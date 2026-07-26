@@ -15,6 +15,7 @@ function readToken(raw, start) {
   const tokenStart = index;
   let token = '';
   let quote = null;
+  let quoted = false;
 
   for (; index < raw.length; index += 1) {
     const character = raw[index];
@@ -24,6 +25,10 @@ function readToken(raw, start) {
       continue;
     }
     if (QUOTES.has(character)) {
+      // Remember that the token opened with a quote: quoting is how a user says
+      // "this is text, not a flag", so the stripped value must not be re-read
+      // as one.
+      if (index === tokenStart) quoted = true;
       quote = character;
       continue;
     }
@@ -31,7 +36,7 @@ function readToken(raw, start) {
     token += character;
   }
 
-  return { token, tokenStart, next: index, unterminated: quote !== null };
+  return { token, tokenStart, next: index, unterminated: quote !== null, quoted };
 }
 
 /**
@@ -50,10 +55,16 @@ export function splitBlob(raw, { valueFlags = [], repeatableFlags = [] } = {}) {
 
   for (;;) {
     const read = readToken(raw, index);
-    if (!read) return { tokens, prompt: '' };
+    if (!read) return { tokens, prompt: '', terminated: false };
 
-    if (read.token === '--') return { tokens, prompt: raw.slice(read.next).trim() };
-    if (!read.token.startsWith('--')) return { tokens, prompt: raw.slice(read.tokenStart).trim() };
+    if (!read.quoted && read.token === '--') {
+      return { tokens, prompt: raw.slice(read.next).trim(), terminated: true };
+    }
+    // A quoted token is prompt text even when it looks like a flag; the slice
+    // starts at the quote so the user's characters survive exactly.
+    if (read.quoted || !read.token.startsWith('--')) {
+      return { tokens, prompt: raw.slice(read.tokenStart).trim(), terminated: false };
+    }
     if (read.unterminated) {
       throw new UserError(`Unterminated quote in option "${read.token}".`);
     }
@@ -96,8 +107,11 @@ export function parseArgs(argv, { valueFlags = [], booleanFlags = [], repeatable
       continue;
     }
     if (!token.startsWith('--')) {
-      positionals.push(token);
-      continue;
+      // Flags are recognised only before the request text starts, matching
+      // splitBlob. Continuing to parse them let "explain the --model flag"
+      // swallow "flag" as a model id and truncate the prompt.
+      positionals.push(...argv.slice(index));
+      break;
     }
 
     const separator = token.indexOf('=');
@@ -121,8 +135,11 @@ export function parseArgs(argv, { valueFlags = [], booleanFlags = [], repeatable
     else options[key] = value;
   }
 
-  return { options, positionals };
+  return { options, positionals, terminated: passthrough };
 }
+
+// A lone "--flag=value with spaces" argument is one flag, not a blob to split.
+const SINGLE_ASSIGNMENT = /^--[A-Za-z][\w-]*=/;
 
 /**
  * Parse argv however it arrives: as one "$ARGUMENTS" blob, or as a properly
@@ -131,13 +148,13 @@ export function parseArgs(argv, { valueFlags = [], booleanFlags = [], repeatable
 export function parseCommandLine(argv, spec = {}) {
   const entries = argv.filter((entry) => entry !== '');
 
-  if (entries.length === 1 && /\s/.test(entries[0])) {
-    const { tokens, prompt } = splitBlob(entries[0], spec);
-    return { options: parseArgs(tokens, spec).options, prompt };
+  if (entries.length === 1 && /\s/.test(entries[0]) && !SINGLE_ASSIGNMENT.test(entries[0])) {
+    const { tokens, prompt, terminated } = splitBlob(entries[0], spec);
+    return { options: parseArgs(tokens, spec).options, prompt, terminated };
   }
 
-  const { options, positionals } = parseArgs(entries, spec);
-  return { options, prompt: positionals.join(' ') };
+  const { options, positionals, terminated } = parseArgs(entries, spec);
+  return { options, prompt: positionals.join(' '), terminated };
 }
 
 /**

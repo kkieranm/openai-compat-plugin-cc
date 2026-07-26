@@ -83,17 +83,27 @@ async function runSetup(argv) {
   process.stdout.write(`${renderSetupReport({ configPath: path, created, results, defaultProvider: config.defaultProvider })}\n`);
 }
 
-function resolvePrompt(options, inlinePrompt) {
+function resolvePrompt(options, inlinePrompt, terminated) {
+  const inline = inlinePrompt.trim();
+
   if (options['prompt-file']) {
+    // Silently preferring one over the other loses half the request.
+    if (inline) {
+      throw new UserError(`--prompt-file was given alongside request text ("${inline.slice(0, 60)}").`, {
+        hint: 'Pass one or the other, so it is unambiguous which text is the request.',
+      });
+    }
     try {
       return readFileSync(options['prompt-file'], 'utf8').trim();
     } catch (error) {
       throw new UserError(`Could not read --prompt-file ${options['prompt-file']}: ${error.message}`);
     }
   }
-  const inline = inlinePrompt.trim();
+
   if (inline) {
-    assertNoFlagsInPrompt(inline, TASK_SPEC);
+    // After an explicit `--` the flag region is closed by the user's own
+    // instruction, so a flag-looking word is plainly part of the request.
+    if (!terminated) assertNoFlagsInPrompt(inline, TASK_SPEC);
     return inline;
   }
   const piped = process.stdin.isTTY ? '' : readStdin().trim();
@@ -115,15 +125,10 @@ async function resolveModel(profile, explicit) {
   return models[0];
 }
 
-async function runTask(argv) {
-  const { options, prompt: inlinePrompt } = parseCommandLine(argv, TASK_SPEC);
-
-  const { config } = loadConfig();
-  const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
-  const prompt = resolvePrompt(options, inlinePrompt);
-  const files = readFileBlocks(options.file);
-  const model = await resolveModel(profile, options.model);
-
+/**
+ * Assemble the request and prove it fits the window before anything is sent.
+ */
+function prepareRequest(options, { profile, prompt, files, model }) {
   const messages = buildMessages({ system: options.system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
   const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
 
@@ -141,6 +146,25 @@ async function runTask(argv) {
     providerName: profile.name,
     model,
   });
+
+  return { messages, estimatedTokens, maxTokens, budget };
+}
+
+async function runTask(argv) {
+  const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
+
+  const { config } = loadConfig();
+  const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
+  if (profile.credentialWithheld) {
+    process.stderr.write(
+      `Note: "${profile.name}" has a credential, but --base-url points at a different host, so it was not sent.\n`,
+    );
+  }
+  const prompt = resolvePrompt(options, inlinePrompt, terminated);
+  const files = readFileBlocks(options.file);
+  const model = await resolveModel(profile, options.model);
+
+  const { messages, estimatedTokens, maxTokens, budget } = prepareRequest(options, { profile, prompt, files, model });
 
   const timeoutMs = options.timeout
     ? parseNumber(options.timeout, 'timeout', { min: 1 }) * 1000

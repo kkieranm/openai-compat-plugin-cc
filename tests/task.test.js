@@ -56,6 +56,53 @@ test('task sends prose containing an apostrophe through unchanged', async () => 
   assert.equal(chat.body.messages.at(-1).content, "explain what the file's header does");
 });
 
+// These drive the real CLI, not one parser helper. The unit tests on splitBlob
+// passed while the documented `--` form failed end to end, which is how the
+// worst parsing defect shipped.
+test('the documented -- escape hatch runs, prompt intact', async () => {
+  const server = await startFakeServer(route());
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+  const blob = await runCompanion(['task', '--model m -- explain what the --file flag does'], { configPath: path });
+  const argvForm = await runCompanion(['task', '--model', 'm', '--', 'explain', 'what', 'the', '--file', 'flag', 'does'], {
+    configPath: path,
+  });
+  await server.close();
+
+  for (const result of [blob, argvForm]) {
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const sent = server.requests.filter((request) => request.url.endsWith('/chat/completions'));
+  assert.equal(sent.length, 2);
+  for (const request of sent) {
+    assert.equal(request.body.messages.at(-1).content, 'explain what the --file flag does');
+    assert.equal(request.body.model, 'm');
+  }
+});
+
+test('a flag written after the request text is reported, not absorbed', async () => {
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });
+
+  const result = await runCompanion(['task', 'explain', 'the', '--model', 'flag'], { configPath: path });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /"--model" appears inside the prompt text/);
+});
+
+test('--prompt-file alongside request text is refused, not silently halved', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-both-'));
+  const promptFile = join(dir, 'p.txt');
+  writeFileSync(promptFile, 'summarize the file');
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });
+
+  const result = await runCompanion(['task', `--prompt-file ${promptFile} also explain the retry path`], {
+    configPath: path,
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--prompt-file was given alongside request text/);
+});
+
 test('task accepts temperature 0 for deterministic sampling', async () => {
   const server = await startFakeServer(route());
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
@@ -147,6 +194,20 @@ test('a requested --max-tokens counts against the window, not the default reserv
   const refused = await runCompanion(['task', '--max-tokens', '7000', '--file', file, 'summarize'], { configPath: path });
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /reserving 7\.0k for the reply/);
+});
+
+test('a --max-tokens larger than the window names that flag, not the input size', async () => {
+  const { path } = writeConfig({
+    defaultProvider: 'local',
+    providers: { local: { baseUrl: 'http://127.0.0.1:1/v1', defaultModel: 'small', contextLength: 8192 } },
+  });
+
+  const result = await runCompanion(['task', '--max-tokens', '9000', 'hello'], { configPath: path });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /requested reply length \(9\.0k tokens\) does not fit small's 8\.2k window/);
+  assert.match(result.stderr, /Lower --max-tokens/);
+  assert.doesNotMatch(result.stderr, /-\d+ usable/, 'must not print a negative budget');
 });
 
 test('task warns, but proceeds, when the context window is unknown', async () => {

@@ -26,7 +26,15 @@ first run with `lmstudio` (:1234), `omlx` (:8000) and `unsloth` (:8888). A profi
 `baseUrl` plus optional `defaultModel`, `contextLength`, `timeoutSeconds`, and either `apiKey` or
 `apiKeyEnv`. Nothing in the request path branches on provider identity; the only provider-keyed code
 is `START_HINTS` in `config.mjs`, which is presentation-only remediation text. Adding a provider is
-a config edit. Resolution order is `--base-url` > `--provider` > `defaultProvider`.
+a config edit. Resolution order is `--base-url` > `--provider` > `defaultProvider`, and a named
+provider must exist even when `--base-url` overrides its endpoint — accepting a typo silently
+discarded the real profile's `contextLength` and disarmed the size guard.
+
+A credential is scoped to the origin it was configured for: `--base-url` pointing at a different
+host drops the key rather than forwarding it somewhere it was never meant to go, and says so on
+stderr. Credentials embedded in the URL itself are refused, because rebuilding the URL would
+otherwise discard them silently. A profile's query string is kept separate from its base URL so it
+can be appended after the request path rather than swallowed in the middle of it.
 
 The seeded ports are documented defaults, **not verified facts** — published defaults for MLX-family
 servers vary widely (8000/8080/10240/11234/11435), so `setup` always prints the config path so a
@@ -65,7 +73,11 @@ an error rather than being swallowed into the prompt, so a typo never silently b
   never closed and a backslash in `\d+` was eaten as an escape, both corrupting the model's input
   silently. Consequently flags must precede the request (or be separated with `--`); a known flag
   found inside the prompt is reported rather than absorbed, and `--prompt-file` remains the route
-  for multi-line prompts.
+  for multi-line prompts. The same rule governs the separated-argv form — flag recognition stops at
+  the first word of the request there too, since parsing flags past that point let
+  `explain the --model flag` consume "flag" as a model id. Quoting marks a word as text, so a quoted
+  `'--model'` is prompt rather than a flag, and passing both `--prompt-file` and inline text is an
+  error rather than a silent choice between them.
 - Claude Code supports two command-invocation styles and both are in use here: `setup.md` uses the
   `` !`…` `` pre-execution prefix (deterministic — it always runs), while `task.md` uses prose plus a
   fenced bash block, because Claude must first decide which files to attach. Both require

@@ -32,6 +32,15 @@ export function checkContextBudget({ estimatedTokens, contextLength, reserveToke
     };
   }
 
+  // Otherwise the budget goes negative and the refusal blames the input size,
+  // which no amount of trimming can fix.
+  if (reserve >= contextLength) {
+    throw new UserError(
+      `The requested reply length (${formatTokens(reserve)} tokens) does not fit ${model}'s ${formatTokens(contextLength)} window on "${providerName}".`,
+      { hint: 'Lower --max-tokens, or raise the model context length in the server and the provider config.' },
+    );
+  }
+
   const budget = contextLength - reserve;
   if (estimatedTokens > budget) {
     throw new UserError(

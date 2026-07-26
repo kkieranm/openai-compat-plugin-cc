@@ -86,8 +86,25 @@ export function normalizeBaseUrl(raw) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new UserError(`"${raw}" is not a valid http(s) URL.`, { hint });
   }
+  // Credentials in the URL would be dropped when we rebuild it below, and a
+  // silently unauthenticated request is worse than a refusal.
+  if (url.username || url.password) {
+    throw new UserError(`"${raw}" embeds credentials in the URL, which this plugin does not forward.`, {
+      hint: 'Put the key in the profile\'s "apiKeyEnv" (preferred) or "apiKey" instead.',
+    });
+  }
   const path = url.pathname.replace(/\/+$/, '');
-  return `${url.origin}${path === '' ? '/v1' : path}`;
+  // The query is kept separate because request paths are appended to baseUrl;
+  // folding it in would produce ".../v1?api-version=2024/models".
+  return { baseUrl: `${url.origin}${path === '' ? '/v1' : path}`, query: url.search };
+}
+
+function sameOrigin(a, b) {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** Resolve the API key without ever returning it to display code. */
@@ -103,9 +120,11 @@ function resolveApiKey(profile, name) {
 }
 
 export function buildProfile(name, rawProfile) {
+  const { baseUrl, query } = normalizeBaseUrl(rawProfile.baseUrl);
   return {
     name,
-    baseUrl: normalizeBaseUrl(rawProfile.baseUrl),
+    baseUrl,
+    query,
     defaultModel: rawProfile.defaultModel,
     contextLength: rawProfile.contextLength,
     timeoutSeconds: rawProfile.timeoutSeconds,
@@ -113,23 +132,41 @@ export function buildProfile(name, rawProfile) {
   };
 }
 
+function requireProvider(config, name) {
+  const rawProfile = config.providers[name];
+  if (rawProfile) return rawProfile;
+  const known = Object.keys(config.providers).join(', ') || '(none)';
+  throw new UserError(`Unknown provider "${name}". Configured: ${known}.`, {
+    hint: `Add it to ${configPath()}, or pass --base-url on its own for a one-off endpoint.`,
+  });
+}
+
 /** Pick one provider: an explicit --base-url wins, then --provider, then the default. */
 export function resolveProfile(config, { provider, baseUrl } = {}) {
+  // A named provider must exist even when --base-url overrides its endpoint.
+  // Skipping this check let a typo yield an empty profile, which silently threw
+  // away contextLength and disarmed the oversized-input guard.
+  const named = provider ? requireProvider(config, provider) : undefined;
+
   if (baseUrl) {
-    return buildProfile(provider || 'custom', { ...(provider ? config.providers[provider] : {}), baseUrl });
+    const overridden = { ...named, baseUrl };
+    // A credential belongs to the host it was configured for. Pointing
+    // --base-url somewhere else must not send that host's key to a new one.
+    const crossOrigin = named && !sameOrigin(named.baseUrl, baseUrl);
+    if (crossOrigin) {
+      delete overridden.apiKey;
+      delete overridden.apiKeyEnv;
+    }
+    const profile = buildProfile(provider ?? 'custom', overridden);
+    profile.credentialWithheld = Boolean(crossOrigin && (named.apiKey || named.apiKeyEnv));
+    return profile;
   }
+
   const name = provider || config.defaultProvider;
   if (!name) {
     throw new UserError('No provider given and the config has no "defaultProvider".', {
       hint: `Pass --provider, or set defaultProvider in ${configPath()}`,
     });
   }
-  const rawProfile = config.providers[name];
-  if (!rawProfile) {
-    const known = Object.keys(config.providers).join(', ') || '(none)';
-    throw new UserError(`Unknown provider "${name}". Configured: ${known}.`, {
-      hint: `Add it to ${configPath()}, or pass --base-url for a one-off endpoint.`,
-    });
-  }
-  return buildProfile(name, rawProfile);
+  return buildProfile(name, named ?? requireProvider(config, name));
 }

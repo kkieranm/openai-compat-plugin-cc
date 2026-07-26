@@ -11,10 +11,20 @@ const CONFIG = {
 };
 
 test('appends /v1 only when the base URL carries no path', () => {
-  assert.equal(normalizeBaseUrl('http://localhost:1234'), 'http://localhost:1234/v1');
-  assert.equal(normalizeBaseUrl('http://localhost:1234/'), 'http://localhost:1234/v1');
-  assert.equal(normalizeBaseUrl('http://localhost:1234/v1'), 'http://localhost:1234/v1');
-  assert.equal(normalizeBaseUrl('http://localhost:1234/api/v0/'), 'http://localhost:1234/api/v0');
+  assert.equal(normalizeBaseUrl('http://localhost:1234').baseUrl, 'http://localhost:1234/v1');
+  assert.equal(normalizeBaseUrl('http://localhost:1234/').baseUrl, 'http://localhost:1234/v1');
+  assert.equal(normalizeBaseUrl('http://localhost:1234/v1').baseUrl, 'http://localhost:1234/v1');
+  assert.equal(normalizeBaseUrl('http://localhost:1234/api/v0/').baseUrl, 'http://localhost:1234/api/v0');
+});
+
+test('a query string is kept for the request, not folded into the base URL', () => {
+  const { baseUrl, query } = normalizeBaseUrl('https://api.example.com/v1?api-version=2024');
+  assert.equal(baseUrl, 'https://api.example.com/v1');
+  assert.equal(query, '?api-version=2024');
+});
+
+test('credentials embedded in the URL are refused rather than dropped', () => {
+  assert.throws(() => normalizeBaseUrl('https://user:pw@api.example.com/v1'), /embeds credentials in the URL/);
 });
 
 test('rejects a malformed base URL', () => {
@@ -41,6 +51,31 @@ test('--base-url outranks the named provider but keeps its other settings', () =
   const profile = resolveProfile(CONFIG, { provider: 'lmstudio', baseUrl: 'http://127.0.0.1:9999' });
   assert.equal(profile.baseUrl, 'http://127.0.0.1:9999/v1');
   assert.equal(profile.contextLength, 8192);
+});
+
+test('a credential is never forwarded to a different host via --base-url', () => {
+  const config = {
+    defaultProvider: 'p',
+    providers: { p: { baseUrl: 'https://real.example/v1', apiKey: 'sk-secret-123' } },
+  };
+
+  const elsewhere = resolveProfile(config, { provider: 'p', baseUrl: 'http://other.host:1/v1' });
+  assert.equal(elsewhere.apiKey, undefined, 'key must not follow the request to another origin');
+  assert.equal(elsewhere.credentialWithheld, true);
+
+  // Same host, different path: still the provider the key belongs to.
+  const samePlace = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v2' });
+  assert.equal(samePlace.apiKey, 'sk-secret-123');
+  assert.equal(samePlace.credentialWithheld, false);
+});
+
+test('a mistyped --provider is rejected even when --base-url is given', () => {
+  // Silently accepting it dropped the real profile's contextLength and left the
+  // oversized-input guard disarmed.
+  assert.throws(
+    () => resolveProfile(CONFIG, { provider: 'lmstduio', baseUrl: 'http://localhost:1234' }),
+    /Unknown provider "lmstduio"/,
+  );
 });
 
 test('an unknown provider lists the configured ones', () => {

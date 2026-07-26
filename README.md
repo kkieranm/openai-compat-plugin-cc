@@ -51,7 +51,13 @@ environment variable holding the key — preferred) or `apiKey`. The seeded port
 documented default; correct them if your server listens elsewhere.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
-`--model` > the profile's `defaultModel` > the first model the server reports.
+`--model` > the profile's `defaultModel` > the first model the server reports. A named provider must
+exist even when `--base-url` overrides its endpoint, and if that URL points at a different host the
+profile's API key is **not** sent with it.
+
+Flags go before the request text; from the first word of the request onward, everything is taken
+verbatim, so apostrophes, quotes and backslashes need no escaping. To ask about a flag by name, put
+the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `--prompt-file`.
 
 ## Notes
 

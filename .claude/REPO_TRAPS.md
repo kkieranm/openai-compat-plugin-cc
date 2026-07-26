@@ -20,8 +20,17 @@ token — and a backslash in `what \d+ matches` was eaten as an escape. Both cor
 input silently, which is the exact failure mode the fail-loud design exists to prevent.
 
 The rule now: tokenize only the **leading flag region**; everything from the first non-flag token
-onward is taken verbatim from the original string. Any future parsing work must preserve that split.
-**Guarded by** `tests/args.test.js` — "prompt text is taken verbatim, punctuation and all".
+onward is taken verbatim from the original string. Quoting a word marks it as text, so a quoted
+`'--model'` is prompt, not a flag; a bare `--` closes the flag region explicitly.
+
+**Guarded by** `tests/args.test.js` (unit) **and `tests/task.test.js`** — "the documented -- escape
+hatch runs, prompt intact", which drives `runCompanion` end to end.
+
+A unit guard on one helper is not enough here, and claiming otherwise caused real damage: this entry
+previously cited only the `splitBlob` unit test, which passed green while the documented `--` form
+failed with exit 1 through the actual CLI. A later review found that defect and noted the false
+assurance had let reviewers skip the area. **Any guard for this trap must exercise the companion, not
+just the parser.**
 
 ## `new URL()` succeeding is not URL validation
 
@@ -35,6 +44,15 @@ URL must also assert the protocol is `http:`/`https:`.
 Commands are markdown, so nothing type-checks them: a missing `allowed-tools: Bash(node:*)` entry or
 a renamed companion script only surfaces when a user runs the command and it fails.
 **Guarded by** `tests/plugin.test.js`.
+
+## A credential belongs to one host
+
+`--base-url` overrides a named profile's endpoint but used to inherit its `apiKey`, so
+`--provider p --base-url http://other.host` sent p's key as a Bearer token to an unrelated host over
+plaintext HTTP. `resolveProfile` now withholds the credential across a differing origin and says so
+on stderr. Any future option that redirects a request must ask the same question: does the
+credential still belong to where this is going?
+**Guarded by** `tests/config.test.js` — "a credential is never forwarded to a different host".
 
 ## Reviewer notes that are not yet defect classes
 

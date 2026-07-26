@@ -33,7 +33,9 @@ function describeFailure(error, profile, timeoutMs) {
 async function request(profile, path, { method = 'GET', body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   let response;
   try {
-    response = await fetch(`${profile.baseUrl}${path}`, {
+    // The profile's query string belongs after the request path, not inside the
+    // base URL (e.g. Azure-style "?api-version=").
+    response = await fetch(`${profile.baseUrl}${path}${profile.query ?? ''}`, {
       method,
       headers: buildHeaders(profile),
       body: body === undefined ? undefined : JSON.stringify(body),
