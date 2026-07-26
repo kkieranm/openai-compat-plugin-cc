@@ -21,11 +21,14 @@ Building the call:
 
 - Attach files with repeated `--file <path>` when the user names files, or when the request plainly needs specific files you can identify. Attach nothing else — local models have small context windows, and the script refuses oversized input rather than truncating it.
 - Do not paste file contents into the prompt text yourself; `--file` does that with proper delimiters.
-- If the prompt is a single line without quotes or shell metacharacters, pass it as the trailing text.
-- Otherwise write the prompt to a temporary file and pass `--prompt-file <path>`, which is read verbatim.
-- Also use `--prompt-file` whenever the prompt text itself contains a `--token` (as in "what does
-  `--json` do?"). Prompt text is parsed for flags, so a bare `--word` is rejected as an unknown
-  option, and a real flag name would swallow the following word as its value.
+- Put every flag **before** the request text. Flags are only recognised up to the first word of the
+  prompt; from there the text is taken verbatim, so ordinary punctuation (apostrophes, quotes,
+  backslashes) needs no escaping and must not be rewritten.
+- A single-line request goes straight after the flags. For a multi-line prompt, write it to a
+  temporary file and pass `--prompt-file <path>`, which is read verbatim.
+- If the request text itself needs to mention one of this command's own flags (as in "explain the
+  `--file` flag"), either put it after a bare `--` separator or use `--prompt-file`. The script
+  reports such a flag rather than silently treating it as part of the request.
 
 Run:
 

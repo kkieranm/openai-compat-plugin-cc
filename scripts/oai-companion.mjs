@@ -126,9 +126,18 @@ async function runTask(argv) {
 
   const messages = buildMessages({ system: options.system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
   const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
+
+  // The window covers prompt + completion, so an explicitly requested reply
+  // length is the headroom to reserve — parsed before the guard runs, not after.
+  const maxTokens =
+    options['max-tokens'] === undefined
+      ? undefined
+      : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 });
+
   const budget = checkContextBudget({
     estimatedTokens,
     contextLength: profile.contextLength,
+    reserveTokens: maxTokens,
     providerName: profile.name,
     model,
   });
@@ -147,10 +156,7 @@ async function runTask(argv) {
     timeoutMs,
     temperature:
       options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
-    maxTokens:
-      options['max-tokens'] === undefined
-        ? undefined
-        : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 }),
+    maxTokens,
   });
 
   process.stdout.write(result.content.trim());

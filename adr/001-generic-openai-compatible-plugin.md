@@ -40,7 +40,8 @@ prove the transport, so it is deferred rather than ported.
 
 **Oversized input fails loudly.** Local context windows are small, and silent truncation produces a
 confident answer drawn from half the input. `context-guard.mjs` estimates tokens crudely (chars/4),
-reserves 1024 for the reply, and refuses with both measured numbers when the input will not fit.
+reserves headroom for the reply — `--max-tokens` when the caller gives one, otherwise 1024 — and
+refuses with both measured numbers when the input will not fit.
 Because the window is a property of how the model was loaded, not something `/v1/models` reports,
 the check only runs when the profile declares `contextLength`; otherwise it prints a warning saying
 so. Auto-chunking was rejected for v1 — merge quality is dubious and it triples the complexity.
@@ -57,9 +58,14 @@ an error rather than being swallowed into the prompt, so a typo never silently b
   hang, so the script writes a `Contacting <provider> (<model>)…` line to stderr before dispatching.
 - The context guard is opt-in per provider. Auto-detecting the window (LM Studio's native
   `/api/v0/models` reports `max_context_length`) would be provider-specific and is left for later.
-- `$ARGUMENTS` arrives as a **single** shell-quoted argv entry, so the companion re-splits that blob
-  quote-aware. Prompts containing quotes or newlines survive only via `--prompt-file`, which
-  `commands/task.md` instructs Claude to use for anything non-trivial.
+- `$ARGUMENTS` arrives as a **single** argv entry, so the companion re-splits that blob — but only
+  the **leading flag region**. Everything from the first non-flag token onward is taken verbatim
+  from the original string. Treating the whole blob as shell syntax was the first design and it was
+  wrong: the blob is the user's prose, so an apostrophe in "the file's header" opened a quote that
+  never closed and a backslash in `\d+` was eaten as an escape, both corrupting the model's input
+  silently. Consequently flags must precede the request (or be separated with `--`); a known flag
+  found inside the prompt is reported rather than absorbed, and `--prompt-file` remains the route
+  for multi-line prompts.
 - Claude Code supports two command-invocation styles and both are in use here: `setup.md` uses the
   `` !`…` `` pre-execution prefix (deterministic — it always runs), while `task.md` uses prose plus a
   fenced bash block, because Claude must first decide which files to attach. Both require

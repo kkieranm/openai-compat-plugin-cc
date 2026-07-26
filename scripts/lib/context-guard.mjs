@@ -19,7 +19,12 @@ export function formatTokens(count) {
  * Refuse loudly when the input cannot fit the window. Returns a note describing
  * what was (or could not be) checked; never truncates silently.
  */
-export function checkContextBudget({ estimatedTokens, contextLength, reserveTokens = DEFAULT_RESERVE_TOKENS, providerName, model }) {
+export function checkContextBudget({ estimatedTokens, contextLength, reserveTokens, providerName, model }) {
+  // An explicit --max-tokens is the reply length actually requested, so it
+  // replaces the guess in both directions: a bigger reply needs more headroom,
+  // a deliberately small one frees the window up for more input.
+  const reserve = reserveTokens ?? DEFAULT_RESERVE_TOKENS;
+
   if (!contextLength) {
     return {
       checked: false,
@@ -27,11 +32,11 @@ export function checkContextBudget({ estimatedTokens, contextLength, reserveToke
     };
   }
 
-  const budget = contextLength - reserveTokens;
+  const budget = contextLength - reserve;
   if (estimatedTokens > budget) {
     throw new UserError(
       `Input is roughly ${formatTokens(estimatedTokens)} tokens but ${model} on "${providerName}" has a ${formatTokens(contextLength)} window ` +
-        `(${formatTokens(budget)} usable after reserving ${formatTokens(reserveTokens)} for the reply).`,
+        `(${formatTokens(budget)} usable after reserving ${formatTokens(reserve)} for the reply).`,
       { hint: 'Send fewer or smaller files, shorten the prompt, or raise the model context length in the server and config.' },
     );
   }
