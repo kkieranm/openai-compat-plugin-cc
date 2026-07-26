@@ -1,0 +1,13 @@
+{
+  "name": "lmstudio-plugin-cc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Claude Code plugin delegating to local LLMs hosted in LM Studio",
+  "type": "module",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
