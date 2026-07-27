@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { assertNoFlagsInPrompt, parseCommandLine } from './lib/args.mjs';
 import { chatCompletion, DEFAULT_TIMEOUT_MS, fetchModels } from './lib/client.mjs';
-import { chatCandidates, describeModels, effectiveWindow, windowFor } from './lib/model-info.mjs';
+import { describeModels, effectiveWindow, planSelection, windowFor } from './lib/model-info.mjs';
 import { buildProfile, loadConfig, resolveProfile } from './lib/config.mjs';
 import { checkContextBudget, estimateTokens } from './lib/context-guard.mjs';
 import { UserError } from './lib/errors.mjs';
@@ -53,8 +53,14 @@ async function probeProvider(name, rawProfile) {
     const described = await describeProvider(profile);
     return { profile, rawProfile, built: true, models: described.models.map((model) => model.id), described };
   } catch (error) {
-    if (error instanceof UserError) return { profile, rawProfile, built: true, models: [], error };
-    throw error;
+    if (!(error instanceof UserError)) throw error;
+    // A server that answers but does not serve /v1/models is up, and a task
+    // with a configured model still runs against it. Reporting that as
+    // unreachable would tell the user to restart a server that is working.
+    if (error.serverResponded) {
+      return { profile, rawProfile, built: true, models: [], described: null, listUnavailable: error.message };
+    }
+    return { profile, rawProfile, built: true, models: [], error };
   }
 }
 
@@ -77,11 +83,15 @@ async function runSetup(argv) {
         reachable: !error,
         error: error ? error.message : null,
         models,
-        chatModels: described ? chatCandidates(described).map((model) => model.id) : [],
         defaultModel: profile.defaultModel ?? null,
         contextLength: profile.contextLength ?? null,
         contextWindow: resolved.window ?? null,
         contextSource: resolved.source ?? null,
+        detectedWindow: resolved.detected ?? null,
+        // The model a task would use, or why it could not pick one — from the
+        // same planner the text report and the task path use.
+        selectedModel: resolved.modelId ?? null,
+        cannotDelegate: resolved.problem?.message ?? null,
         hasApiKey: Boolean(profile.apiKey),
         apiKeyEnv: rawProfile?.apiKeyEnv ?? null,
       };
@@ -142,24 +152,11 @@ async function describeProvider(profile, { required = true } = {}) {
 }
 
 function selectModel(profile, explicit, described) {
-  if (explicit) return explicit;
-  if (profile.defaultModel) return profile.defaultModel;
-
-  const candidates = chatCandidates(described);
-  if (candidates.length === 0) {
-    throw new UserError(`Provider "${profile.name}" offers no model that can answer a chat request.`, {
-      hint: 'Load a model in the server, or pass --model <id> to have it loaded on demand.',
-    });
+  const plan = planSelection(profile, explicit, described);
+  if (plan.problem) {
+    throw new UserError(`Provider "${profile.name}": ${plan.problem.message}`, { hint: plan.problem.hint });
   }
-  // Picking the first of several used to delegate to whatever the server happened
-  // to list first — an embedding model, on the machine this was built against.
-  if (candidates.length > 1) {
-    throw new UserError(
-      `Provider "${profile.name}" offers ${candidates.length} models: ${candidates.map((model) => model.id).join(', ')}.`,
-      { hint: 'Pass --model <id>, or set "defaultModel" for this provider in the config.' },
-    );
-  }
-  return candidates[0].id;
+  return plan.modelId;
 }
 
 /**
@@ -206,10 +203,14 @@ function parseNumericOptions(options) {
 async function resolveTarget(profile, options) {
   const mustChooseModel = !options.model && !profile.defaultModel;
   const mustDetectWindow = !profile.contextLength;
-  const described =
-    mustChooseModel || mustDetectWindow
-      ? await describeProvider(profile, { required: mustChooseModel })
-      : { models: [], source: null };
+
+  let described = { models: [], source: null };
+  if (mustChooseModel || mustDetectWindow) {
+    // Probing precedes the "Contacting…" line and can stall on an endpoint that
+    // black-holes unknown paths, so say what is happening before it starts.
+    process.stderr.write(`Checking ${profile.name} for available models and context window...\n`);
+    described = await describeProvider(profile, { required: mustChooseModel });
+  }
 
   const model = selectModel(profile, options.model, described);
   return { model, contextLength: profile.contextLength ?? windowFor(described, model) };

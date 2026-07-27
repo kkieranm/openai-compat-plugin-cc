@@ -53,7 +53,9 @@ model. The seeded ports are each project's documented default; correct them if y
 elsewhere.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
-`--model` > the profile's `defaultModel` > the first model the server reports. A named provider must
+`--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several
+chat models and none is named, the plugin lists them and asks rather than picking one for you;
+embedding models are never chosen. A named provider must
 exist even when `--base-url` overrides its endpoint, and if that URL points at a different host the
 profile's API key is **not** sent with it.
 

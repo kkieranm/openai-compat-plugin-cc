@@ -48,9 +48,13 @@ async function request(profile, path, { method = 'GET', body, timeoutMs = DEFAUL
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     const trimmed = detail.trim().slice(0, 400);
-    throw new UserError(
+    const error = new UserError(
       `${profile.name} returned HTTP ${response.status} ${response.statusText} for ${path}${trimmed ? `: ${trimmed}` : ''}`,
     );
+    // The server answered, so it is up — it just does not serve this endpoint.
+    // Callers use this to tell "server down" from "server lacks /v1/models".
+    error.serverResponded = true;
+    throw error;
   }
 
   try {

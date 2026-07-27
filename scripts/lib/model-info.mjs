@@ -144,11 +144,23 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
  * dialect only adds detail to those ids. A server-wide window (llama.cpp, TGI)
  * applies to every model, since those servers serve one at a time.
  */
+// The same model is spelled differently across a server's own endpoints — a
+// quantization suffix on one side, different case on the other. An exact-match
+// join drops `type` for those, and a record with no type passes the embeddings
+// denylist trivially, which would put a chat request to an embedding model.
+function matchKey(id) {
+  return String(id).toLowerCase().split('@')[0].trim();
+}
+
 function merge(ids, detected) {
   const byId = new Map(detected.models.map((model) => [model.id, model]));
-  const models = (ids.length > 0 ? ids : detected.models.map((model) => model.id)).map((id) => ({
+  const byKey = new Map(detected.models.map((model) => [matchKey(model.id), model]));
+  const authoritative = ids.length > 0 ? ids : detected.models.map((model) => model.id);
+
+  const models = authoritative.map((id) => ({
+    ...(byId.get(id) ?? byKey.get(matchKey(id)) ?? {}),
+    // Keep the spelling the chat endpoint accepts, not the dialect's.
     id,
-    ...byId.get(id),
     ...(detected.serverWindow ? { window: detected.serverWindow } : {}),
   }));
   return { models, source: detected.source };
@@ -159,35 +171,92 @@ export function windowFor(described, modelId) {
   return described.models.find((model) => model.id === modelId)?.window;
 }
 
+export const MAX_LISTED_MODELS = 12;
+
+function listModelIds(ids) {
+  const shown = ids.slice(0, MAX_LISTED_MODELS);
+  const extra = ids.length - shown.length;
+  return `${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`;
+}
+
+/**
+ * THE authority on which model a task will use — or why it cannot pick one.
+ *
+ * Every other view of that decision must call this rather than re-deriving it.
+ * Three separate implementations of "what will happen" (selection, the readiness
+ * marker, the window report) is what produced this repo's most-repeated defect
+ * class: status output promising something the real path then refuses.
+ */
+export function planSelection({ defaultModel } = {}, explicitModel, described) {
+  if (explicitModel) return { modelId: explicitModel };
+
+  if (defaultModel) {
+    // A configured model is taken on trust when the server does not list it: it
+    // may be downloaded but not loaded, and will be loaded on demand. But if the
+    // server does list it and calls it an embedder, that is a real conflict.
+    const known = described?.models?.find((model) => model.id === defaultModel);
+    if (known?.type === 'embeddings') {
+      return {
+        problem: {
+          message: `Configured defaultModel "${defaultModel}" is an embedding model and cannot answer a chat request.`,
+          hint: 'Point defaultModel at a chat model, or pass --model <id>.',
+        },
+      };
+    }
+    return { modelId: defaultModel };
+  }
+
+  const candidates = chatCandidates(described ?? { models: [] });
+  if (candidates.length === 0) {
+    return {
+      problem: {
+        message: 'This provider offers no model that can answer a chat request.',
+        hint: 'Load a chat model in the server, or pass --model <id> to have it loaded on demand.',
+      },
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      problem: {
+        message: `This provider offers ${candidates.length} models: ${listModelIds(candidates.map((model) => model.id))}.`,
+        hint: 'Pass --model <id>, or set "defaultModel" for this provider in the config.',
+      },
+    };
+  }
+  return { modelId: candidates[0].id };
+}
+
 /**
  * The window that will actually be used, and where it came from. Both the human
  * report and `--json` derive from this one function — computing it twice is how
  * two views of the same run end up disagreeing.
  */
-export function effectiveWindow({ contextLength, defaultModel } = {}, described) {
-  if (contextLength) return { window: contextLength, source: 'config' };
-  if (!described) return { window: undefined, source: null };
+export function effectiveWindow(profile = {}, described, explicitModel) {
+  const configured = positiveInteger(profile.contextLength);
+  const plan = planSelection(profile, explicitModel, described);
+  const chosen = plan.modelId ? described?.models?.find((model) => model.id === plan.modelId) : undefined;
 
-  const chosen = defaultModel
-    ? described.models.find((model) => model.id === defaultModel)
-    : onlyCandidate(described);
-
-  if (!chosen) {
-    const candidates = chatCandidates(described);
-    return { window: undefined, source: null, candidates: candidates.length };
+  if (configured) {
+    // Report the conflict where it is known. A stale configured value outranks
+    // detection silently, which is how a guard ends up sized to a window the
+    // server is no longer serving.
+    return {
+      window: configured,
+      source: 'config',
+      modelId: plan.modelId,
+      detected: chosen?.window && chosen.window !== configured ? chosen.window : undefined,
+      problem: plan.problem,
+    };
   }
-  return {
-    window: chosen.window,
-    ceiling: chosen.ceiling,
-    modelId: chosen.id,
-    source: chosen.window ? described.source : null,
-    candidates: chatCandidates(described).length,
-  };
-}
+  if (!described) return { window: undefined, source: null, problem: plan.problem };
 
-function onlyCandidate(described) {
-  const candidates = chatCandidates(described);
-  return candidates.length === 1 ? candidates[0] : undefined;
+  return {
+    window: chosen?.window,
+    ceiling: chosen?.ceiling,
+    modelId: plan.modelId,
+    source: chosen?.window ? described.source : null,
+    problem: plan.problem,
+  };
 }
 
 /** Models eligible for automatic selection: everything the server did not call an embedder. */

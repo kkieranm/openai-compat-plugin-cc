@@ -14,7 +14,7 @@ function route({ models = () => modelList('test-model'), chat = () => completion
 }
 
 test('setup reports a reachable provider with its models', async () => {
-  const server = await startFakeServer(route({ models: () => modelList('qwen3-coder', 'llama-3.2') }));
+  const server = await startFakeServer(route({ models: () => modelList('qwen3-coder') }));
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
 
   const result = await runCompanion(['setup'], { configPath: path });
@@ -22,8 +22,25 @@ test('setup reports a reachable provider with its models', async () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /ok\s+local \(default\)/);
-  assert.match(result.stdout, /2 model\(s\): qwen3-coder, llama-3\.2/);
+  assert.match(result.stdout, /1 model\(s\): qwen3-coder/);
   assert.match(result.stdout, /Ready: local/);
+});
+
+test('setup does not promise delegation when the model is ambiguous', async () => {
+  // Two models and no defaultModel: a task here would refuse to guess, so
+  // setup must not print "ok"/"Ready". This test previously asserted the
+  // opposite and so encoded the defect.
+  const server = await startFakeServer(route({ models: () => modelList('qwen3-coder', 'llama-3.2') }));
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+  const setup = await runCompanion(['setup'], { configPath: path });
+  const task = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(setup.status, 0, setup.stderr);
+  assert.doesNotMatch(setup.stdout, /Ready: local/);
+  assert.match(setup.stdout, /cannot run here: This provider offers 2 models/);
+  assert.equal(task.status, 1, 'the task must indeed refuse, or setup was right to promise');
 });
 
 test('setup reports an unreachable provider with remediation and still exits 0', async () => {

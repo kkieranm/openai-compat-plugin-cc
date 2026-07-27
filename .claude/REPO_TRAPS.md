@@ -60,8 +60,19 @@ guessing".
 
 ## Reported state must describe what will actually happen
 
-This class has now bitten **three times in one feature**, so treat any new status output as guilty
-until it derives from the same code the real path runs:
+**The most-repeated defect in this repo: nine confirmed instances across two features.** Two rounds
+of fixes failed because each one patched the branch that was reported while leaving the cause in
+place — `selectModel` decided what would happen, and `canDelegate` and `effectiveWindow` each
+re-derived that decision independently. Three models of one truth drift by construction, so every
+branch fixed left the others free to disagree.
+
+**The fix is one authority, never a patched branch.** `planSelection()` in `model-info.mjs` is now
+the only code that decides which model a task will use, or why it cannot pick one. `selectModel`
+throws its `problem`, the readiness marker is `!problem`, and the report *formats* it. A new view of
+that decision must call it, not re-implement it. The same rule applies to the window: one
+`effectiveWindow()` feeds both the text report and `--json`.
+
+Instances, for the pattern rather than the detail:
 
 1. `/oai:setup` reported the first model with a detected window, which could be a different model
    from the one a task would run — promising a guard the task would not have.
@@ -69,10 +80,20 @@ until it derives from the same code the real path runs:
    text report described as guarded at 58.1k. Both now derive from one `effectiveWindow()`.
 3. `setup` marked an embeddings-only provider `ok` and listed it as `Ready`, while a task against it
    failed instantly — and the remediation it offered ("set contextLength") could never have helped.
+4. Same marker said `ok`/`Ready` with **two** chat models and no `defaultModel`, where a task refuses
+   to guess — the case the fix for (3) did not cover. A repo test asserted this broken behaviour.
+5. Same marker said `ok` when `defaultModel` named a model the server itself calls an embedder.
+6. `setup` told the user to "set defaultModel" when `defaultModel` was set but absent from the
+   server's list — a case the code deliberately supports, since a model may load on demand.
+7. A configured `contextLength` silently outranked a *disagreeing* detected window, with no warning
+   in the one place that knew both numbers.
+8. The text report hid the window on an error row while `--json` still reported it.
+9. `setup` called a provider unreachable when it merely lacked `/v1/models`, while a task against it
+   succeeded — the same class inverted, telling the user to restart a working server.
 
-**Guarded by** `tests/model-selection.test.js` — "setup reports the window of the model a task would
-use", "setup --json reports the same window the text report does", and "setup does not call an
-embeddings-only provider ready".
+**Guarded by** `tests/model-selection.test.js` and `tests/context-window.test.js` — including "setup
+does not promise delegation when the model is ambiguous", which asserts that a real task refuses
+whenever setup declines to promise.
 
 ## A credential belongs to one host
 

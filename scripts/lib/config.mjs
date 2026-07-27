@@ -66,6 +66,14 @@ function validateConfig(config, path) {
     if (!profile || typeof profile.baseUrl !== 'string' || !profile.baseUrl) {
       throw new UserError(`Provider "${name}" in ${path} needs a "baseUrl" string.`);
     }
+    // "8k" would sail through every comparison in the size guard as NaN,
+    // leaving it reporting an armed check that in fact tests nothing.
+    for (const key of ['contextLength', 'timeoutSeconds']) {
+      const value = profile[key];
+      if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
+        throw new UserError(`Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a positive whole number.`);
+      }
+    }
   }
 }
 

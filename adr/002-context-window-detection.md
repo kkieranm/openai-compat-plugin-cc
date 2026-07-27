@@ -70,9 +70,18 @@ model could have been sent a chat request.
   best-effort in the strict sense — when the model is already known and only the window is being
   sized, a `/v1/models` that 404s or times out must not fail the task. Choosing a model is the one
   case where the same failure is fatal, because there is nothing to send to.
-- `/oai:setup` calls a provider `ok` only when a task could actually pick a model there. A server
-  offering nothing but embedders is reachable but cannot be delegated to, and reporting it as ready
-  sends the user to a command that fails immediately.
+- `/oai:setup` calls a provider `ok` only when a task could actually pick a model there, and it
+  determines that by calling `planSelection()` — the same function the task path uses — rather than
+  approximating it. Two review rounds produced nine instances of setup promising something the task
+  refused; the cure was a single authority, not a better approximation. Any future status output
+  must call the planner, never re-derive it.
+- A configured `contextLength` still wins over detection, but when the server reports a *different*
+  served window the report says so. ADR 002 originally named that staleness hazard and left it to
+  the operator; the code now surfaces it in the one place that knows both numbers.
+- `contextLength` and `timeoutSeconds` are validated as positive integers at config load. A string
+  like `"8k"` previously turned every comparison in the guard into `NaN`, so it reported an armed
+  check that tested nothing — the worst possible failure for a guard whose contract is to refuse
+  loudly.
 - A server offering several chat models now needs `--model` or `defaultModel`. That is a deliberate
   behaviour change: the previous silent first-entry pick was the OAI-2b defect.
 - Adding a dialect is a code change, in one module, with one test per dialect. The alternative —
