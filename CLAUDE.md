@@ -12,6 +12,11 @@ makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.m
 endpoints by response shape, trusting only served windows over model ceilings — see
 [ADR 002](adr/002-context-window-detection.md).
 
+`scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff, taking content from the
+revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by
+no diff) from droppable `changed`, and the reply falls back to the diff alone when the window is too
+small — see [ADR 005](adr/005-whole-files-for-review.md).
+
 `scripts/lib/structured.mjs` asks for JSON with a strict `response_format` schema, reads the payload
 from whichever channel carries it, and degrades to prompt-and-parse when a server refuses the schema
 — see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a

@@ -3,21 +3,23 @@
 Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 
 **Current theme: make `/oai:review` trustworthy before extending the plugin further.** Where it
-actually stands, stated plainly because it is easy to overrate: **every verified true positive so far
-has come from a whole file, and real commit diffs have produced none across ~6 runs.** The order
-below follows from that — fix the context we hand the model (OAI-14), then build the measurement that
-lets any further change be judged (OAI-12), then the levers that move the hit rate (OAI-9, OAI-11),
-and only then ergonomics and infrastructure.
+actually stands, stated plainly because it is easy to overrate: OAI-14 removed the largest
+false-positive class (3-of-3 → 0-of-3 on the one commit with a baseline), but **no run has yet
+produced a verified true positive on a real commit diff.** Precision improved; recall is unmeasured
+and unchanged — and it came at a cost: **the `analysis` cap now binds in 2 runs of 3 against ~1 in 5
+on diffs, and both capped runs reported nothing**, so the wasted-run rate roughly tripled.
 
-The reviewer is useful once checking its claims costs less than its catches are worth. Today that is
-roughly one real defect per five runs against two or three false positives per run, so checking
-dominates. Only two things move that ratio: **fewer false positives** (OAI-14, which removes a class
-our own harness creates) and **an agreement signal to triage by** (OAI-9). OAI-8 is real ergonomic
-pain and moves neither — it is ordered after them deliberately.
+The reviewer is useful once checking its claims costs less than its catches are worth. **The
+remaining lever on that ratio is an agreement signal to triage by** (OAI-9) — but tuning before
+OAI-12 lands is guesswork, and OAI-14 is the argument: it shipped as half the design it was planned
+as, because measuring the threshold showed the other half would never trigger and would drop the
+wrong file when it did. Every reviewer decision before that rested on hand-verified anecdotes, and
+OAI-10 got three cap values wrong in one afternoon for the same reason.
 
-Tuning before OAI-12 lands is guesswork; every reviewer decision so far rests on hand-verified
-anecdotes, and OAI-10 got three cap values wrong in one afternoon for exactly that reason. OAI-10 did
-close the first of the five wasted-run modes (the runaway); the remaining four are quality.
+**OAI-8 may deserve to move up now, and that is a decision, not an oversight.** Its item said the
+wait was a moving target until the context work settled. It has settled: whole-file reviews measured
+38–245s against 7–27s for diff-only, 4–10× worse, and the `analysis` cap now binds in 2 runs of 3.
+It still moves neither half of the useful-output ratio, so it stays where it is until asked.
 
 > **Discharged 2026-07-27:** the owed built-in `/code-review high` ran over `structured.mjs`,
 > `client.mjs` and `cmd-review.mjs` (`c552bcd..HEAD`), covering OAI-4 and OAI-10 in one pass —
@@ -27,37 +29,6 @@ close the first of the five wasted-run modes (the runaway); the remaining four a
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-14** — Review whole changed files, not bare diff hunks. **The largest observed false-positive
-  class is caused by our own harness, not by the model.** On `--commit 1ea398f` the reviewer reported
-  "`positiveInteger` is not defined or imported" in three separate runs. It is defined at
-  `model-info.mjs:48`; the diff carried only the call site at line 235. The model reasoned correctly
-  from what it was given, and `REVIEW_SYSTEM_PROMPT` tells it never to speculate about code it was
-  not shown — then we show it a file with the definitions cut out. Any identifier defined outside the
-  changed hunks is a standing invitation to this error.
-  The evidence also runs the other way: **every verified true positive so far came from `--file`,
-  which sends whole files** (credentials stripped by `url.origin`; the dropped query string). Real
-  diffs have produced zero verified catches across ~6 runs. So this moves real reviews into the only
-  configuration that has ever worked.
-  Shape: send each changed file whole, plus the diff so the model knows what actually changed —
-  `readFileBlocks` in `prompt.mjs` already does the file half and `--file` already proves the path.
-  Details that need deciding, not guessing:
-  - **Which revision's content.** `--commit <ref>` must send the file *at that ref*, not the working
-    tree; `--base` sends HEAD; `--staged` sends the staged blob. Getting this wrong reviews code that
-    was never in the change.
-  - **Deleted files** have no current content, and renames need the new path. Both fall back to the
-    diff alone.
-  - **Size.** Whole files are much larger than hunks, and this is the item most likely to hit the
-    context guard. Needs a stated policy when they will not fit — fall back to diff-only and *say so
-    on stderr*, never silently, since a silent fallback would reintroduce exactly the defect this
-    item removes while reporting that it was fixed.
-  - **Scope of the ask, and this is the real fork.** Given a whole file the model will find defects in
-    code the change never touched. For "review my diff" that is noise; for "review this code" it is
-    the point. Decide whether unchanged-code findings are dropped, or kept and labelled pre-existing.
-    Labelling is probably better — a real bug is worth knowing about — but it must not be counted
-    against the diff.
-  **Measure it, do not assume it.** This is a context change of exactly the kind OAI-12 exists to
-  judge, so the corpus should carry whole-file and diff-only variants of the same commits. Shipping
-  it unmeasured would repeat the mistake OAI-10 made three times over.
 - **OAI-12** — A labelled corpus and a benchmark harness, so reviewer changes stop being anecdotes.
   Every tuning decision so far (schema shape, temperature, budget) rested on one hand-extracted file
   and findings I verified by reading later commits. That does not scale and is not repeatable.
@@ -127,9 +98,11 @@ close the first of the five wasted-run modes (the runaway); the remaining four a
   Overlaps **OAI-6** (streaming) — streaming would supply the signal for free on servers that
   support it, so decide whether this is a fallback for non-streaming servers or a separate progress
   line that works either way. Note the wait grew with OAI-4: the `analysis` field means the model now
-  reasons for thousands of tokens before emitting anything at all. **Ordered here, not first**: it is
-  the most-felt pain but it moves neither half of the useful-output ratio, and OAI-14 makes runs
-  bigger — so the wait it addresses is a moving target until the context work settles.
+  reasons for thousands of tokens before emitting anything at all. **OAI-14 has now landed and the
+  wait is measured: 38–245s for a whole-file review against 7–27s diff-only, 4–10× worse, with a
+  245s run that then reported nothing.** That was the "moving target" this item was waiting on, so
+  the reason for deferring it has expired; it stays here only because it still moves neither half of
+  the useful-output ratio. Worth reopening the ordering rather than leaving it settled by default.
 - **OAI-6** — Streaming output for `/oai:task`, so a slow local model shows progress rather than
   sitting silent behind a single stderr line.
 - **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.

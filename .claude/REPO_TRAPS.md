@@ -175,6 +175,42 @@ membership test that decides whether data is trustworthy.
 **Guarded by** `tests/structured.test.js` — "a key named after an Object prototype member is still
 an extra key".
 
+## Two git commands that "list the same change" do not agree at the edges
+
+`git show <ref>` prints a **root** commit's diff; `git diff-tree -r <ref>` lists nothing for it
+without `--root`. Same for a **merge**: `git show` prints a combined diff whenever the result differs
+from all parents (a resolved conflict, an evil merge), and `diff-tree` lists nothing without `--cc`.
+Pairing them meant the whole-file bodies vanished for exactly the commit a new repository reviews
+first, and for every merge that did real work — while the hunks-only note truthfully said the bodies
+were absent, so it looked intended rather than broken.
+
+**The merge half was found twice, which is the lesson.** The first fix asserted in this file and in
+ADR 005 that merges were consistent because "both produce nothing" — checked against one trivially
+mergeable merge and generalised. A review found the counterexample within the hour.
+
+The rule: when two commands are used as two views of one change, name the cases where they disagree
+— root commits, merges, renames, deletions, subdirectory cwd — and assert **each**, with an input
+that actually exercises it. Agreement on ordinary input proves nothing about the edges, and a
+passing check on a degenerate edge case proves nothing about the real one.
+**Guarded by** `tests/git-diff.test.js` — "a repository's first commit still sends its files whole",
+"a merge commit that resolved a conflict still sends its files whole", "a review run from a
+subdirectory still reads the changed files", plus the deletion, rename and binary cases beside them.
+
+## A read that fails must be recorded, not swallowed
+
+`blockFor` returned `null` for any unreadable file, so a path git had listed as changed simply
+vanished from the collected set with nothing left to say it had ever existed. During a conflicted
+merge `git show :<path>` fails (no stage-0 blob), so `--staged` lost the file — and the prompt then
+told the model it had *"the complete current content of every changed file"*, vouching for content
+that never arrived. A swallowed error is indistinguishable from "there was nothing there", and the
+difference is exactly what the next claim depends on.
+
+`blocksFor` now returns `{ blocks, unreadable }`, the unreadable paths reach `renderFindings`, and
+the completeness claim requires the list to be empty.
+**Guarded by** `tests/git-diff.test.js` — "a file whose content cannot be read is recorded, not
+silently dropped" — and `tests/review-context.test.js` — "a file that could not be read is named,
+and voids the completeness claim".
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

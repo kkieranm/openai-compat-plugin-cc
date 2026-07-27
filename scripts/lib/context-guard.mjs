@@ -71,6 +71,9 @@ export function checkContextBudget({
         hint:
           oversizeHint ??
           'Send fewer or smaller files, shorten the prompt, or raise the model context length in the server and config.',
+        // The one refusal that sending less input can fix, so the one a caller
+        // may retry smaller. The reserve refusal above is deliberately untagged.
+        reason: 'oversize',
       },
     );
   }

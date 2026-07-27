@@ -73,9 +73,12 @@ test('a guard refusal on the retry never claims the retry happened', async () =>
   // Sized so the first prompt fits with the floor reserve and the second — the
   // same prompt plus the ~200-token schema instruction — does not. That gap is
   // the only place this ordering is observable.
+  // Both attempts land on the diff-only rung here: the whole file is 17.4k
+  // tokens and never fits, which is what makes the 8,858 / 9,059 pair the ones
+  // that matter. Viable window is 12,954..13,154; measured, not guessed.
   const { dir, server, configPath } = await scenario(
     (request, response) => respondJson(response, { error: 'response_format is not supported' }, 400),
-    { contextLength: 12_950, seed: `seed\n${'x'.repeat(29_000)}\n` },
+    { contextLength: 13_050, seed: `seed\n${'x'.repeat(29_000)}\n` },
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });

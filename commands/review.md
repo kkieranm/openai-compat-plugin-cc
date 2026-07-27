@@ -1,6 +1,6 @@
 ---
 description: Get a second-opinion code review from a local model, then verify each finding and fix the ones that are real
-argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [extra instructions]'
+argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [--diff-only] [extra instructions]'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read, Grep, Glob, Edit
 ---
@@ -19,6 +19,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/oai-companion.mjs" review [flags] "<extra in
 Put every flag **before** the instructions, and quote the instruction text as one argument. From its first word onward it is taken verbatim, so apostrophes, quotes and backslashes must survive exactly as the user typed them — never rewrite or re-escape them. If the instructions themselves need to name one of this command's flags, put them after a bare `--`.
 
 The script decides what to review — do not build a diff yourself or paste one into the arguments. With no flags it reviews uncommitted work (working tree, staged changes, and untracked files). `--staged`, `--base <ref>`, `--commit <ref>` and repeated `--file <path>` change the target; `--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens` and `--temperature` behave as in `/oai:task`. Pass the user's flags through exactly. Any trailing text is forwarded as extra instructions for the reviewer, verbatim.
+
+Each changed file is sent whole alongside the diff, so the model can resolve anything defined outside the changed hunks. `--diff-only` sends just the diff — faster on a slow local model, at the cost of the "X is not defined" false positives that whole files exist to prevent. It cannot be combined with `--file`, which has no diff.
 
 **The findings are unverified claims from a small model. Treat them as leads, not conclusions.**
 

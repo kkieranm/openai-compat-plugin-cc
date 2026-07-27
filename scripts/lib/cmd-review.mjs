@@ -10,7 +10,7 @@ import { isFormatRejection, parseFindings, responseFormatFor, REVIEW_SCHEMA, sch
 
 const REVIEW_SPEC = {
   valueFlags: ['provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-tokens', 'temperature'],
-  booleanFlags: ['staged'],
+  booleanFlags: ['staged', 'diff-only'],
   repeatableFlags: ['file'],
 };
 
@@ -52,6 +52,55 @@ function reserveFor(contextLength, requested) {
 }
 
 /**
+ * Whole changed files if they fit the window, the diff alone if they do not.
+ *
+ * Two rungs rather than a per-file shed. The second rung is exactly the
+ * behaviour that shipped before whole files existed, so it needs no manifest of
+ * what was left out in order to be honest, and there is no drop order to get
+ * wrong — largest-first would have shed `model-info.mjs`, the very file whose
+ * absent definition produced the false positive this feature removes.
+ *
+ * Only `target.changed` is droppable. `target.files` is code no diff covers —
+ * untracked files, or `--file` where there is no diff at all — so dropping one
+ * would review nothing and report a clean pass. See ADR 005.
+ */
+function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' }) {
+  const hasDiff = Boolean(target.diff.trim());
+  // Every condition the claim "you hold the complete content of every changed
+  // file" depends on. `unreadable` is the one that is easy to forget: a path git
+  // listed whose body would not load is absent from `changed` and leaves no
+  // other trace, so without this the prompt would vouch for a file that never
+  // arrived — this feature's own defect, asserted rather than merely risked.
+  const build = (whole) => {
+    const prompt = buildReviewPrompt({
+      label: target.label,
+      diff: target.diff,
+      instructions,
+      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0,
+    });
+    return {
+      prompt: suffix ? `${prompt}\n\n${suffix}` : prompt,
+      files: whole ? [...target.files, ...target.changed] : target.files,
+    };
+  };
+
+  if (target.changed.length > 0) {
+    try {
+      return { ...prepareRequest({ ...shared, ...build(true) }), hunksOnly: false };
+    } catch (error) {
+      // Only the oversize refusal is retryable by sending less; anything else
+      // is a different failure and must not be laundered into "too big".
+      if (error.reason !== 'oversize') throw error;
+    }
+  }
+  // The reader's caveat is about what the model saw, not about why: no changed
+  // file went whole, whether they did not fit, were not asked for, or were
+  // never listed. Pinned files are unaffected — the note only ever qualifies
+  // findings the diff alone had to carry.
+  return { ...prepareRequest({ ...shared, ...build(false) }), hunksOnly: hasDiff };
+}
+
+/**
  * Ask for findings, degrading if the server will not take a schema.
  *
  * The retry is near-free: an unsupported `response_format` is a request
@@ -59,10 +108,8 @@ function reserveFor(contextLength, requested) {
  */
 async function requestFindings(profile, plan) {
   const { model, timeoutMs, temperature, reserve, contextLength, target, instructions } = plan;
-  const prompt = buildReviewPrompt({ label: target.label, diff: target.diff, instructions });
   const shared = {
     profile,
-    files: target.files,
     model,
     contextLength,
     maxTokens: reserve,
@@ -73,8 +120,9 @@ async function requestFindings(profile, plan) {
       'specific files with --file — or raise the model context length in the server and config.',
   };
   const send = { model, timeoutMs, temperature };
+  const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
-  const first = prepareRequest({ ...shared, prompt });
+  const first = prepareLadder(shared, ladder);
   try {
     const result = await chatCompletion(profile, {
       ...send,
@@ -90,7 +138,9 @@ async function requestFindings(profile, plan) {
     // *before* the retry is announced. Announcing first meant a guard refusal
     // arrived right after "Retrying without it", blaming the user's diff size
     // for a request that was never sent and a retry that never happened.
-    const second = prepareRequest({ ...shared, prompt: `${prompt}\n\n${schemaInstruction(REVIEW_SCHEMA)}` });
+    // The whole ladder is climbed again, not just the guard: the instruction
+    // makes the prompt longer, so the rung that fit a moment ago may not now.
+    const second = prepareLadder(shared, { ...ladder, suffix: schemaInstruction(REVIEW_SCHEMA) });
 
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.
@@ -100,9 +150,14 @@ async function requestFindings(profile, plan) {
   }
 }
 
-function reportFindings(parsed, { result, structured, profile, model, target }) {
+function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly }) {
   if (parsed) {
-    process.stdout.write(renderFindings(parsed, { label: target.label, provider: profile.name, model }));
+    process.stdout.write(
+      renderFindings(
+        { ...parsed, hunksOnly, unreadable: target.unreadable },
+        { label: target.label, provider: profile.name, model },
+      ),
+    );
     return;
   }
   // A reply we cut off mid-object is a token-budget problem, not a shape
@@ -130,6 +185,13 @@ function reportFindings(parsed, { result, structured, profile, model, target }) 
 export async function runReview(argv) {
   const { options, prompt: instructions, terminated } = parseCommandLine(argv, REVIEW_SPEC);
   if (instructions && !terminated) assertNoFlagsInPrompt(instructions, REVIEW_SPEC);
+  // --file has no diff, so "the diff alone" would be nothing at all. Refusing
+  // beats sending an empty review that reads as a clean pass.
+  if (options['diff-only'] && options.file?.length) {
+    throw new UserError('--diff-only cannot be combined with --file: there is no diff, only whole files.', {
+      hint: 'Drop --diff-only to review the files, or use --commit/--base/--staged to review a diff.',
+    });
+  }
   const { maxTokens, temperature, timeoutSeconds } = parseNumericOptions(options);
 
   const { config } = loadConfig();
@@ -147,7 +209,7 @@ export async function runReview(argv) {
   const startedAt = Date.now();
   process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
 
-  const { result, structured, budget, estimatedTokens } = await requestFindings(profile, {
+  const { result, structured, budget, estimatedTokens, hunksOnly } = await requestFindings(profile, {
     model,
     contextLength,
     target,
@@ -157,7 +219,7 @@ export async function runReview(argv) {
     timeoutMs: resolveTimeout(profile, timeoutSeconds),
   });
 
-  reportFindings(parseFindings(result, { structured }), { result, structured, profile, model, target });
+  reportFindings(parseFindings(result, { structured }), { result, structured, profile, model, target, hunksOnly });
   process.stdout.write(
     `${renderTaskFooter({
       providerName: profile.name,

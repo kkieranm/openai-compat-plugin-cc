@@ -2,6 +2,30 @@
 
 Newest first.
 
+- **OAI-14** — Review whole changed files, not bare diff hunks. Completed 2026-07-27. Each changed
+  file is now sent whole alongside the diff, taken from the revision the diff describes (`git show
+  <ref>:<path>` for `--commit`, the index blob for `--staged`), with `--diff-only` restoring the old
+  behaviour. **The target class is gone: the "`positiveInteger` is not defined" false positive ran
+  3-of-3 before and 0-of-3 after.** Honest scoring is 1 false positive → 0 with true positives
+  unchanged at 0 — `1ea398f` is the commit that *fixed* the OAI-2 findings, so it is near-clean and
+  the baseline's only output was the false positive. **This bought precision and says nothing about
+  recall.** The diff-only arm stopped producing it too, via the new hunks-only prompt sentence, so
+  the six runs do not isolate which mechanism does the work.
+  **Shipped as a two-rung ladder, not the per-file shed the plan had.** The reserve arithmetic
+  collapses to `fit ⟺ estimate ≤ contextLength − minReserve`, so the real threshold is 54,016 and
+  the largest measured commit is 41,790 — shedding never triggers on observed data, and ordered
+  largest-first it would have dropped `model-info.mjs`, the very file whose missing definition caused
+  the false positive. Untracked and `--file` blocks are pinned and never dropped, so an empty review
+  is impossible by construction. Cost: 2.5× the input, 4–10× the wall clock, and the `analysis` cap
+  now binds in 2 runs of 3 — which makes OAI-8 more necessary, not less. A root-commit bug
+  (`git diff-tree` lists nothing without `--root` where `git show` prints a diff) was caught by a
+  test and is now a repo trap. **Four claims-vs-reality defects were caught before commit, none by
+  the test suite**: the root commit, a subdirectory cwd reading nothing and reporting a normal run,
+  a blanket "you have only hunks" asserted while whole files sat in the same request, and — found by
+  the lean review, after I had already "fixed" the git-edges class and written the merge case off as
+  safe from one trivial example — merges silently losing their bodies, plus an unreadable file
+  vanishing with the prompt still vouching for it. Design in `adr/005-whole-files-for-review.md`.
+
 - **OAI-10** — Bound the review reply so a runaway cannot eat a whole pass. Completed 2026-07-27.
   Every string and array in `REVIEW_SCHEMA` now carries a grammar-enforced ceiling, sized above every
   observed successful run; hitting the findings cap is reported rather than silently binning a
