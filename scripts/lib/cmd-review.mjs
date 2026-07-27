@@ -15,12 +15,23 @@ const REVIEW_SPEC = {
 };
 
 /**
- * Measured: five findings on a real 50 KB diff cost 724 completion tokens. This
- * leaves room for roughly 25 while still reserving under 8% of a 58k window.
- * It is deliberately not DEFAULT_RESERVE_TOKENS (1024) — a review that runs out
- * of tokens mid-JSON returns nothing usable (ADR 003).
+ * Big, because the schema's `analysis` field is where the model does its actual
+ * reasoning: one 135-line file drew 6k output tokens and was still mid-analysis.
+ * A review that runs out of tokens part way returns nothing usable at all, which
+ * is why this is nowhere near DEFAULT_RESERVE_TOKENS (1024) — see ADR 003.
  */
-export const REVIEW_MAX_TOKENS = 4096;
+export const REVIEW_MAX_TOKENS = 16_384;
+
+/**
+ * Never reserve more than half the window: on a small-window model a fixed 16k
+ * reserve would refuse every review outright, blaming an input that would
+ * comfortably have fit.
+ */
+function reserveFor(contextLength, requested) {
+  if (requested) return requested;
+  if (!contextLength) return REVIEW_MAX_TOKENS;
+  return Math.min(REVIEW_MAX_TOKENS, Math.floor(contextLength / 2));
+}
 
 /**
  * Ask for findings, degrading if the server will not take a schema.
@@ -65,7 +76,7 @@ function reportFindings(parsed, { result, structured, profile, model, target }) 
   // for damage we did, and hides the one flag that fixes it.
   if (result.finishReason === 'length') {
     throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
-      hint: `Raise --max-tokens above the current ${REVIEW_MAX_TOKENS}, or review a smaller target.`,
+      hint: 'Raise --max-tokens, or review a smaller target — the model reasons at length before reporting.',
     });
   }
 
@@ -97,7 +108,7 @@ export async function runReview(argv) {
 
   const target = await collectTarget(options);
   const { model, contextLength } = await resolveTarget(profile, options);
-  const reserve = maxTokens ?? REVIEW_MAX_TOKENS;
+  const reserve = reserveFor(contextLength, maxTokens);
 
   const startedAt = Date.now();
   process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);

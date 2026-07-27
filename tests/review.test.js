@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { completion, createRepo, reasoningCompletion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 
 const FINDINGS = JSON.stringify({
+  analysis: 'walked each changed hunk',
   findings: [{ file: 'seed.txt', line: 3, severity: 'high', summary: 'the seed is wrong', evidence: 'edited' }],
   summary: 'one real defect',
 });
@@ -215,6 +216,34 @@ test('trailing text is forwarded to the reviewer verbatim', async () => {
   assert.equal(result.status, 0, result.stderr);
   // The apostrophe must survive: review instructions are prose, not shell syntax.
   assert.match(chatRequests(server)[0].body.messages[1].content, /focus on the guard's edge cases/);
+});
+
+test('the reserve never takes more than half a small window', async () => {
+  // A flat 16k reserve would refuse every review on a small-window model,
+  // blaming an input that would comfortably have fit.
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    { contextLength: 8192 },
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(chatRequests(server)[0].body.max_tokens, 4096);
+});
+
+test('a large window gets the full reasoning budget', async () => {
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    { contextLength: 131_072 },
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(chatRequests(server)[0].body.max_tokens, 16_384);
 });
 
 test('the review reserves more headroom than a task does', async () => {

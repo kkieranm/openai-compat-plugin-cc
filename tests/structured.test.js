@@ -12,7 +12,8 @@ import {
 } from '../scripts/lib/structured.mjs';
 
 const FINDING = { file: 'a.js', line: 3, severity: 'high', summary: 'boom', evidence: 'x()' };
-const payload = (findings = [FINDING], summary = 'one defect') => JSON.stringify({ findings, summary });
+const payload = (findings = [FINDING], summary = 'one defect') =>
+  JSON.stringify({ analysis: 'checked each path', findings, summary });
 
 test('a strict schema declares every property required and forbids extras', () => {
   // OpenAI's strict mode rejects a schema with an optional property, so an
@@ -94,7 +95,7 @@ test('a non-numeric line becomes null instead of NaN', () => {
 test('under a schema, a reply that misses a required key is rejected, not repaired', () => {
   // The schema is the whole proof that the reasoning channel holds the answer
   // rather than a draft, so a near-miss must not be patched up into findings.
-  const draft = JSON.stringify({ findings: [{ file: 'a.js', summary: 'maybe' }], summary: 'draft' });
+  const draft = JSON.stringify({ analysis: 'a', findings: [{ file: 'a.js', summary: 'maybe' }], summary: 'draft' });
   assert.equal(parseFindings({ content: '', reasoning: draft }, { structured: true }), null);
 
   // Nothing was promised without one, so there repair is the right behaviour.
@@ -104,16 +105,16 @@ test('under a schema, a reply that misses a required key is rejected, not repair
 });
 
 test('schema conformance is checked against the schema, not a copy of it', () => {
-  assert.equal(matchesSchema({ findings: [], summary: 'none' }, REVIEW_SCHEMA), true);
-  assert.equal(matchesSchema({ findings: [] }, REVIEW_SCHEMA), false, 'summary is required');
-  assert.equal(matchesSchema({ findings: [], summary: 'x', extra: 1 }, REVIEW_SCHEMA), false, 'extras are forbidden');
+  assert.equal(matchesSchema({ analysis: 'a', findings: [], summary: 'none' }, REVIEW_SCHEMA), true);
+  assert.equal(matchesSchema({ analysis: 'a', findings: [] }, REVIEW_SCHEMA), false, 'summary is required');
+  assert.equal(matchesSchema({ analysis: 'a', findings: [], summary: 'x', extra: 1 }, REVIEW_SCHEMA), false, 'extras are forbidden');
   assert.equal(
-    matchesSchema({ findings: [{ ...FINDING, severity: 'catastrophic' }], summary: 'x' }, REVIEW_SCHEMA),
+    matchesSchema({ analysis: 'a', findings: [{ ...FINDING, severity: 'catastrophic' }], summary: 'x' }, REVIEW_SCHEMA),
     false,
     'severity is an enum',
   );
-  assert.equal(matchesSchema({ findings: [{ ...FINDING, line: null }], summary: 'x' }, REVIEW_SCHEMA), true, 'line is nullable');
-  assert.equal(matchesSchema({ findings: [{ ...FINDING, line: 1.5 }], summary: 'x' }, REVIEW_SCHEMA), false, 'line is an integer');
+  assert.equal(matchesSchema({ analysis: 'a', findings: [{ ...FINDING, line: null }], summary: 'x' }, REVIEW_SCHEMA), true, 'line is nullable');
+  assert.equal(matchesSchema({ analysis: 'a', findings: [{ ...FINDING, line: 1.5 }], summary: 'x' }, REVIEW_SCHEMA), false, 'line is an integer');
 });
 
 test('a reply without a findings array is not findings', () => {

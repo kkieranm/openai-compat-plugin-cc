@@ -8,7 +8,9 @@ export const REVIEW_SYSTEM_PROMPT =
   'No style opinions, no praise, no summaries of what the code does. ' +
   'Never speculate about code you were not shown. ' +
   'Every finding must name the file it is in and quote the exact line as evidence. ' +
-  'If you find no defects, return an empty findings list and say so in the summary — do not invent one.';
+  'If you find no defects, return an empty findings list and say so in the summary — do not invent one. ' +
+  'Use the "analysis" field first: work through the code path by path, considering for each function ' +
+  'what it accepts and what a careless caller or an attacker could pass it. Only then fill in findings.';
 
 export function buildReviewPrompt({ label, diff, instructions }) {
   const parts = [`Review these ${label} for defects.`];

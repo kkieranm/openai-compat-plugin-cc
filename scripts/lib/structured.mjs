@@ -6,8 +6,17 @@
 export const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['findings', 'summary'],
+  required: ['analysis', 'findings', 'summary'],
   properties: {
+    // First, and load-bearing. A grammar constrains generation from the very
+    // first token, so a schema that opens with `findings` forces the model to
+    // commit to defects before it has read anything — measured on one 135-line
+    // file, that produced 112 output tokens and one vague non-defect. The same
+    // model, same prompt, with this field ahead of the findings, produced a
+    // path-by-path analysis and found a real credential-stripping bug. Reasoning
+    // space is not decoration here; removing it is what made the reviewer
+    // useless (ADR 003).
+    analysis: { type: 'string' },
     findings: {
       type: 'array',
       items: {
