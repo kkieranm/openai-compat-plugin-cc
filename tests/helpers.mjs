@@ -77,19 +77,29 @@ export function reasoningCompletion(reasoning, extra = {}) {
   };
 }
 
-/** Async, for the same reason runCompanion is: sync spawn deadlocks the suite. */
+/**
+ * Async, for the same reason runCompanion is: sync spawn deadlocks the suite.
+ * Resolves the command's stdout, so a test can assert on what git *said* and
+ * not merely that it exited zero — callers that only sequence commands ignore
+ * the value.
+ */
 export function git(args, cwd) {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
     let stderr = '';
+    child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
     child.stderr.on('data', (chunk) => {
       stderr += chunk;
     });
     child.on('error', reject);
     child.on('close', (status) => {
       if (status !== 0) reject(new Error(`git ${args.join(' ')} failed: ${stderr}`));
-      else resolve();
+      else resolve(stdout);
     });
   });
 }

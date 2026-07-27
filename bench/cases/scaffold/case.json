@@ -1,0 +1,68 @@
+{
+  "id": "scaffold",
+  "label": "The initial plugin scaffold: 24 files, credential and argument-parsing defects",
+  "mode": "commit",
+  "origin": {
+    "commit": "8990173",
+    "note": "The same two config.mjs defects as config-origin, but buried in 14 code files instead of one. The pair measures whether context dilution costs recall."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "url-origin-strips-credentials",
+      "file": "scripts/lib/config.mjs",
+      "lines": [
+        88,
+        91
+      ],
+      "fixedIn": "7d3a1a4",
+      "confidence": "high",
+      "description": "normalizeBaseUrl discards credentials and the query string when rebuilding from url.origin.",
+      "anchor": "return `${url.origin}${path === '' ? '/v1' : path}`;"
+    },
+    {
+      "id": "credential-inherited-across-origin",
+      "file": "scripts/lib/config.mjs",
+      "lines": [
+        117,
+        120
+      ],
+      "fixedIn": "7d3a1a4",
+      "confidence": "high",
+      "description": "resolveProfile sends a named profile’s API key to whatever host --base-url names.",
+      "anchor": "return buildProfile(provider || 'custom', { ...(provider ? config.providers[provider] : {}), baseUrl });"
+    },
+    {
+      "id": "flags-recognised-after-prompt",
+      "file": "scripts/lib/args.mjs",
+      "lines": [
+        98,
+        101
+      ],
+      "fixedIn": "7d3a1a4",
+      "confidence": "high",
+      "description": "parseArgs pushes a non-flag token to positionals and continues, so flag recognition never stops at the first word of the request: \"explain the --model flag\" sends a model named \"flag\". splitBlob returns at the equivalent point; this path does not.",
+      "anchor": "if (!token.startsWith('--')) {"
+    }
+  ],
+  "dropped": [
+    {
+      "claim": "Quotes were stripped before the flag test, so a quoted --model was read as a flag.",
+      "reason": "Lives inside readToken’s quote handling with no single offending line to anchor on."
+    },
+    {
+      "claim": "The documented -- terminator was dead: the prompt was re-scanned for flags afterwards.",
+      "reason": "The bug is in the caller that re-scans, not in args.mjs, where the terminator branch reads correctly. Attributing it to a line here would be a guess."
+    },
+    {
+      "claim": "--prompt-file discarded any request text passed beside it.",
+      "reason": "Only the hint string mentions --prompt-file in this blob; the discard is not locatable to a line."
+    },
+    {
+      "claim": "A --max-tokens larger than the window produced a negative budget and blamed the input size.",
+      "reason": "Not present at this commit — context-guard.mjs does not read maxTokens here. It was introduced and fixed later (4293726), so scoring it against this case would be false."
+    }
+  ]
+}

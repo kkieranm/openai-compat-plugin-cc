@@ -1,16 +1,19 @@
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
-import { chatCompletion, requireAnswer } from './client.mjs';
+import { chatCompletion } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, prepareRequest, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
-import { renderTaskFooter } from './render.mjs';
-import { buildReviewPrompt, renderFindings, REVIEW_SYSTEM_PROMPT, unreadableNote } from './review.mjs';
+import { report } from './review-report.mjs';
+import { buildReviewPrompt, REVIEW_SYSTEM_PROMPT } from './review.mjs';
 import { isFormatRejection, parseFindings, responseFormatFor, REVIEW_SCHEMA, schemaInstruction } from './structured.mjs';
 
-const REVIEW_SPEC = {
+// Exported so `tests/plugin.test.js` can prove every flag this command accepts
+// is documented in `commands/review.md`. The markdown is the only description a
+// user ever sees, and nothing but a test notices when a flag outlives its docs.
+export const REVIEW_SPEC = {
   valueFlags: ['provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-tokens', 'temperature'],
-  booleanFlags: ['staged', 'diff-only'],
+  booleanFlags: ['staged', 'diff-only', 'json'],
   repeatableFlags: ['file'],
 };
 
@@ -150,41 +153,6 @@ async function requestFindings(profile, plan) {
   }
 }
 
-function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly }) {
-  if (parsed) {
-    process.stdout.write(
-      renderFindings(
-        { ...parsed, hunksOnly, unreadable: target.unreadable },
-        { label: target.label, provider: profile.name, model },
-      ),
-    );
-    return;
-  }
-  // A reply we cut off mid-object is a token-budget problem, not a shape
-  // problem. Showing the fragment and calling it a bad shape blames the model
-  // for damage we did, and hides the one flag that fixes it.
-  if (result.finishReason === 'length') {
-    throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
-      hint: 'Raise --max-tokens, or review a smaller target — the model reasons at length before reporting.',
-    });
-  }
-
-  // Nothing parseable. Under a schema the reasoning channel carries the
-  // constrained output, so it is legitimate to show; without one it is only the
-  // model's scratchpad. Either way an empty reply falls through to
-  // requireAnswer, which refuses — printing an empty "verbatim" block would
-  // report a run that produced nothing as one that merely said something odd.
-  const constrained = structured ? result.content.trim() || result.reasoning.trim() : '';
-  const text = constrained || requireAnswer(result, profile).trim();
-  // The same caveat as the parsed path: a file that never arrived is a fact
-  // about the request, and this output is just as derived from it.
-  const missing = unreadableNote(target.unreadable);
-  process.stdout.write(
-    `The model did not return findings in the requested shape. Its reply, verbatim:\n\n${text}\n\n` +
-      `Nothing here has been checked against the code.${missing ? `\n\n${missing}` : ''}`,
-  );
-}
-
 export async function runReview(argv) {
   const { options, prompt: instructions, terminated } = parseCommandLine(argv, REVIEW_SPEC);
   if (instructions && !terminated) assertNoFlagsInPrompt(instructions, REVIEW_SPEC);
@@ -222,15 +190,16 @@ export async function runReview(argv) {
     timeoutMs: resolveTimeout(profile, timeoutSeconds),
   });
 
-  reportFindings(parseFindings(result, { structured }), { result, structured, profile, model, target, hunksOnly });
-  process.stdout.write(
-    `${renderTaskFooter({
-      providerName: profile.name,
-      model: result.model,
-      usage: result.usage,
-      durationMs: Date.now() - startedAt,
-      contextNote: budget.checked ? `~${estimatedTokens} tokens sent.` : budget.note,
-      finishReason: result.finishReason,
-    })}\n`,
-  );
+  report(parseFindings(result, { structured }), {
+    result,
+    structured,
+    profile,
+    model,
+    target,
+    hunksOnly,
+    budget,
+    estimatedTokens,
+    durationMs: Date.now() - startedAt,
+    json: Boolean(options.json),
+  });
 }

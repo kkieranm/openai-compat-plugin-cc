@@ -15,7 +15,7 @@ Core constraints:
 - This command delegates. It does not do the work itself.
 - Return the companion script's stdout verbatim: no paraphrasing, summarising, or commentary before or after it.
 - Do not act on what the local model says — no edits, no fixes, no follow-up tasks. If its answer suggests changes, leave that for the user to ask for.
-- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens`, `--temperature`) exactly as given.
+- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens`, `--temperature`, `--system`) exactly as given.
 
 Building the call:
 
@@ -26,6 +26,8 @@ Building the call:
   backslashes) needs no escaping and must not be rewritten.
 - A single-line request goes straight after the flags. For a multi-line prompt, write it to a
   temporary file and pass `--prompt-file <path>`, which is read verbatim.
+- `--system <text>` replaces the default system prompt. Pass it only when the user asks for it; it
+  changes how the model is framed for the whole request.
 - If the request text itself needs to mention one of this command's own flags (as in "explain the
   `--file` flag"), either put it after a bare `--` separator or use `--prompt-file`. The script
   reports such a flag rather than silently treating it as part of the request.

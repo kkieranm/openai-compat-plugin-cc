@@ -1,0 +1,8 @@
+{
+  "name": "oai",
+  "description": "Delegate tasks from Claude Code to any OpenAI-compatible model server (LM Studio, oMLX, Unsloth Studio, ...).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Kieran"
+  }
+}

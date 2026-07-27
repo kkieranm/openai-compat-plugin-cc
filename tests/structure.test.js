@@ -16,14 +16,21 @@ const MAX_FUNCTION_LINES = 60;
 const ALLOWLIST = {};
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.claude']);
+// Skipped by path rather than by bare name, which would skip any directory
+// called `cases` anywhere in the tree. The benchmark corpus is data, not
+// source: historical blobs kept byte-identical *because* they contain known
+// defects. A size budget over them would measure 2026's commits, and the
+// harness code beside them stays under the ratchet like everything else.
+const SKIP_PATHS = new Set(['bench/cases']);
 const SOURCE_EXT = /\.(js|mjs|cjs|ts|jsx|tsx|sh)$/;
 
 function* sourceFiles(dir) {
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) yield* sourceFiles(p);
-    else if (SOURCE_EXT.test(name)) yield p;
+    if (statSync(p).isDirectory()) {
+      if (!SKIP_PATHS.has(relative(ROOT, p))) yield* sourceFiles(p);
+    } else if (SOURCE_EXT.test(name)) yield p;
   }
 }
 
@@ -81,6 +88,16 @@ test('tests never spawn a child synchronously', () => {
     }
   }
   assert.deepEqual(offenders, [], 'use the async runCompanion helper instead');
+});
+
+// Confirmed defect class, promoted from "I noticed it" to a guard: `node --test`
+// with no path walks the whole repo, so the benchmark corpus — historical source
+// kept deliberately as data — was discovered and its 2026-vintage tests were run
+// against today's tree, failing on imports that no longer exist. The scope in the
+// npm script is what stops that, and it reads as redundant until someone removes it.
+test('the test runner is scoped, so corpus snapshots are not discovered as tests', () => {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  assert.match(pkg.scripts.test, /tests\//, 'an unscoped `node --test` would run bench/cases snapshots');
 });
 
 test('allowlist entries all carry a reason', () => {

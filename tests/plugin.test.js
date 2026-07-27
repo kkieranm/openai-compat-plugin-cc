@@ -5,9 +5,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
+import { SETUP_SPEC } from '../scripts/lib/cmd-setup.mjs';
+import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const COMMANDS_DIR = join(ROOT, 'commands');
+
+// The parser's flag list is the definition; the markdown is the only
+// description a user ever sees. Hand-keeping them in agreement is exactly the
+// pairing that drifts silently, so it is checked instead — this guard was
+// written after finding /oai:task had accepted --system with no mention of it
+// anywhere in commands/task.md.
+const SPECS = { 'review.md': REVIEW_SPEC, 'setup.md': SETUP_SPEC, 'task.md': TASK_SPEC };
 
 function commandFiles() {
   return readdirSync(COMMANDS_DIR).filter((name) => name.endsWith('.md'));
@@ -50,6 +60,24 @@ test('every command declares a description and can run the companion script', ()
       `${file}: invokes node, so allowed-tools must include Bash(node:*)`,
     );
   }
+});
+
+test('every flag a command accepts is documented in its markdown', () => {
+  // A new command with no spec listed here would escape the check entirely,
+  // which is the same silent gap one directory up.
+  assert.deepEqual(commandFiles().sort(), Object.keys(SPECS).sort(), 'every command file needs its spec listed in SPECS');
+
+  const undocumented = [];
+  for (const [file, spec] of Object.entries(SPECS)) {
+    const source = readFileSync(join(COMMANDS_DIR, file), 'utf8');
+    const flags = [...(spec.valueFlags ?? []), ...(spec.booleanFlags ?? []), ...(spec.repeatableFlags ?? [])];
+    for (const flag of flags) {
+      // Anchored on the right: `--base-url` in the prose must not be read as
+      // documentation of `--base`, which is a different flag entirely.
+      if (!new RegExp(`--${flag}(?![\\w-])`).test(source)) undocumented.push(`${file}: --${flag}`);
+    }
+  }
+  assert.deepEqual(undocumented, [], 'a flag the parser accepts but no doc mentions');
 });
 
 test('every script path a command references exists', () => {

@@ -10,11 +10,25 @@ and unchanged — and it came at a cost: **the `analysis` cap now binds in 2 run
 on diffs, and both capped runs reported nothing**, so the wasted-run rate roughly tripled.
 
 The reviewer is useful once checking its claims costs less than its catches are worth. **The
-remaining lever on that ratio is an agreement signal to triage by** (OAI-9) — but tuning before
-OAI-12 lands is guesswork, and OAI-14 is the argument: it shipped as half the design it was planned
-as, because measuring the threshold showed the other half would never trigger and would drop the
-wrong file when it did. Every reviewer decision before that rested on hand-verified anecdotes, and
-OAI-10 got three cap values wrong in one afternoon for the same reason.
+remaining lever on that ratio is an agreement signal to triage by** (OAI-9).
+
+**OAI-12 has landed, so tuning is no longer guesswork — and its first reading already reorders what
+is worth doing.** `npm run bench` scores the shipped command against 11 catalogued defects in six
+snapshots of this repo's history and writes a per-run record, ending the era where a conclusion was
+kept and its evidence thrown away (ADR 004 says "four runs", `890ee2e` says "five", same experiment,
+neither now checkable). Baseline: **1 of 11 at N=1, 10.9 minutes.** Two results matter more than
+that number:
+
+- **Context dilution is measured.** The same defect was **found at 1,575 prompt tokens and missed at
+  47,072** — `config-origin` and `scaffold` are the same `config.mjs` bug, alone and buried in 24
+  files. That is the mechanism behind ADR 005's observation that every verified true positive so far
+  came from `--file`, and it means **narrowing the target may beat any prompt or schema tuning.**
+- **The `analysis` cap bound on 2 of 6 runs and both reported nothing** — a third of the run wasted,
+  on the two largest inputs. That is OAI-8 and OAI-9's argument, restated with numbers.
+
+What the bench is *not* is a measure of true recall: the denominator counts only defects that could
+be pointed at in the snapshot, which is smaller than what history claims and therefore flatters it.
+See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same caveats every run.
 
 **OAI-8 may deserve to move up now, and that is a decision, not an oversight.** Its item said the
 wait was a moving target until the context work settled. It has settled: whole-file reviews measured
@@ -29,41 +43,6 @@ It still moves neither half of the useful-output ratio, so it stays where it is 
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-12** — A labelled corpus and a benchmark harness, so reviewer changes stop being anecdotes.
-  Every tuning decision so far (schema shape, temperature, budget) rested on one hand-extracted file
-  and findings I verified by reading later commits. That does not scale and is not repeatable.
-  **The ground truth already exists in this repo's history**: each defect a review confirmed and a
-  later commit fixed is a labelled example — file at commit X contains defect Y, fixed in Z. Seeds
-  available today: `config.mjs@8990173` (credentials stripped by `url.origin`; query string dropped —
-  both fixed later), the ten findings from the OAI-1 `high` review fixed in `7d3a1a4`, and the OAI-2
-  round fixed in `1ea398f`. Include **negative controls** — `25e1fcd` is documentation-only and the
-  model correctly reported nothing there — because precision needs clean targets as much as recall
-  needs dirty ones.
-  Store as committed snapshots under `bench/` with a manifest, not `git show` at runtime: the corpus
-  must survive a rebase and stay byte-stable, or scores drift for reasons that have nothing to do
-  with the reviewer.
-  **Constraint: this cannot live in `npm test`.** The suite is network-free by contract and the
-  fake server exists precisely so it stays that way; a benchmark needs a real model and is
-  non-deterministic besides. Separate opt-in entry point (`npm run bench`), skipped by default,
-  reporting recall against known defects, false positives per run, tokens and wall clock.
-  **The hard part is scoring** — deciding whether a free-text finding "is" a known defect. Options:
-  match on file plus line proximity (cheap, brittle), keyword match on the defect's signature (cheap,
-  gameable), or a stronger model as judge (accurate, costs API budget, and needs its own sanity
-  check). Prototype the scorer against today's five recorded runs before building anything on top of
-  it; if the scorer cannot reproduce the verdicts I reached by hand, it is not measuring the right
-  thing.
-  **Two experiments deferred here from OAI-10**, both one-line changes whose entire cost is measuring
-  them. (1) A sentence in the prompt telling the model its reasoning budget: it cut a run from ~6,000
-  to 1,333 output tokens and 88s to 22.7s, but that is steering the reviewer to reason *less*, and
-  reasoning less is what made it useless before ADR 003 — worth real money if it costs no recall,
-  worth nothing if it does. **Re-derive that effect against the shipped string schema before
-  believing it**: the run it came from also used the array-of-steps shape ADR 004 went on to reject,
-  so as measured it confounds the sentence with a schema that no longer exists. Two variables, one
-  number. (2) Whether a floor on `analysis` (a `minLength`, or the bounded list of
-  reasoning steps ADR 004 rejected) beats the plain bounded string. (3) Whether raising
-  `REVIEW_MAX_TOKENS` — now safe, since the schema is bounded and cannot run away into the extra
-  room — and widening the caps to match buys anything. The half-window rule allows 29,056 on the 58k
-  machine, about double today's reserve.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

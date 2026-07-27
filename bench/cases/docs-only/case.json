@@ -1,0 +1,15 @@
+{
+  "id": "docs-only",
+  "label": "Negative control: a documentation-only commit with no code at all",
+  "mode": "commit",
+  "origin": {
+    "commit": "25e1fcd",
+    "note": "Four markdown files, zero code. Every finding here is a false positive by construction, which makes this the only case that measures precision cleanly. The model correctly reported nothing here once before, in the pre-benchmark record."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "control": true,
+  "defects": [],
+  "dropped": []
+}

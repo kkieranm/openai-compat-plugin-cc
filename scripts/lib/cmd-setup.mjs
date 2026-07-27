@@ -61,8 +61,12 @@ function jsonRow({ profile, rawProfile, models, error, described }) {
   };
 }
 
+// Exported for the same reason as TASK_SPEC and REVIEW_SPEC: a test proves
+// every flag here is documented in `commands/setup.md`.
+export const SETUP_SPEC = { booleanFlags: ['json'] };
+
 export async function runSetup(argv) {
-  const { options } = parseCommandLine(argv, { booleanFlags: ['json'] });
+  const { options } = parseCommandLine(argv, SETUP_SPEC);
   const { path, config, created } = loadConfig();
   const results = await Promise.all(
     Object.entries(config.providers).map(([name, rawProfile]) => probeProvider(name, rawProfile)),

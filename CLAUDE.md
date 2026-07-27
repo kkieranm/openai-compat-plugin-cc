@@ -23,15 +23,25 @@ from whichever channel carries it, and degrades to prompt-and-parse when a serve
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
 see [ADR 004](adr/004-bounding-the-review-reply.md).
 
+`bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
+historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
+the real CLI via `--json` and matched on a quoted anchor line — see
+[ADR 006](adr/006-benchmarking-the-reviewer.md).
+
 ## Commands
 
-- Test: `npm test` (runs `node --test`, auto-discovers `tests/`)
+- Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns)
+- Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`)
 - Load the plugin in a scratch session: `claude --plugin-dir /Users/kieran/Code/openai-compat-plugin-cc -p "/oai:setup"`
 - No build step; the plugin is markdown + JSON + ESM scripts.
 
 ## Session footguns (repeat offenders — check before hitting them)
 
 - The shell cwd resets between Bash calls — use absolute paths.
+- **`node --test` with no path walks the whole repo**, so any directory of source-shaped *data* gets
+  discovered as tests — `bench/cases` holds historical `tests/*.test.js` that were duly run against
+  today's tree. The npm script's `tests/**/*.test.js` scope is what prevents it; a test asserts the
+  scope survives. Node 26 also rejects a bare directory (`node --test tests/`) as a missing module.
 - **Never `spawnSync` in a test that talks to the in-process fake server** — the sync spawn blocks
   the event loop, the server can never answer, and the run hangs until the client timeout (cost: one
   204-second suite). `tests/helpers.mjs` `runCompanion` is async for this reason; `await` it.

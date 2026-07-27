@@ -1,1 +1,4 @@
 node_modules/
+# Raw per-run benchmark records. Regenerable, machine-written, and large; the
+# summary worth keeping goes in an ADR, quoted, where it can be argued with.
+bench/results/

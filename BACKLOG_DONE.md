@@ -2,6 +2,30 @@
 
 Newest first.
 
+- **OAI-12** — A labelled corpus and a benchmark harness. Completed 2026-07-28. `npm run bench` runs
+  the shipped `/oai:review` against six committed snapshots of this repo's own history and scores the
+  findings; `--runs N`, `--case <id>`, `--diff-only`. **It drives the real CLI through a new
+  `/oai:review --json`, never a copy of the pipeline** — a bench that scored a reimplementation and
+  reported it as the reviewer's score would be this repo's signature defect at the meta level, and
+  `structured` (64,357 tokens against a 54,016 threshold) makes it concrete by falling to ADR 005's
+  second rung where the others do not. **Baseline: 1 of 11 catalogued defects at N=1, 10.9 minutes.**
+  Two findings outweigh that number. **Context dilution is now measured**: the same `config.mjs`
+  defect was found at 1,575 prompt tokens and missed at 47,072 — which is the mechanism behind ADR
+  005's note that every verified true positive so far came from `--file`. And **the `analysis` cap
+  bound on 2 of 6 runs, both reporting nothing**, wasting a third of the run.
+  **The corpus is smaller than history claims, on purpose.** A defect is listed only if it can be
+  pointed at in the snapshot; 8 further claims are recorded as dropped with reasons. Applying that
+  rule caught **two of my own attributions being wrong** — a defect assigned to `65373a0`, which does
+  not touch `config.mjs` at all, and one assigned to `8990173`, where the code did not yet exist —
+  both of which would have scored the reviewer for missing code it was never shown.
+  **The scorer was validated against hand verdicts before any number shipped** (3 adjudications, 3
+  agreements), and immediately justified its design: the model placed the run's only true positive at
+  line 83 when the defect is at line 90, so the cheaper file-plus-line-proximity scorer would have
+  reported 0/11. **Two guards were earned from defects the corpus itself caused**: `node --test` with
+  no path discovered the corpus's historical tests and ran them against today's tree, and a new
+  flag-documentation check found `/oai:task` had been accepting `--system` undocumented. Design in
+  `adr/006-benchmarking-the-reviewer.md`.
+
 - **OAI-14** — Review whole changed files, not bare diff hunks. Completed 2026-07-27. Each changed
   file is now sent whole alongside the diff, taken from the revision the diff describes (`git show
   <ref>:<path>` for `--commit`, the index blob for `--staged`), with `--diff-only` restoring the old

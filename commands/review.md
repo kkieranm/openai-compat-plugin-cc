@@ -1,6 +1,6 @@
 ---
 description: Get a second-opinion code review from a local model, then verify each finding and fix the ones that are real
-argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [--diff-only] [extra instructions]'
+argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [--diff-only] [--json] [extra instructions]'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read, Grep, Glob, Edit
 ---
@@ -21,6 +21,8 @@ Put every flag **before** the instructions, and quote the instruction text as on
 The script decides what to review — do not build a diff yourself or paste one into the arguments. With no flags it reviews uncommitted work (working tree, staged changes, and untracked files). `--staged`, `--base <ref>`, `--commit <ref>` and repeated `--file <path>` change the target; `--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens` and `--temperature` behave as in `/oai:task`. Pass the user's flags through exactly. Any trailing text is forwarded as extra instructions for the reviewer, verbatim.
 
 Each changed file is sent whole alongside the diff, so the model can resolve anything defined outside the changed hunks. `--diff-only` sends just the diff — faster on a slow local model, at the cost of the "X is not defined" false positives that whole files exist to prevent. It cannot be combined with `--file`, which has no diff.
+
+`--json` prints the whole run as one JSON object on stdout — findings, summary, every caveat the text report carries, plus token usage and timing — instead of the report below. It exists for scripts and for the benchmark harness (`npm run bench`). Pass it only if the user asks for it: the verification duty below still applies to whatever it returns, and `"parsed": false` means the model's reply could not be read, which is not the same as finding nothing.
 
 **The findings are unverified claims from a small model. Treat them as leads, not conclusions.**
 
