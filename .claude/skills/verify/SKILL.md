@@ -49,12 +49,18 @@ server speaks the dialect we assume.
 
 ## 4. Live check (the real thing)
 
-Only possible once a server is installed and a model loaded. Detect one:
+Detect a running server, and prefer this over the stub whenever one is up:
 
 ```sh
 curl -sf http://localhost:1234/v1/models    # LM Studio; oMLX :8000, Unsloth Studio :8888
+curl -sf http://localhost:1234/api/v0/models  # also reports state + loaded_context_length
 ```
 
-Then rerun step 3 without the stub and against the real provider, and quote the model's actual
-answer. If no server is installed, say so plainly and mark the live step pending rather than
-reporting the feature as verified.
+Then rerun step 3 against the real provider and quote the model's actual answer. Expect roughly
+14s for a small file on a 35B MLX model, so do not mistake slowness for a hang.
+
+If the change touches the context guard, also prove the refusal with real numbers — build a file
+larger than the loaded window and confirm it is refused *before* any request is sent.
+
+If nothing is listening, say so plainly and mark the live step pending rather than reporting the
+feature as verified.

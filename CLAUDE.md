@@ -22,8 +22,14 @@ makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.m
   204-second suite). `tests/helpers.mjs` `runCompanion` is async for this reason; `await` it.
 - `new URL('localhost:1234')` **parses** (scheme `localhost:`, null origin) — URL parsing alone does
   not validate a base URL, so `normalizeBaseUrl` also checks the protocol is http(s).
-- No model server is installed on this machine. Tests must stay network-free (fake server on an
-  ephemeral port); for manual end-to-end runs use a stub server rather than assuming a live model.
+- LM Studio is installed and usually serves `qwen3.6-35b-a3b-ud-mlx` on :1234, but it is only up
+  when started. Tests must stay network-free (fake server on an ephemeral port); use the stub for
+  manual runs when nothing is listening.
+- A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
+  for the same model here. Size the guard by what was loaded, or it waves through input the server
+  rejects.
+- `/v1/models` lists embedding models alongside chat models, and `resolveModel` takes the first
+  entry; pin `defaultModel` in the config rather than relying on ordering.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.
 
 ## Grilling checklist — schema/shape forks to always surface
