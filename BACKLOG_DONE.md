@@ -2,6 +2,14 @@
 
 Newest first.
 
+- **OAI-4** — `/oai:review`: a local second opinion on the diff. Completed 2026-07-27, pulled ahead
+  of OAI-3 so it could be used while building the rest. Strict `json_schema` findings read from
+  whichever channel carries them, degrading to prompt-and-parse when a server refuses the schema;
+  the target is collected in Node and includes untracked files. Fixed a shipped defect on the way:
+  an empty answer was reported as success. Live-verified against LM Studio — five findings on a real
+  commit in 32s, a 74.5k-token input refused before sending, and a false positive correctly refuted
+  rather than fixed. Design in `adr/003-structured-findings.md`.
+
 - **OAI-2 + OAI-2b** — Context-window auto-detection and embedder exclusion. Completed 2026-07-27.
   Probes by response shape across LM Studio, vLLM, llama.cpp, TGI and (unverified) oMLX, trusting only
   served windows over model ceilings; automatic model selection drops embedders and refuses to guess

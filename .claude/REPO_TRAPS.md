@@ -90,6 +90,17 @@ Instances, for the pattern rather than the detail:
 8. The text report hid the window on an error row while `--json` still reported it.
 9. `setup` called a provider unreachable when it merely lacked `/v1/models`, while a task against it
    succeeded — the same class inverted, telling the user to restart a working server.
+10. `chatCompletion` guarded content with `typeof content !== 'string'`, which `''` satisfies. A
+    reasoning model that spent its whole budget thinking returned an empty answer, and `/oai:task`
+    printed nothing, added a footer naming the token counts, and **exited 0** — a run that produced
+    nothing reported as a success. `requireAnswer()` is now the one place that decides whether a
+    reply is an answer.
+11. `/oai:review` showed a reply it had truncated itself — the model hit `--max-tokens` mid-JSON —
+    as "did not return findings in the requested shape", and exited 0. The shape was fine; we cut it
+    off. Reporting our own truncation as the model's error sends the user to fix the wrong thing and
+    hides the one flag that works. Found by the lean review, in a fix written earlier the same
+    session for the *adjacent* case (both channels empty) — patching the branch in front of you is
+    how this class keeps regenerating.
 
 **Guarded by** `tests/model-selection.test.js` and `tests/context-window.test.js` — including "setup
 does not promise delegation when the model is ambiguous", which asserts that a real task refuses
@@ -103,6 +114,17 @@ plaintext HTTP. `resolveProfile` now withholds the credential across a differing
 on stderr. Any future option that redirects a request must ask the same question: does the
 credential still belong to where this is going?
 **Guarded by** `tests/config.test.js` — "a credential is never forwarded to a different host".
+
+## Constrained output does not arrive where unconstrained output does
+
+A strict `response_format` schema constrains generation from the first token, so a model whose chat
+template opens a thinking block can never emit the token that closes it. Every schema-valid reply
+therefore lands in `reasoning_content` with `content: ""`. Code that reads only `content` gets an
+empty string and no error. Reading the other channel is correct **only** under a schema, where
+parsing against it is the proof; without one the same text is the model's scratchpad and must never
+be shown as an answer.
+**Guarded by** `tests/structured.test.js` — "under a schema, the reasoning channel carries the
+payload" and "without a schema, the reasoning channel is never read" — and `tests/review.test.js`.
 
 ## Reviewer notes that are not yet defect classes
 

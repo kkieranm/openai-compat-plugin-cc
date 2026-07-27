@@ -12,6 +12,10 @@ makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.m
 endpoints by response shape, trusting only served windows over model ceilings — see
 [ADR 002](adr/002-context-window-detection.md).
 
+`scripts/lib/structured.mjs` asks for JSON with a strict `response_format` schema, reads the payload
+from whichever channel carries it, and degrades to prompt-and-parse when a server refuses the schema
+— see [ADR 003](adr/003-structured-findings.md).
+
 ## Commands
 
 - Test: `npm test` (runs `node --test`, auto-discovers `tests/`)
@@ -32,6 +36,9 @@ endpoints by response shape, trusting only served windows over model ceilings �
 - A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
   for the same model here. `model-info.mjs` encodes this; never "simplify" it to the larger field.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.
+- A schema-constrained reply arrives in `reasoning_content` with `content` **empty** — the grammar
+  stops the model ever closing its think block. Reading that channel is legitimate only under a
+  schema, where parsing proves what it is; without one it is scratchpad and `requireAnswer` refuses.
 
 ## Grilling checklist — schema/shape forks to always surface
 

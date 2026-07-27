@@ -19,16 +19,25 @@ claude --plugin-dir /path/to/openai-compat-plugin-cc     # try it in one session
 | --- | --- |
 | `/oai:setup` | Probes every configured provider and reports which are reachable and what models they have loaded. Seeds the config file on first run. |
 | `/oai:task` | Delegates one request to a local model and returns its answer verbatim. |
+| `/oai:review` | Has a local model review your diff, then checks each finding against the code and fixes the real ones. |
 
 ```
 /oai:setup
 /oai:task summarize what this module is responsible for
 /oai:task --file src/parser.js --file src/lexer.js where would an off-by-one hide here?
 /oai:task --provider omlx --model mlx-community/Qwen3-8B draft a docstring for this function
+
+/oai:review                      # working tree + staged + untracked, vs HEAD
+/oai:review --staged
+/oai:review --base main          # the whole branch
+/oai:review --commit 1ea398f
+/oai:review --file src/parser.js pay attention to the error paths
 ```
 
 Useful flags: `--provider <name>`, `--model <id>`, `--base-url <url>`, `--file <path>` (repeatable),
-`--prompt-file <path>`, `--timeout <seconds>`, `--max-tokens`, `--temperature`.
+`--prompt-file <path>`, `--timeout <seconds>`, `--max-tokens`, `--temperature`. `/oai:review` adds
+`--staged`, `--base <ref>` and `--commit <ref>`, and takes any trailing text as extra instructions
+for the reviewer.
 
 ## Configuration
 
@@ -72,6 +81,12 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   model's theoretical ceiling is ignored, since guarding on it would admit input the server rejects.
   Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on a
   profile overrides detection.
+- **Review findings are claims, not conclusions.** They come from a small model asked for a strict
+  JSON schema; each one is checked against the real code before anything is changed, and a finding
+  that cannot be reproduced is reported as refuted rather than fixed. Expect false positives.
+- **A schema-constrained reply arrives in the model's reasoning channel**, not `content` — the
+  grammar leaves it unable to close its thinking block. The plugin reads it there, but only under a
+  schema, where parsing proves what it is. Without one, an empty answer is an error, never silence.
 - **Calls are synchronous and non-streaming.** A slow local model prints a `Contacting …` line to
   stderr, then the answer with a footer of provider, model, duration and token counts.
 

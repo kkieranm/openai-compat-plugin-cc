@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { completion, modelList, reasoningCompletion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 
 function route({ models = () => modelList('test-model'), chat = () => completion('local model says hi') } = {}) {
   return (request, response) => {
@@ -253,6 +253,7 @@ test('an unknown flag is rejected rather than sent as prompt text', async () => 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown option "--modle"/);
 });
+
 
 test('an unknown subcommand is rejected', async () => {
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });

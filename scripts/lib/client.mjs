@@ -54,6 +54,9 @@ async function request(profile, path, { method = 'GET', body, timeoutMs = DEFAUL
     // The server answered, so it is up — it just does not serve this endpoint.
     // Callers use this to tell "server down" from "server lacks /v1/models".
     error.serverResponded = true;
+    // Kept separate from the message so a caller can test the status without
+    // pattern-matching prose (structured.mjs discriminates a 400 this way).
+    error.status = response.status;
     throw error;
   }
 
@@ -77,24 +80,67 @@ export function authHeaders(profile) {
   return buildHeaders(profile);
 }
 
-/** One non-streaming chat completion. Returns the text plus whatever usage the server reported. */
-export async function chatCompletion(profile, { model, messages, timeoutMs, temperature, maxTokens }) {
+/**
+ * One non-streaming chat completion.
+ *
+ * Both text channels are returned. A reasoning model can leave `content` empty
+ * and put everything in `reasoning_content` — under a constrained grammar it
+ * always does, because it can never emit the token that closes its think block
+ * (ADR 003). Which channel is legitimate depends on what was asked for, so that
+ * decision belongs to the caller, not here.
+ */
+export async function chatCompletion(profile, { model, messages, timeoutMs, temperature, maxTokens, responseFormat }) {
   const body = { model, messages, stream: false };
   if (temperature !== undefined) body.temperature = temperature;
   if (maxTokens !== undefined) body.max_tokens = maxTokens;
+  if (responseFormat !== undefined) body.response_format = responseFormat;
 
   const payload = await request(profile, '/chat/completions', { method: 'POST', body, timeoutMs });
   const choice = payload?.choices?.[0];
   const content = choice?.message?.content;
-  if (typeof content !== 'string') {
+  const reasoning = choice?.message?.reasoning_content;
+  // Neither channel being a string is a malformed response, not an empty answer.
+  if (typeof content !== 'string' && typeof reasoning !== 'string') {
     throw new UserError(
       `${profile.name} returned a completion with no message content (finish_reason: ${choice?.finish_reason ?? 'unknown'}).`,
     );
   }
   return {
-    content,
+    content: typeof content === 'string' ? content : '',
+    reasoning: typeof reasoning === 'string' ? reasoning : '',
     model: payload.model ?? model,
     usage: payload.usage ?? null,
     finishReason: choice.finish_reason ?? null,
   };
+}
+
+/**
+ * The answer to an unconstrained request, or a loud failure.
+ *
+ * There is deliberately no fallback to `reasoning` here. That text is the
+ * model's scratchpad, not its reply: printing it would present working-out as
+ * an answer, which is exactly the "reported state must describe what will
+ * actually happen" class this repo keeps re-finding. A structured caller may
+ * read the other channel, but only because parsing it against the schema proves
+ * what it is.
+ */
+export function requireAnswer(result, profile) {
+  if (result.content.trim()) return result.content;
+
+  if (result.finishReason === 'length') {
+    throw new UserError(
+      `${profile.name} stopped at the token limit before writing an answer` +
+        `${result.reasoning ? ', having spent the whole budget reasoning' : ''}.`,
+      { hint: 'Raise --max-tokens (reasoning models can think for thousands of tokens before replying).' },
+    );
+  }
+  if (result.reasoning.trim()) {
+    throw new UserError(`${profile.name} returned only internal reasoning and no answer.`, {
+      hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
+    });
+  }
+  throw new UserError(
+    `${profile.name} returned an empty answer (finish_reason: ${result.finishReason ?? 'unknown'}).`,
+    { hint: 'Try again, or check the server log — nothing was generated.' },
+  );
 }

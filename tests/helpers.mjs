@@ -60,6 +60,52 @@ export function completion(content, extra = {}) {
   };
 }
 
+/**
+ * A completion whose text arrived in the reasoning channel with `content`
+ * empty — what every schema-constrained reply from a reasoning model looks
+ * like (ADR 003).
+ */
+export function reasoningCompletion(reasoning, extra = {}) {
+  return {
+    id: 'chatcmpl-test',
+    model: 'test-model',
+    choices: [
+      { index: 0, message: { role: 'assistant', content: '', reasoning_content: reasoning }, finish_reason: 'stop' },
+    ],
+    usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
+    ...extra,
+  };
+}
+
+/** Async, for the same reason runCompanion is: sync spawn deadlocks the suite. */
+export function git(args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (status) => {
+      if (status !== 0) reject(new Error(`git ${args.join(' ')} failed: ${stderr}`));
+      else resolve();
+    });
+  });
+}
+
+/** A throwaway repository with one commit, so HEAD exists. */
+export async function createRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-repo-'));
+  await git(['init', '--quiet', '--initial-branch=main'], dir);
+  await git(['config', 'user.email', 'test@example.com'], dir);
+  await git(['config', 'user.name', 'Test'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\n');
+  await git(['add', 'seed.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'seed'], dir);
+  return dir;
+}
+
 /** A port that is guaranteed to refuse connections. */
 export async function closedPort() {
   const server = createServer();

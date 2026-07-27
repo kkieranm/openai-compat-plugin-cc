@@ -2,7 +2,18 @@ import { UserError } from './errors.mjs';
 
 // Deliberately crude: a real tokenizer differs per model, and this guard exists
 // to catch "you sent 40k into a 4k window", not to be exact at the margin.
-const CHARS_PER_TOKEN = 4;
+//
+// But it must err toward refusing, never toward admitting input the server then
+// rejects — that is the failure this guard exists to prevent. Measured against
+// LM Studio on two real diffs: 50 KB counted 13,889 tokens (3.61 chars/token)
+// and 156 KB counted 44,997 (3.48). Code and diffs pack denser than the prose 4
+// assumed, so a review — which only ever sends code — was systematically
+// over-estimating how much would fit.
+//
+// Set *below* the densest measurement rather than at it: at 3.5 the estimate
+// still fell 300 tokens short of the second sample, and "close enough" is the
+// wrong target for a number whose only job is to stay on the safe side.
+const CHARS_PER_TOKEN = 3.4;
 
 // Headroom left for the model's reply, since the window covers prompt + completion.
 export const DEFAULT_RESERVE_TOKENS = 1024;
