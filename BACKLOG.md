@@ -54,6 +54,29 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
   target — then this is a config change, not a rewrite. Open question worth an experiment before
   committing: whether three lenses on one model beats three plain passes, since that would deliver
   most of the value with no second model to install.
+- **OAI-12** — A labelled corpus and a benchmark harness, so reviewer changes stop being anecdotes.
+  Every tuning decision so far (schema shape, temperature, budget) rested on one hand-extracted file
+  and findings I verified by reading later commits. That does not scale and is not repeatable.
+  **The ground truth already exists in this repo's history**: each defect a review confirmed and a
+  later commit fixed is a labelled example — file at commit X contains defect Y, fixed in Z. Seeds
+  available today: `config.mjs@8990173` (credentials stripped by `url.origin`; query string dropped —
+  both fixed later), the ten findings from the OAI-1 `high` review fixed in `7d3a1a4`, and the OAI-2
+  round fixed in `1ea398f`. Include **negative controls** — `25e1fcd` is documentation-only and the
+  model correctly reported nothing there — because precision needs clean targets as much as recall
+  needs dirty ones.
+  Store as committed snapshots under `bench/` with a manifest, not `git show` at runtime: the corpus
+  must survive a rebase and stay byte-stable, or scores drift for reasons that have nothing to do
+  with the reviewer.
+  **Constraint: this cannot live in `npm test`.** The suite is network-free by contract and the
+  fake server exists precisely so it stays that way; a benchmark needs a real model and is
+  non-deterministic besides. Separate opt-in entry point (`npm run bench`), skipped by default,
+  reporting recall against known defects, false positives per run, tokens and wall clock.
+  **The hard part is scoring** — deciding whether a free-text finding "is" a known defect. Options:
+  match on file plus line proximity (cheap, brittle), keyword match on the defect's signature (cheap,
+  gameable), or a stronger model as judge (accurate, costs API budget, and needs its own sanity
+  check). Prototype the scorer against today's five recorded runs before building anything on top of
+  it; if the scorer cannot reproduce the verdicts I reached by hand, it is not measuring the right
+  thing.
 - **OAI-5** — A delegation subagent (`/oai:rescue` + a thin forwarding agent) so a long local-model
   run does not consume the main session's context.
 - **OAI-6** — Streaming output for `/oai:task`, so a slow local model shows progress rather than
