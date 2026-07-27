@@ -33,7 +33,7 @@ function renderFinding(finding) {
  * The findings, ordered by severity. Framed as claims, not conclusions: they
  * come from a small local model and have not been checked against the code yet.
  */
-export function renderFindings({ findings, summary, dropped, atCap }, { label, provider, model }) {
+export function renderFindings({ findings, summary, dropped, atCap, analysisCut }, { label, provider, model }) {
   const lines = [`${findings.length} finding(s) from ${model} on ${provider} — ${label}`, ''];
 
   if (findings.length === 0) {
@@ -46,6 +46,18 @@ export function renderFindings({ findings, summary, dropped, atCap }, { label, p
   }
 
   if (summary) lines.push('', `Summary: ${summary}`);
+  // Said loudly, and before the findings count is believed: the model was cut
+  // off while still reasoning, so an empty list here means "did not finish
+  // looking", not "found nothing". Without this the reply is identical to a
+  // clean review.
+  if (analysisCut) {
+    lines.push(
+      '',
+      'WARNING: the model was still reasoning when it hit its length limit, so it never finished ' +
+        'looking. Treat this result as incomplete — especially an empty one. Review a smaller ' +
+        'target, or raise the limit.',
+    );
+  }
   // The schema caps the list, so a reply arriving at exactly the cap may have
   // been cut. There is no way to tell "found this many" from "found more and was
   // stopped", so this says that rather than inventing a count it cannot know —

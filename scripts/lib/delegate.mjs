@@ -93,19 +93,42 @@ export async function resolveTarget(profile, options) {
 /**
  * Assemble the request and prove it fits the window before anything is sent.
  */
-export function prepareRequest({ profile, prompt, files, model, contextLength, maxTokens, system }) {
+export function prepareRequest({
+  profile,
+  prompt,
+  files,
+  model,
+  contextLength,
+  maxTokens,
+  minReserve,
+  system,
+  oversizeHint,
+}) {
   const messages = buildMessages({ system: system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
   const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
+
+  // With a floor set, the reply budget yields to the input rather than the
+  // input being refused. A generous fixed reserve otherwise withholds the
+  // window from the prompt on behalf of a reply that usually never arrives —
+  // and refuses work that would have fit comfortably with a shorter answer.
+  // Never below the floor: past that the reply is too small to be worth having,
+  // and the refusal should name the floor so it describes the real limit.
+  let reserve = maxTokens;
+  if (minReserve && contextLength && maxTokens) {
+    const available = contextLength - estimatedTokens;
+    if (available < maxTokens) reserve = Math.max(minReserve, available);
+  }
 
   const budget = checkContextBudget({
     estimatedTokens,
     contextLength,
-    reserveTokens: maxTokens,
+    reserveTokens: reserve,
     providerName: profile.name,
     model,
+    oversizeHint,
   });
 
-  return { messages, estimatedTokens, budget };
+  return { messages, estimatedTokens, budget, reserve };
 }
 
 export function resolveTimeout(profile, timeoutSeconds) {

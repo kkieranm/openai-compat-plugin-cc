@@ -29,6 +29,18 @@ const REVIEW_SPEC = {
 export const REVIEW_MAX_TOKENS = 16_384;
 
 /**
+ * The smallest reply budget worth having, and the floor the reserve yields to
+ * when a big diff needs the room.
+ *
+ * Reserving the full 16,384 unconditionally cost ~12k tokens of *input* on
+ * every review — on a 58k window the usable input fell from 54.0k to 41.7k, so
+ * diffs that reviewed fine before were refused for the sake of a reply that
+ * arrives at that size in roughly one run in five. This is the old reserve,
+ * which is exactly the size that used to work.
+ */
+export const REVIEW_MIN_TOKENS = 4096;
+
+/**
  * Never reserve more than half the window: on a small-window model a fixed 16k
  * reserve would refuse every review outright, blaming an input that would
  * comfortably have fit.
@@ -48,26 +60,42 @@ function reserveFor(contextLength, requested) {
 async function requestFindings(profile, plan) {
   const { model, timeoutMs, temperature, reserve, contextLength, target, instructions } = plan;
   const prompt = buildReviewPrompt({ label: target.label, diff: target.diff, instructions });
-  const shared = { profile, files: target.files, model, contextLength, maxTokens: reserve, system: REVIEW_SYSTEM_PROMPT };
-  const send = { model, timeoutMs, temperature, maxTokens: reserve };
+  const shared = {
+    profile,
+    files: target.files,
+    model,
+    contextLength,
+    maxTokens: reserve,
+    minReserve: REVIEW_MIN_TOKENS,
+    system: REVIEW_SYSTEM_PROMPT,
+    oversizeHint:
+      'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
+      'specific files with --file — or raise the model context length in the server and config.',
+  };
+  const send = { model, timeoutMs, temperature };
 
   const first = prepareRequest({ ...shared, prompt });
   try {
     const result = await chatCompletion(profile, {
       ...send,
+      maxTokens: first.reserve,
       messages: first.messages,
       responseFormat: responseFormatFor(REVIEW_SCHEMA),
     });
     return { result, structured: true, ...first };
   } catch (error) {
     if (!isFormatRejection(error)) throw error;
+
+    // The instruction has to fit the window too, so the guard runs again —
+    // *before* the retry is announced. Announcing first meant a guard refusal
+    // arrived right after "Retrying without it", blaming the user's diff size
+    // for a request that was never sent and a retry that never happened.
+    const second = prepareRequest({ ...shared, prompt: `${prompt}\n\n${schemaInstruction(REVIEW_SCHEMA)}` });
+
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.
     process.stderr.write(`${profile.name} rejected response_format (${error.message}). Retrying without it.\n`);
-
-    // The instruction has to fit the window too, so the guard runs again.
-    const second = prepareRequest({ ...shared, prompt: `${prompt}\n\n${schemaInstruction(REVIEW_SCHEMA)}` });
-    const result = await chatCompletion(profile, { ...send, messages: second.messages });
+    const result = await chatCompletion(profile, { ...send, maxTokens: second.reserve, messages: second.messages });
     return { result, structured: false, ...second };
   }
 }

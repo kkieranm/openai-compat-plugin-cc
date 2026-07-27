@@ -1,0 +1,108 @@
+// How /oai:review spends the context window, and what it says when it cannot.
+// Split from review.test.js at the size budget; these are the paths where the
+// reply budget and the input compete for one window.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { chatRequests, reasoningCompletion, respondJson, reviewScenario as scenario, runCompanion } from './helpers.mjs';
+import { REVIEW_MAX_TOKENS, REVIEW_MIN_TOKENS } from '../scripts/lib/cmd-review.mjs';
+import { REVIEW_SCHEMA } from '../scripts/lib/structured.mjs';
+
+const FINDINGS = JSON.stringify({
+  analysis: 'walked each changed hunk',
+  findings: [{ file: 'seed.txt', line: 3, severity: 'high', summary: 'the seed is wrong', evidence: 'edited' }],
+  summary: 'one real defect',
+});
+
+test('a big diff shrinks the reply budget instead of being refused', async () => {
+  // A fixed 16k reserve withheld ~12k tokens of window from the input on every
+  // review, refusing diffs that fit comfortably with a shorter answer — for the
+  // sake of a reply that arrives at that size roughly one run in five.
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    { contextLength: 30_000, seed: `seed\n${'const x = 1;\n'.repeat(5_000)}` },
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const sent = chatRequests(server)[0].body.max_tokens;
+  assert.ok(sent < REVIEW_MAX_TOKENS, `expected a shrunk reserve, got ${sent}`);
+  assert.ok(sent >= REVIEW_MIN_TOKENS, `never below the floor, got ${sent}`);
+});
+
+test('an input too large even for the floor is still refused, naming the floor', async () => {
+  // Shrinking must not become silent truncation: past the floor the reply is
+  // too small to be worth having, and the refusal has to describe that limit
+  // rather than a reserve the code would never have used.
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    { contextLength: 20_000 },
+  );
+  writeFileSync(join(dir, 'huge.js'), `// ${'x'.repeat(200_000)}\n`);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /reserving 4.1k for the reply/);
+  assert.equal(chatRequests(server).length, 0, 'oversized input must never reach the server');
+});
+
+test('an oversized review is told how to narrow a diff, not how to send fewer files', async () => {
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    { contextLength: 20_000 },
+  );
+  writeFileSync(join(dir, 'huge.js'), `// ${'x'.repeat(200_000)}\n`);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.match(result.stderr, /--commit/);
+  assert.match(result.stderr, /--base/);
+  assert.doesNotMatch(result.stderr, /Send fewer or smaller files/, 'that is advice for /oai:task');
+});
+
+test('a guard refusal on the retry never claims the retry happened', async () => {
+  // The announcement used to come first, so a refusal on the longer degraded
+  // prompt arrived right after "Retrying without it" — blaming the diff for a
+  // request that was never sent.
+  // Sized so the first prompt fits with the floor reserve and the second — the
+  // same prompt plus the ~200-token schema instruction — does not. That gap is
+  // the only place this ordering is observable.
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, { error: 'response_format is not supported' }, 400),
+    { contextLength: 12_950, seed: `seed\n${'x'.repeat(29_000)}\n` },
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(result.stdout + result.stderr, /Retrying without it/, 'no retry was possible');
+  assert.equal(chatRequests(server).length, 1, 'the second request must never be sent');
+});
+
+test('a cut analysis warns loudly rather than reading as a clean review', async () => {
+  // Complete JSON, finish_reason stop, no findings — identical on screen to a
+  // review that looked properly and found nothing.
+  const cut = JSON.stringify({
+    analysis: 'x'.repeat(REVIEW_SCHEMA.properties.analysis.maxLength),
+    findings: [],
+    summary: 'No defects found.',
+  });
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, reasoningCompletion(cut)),
+    { contextLength: 131_072 },
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /still reasoning when it hit its length limit/);
+  assert.match(result.stdout, /incomplete/);
+});

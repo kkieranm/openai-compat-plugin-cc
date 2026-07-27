@@ -108,6 +108,37 @@ test('the cap warning is never raised on the path that has no cap', () => {
   assert.equal(degraded.atCap, false);
 });
 
+test('JSON is found after prose that contains braces of its own', () => {
+  // The system prompt orders the model to quote the offending source line, so a
+  // degraded reply routinely opens with code. Anchoring on the first `{` made a
+  // quoted `if (…) { … }` swallow the anchor and threw away good findings.
+  const reply =
+    'Looking at the code, the guard reads:\n\nif (!contextLength) { return DEFAULT; }\n\nwhich is wrong.\n\n' +
+    '{"analysis":"a","findings":[],"summary":"one defect"}';
+  assert.equal(extractJson(reply)?.summary, 'one defect');
+});
+
+test('a key named after an Object prototype member is still an extra key', () => {
+  // `in` walks the prototype chain, so these passed the extras check — and that
+  // check is the proof the text is the constrained payload, not a draft.
+  for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    const value = { analysis: 'a', findings: [], summary: 's', [key]: 'smuggled' };
+    assert.equal(matchesSchema(value, REVIEW_SCHEMA), false, `${key} must be rejected as an extra key`);
+  }
+});
+
+test('a cut analysis is flagged, so an empty result cannot pass as a clean one', () => {
+  // Bounding `analysis` made a guillotined run *valid*: complete JSON,
+  // finish_reason stop, no findings. Without this flag it renders exactly like
+  // a review that looked and found nothing.
+  const cap = REVIEW_SCHEMA.properties.analysis.maxLength;
+  const cut = JSON.stringify({ analysis: 'x'.repeat(cap), findings: [], summary: '' });
+  assert.equal(parseFindings({ content: cut, reasoning: '' }, { structured: true }).analysisCut, true);
+
+  const whole = JSON.stringify({ analysis: 'x'.repeat(cap - 1), findings: [], summary: '' });
+  assert.equal(parseFindings({ content: whole, reasoning: '' }, { structured: true }).analysisCut, false);
+});
+
 test('the response_format wrapper asks for strict mode', () => {
   const format = responseFormatFor(REVIEW_SCHEMA, 'review');
   assert.equal(format.type, 'json_schema');

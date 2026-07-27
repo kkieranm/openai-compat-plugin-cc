@@ -102,11 +102,11 @@ export function schemaInstruction(schema) {
 const FENCE = /```(?:json)?\s*\n([\s\S]*?)```/;
 
 /**
- * Find the first balanced object in a string. String-aware, so a brace inside a
- * quoted value (`"summary": "the } case"`) does not close the object early.
+ * Find the balanced object starting at or after `from`. String-aware, so a brace
+ * inside a quoted value (`"summary": "the } case"`) does not close it early.
  */
-function balancedObject(text) {
-  const start = text.indexOf('{');
+function balancedObject(text, from = 0) {
+  const start = text.indexOf('{', from);
   if (start === -1) return null;
 
   let depth = 0;
@@ -128,16 +128,24 @@ function balancedObject(text) {
     else if (character === '{') depth += 1;
     else if (character === '}') {
       depth -= 1;
-      if (depth === 0) return text.slice(start, index + 1);
+      if (depth === 0) return { json: text.slice(start, index + 1), start };
     }
   }
   return null;
 }
 
-/** Parse JSON out of a reply that may be bare, fenced, or wrapped in prose. */
+/**
+ * Parse JSON out of a reply that may be bare, fenced, or wrapped in prose.
+ *
+ * Every balanced object is tried, not just the first. The system prompt orders
+ * the model to quote the offending source line, so a degraded reply routinely
+ * opens with code — and anchoring on the first `{` meant a quoted `if (x) { … }`
+ * swallowed the anchor and a perfectly good findings object was thrown away,
+ * with the user told the *model* returned the wrong shape. That is this repo's
+ * most-repeated defect class, reported against ourselves.
+ */
 export function extractJson(text) {
-  const candidates = [text.trim(), text.match(FENCE)?.[1], balancedObject(text)];
-  for (const candidate of candidates) {
+  for (const candidate of [text.trim(), text.match(FENCE)?.[1]]) {
     if (!candidate) continue;
     try {
       return JSON.parse(candidate);
@@ -145,7 +153,19 @@ export function extractJson(text) {
       // Try the next shape; an unparseable candidate is expected here.
     }
   }
-  return null;
+
+  let from = 0;
+  for (;;) {
+    const found = balancedObject(text, from);
+    if (!found) return null;
+    try {
+      return JSON.parse(found.json);
+    } catch {
+      // Not it — resume the scan past this object's opening brace, so a nested
+      // or adjacent object later in the reply still gets its turn.
+      from = found.start + 1;
+    }
+  }
 }
 
 /**
@@ -169,9 +189,17 @@ export function matchesSchema(value, schema) {
   if (types.includes('object')) {
     if (typeof value !== 'object' || Array.isArray(value)) return false;
     const properties = schema.properties ?? {};
-    if ((schema.required ?? []).some((key) => !(key in value))) return false;
-    if (schema.additionalProperties === false && Object.keys(value).some((key) => !(key in properties))) return false;
-    return Object.entries(properties).every(([key, child]) => !(key in value) || matchesSchema(value[key], child));
+    // `in` walks the prototype chain, so a draft object carrying a key named
+    // `constructor`, `toString` or `__proto__` passed the extras check as
+    // conformant — and conformance is the whole proof that this text is the
+    // grammar-constrained payload rather than a scratchpad draft.
+    if ((schema.required ?? []).some((key) => !Object.hasOwn(value, key))) return false;
+    if (schema.additionalProperties === false && Object.keys(value).some((key) => !Object.hasOwn(properties, key))) {
+      return false;
+    }
+    return Object.entries(properties).every(
+      ([key, child]) => !Object.hasOwn(value, key) || matchesSchema(value[key], child),
+    );
   }
   if (types.includes('array')) {
     return Array.isArray(value) && value.every((item) => matchesSchema(item, schema.items));
@@ -243,6 +271,16 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
     // nothing was cut, and warning about a cut that did not happen is the defect
     // this warning exists to prevent, inverted.
     atCap: structured && parsed.findings.length === MAX_FINDINGS,
+    // The same test for the reasoning field, and it matters more. A cut
+    // `analysis` used to be impossible: the run hit `max_tokens` and raised a
+    // loud "ran out of tokens". Bounding it made that reply *valid* — complete
+    // JSON, `finish_reason: stop`, and usually an empty findings list — so the
+    // user is shown "No defects reported" and a normal footer for a review that
+    // was guillotined mid-sentence. Indistinguishable from a genuinely clean
+    // pass, which turns a loud failure into a confident wrong answer. ADR 004
+    // recorded this behaviour and mistook it for an acceptable trade.
+    analysisCut: structured && typeof parsed.analysis === 'string'
+      && parsed.analysis.length === schema.properties?.analysis?.maxLength,
     summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
   };
 }

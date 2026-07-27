@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { completion, createRepo, reasoningCompletion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { chatRequests, completion, reasoningCompletion, respondJson, reviewScenario as scenario, runCompanion } from './helpers.mjs';
 import { MAX_FINDINGS } from '../scripts/lib/structured.mjs';
 
 const FINDINGS = JSON.stringify({
@@ -12,22 +12,6 @@ const FINDINGS = JSON.stringify({
   findings: [{ file: 'seed.txt', line: 3, severity: 'high', summary: 'the seed is wrong', evidence: 'edited' }],
   summary: 'one real defect',
 });
-
-/** A repo with one uncommitted edit, and a config that needs no probing. */
-async function scenario(handler, { contextLength = 8192 } = {}) {
-  const dir = await createRepo();
-  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
-  const server = await startFakeServer(handler);
-  const { path } = writeConfig({
-    defaultProvider: 'local',
-    providers: { local: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength } },
-  });
-  return { dir, server, configPath: path };
-}
-
-function chatRequests(server) {
-  return server.requests.filter((request) => request.url.includes('/chat/completions'));
-}
 
 test('findings arriving in the reasoning channel are reported as findings', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>

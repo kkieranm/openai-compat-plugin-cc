@@ -107,6 +107,19 @@ Instances, for the pattern rather than the detail:
     on a server that took the schema and ignored `maxItems`, and there every finding is already on
     screen — so the warning fired precisely when it was provably wrong.
 
+14. **A guard turned a loud failure into a valid-looking wrong answer.** Bounding `analysis` made a
+    guillotined review *parseable* — complete JSON, `finish_reason: stop`, empty findings — so the
+    user saw `0 finding(s) … No defects reported.` with a normal footer, identical to a review that
+    looked properly and found nothing. The previous behaviour was a loud "ran out of tokens". The
+    ADR that introduced this described the symptom and called it an acceptable trade. Fixed with an
+    `analysisCut` flag and a warning. **When a change converts an error into a valid-looking result,
+    the result must carry the reason** — otherwise the trade is an error for a lie.
+15. `extractJson` anchored on the *first* `{` and never retried from a later one, so a degraded
+    reply that quoted source before its JSON (`if (!contextLength) { return DEFAULT; }`) had the
+    quoted brace swallow the anchor — and good findings were discarded with "the model did not
+    return findings in the requested shape". Our parser's limitation, reported as the model's fault.
+    Now every balanced object is tried.
+
 **12 and 13 are one warning, added in one change, wrong in two directions within an hour.** That is
 the tell for this class: the risk is not the happy path but every path where the *precondition for
 the message* differs from the condition actually tested. Before adding any warning, state the fact
@@ -150,6 +163,17 @@ Before adding any schema constraint, ask what the cheapest string the grammar no
 that is what you will eventually get.
 **Guarded by** `tests/structured.test.js` — "every string and array in the schema carries a ceiling"
 (the growth guard) — and ADR 004, which records why `analysis` is a string and not a list.
+
+## `key in object` is not "the object has this key"
+
+`in` walks the prototype chain, so every plain object "has" `constructor`, `toString`, `valueOf`,
+`hasOwnProperty` and `__proto__`. `matchesSchema` used `!(key in properties)` for its
+`additionalProperties: false` check, so a reply carrying an extra key named after any of those
+passed as conformant — and that check is the *whole proof* that text taken from `reasoning_content`
+is the grammar-constrained payload rather than a scratchpad draft. Use `Object.hasOwn` for any
+membership test that decides whether data is trustworthy.
+**Guarded by** `tests/structured.test.js` — "a key named after an Object prototype member is still
+an extra key".
 
 ## Reviewer notes that are not yet defect classes
 

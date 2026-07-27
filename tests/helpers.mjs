@@ -150,3 +150,24 @@ export function runCompanion(args, { configPath, env = {}, cwd } = {}) {
     child.on('close', (status) => resolve({ status, stdout, stderr }));
   });
 }
+
+/**
+ * A repo with one uncommitted edit and a config that needs no probing — the
+ * starting point for every `/oai:review` end-to-end test. Shared so the review
+ * suites cannot drift apart on what "a reviewable repo" means.
+ */
+export async function reviewScenario(handler, { contextLength = 8192, seed = 'seed\nedited\n' } = {}) {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), seed);
+  const server = await startFakeServer(handler);
+  const { path } = writeConfig({
+    defaultProvider: 'local',
+    providers: { local: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength } },
+  });
+  return { dir, server, configPath: path };
+}
+
+/** The chat requests a fake server received, in order. */
+export function chatRequests(server) {
+  return server.requests.filter((request) => request.url.includes('/chat/completions'));
+}

@@ -110,10 +110,18 @@ reach first.
 
 - A pathological run now returns a *parseable* reply instead of nothing, because the grammar stops
   before `max_tokens` does on this machine. **It does not return good findings.** The one run
-  measured hitting the `analysis` cap went on to report zero findings — the cut is not a rescue, it
-  converts an error into a cheap empty answer. This is worth having (the pass fails in 70s instead of
-  four minutes, and `/oai:review` never dead-ends on a truncation error) but it is not a hit-rate
-  improvement, and nothing here should be read as one.
+  measured hitting the `analysis` cap went on to report zero findings.
+- **Correction — "converts an error into a cheap empty answer" was the wrong reading, and a
+  dangerous one.** That sentence stood in this ADR and treated the cut as an acceptable trade. A
+  built-in `/code-review` over this module found what it actually produces: complete JSON,
+  `finish_reason: stop`, an empty findings array, and therefore `0 finding(s) … No defects reported.`
+  with an unremarkable footer — **indistinguishable on screen from a review that looked properly and
+  found nothing.** Bounding the reply did not make the failure cheap; it made a loud failure into a
+  confident wrong answer, which is this repo's signature defect class committed by the change that
+  documented it. `parseFindings` now returns `analysisCut` alongside `atCap`, and `renderFindings`
+  says plainly that the model never finished looking. The lesson is narrow and worth keeping: **when
+  a guard converts a loud failure into a valid-looking result, the result has to carry the reason**,
+  or the guard has traded an error for a lie.
 - **A cap cannot tell verbose from runaway.** Length is the only signal available at generation time,
   and the two distributions overlap. Every cap therefore has a range where it cuts productive work;
   the numbers above move that range above what has been observed rather than eliminating it. The
@@ -134,6 +142,15 @@ reach first.
   short collapse (~300 output tokens, no findings) appeared in both arms, so it is a property of the
   model rather than of the schema. This is precisely why OAI-12 exists: nothing about reviewer
   quality should be concluded from single runs, including anything claimed here.
+- **The reserve yields to the input rather than refusing it.** A fixed 16,384-token reserve is
+  subtracted from the *input* budget on every review, which cut usable input on a 58k window from
+  54.0k to 41.7k and refused diffs that had reviewed fine before — spending the window on a reply
+  that reaches that size in roughly one run in five. `prepareRequest` now takes a `minReserve`, and
+  when the input needs the room the reply budget shrinks toward that floor (`REVIEW_MIN_TOKENS`,
+  4,096 — the reserve that used to work) instead of the input being rejected. Below the floor the
+  refusal stands and names the floor, so it describes the real limit rather than a reserve the code
+  would never have used. Shrinking is safe now in a way it would not have been before: a reply cut
+  short is detectable, per the correction above.
 - **Raising `REVIEW_MAX_TOKENS` is now safe in a way it was not before, and is untried.** The
   original refusal stands for its own reasons — more room bought only a longer runaway when nothing
   was bounded. With the schema bounded, a larger reserve instead buys room for larger caps: the

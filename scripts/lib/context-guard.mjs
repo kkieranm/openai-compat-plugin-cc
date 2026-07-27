@@ -30,7 +30,14 @@ export function formatTokens(count) {
  * Refuse loudly when the input cannot fit the window. Returns a note describing
  * what was (or could not be) checked; never truncates silently.
  */
-export function checkContextBudget({ estimatedTokens, contextLength, reserveTokens, providerName, model }) {
+export function checkContextBudget({
+  estimatedTokens,
+  contextLength,
+  reserveTokens,
+  providerName,
+  model,
+  oversizeHint,
+}) {
   // An explicit --max-tokens is the reply length actually requested, so it
   // replaces the guess in both directions: a bigger reply needs more headroom,
   // a deliberately small one frees the window up for more input.
@@ -57,7 +64,14 @@ export function checkContextBudget({ estimatedTokens, contextLength, reserveToke
     throw new UserError(
       `Input is roughly ${formatTokens(estimatedTokens)} tokens but ${model} on "${providerName}" has a ${formatTokens(contextLength)} window ` +
         `(${formatTokens(budget)} usable after reserving ${formatTokens(reserve)} for the reply).`,
-      { hint: 'Send fewer or smaller files, shorten the prompt, or raise the model context length in the server and config.' },
+      {
+        // The caller knows what its input actually is. A review's input is a
+        // diff chosen by --base/--commit, so "send fewer files" is advice for a
+        // command the user did not run.
+        hint:
+          oversizeHint ??
+          'Send fewer or smaller files, shorten the prompt, or raise the model context length in the server and config.',
+      },
     );
   }
 

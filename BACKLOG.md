@@ -9,12 +9,13 @@ and only then the ergonomics and infrastructure work. Tuning before OAI-12 lands
 every reviewer decision so far rests on hand-verified anecdotes. OAI-10 closed the first of the five
 wasted-run modes (the runaway); the remaining four are quality, not plumbing.
 
-> **Owed:** one built-in `/code-review high` over the vendor-facing modules
-> (`scripts/lib/structured.mjs`, `client.mjs`, `cmd-review.mjs`). The new-module trigger fired for
-> OAI-4 — `structured.mjs` carries `response_format`, `reasoning_content` and now grammar-keyword
-> assumptions — but the five-hour window was at 73% when it landed, and a run that dies half way
-> costs full price for partial coverage. OAI-10 has since changed two of the three files, so the one
-> run now covers both and should not be split. Run it at the start of a fresh window.
+> **Discharged 2026-07-27:** the owed built-in `/code-review high` ran over `structured.mjs`,
+> `client.mjs` and `cmd-review.mjs` (`c552bcd..HEAD`), covering OAI-4 and OAI-10 in one pass —
+> 25 agents, 1.07M tokens, no deaths. Ten findings: **5 confirmed and fixed**, 5 vendor-dependent
+> and parked as **OAI-13**. The new-module trigger earned its keep: the two most severe (a cut
+> review rendering as a clean pass; a 12k-token input-budget regression) were both in exactly the
+> vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
+> them across four and two passes respectively.
 
 - **OAI-8** — Liveness for a run in progress: while a review or task is waiting, there is no way to
   tell slow from stuck. Today the user gets one stderr line and then silence — measured waits on the
@@ -95,3 +96,17 @@ wasted-run modes (the runaway); the remaining four are quality, not plumbing.
   run does not consume the main session's context.
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
+- **OAI-13** — The five PLAUSIBLE findings from the OAI-4/OAI-10 built-in review, all vendor-
+  dependent and none reproducible against LM Studio. They need a second server to settle, so they
+  wait for one rather than being fixed blind. (1) `isFormatRejection` reads `error.message`, which
+  `client.mjs` truncates to 400 characters — a server whose validation dump names `response_format`
+  later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
+  matcher fires on *any* 400 whose body echoes the request, asserting "rejected response_format"
+  as a cause it only guessed. (3) `parseFindings` picks a channel before parsing and never falls
+  back, so one stray non-whitespace character in `content` discards a schema-valid payload sitting
+  in `reasoning`. (4) With the window unknown, `reserveFor` still puts `max_tokens: 16384` on the
+  wire, where `/oai:task` sends none — a server that rejects an oversized `max_tokens` fails for a
+  reason the plugin chose. (5) On the degraded path a bare findings *array* is discarded, though the
+  adjacent comment promises repair. Fixing (1) and (2) properly probably means the server's status
+  or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
+  the reason this is one item rather than five.
