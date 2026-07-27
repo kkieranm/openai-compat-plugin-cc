@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { assertNoFlagsInPrompt, parseCommandLine } from './lib/args.mjs';
-import { chatCompletion, DEFAULT_TIMEOUT_MS, listModels } from './lib/client.mjs';
+import { chatCompletion, DEFAULT_TIMEOUT_MS, fetchModels } from './lib/client.mjs';
+import { chatCandidates, describeModels, effectiveWindow, windowFor } from './lib/model-info.mjs';
 import { buildProfile, loadConfig, resolveProfile } from './lib/config.mjs';
 import { checkContextBudget, estimateTokens } from './lib/context-guard.mjs';
 import { UserError } from './lib/errors.mjs';
@@ -49,7 +50,8 @@ async function probeProvider(name, rawProfile) {
   }
 
   try {
-    return { profile, rawProfile, built: true, models: await listModels(profile, { timeoutMs: PROBE_TIMEOUT_MS }) };
+    const described = await describeProvider(profile);
+    return { profile, rawProfile, built: true, models: described.models.map((model) => model.id), described };
   } catch (error) {
     if (error instanceof UserError) return { profile, rawProfile, built: true, models: [], error };
     throw error;
@@ -65,17 +67,25 @@ async function runSetup(argv) {
 
   if (options.json) {
     // Never emit apiKey — only whether one is configured.
-    const providers = results.map(({ profile, rawProfile, models, error }) => ({
-      name: profile.name,
-      baseUrl: profile.baseUrl,
-      reachable: !error,
-      error: error ? error.message : null,
-      models,
-      defaultModel: profile.defaultModel ?? null,
-      contextLength: profile.contextLength ?? null,
-      hasApiKey: Boolean(profile.apiKey),
-      apiKeyEnv: rawProfile?.apiKeyEnv ?? null,
-    }));
+    const providers = results.map(({ profile, rawProfile, models, error, described }) => {
+      // Derived from the same resolver the text report uses; computing it
+      // separately is how the two views come to disagree about the same run.
+      const resolved = effectiveWindow(profile, described);
+      return {
+        name: profile.name,
+        baseUrl: profile.baseUrl,
+        reachable: !error,
+        error: error ? error.message : null,
+        models,
+        chatModels: described ? chatCandidates(described).map((model) => model.id) : [],
+        defaultModel: profile.defaultModel ?? null,
+        contextLength: profile.contextLength ?? null,
+        contextWindow: resolved.window ?? null,
+        contextSource: resolved.source ?? null,
+        hasApiKey: Boolean(profile.apiKey),
+        apiKeyEnv: rawProfile?.apiKeyEnv ?? null,
+      };
+    });
     process.stdout.write(`${JSON.stringify({ configPath: path, created, defaultProvider: config.defaultProvider, providers }, null, 2)}\n`);
     return;
   }
@@ -113,45 +123,101 @@ function resolvePrompt(options, inlinePrompt, terminated) {
   });
 }
 
-async function resolveModel(profile, explicit) {
+/**
+ * Model records for a provider, fetched once and reused for both selection and
+ * the context window.
+ */
+async function describeProvider(profile, { required = true } = {}) {
+  try {
+    const modelsPayload = await fetchModels(profile, { timeoutMs: PROBE_TIMEOUT_MS });
+    return await describeModels(profile, { modelsPayload });
+  } catch (error) {
+    // Choosing a model needs the list, so that failure is fatal. Merely sizing
+    // the window does not: a server that cannot list models (or 404s /models
+    // entirely) must still take the task, with the window left unknown and
+    // warned about — the behaviour that existed before detection.
+    if (required || !(error instanceof UserError)) throw error;
+    return { models: [], source: null };
+  }
+}
+
+function selectModel(profile, explicit, described) {
   if (explicit) return explicit;
   if (profile.defaultModel) return profile.defaultModel;
-  const models = await listModels(profile, { timeoutMs: PROBE_TIMEOUT_MS });
-  if (models.length === 0) {
-    throw new UserError(`Provider "${profile.name}" reports no available models.`, {
+
+  const candidates = chatCandidates(described);
+  if (candidates.length === 0) {
+    throw new UserError(`Provider "${profile.name}" offers no model that can answer a chat request.`, {
       hint: 'Load a model in the server, or pass --model <id> to have it loaded on demand.',
     });
   }
-  return models[0];
+  // Picking the first of several used to delegate to whatever the server happened
+  // to list first — an embedding model, on the machine this was built against.
+  if (candidates.length > 1) {
+    throw new UserError(
+      `Provider "${profile.name}" offers ${candidates.length} models: ${candidates.map((model) => model.id).join(', ')}.`,
+      { hint: 'Pass --model <id>, or set "defaultModel" for this provider in the config.' },
+    );
+  }
+  return candidates[0].id;
 }
 
 /**
  * Assemble the request and prove it fits the window before anything is sent.
  */
-function prepareRequest(options, { profile, prompt, files, model }) {
+function prepareRequest(options, { profile, prompt, files, model, contextLength, maxTokens }) {
   const messages = buildMessages({ system: options.system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
   const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
 
-  // The window covers prompt + completion, so an explicitly requested reply
-  // length is the headroom to reserve — parsed before the guard runs, not after.
-  const maxTokens =
-    options['max-tokens'] === undefined
-      ? undefined
-      : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 });
-
   const budget = checkContextBudget({
     estimatedTokens,
-    contextLength: profile.contextLength,
+    contextLength,
     reserveTokens: maxTokens,
     providerName: profile.name,
     model,
   });
 
-  return { messages, estimatedTokens, maxTokens, budget };
+  return { messages, estimatedTokens, budget };
+}
+
+/**
+ * Validate every numeric flag before any network work, so a bad flag fails in
+ * milliseconds instead of after a round trip that was never going to be used.
+ * The window covers prompt + completion, so --max-tokens is also the headroom
+ * the guard must reserve.
+ */
+function parseNumericOptions(options) {
+  return {
+    maxTokens:
+      options['max-tokens'] === undefined
+        ? undefined
+        : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 }),
+    temperature:
+      options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
+    timeoutSeconds: options.timeout === undefined ? undefined : parseNumber(options.timeout, 'timeout', { min: 1 }),
+  };
+}
+
+/**
+ * Which model to send to, and how big its window is. The server is consulted
+ * only for what the config does not already answer, so a fully configured
+ * profile performs no probes at all.
+ */
+async function resolveTarget(profile, options) {
+  const mustChooseModel = !options.model && !profile.defaultModel;
+  const mustDetectWindow = !profile.contextLength;
+  const described =
+    mustChooseModel || mustDetectWindow
+      ? await describeProvider(profile, { required: mustChooseModel })
+      : { models: [], source: null };
+
+  const model = selectModel(profile, options.model, described);
+  return { model, contextLength: profile.contextLength ?? windowFor(described, model) };
 }
 
 async function runTask(argv) {
   const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
+  const { maxTokens, temperature, timeoutSeconds } = parseNumericOptions(options);
 
   const { config } = loadConfig();
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
@@ -162,13 +228,18 @@ async function runTask(argv) {
   }
   const prompt = resolvePrompt(options, inlinePrompt, terminated);
   const files = readFileBlocks(options.file);
-  const model = await resolveModel(profile, options.model);
+  const { model, contextLength } = await resolveTarget(profile, options);
 
-  const { messages, estimatedTokens, maxTokens, budget } = prepareRequest(options, { profile, prompt, files, model });
+  const { messages, estimatedTokens, budget } = prepareRequest(options, {
+    profile,
+    prompt,
+    files,
+    model,
+    contextLength,
+    maxTokens,
+  });
 
-  const timeoutMs = options.timeout
-    ? parseNumber(options.timeout, 'timeout', { min: 1 }) * 1000
-    : (profile.timeoutSeconds ?? 0) * 1000 || DEFAULT_TIMEOUT_MS;
+  const timeoutMs = timeoutSeconds ? timeoutSeconds * 1000 : (profile.timeoutSeconds ?? 0) * 1000 || DEFAULT_TIMEOUT_MS;
 
   // Non-streaming against a slow local model looks like a hang without this.
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
@@ -178,8 +249,7 @@ async function runTask(argv) {
     model,
     messages,
     timeoutMs,
-    temperature:
-      options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
+    temperature,
     maxTokens,
   });
 

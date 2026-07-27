@@ -221,18 +221,6 @@ test('task warns, but proceeds, when the context window is unknown', async () =>
   assert.match(result.stdout, /Context window unknown for test-model/);
 });
 
-test('task fails clearly when the server has no models and none was named', async () => {
-  const server = await startFakeServer(route({ models: () => modelList() }));
-  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
-
-  const result = await runCompanion(['task', 'hello'], { configPath: path });
-  await server.close();
-
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /Provider "local" reports no available models/);
-  assert.match(result.stderr, /pass --model <id>/);
-});
-
 test('task fails clearly on a missing file', async () => {
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });
 

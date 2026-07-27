@@ -8,6 +8,10 @@ Architecture: providers are config data, never code paths — `commands/*.md` sh
 `scripts/oai-companion.mjs`, which resolves a profile from `~/.config/oai-plugin/providers.json` and
 makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.md).
 
+`scripts/lib/model-info.mjs` detects a provider's context window and model types by probing vendor
+endpoints by response shape, trusting only served windows over model ceilings — see
+[ADR 002](adr/002-context-window-detection.md).
+
 ## Commands
 
 - Test: `npm test` (runs `node --test`, auto-discovers `tests/`)
@@ -26,10 +30,7 @@ makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.m
   when started. Tests must stay network-free (fake server on an ephemeral port); use the stub for
   manual runs when nothing is listening.
 - A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
-  for the same model here. Size the guard by what was loaded, or it waves through input the server
-  rejects.
-- `/v1/models` lists embedding models alongside chat models, and `resolveModel` takes the first
-  entry; pin `defaultModel` in the config rather than relying on ordering.
+  for the same model here. `model-info.mjs` encodes this; never "simplify" it to the larger field.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.
 
 ## Grilling checklist — schema/shape forks to always surface

@@ -45,6 +45,35 @@ Commands are markdown, so nothing type-checks them: a missing `allowed-tools: Ba
 a renamed companion script only surfaces when a user runs the command and it fails.
 **Guarded by** `tests/plugin.test.js`.
 
+## A model ceiling is not a context window
+
+Vendor APIs report two different numbers and they can differ by 4.5×: what the server is actually
+serving (LM Studio `loaded_context_length`, vLLM `max_model_len`, llama.cpp `/props` `n_ctx`) versus
+what the model could theoretically support (`max_context_length`, `n_ctx_train`,
+`<arch>.context_length`). Sizing the guard by a ceiling silently admits input the server rejects —
+the exact failure the guard exists to prevent. `model-info.mjs` only ever assigns `window` from a
+served field; ceilings go to `ceiling` and are display-only. When only a ceiling is known, the
+window is **unknown** and we warn.
+**Guarded by** `tests/model-info.test.js` — "a model that is not loaded has no known window", and
+`tests/model-selection.test.js` — "a ceiling-only server leaves the guard disarmed rather than
+guessing".
+
+## Reported state must describe what will actually happen
+
+This class has now bitten **three times in one feature**, so treat any new status output as guilty
+until it derives from the same code the real path runs:
+
+1. `/oai:setup` reported the first model with a detected window, which could be a different model
+   from the one a task would run — promising a guard the task would not have.
+2. `setup --json` reported only the *configured* `contextLength`, so it printed `null` for a run the
+   text report described as guarded at 58.1k. Both now derive from one `effectiveWindow()`.
+3. `setup` marked an embeddings-only provider `ok` and listed it as `Ready`, while a task against it
+   failed instantly — and the remediation it offered ("set contextLength") could never have helped.
+
+**Guarded by** `tests/model-selection.test.js` — "setup reports the window of the model a task would
+use", "setup --json reports the same window the text report does", and "setup does not call an
+embeddings-only provider ready".
+
 ## A credential belongs to one host
 
 `--base-url` overrides a named profile's endpoint but used to inherit its `apiKey`, so

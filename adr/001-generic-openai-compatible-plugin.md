@@ -24,8 +24,11 @@ keeping.
 (overridable with `OAI_PLUGIN_CONFIG`, honouring `XDG_CONFIG_HOME`) holds named profiles, seeded on
 first run with `lmstudio` (:1234), `omlx` (:8000) and `unsloth` (:8888). A profile carries
 `baseUrl` plus optional `defaultModel`, `contextLength`, `timeoutSeconds`, and either `apiKey` or
-`apiKeyEnv`. Nothing in the request path branches on provider identity; the only provider-keyed code
-is `START_HINTS` in `config.mjs`, which is presentation-only remediation text. Adding a provider is
+`apiKeyEnv`. Nothing in the request path branches on provider *identity*; the only provider-keyed
+code is `START_HINTS` in `config.mjs`, which is presentation-only remediation text. (Amended by
+[ADR 002](002-context-window-detection.md): `model-info.mjs` now recognises several vendor dialects
+in order to detect a context window, but it matches on the *shape of a response*, never on a
+profile's name — the property this rule exists to protect.) Adding a provider is
 a config edit. Resolution order is `--base-url` > `--provider` > `defaultProvider`, and a named
 provider must exist even when `--base-url` overrides its endpoint — accepting a typo silently
 discarded the real profile's `contextLength` and disarmed the size guard.
@@ -50,9 +53,10 @@ prove the transport, so it is deferred rather than ported.
 confident answer drawn from half the input. `context-guard.mjs` estimates tokens crudely (chars/4),
 reserves headroom for the reply — `--max-tokens` when the caller gives one, otherwise 1024 — and
 refuses with both measured numbers when the input will not fit.
-Because the window is a property of how the model was loaded, not something `/v1/models` reports,
-the check only runs when the profile declares `contextLength`; otherwise it prints a warning saying
-so. Auto-chunking was rejected for v1 — merge quality is dubious and it triples the complexity.
+The window is a property of how the model was loaded and is absent from `/v1/models`, so originally
+the check only ran when a profile declared `contextLength`. [ADR 002](002-context-window-detection.md)
+added detection; an explicit `contextLength` still wins, and an undetectable window still warns
+rather than guessing. Auto-chunking was rejected for v1 — merge quality is dubious and it triples the complexity.
 
 **Errors are specific, with remediation.** Exit 0 for success, 1 for user-fixable problems (server
 down, no model loaded, input too large, missing file, unknown flag), 2 for a bug. Unknown flags are

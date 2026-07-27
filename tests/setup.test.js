@@ -38,7 +38,7 @@ test('setup reports an unreachable provider with remediation and still exits 0',
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /connection refused/);
   assert.match(result.stdout, /Start LM Studio/);
-  assert.match(result.stdout, /No provider is reachable/);
+  assert.match(result.stdout, /No provider can take a task right now/);
 });
 
 test('setup --json reports that a key is configured without ever printing it', async () => {

@@ -2,6 +2,13 @@
 
 Newest first.
 
+- **OAI-2 + OAI-2b** — Context-window auto-detection and embedder exclusion. Completed 2026-07-27.
+  Probes by response shape across LM Studio, vLLM, llama.cpp, TGI and (unverified) oMLX, trusting only
+  served windows over model ceilings; automatic model selection drops embedders and refuses to guess
+  between several candidates. Live-verified against LM Studio with all hand-set config removed:
+  detected 58.1k with attribution, picked the chat model over the embedder, and still refused a
+  65.4k-token input. Design in `adr/002-context-window-detection.md`.
+
 - **OAI-1** — Plugin skeleton + `/oai:setup` + synchronous `/oai:task`. Completed 2026-07-27.
   Live-verified against LM Studio serving `qwen3.6-35b-a3b-ud-mlx` (58k loaded window): `/oai:setup`
   listed the provider and model, `/oai:task` returned real model output through a `--plugin-dir`

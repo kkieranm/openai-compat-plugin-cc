@@ -60,11 +60,17 @@ async function request(profile, path, { method = 'GET', body, timeoutMs = DEFAUL
   }
 }
 
-/** Model ids the server reports, in the order it reports them. */
-export async function listModels(profile, { timeoutMs = 10_000 } = {}) {
-  const payload = await request(profile, '/models', { timeoutMs });
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
-  return entries.map((entry) => (typeof entry === 'string' ? entry : entry?.id)).filter(Boolean);
+/**
+ * The raw /v1/models payload. Returned whole rather than as ids, because vLLM
+ * carries the served context length on the same objects (see model-info.mjs).
+ */
+export async function fetchModels(profile, { timeoutMs = 10_000 } = {}) {
+  return request(profile, '/models', { timeoutMs });
+}
+
+/** Auth headers for probing a provider's non-/v1 endpoints on the same host. */
+export function authHeaders(profile) {
+  return buildHeaders(profile);
 }
 
 /** One non-streaming chat completion. Returns the text plus whatever usage the server reported. */

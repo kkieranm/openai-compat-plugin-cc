@@ -47,8 +47,10 @@ Useful flags: `--provider <name>`, `--model <id>`, `--base-url <url>`, `--file <
 ```
 
 Per-provider options: `defaultModel`, `contextLength`, `timeoutSeconds`, and `apiKeyEnv` (name of an
-environment variable holding the key — preferred) or `apiKey`. The seeded ports are each project's
-documented default; correct them if your server listens elsewhere.
+environment variable holding the key — preferred) or `apiKey`. All are optional: `contextLength` is
+detected where possible, and `defaultModel` is only needed when a server offers more than one chat
+model. The seeded ports are each project's documented default; correct them if your server listens
+elsewhere.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
 `--model` > the profile's `defaultModel` > the first model the server reports. A named provider must
@@ -61,9 +63,13 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
 
 ## Notes
 
-- **Oversized input is refused, never truncated.** Set `contextLength` for a provider and the plugin
-  refuses work that cannot fit the window, quoting both numbers, rather than silently sending half
-  the input. Without `contextLength` it proceeds and warns.
+- **Oversized input is refused, never truncated.** The plugin refuses work that cannot fit the
+  model's context window, quoting both numbers, rather than silently sending half the input.
+- **The window is detected automatically** on LM Studio, vLLM, llama.cpp and TGI, and `/oai:setup`
+  shows where the number came from. Only the window a server is *actually serving* counts — a
+  model's theoretical ceiling is ignored, since guarding on it would admit input the server rejects.
+  Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on a
+  profile overrides detection.
 - **Calls are synchronous and non-streaming.** A slow local model prints a `Contacting …` line to
   stderr, then the answer with a footer of provider, model, duration and token counts.
 
