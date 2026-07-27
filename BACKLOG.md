@@ -39,6 +39,21 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
   machine anything above ~29k is unreachable. Worth measuring what analysis length actually
   correlates with finding real defects before picking numbers; the run that found the credential bug
   used ~6k, the run that found the query-parameter bug 5,450, and the empty runs ~2.3k.
+- **OAI-11** — Diverse passes: different models, and different lenses. **OAI-9 decorrelates sampling
+  noise; this decorrelates blind spots**, which is the more valuable axis — repeated samples of one
+  model share its failure modes, so agreement between them says much less than agreement between two
+  models trained differently. That makes cross-model agreement a genuinely strong confidence signal
+  where cross-sample agreement is only a weak one.
+  Three ways to get diversity, cheapest first: different **lenses** on the same model (one pass for
+  correctness, one for security, one for edge cases) — free, and available today with one model
+  loaded; different **models on different providers**, which is exactly what ADR 001's
+  providers-as-data buys us, and the case where passes can genuinely run concurrently; different
+  models on **one** provider, which on LM Studio means paying a JIT load between passes and is
+  probably the worst of the three.
+  Build OAI-9 so a pass carries its own `{provider, model, lens}` rather than inheriting one global
+  target — then this is a config change, not a rewrite. Open question worth an experiment before
+  committing: whether three lenses on one model beats three plain passes, since that would deliver
+  most of the value with no second model to install.
 - **OAI-5** — A delegation subagent (`/oai:rescue` + a thin forwarding agent) so a long local-model
   run does not consume the main session's context.
 - **OAI-6** — Streaming output for `/oai:task`, so a slow local model shows progress rather than
