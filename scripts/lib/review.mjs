@@ -67,6 +67,21 @@ function renderFinding(finding) {
  * come from a small local model and have not been checked against the code yet.
  */
 /**
+ * A fact about the *request*, so every path that shows output derived from it
+ * says the same thing — defined once rather than written out at each. The
+ * parsed and unparseable paths diverging is how this repo produced instance 11:
+ * the branch in front of you gets the fix and the adjacent one does not.
+ */
+export function unreadableNote(unreadable) {
+  if (!unreadable?.length) return null;
+  return (
+    `NOTE: ${unreadable.length} file(s) changed by this work could not be read, so only their diff ` +
+    `hunks were sent: ${unreadable.join(', ')}. An unmerged path during a conflicted merge does ` +
+    'this. The same caveat applies to any claim naming them.'
+  );
+}
+
+/**
  * Every reason this result may be less than it appears, in one place.
  *
  * Each is a claim about what happened, so each must be true on every path that
@@ -106,13 +121,8 @@ function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable }) {
         'a part of the file that was not sent.',
     );
   }
-  if (unreadable?.length) {
-    notes.push(
-      `NOTE: ${unreadable.length} file(s) changed by this work could not be read, so only their diff ` +
-        `hunks were sent: ${unreadable.join(', ')}. An unmerged path during a conflicted merge does ` +
-        'this. The same caveat applies to any finding naming them.',
-    );
-  }
+  const missing = unreadableNote(unreadable);
+  if (missing) notes.push(missing);
   if (dropped > 0) {
     notes.push(`(${dropped} finding(s) were dropped: they named no file or no defect, so nothing could be checked.)`);
   }

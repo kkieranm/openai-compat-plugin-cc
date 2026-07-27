@@ -101,8 +101,10 @@ It still moves neither half of the useful-output ratio, so it stays where it is 
   reasons for thousands of tokens before emitting anything at all. **OAI-14 has now landed and the
   wait is measured: 38–245s for a whole-file review against 7–27s diff-only, 4–10× worse, with a
   245s run that then reported nothing.** That was the "moving target" this item was waiting on, so
-  the reason for deferring it has expired; it stays here only because it still moves neither half of
-  the useful-output ratio. Worth reopening the ordering rather than leaving it settled by default.
+  the reason for deferring it has expired. **And the old justification no longer holds either**: a
+  four-minute run that reports nothing *is* a wasted pass, which is the same quantity OAI-9 exists to
+  reduce — so this does move the ratio, contrary to what this item said while the wait was unmeasured.
+  It sits here only because nobody has re-decided the order. Ask before treating that as settled.
 - **OAI-6** — Streaming output for `/oai:task`, so a slow local model shows progress rather than
   sitting silent behind a single stderr line.
 - **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.

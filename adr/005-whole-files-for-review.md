@@ -143,5 +143,13 @@ bug into "too big" — the same shape as `planSelection` returning a `problem` f
   claims matching reality shipped a claim that did not, and it was asserted from one trivial
   example** — the same "agreement on ordinary input proves nothing about the edges" failure as the
   root-commit bug, three paragraphs above the correction.
+- **`--base` was checked for the same disagreement and is genuinely clean.** A branch whose history
+  contains a conflict-resolved merge still diffs `mergeBase..HEAD` as two trees, so no combined diff
+  arises and the listing matches the diff exactly (verified: both give `a.txt`, `b.txt`). `--cc` is
+  therefore on `--commit` alone, where `git show` can produce combined output. Recorded because
+  "checked and fine" is worth as much as a fix — it is what stops the next reader re-deriving it.
+- An unreadable file is reported on the **unparseable** reply path too, not just the parsed one, via
+  a shared `unreadableNote`. It is a fact about the request, and both outputs derive from it;
+  fixing only the branch in front of you is how instance 11 happened.
 - No end-to-end coverage of `--commit`, `--base`, `--staged` or `--file` existed before this item;
   all four were unit-tested against `collectTarget` alone. `tests/review-context.test.js` adds it.

@@ -5,7 +5,7 @@ import { parseNumericOptions, prepareRequest, resolveTarget, resolveTimeout } fr
 import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
 import { renderTaskFooter } from './render.mjs';
-import { buildReviewPrompt, renderFindings, REVIEW_SYSTEM_PROMPT } from './review.mjs';
+import { buildReviewPrompt, renderFindings, REVIEW_SYSTEM_PROMPT, unreadableNote } from './review.mjs';
 import { isFormatRejection, parseFindings, responseFormatFor, REVIEW_SCHEMA, schemaInstruction } from './structured.mjs';
 
 const REVIEW_SPEC = {
@@ -176,9 +176,12 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
   // report a run that produced nothing as one that merely said something odd.
   const constrained = structured ? result.content.trim() || result.reasoning.trim() : '';
   const text = constrained || requireAnswer(result, profile).trim();
+  // The same caveat as the parsed path: a file that never arrived is a fact
+  // about the request, and this output is just as derived from it.
+  const missing = unreadableNote(target.unreadable);
   process.stdout.write(
     `The model did not return findings in the requested shape. Its reply, verbatim:\n\n${text}\n\n` +
-      'Nothing here has been checked against the code.',
+      `Nothing here has been checked against the code.${missing ? `\n\n${missing}` : ''}`,
   );
 }
 
