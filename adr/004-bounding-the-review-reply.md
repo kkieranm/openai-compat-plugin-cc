@@ -119,6 +119,12 @@ reach first.
   the numbers above move that range above what has been observed rather than eliminating it. The
   `analysis` cap still binds in roughly one run of five even at 28,000 — but the run measured doing
   so went on to report a finding, where the same event at 24,000 produced none.
+  **So the stated criterion is not actually met, and cannot be.** 28,000 is set by what fits the
+  16,384-token reserve once the findings array is accounted for, not by what clears the observed
+  distribution — that distribution has no visible right edge, since the model will fill whatever it
+  is given. "Above the verbose-but-productive range" is the goal the numbers are pointed at, not a
+  property they achieve. Raising the reserve is the only lever that would move it, which is the
+  OAI-12 experiment noted below.
 - **The caps were A/B'd against an uncapped schema and show no effect on how much the model reasons.**
   Identical input (the `1ea398f` diff), same prompt, only the caps differing. Analysis lengths came
   out 3,775 / 16,890 / 1,903 / 15,946 / 28,000 capped against 2,179 / 1,694 / 3,542 / 5,960

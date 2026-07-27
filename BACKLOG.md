@@ -52,7 +52,10 @@ wasted-run modes (the runaway); the remaining four are quality, not plumbing.
   them. (1) A sentence in the prompt telling the model its reasoning budget: it cut a run from ~6,000
   to 1,333 output tokens and 88s to 22.7s, but that is steering the reviewer to reason *less*, and
   reasoning less is what made it useless before ADR 003 — worth real money if it costs no recall,
-  worth nothing if it does. (2) Whether a floor on `analysis` (a `minLength`, or the bounded list of
+  worth nothing if it does. **Re-derive that effect against the shipped string schema before
+  believing it**: the run it came from also used the array-of-steps shape ADR 004 went on to reject,
+  so as measured it confounds the sentence with a schema that no longer exists. Two variables, one
+  number. (2) Whether a floor on `analysis` (a `minLength`, or the bounded list of
   reasoning steps ADR 004 rejected) beats the plain bounded string. (3) Whether raising
   `REVIEW_MAX_TOKENS` — now safe, since the schema is bounded and cannot run away into the extra
   room — and widening the caps to match buys anything. The half-window rule allows 29,056 on the 58k
