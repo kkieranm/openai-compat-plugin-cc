@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { completion, createRepo, reasoningCompletion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { MAX_FINDINGS } from '../scripts/lib/structured.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',
@@ -173,6 +174,32 @@ test('a schema-shaped reply that does not match the schema is not findings', asy
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /did not return findings in the requested shape/);
   assert.doesNotMatch(result.stdout, /1 finding\(s\)/, 'a draft that misses required keys is not a finding');
+});
+
+test('a findings list at the schema cap says so, rather than binning the rest quietly', async () => {
+  // The schema caps the list, so a reply arriving full may have been cut. That
+  // has to be visible: an unreported cut is a real defect silently discarded.
+  const capped = JSON.stringify({
+    analysis: 'lots to say',
+    findings: Array.from({ length: MAX_FINDINGS }, (unused, index) => ({
+      file: 'seed.txt',
+      line: index + 1,
+      severity: 'low',
+      summary: `defect ${index}`,
+      evidence: 'edited',
+    })),
+    summary: 'a great many',
+  });
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondJson(response, reasoningCompletion(capped)),
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, new RegExp(`hit its limit of ${MAX_FINDINGS}`));
+  assert.match(result.stdout, /there may be more/);
 });
 
 test('a diff too large for the window is refused with both numbers', async () => {

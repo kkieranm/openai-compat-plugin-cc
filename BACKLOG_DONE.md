@@ -2,6 +2,21 @@
 
 Newest first.
 
+- **OAI-10** — Bound the review reply so a runaway cannot eat a whole pass. Completed 2026-07-27.
+  Every string and array in `REVIEW_SCHEMA` now carries a grammar-enforced ceiling, sized above every
+  observed successful run; hitting the findings cap is reported rather than silently binning a
+  defect. **Shipped as half the item it was written as.** "Raise the ceiling" was dropped on
+  evidence: the failing run generated all 16,384 tokens it was allowed against 5,450 / 2,521 / 2,301
+  for the runs that finished, so more room only buys a longer runaway. The prompt-side cap was
+  dropped too — probing showed the reduction it appeared to give came from *steering the model to
+  reason less*, which is an unmeasured recall trade and now an OAI-12 experiment. Probing also found
+  that `maxItems` on a reasoning field with no floor collapses it to `[]` in six tokens, now a repo
+  trap. **Both first-guess cap values were wrong and live verification caught them** — `evidence` cut
+  a real finding, `analysis` cut mid-sentence and the run then reported none. Honest scope: a
+  runaway now fails cheaply and parseably in ~70s rather than dead-ending on a truncation error, but
+  the cut is not a rescue and this does not move the hit rate. Design in
+  `adr/004-bounding-the-review-reply.md`.
+
 - **OAI-4** — `/oai:review`: a local second opinion on the diff. Completed 2026-07-27, pulled ahead
   of OAI-3 so it could be used while building the rest. Strict `json_schema` findings read from
   whichever channel carries them, degrading to prompt-and-parse when a server refuses the schema;

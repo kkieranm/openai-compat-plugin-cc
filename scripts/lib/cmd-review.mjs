@@ -19,6 +19,12 @@ const REVIEW_SPEC = {
  * reasoning: one 135-line file drew 6k output tokens and was still mid-analysis.
  * A review that runs out of tokens part way returns nothing usable at all, which
  * is why this is nowhere near DEFAULT_RESERVE_TOKENS (1024) — see ADR 003.
+ *
+ * Raising it further was tried and rejected. The run that overran generated
+ * every one of these 16,384 tokens on a 135-line file, against 5,450 / 2,521 /
+ * 2,301 for the runs that finished — a runaway, not a shortfall, so more room
+ * only buys a longer one. The schema's size caps are the fix (ADR 004); this
+ * stays a backstop.
  */
 export const REVIEW_MAX_TOKENS = 16_384;
 

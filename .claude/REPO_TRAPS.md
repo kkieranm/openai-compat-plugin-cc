@@ -101,10 +101,21 @@ Instances, for the pattern rather than the detail:
     hides the one flag that works. Found by the lean review, in a fix written earlier the same
     session for the *adjacent* case (both channels empty) — patching the branch in front of you is
     how this class keeps regenerating.
+12. The findings-cap warning ("the list hit its limit, there may be more") was raised on the
+    prompt-and-parse path, where no grammar ever ran and therefore nothing can have been cut.
+13. The same warning used `>=` where only `===` is true. A list *longer* than the cap is reachable
+    on a server that took the schema and ignored `maxItems`, and there every finding is already on
+    screen — so the warning fired precisely when it was provably wrong.
+
+**12 and 13 are one warning, added in one change, wrong in two directions within an hour.** That is
+the tell for this class: the risk is not the happy path but every path where the *precondition for
+the message* differs from the condition actually tested. Before adding any warning, state the fact
+it asserts and find the paths where the code could emit it without that fact being true.
 
 **Guarded by** `tests/model-selection.test.js` and `tests/context-window.test.js` — including "setup
 does not promise delegation when the model is ambiguous", which asserts that a real task refuses
-whenever setup declines to promise.
+whenever setup declines to promise — and, for 12 and 13, `tests/structured.test.js`: "the cap warning
+is never raised on the path that has no cap" and "a list longer than the cap proves nothing was cut".
 
 ## A credential belongs to one host
 
@@ -125,6 +136,20 @@ parsing against it is the proof; without one the same text is the model's scratc
 be shown as an answer.
 **Guarded by** `tests/structured.test.js` — "under a schema, the reasoning channel carries the
 payload" and "without a schema, the reasoning channel is never read" — and `tests/review.test.js`.
+
+## A ceiling without a floor is an exit the model will take
+
+A grammar constrains generation from the first token, so a schema keyword is not a preference — it
+is the set of tokens the model is permitted to emit next. Putting `maxItems: 3` on the reasoning
+field to stop a runaway produced `analysis: []` in **six tokens**: the grammar made closing the array
+legal immediately, and the model took the cheapest legal path. The cap has to come with `minItems`,
+or the field has to be something with no early exit — a bounded string, which is what shipped.
+
+The general rule: a ceiling on *output* is safe, a ceiling on *thinking* needs a floor beside it.
+Before adding any schema constraint, ask what the cheapest string the grammar now accepts is, because
+that is what you will eventually get.
+**Guarded by** `tests/structured.test.js` — "every string and array in the schema carries a ceiling"
+(the growth guard) — and ADR 004, which records why `analysis` is a string and not a list.
 
 ## Reviewer notes that are not yet defect classes
 

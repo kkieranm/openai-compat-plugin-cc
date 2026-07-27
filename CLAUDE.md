@@ -14,7 +14,9 @@ endpoints by response shape, trusting only served windows over model ceilings �
 
 `scripts/lib/structured.mjs` asks for JSON with a strict `response_format` schema, reads the payload
 from whichever channel carries it, and degrades to prompt-and-parse when a server refuses the schema
-— see [ADR 003](adr/003-structured-findings.md).
+— see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
+size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
+see [ADR 004](adr/004-bounding-the-review-reply.md).
 
 ## Commands
 

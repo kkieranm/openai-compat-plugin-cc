@@ -1,8 +1,29 @@
 // Asking an OpenAI-compatible server for JSON, and getting it back out again.
 // This is the one module that encodes structured-output dialect: see ADR 003.
 
+/**
+ * The most findings one reply may carry.
+ *
+ * Exported because `renderFindings` has to say so when a list arrives at exactly
+ * this length: unlike the string caps, which only ever trim reasoning, this one
+ * can drop a defect the model actually found. Shared rather than copied so the
+ * schema and the warning cannot disagree about where the edge is.
+ */
+export const MAX_FINDINGS = 20;
+
 // Strict schemas allow no optional properties — every key must be listed in
 // `required`, so an absent value is expressed as a null type, not omission.
+//
+// Every string and array also carries a ceiling. A grammar enforces these, so
+// they are a hard backstop against the failure that wastes a whole pass: one
+// measured run generated all 16,384 tokens it was allowed and returned nothing
+// parseable at all. They are sized above every successful run observed, so a
+// healthy pass never reaches them — see ADR 004.
+//
+// Ceilings belong on output, floors on thinking, and the two are not
+// interchangeable: `maxItems` on a *reasoning* array with no `minItems` hands
+// the model a zero-cost exit, and it takes it (measured: `analysis: []` in six
+// tokens). That is why `analysis` is a bounded string and not a bounded list.
 export const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -16,26 +37,39 @@ export const REVIEW_SCHEMA = {
     // path-by-path analysis and found a real credential-stripping bug. Reasoning
     // space is not decoration here; removing it is what made the reviewer
     // useless (ADR 003).
-    analysis: { type: 'string' },
+    // ~7.8k tokens at the measured output density of 3.61 chars/token. 24,000
+    // was the first guess and it bound on a real run — cut mid-sentence while
+    // describing a defect, after which the model reported none at all. The cap
+    // must sit above the verbose-but-productive range, not inside it; what is
+    // left below is only the pathological one. See ADR 004 for what this does
+    // and does not buy.
+    analysis: { type: 'string', maxLength: 28_000 },
     findings: {
       type: 'array',
+      maxItems: MAX_FINDINGS,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['file', 'line', 'severity', 'summary', 'evidence'],
         properties: {
-          file: { type: 'string' },
+          file: { type: 'string', maxLength: 200 },
           line: { type: ['integer', 'null'] },
           severity: { type: 'string', enum: ['high', 'medium', 'low'] },
-          summary: { type: 'string' },
-          evidence: { type: 'string' },
+          summary: { type: 'string', maxLength: 300 },
+          // Much roomier than the summary: this is meant to be a quoted line of
+          // source, and one truncated mid-token is not checkable against the
+          // code. 400 was the first guess and it cut a real finding on the first
+          // diff tried — the model writes prose here rather than a bare line,
+          // which ADR 003 already records as a known limit of requiring a field
+          // versus making it useful. Sized to clear that, not to permit it.
+          evidence: { type: 'string', maxLength: 600 },
         },
       },
     },
     // Listed after findings so the model writes its conclusion having already
     // committed to the evidence, and has somewhere to say "nothing found"
     // rather than inventing a finding to fill an empty array.
-    summary: { type: 'string' },
+    summary: { type: 'string', maxLength: 1500 },
   },
 };
 
@@ -119,6 +153,14 @@ export function extractJson(text) {
  *
  * Driven by the schema object rather than a hand-written mirror of it, so the
  * check cannot drift from the schema the request declared.
+ *
+ * `maxLength` and `maxItems` are deliberately **not** checked here, and that is
+ * a decision rather than an omission. This function exists to prove a reply is
+ * the grammar-constrained payload and not a scratchpad draft, and identity is
+ * settled by `type`, `required`, `additionalProperties` and `enum`. The size
+ * caps are instructions to the generator, not claims about the payload — so a
+ * server that accepted the schema and ignored a cap would have its perfectly
+ * good findings thrown away for being wordy. Pinned by a test.
  */
 export function matchesSchema(value, schema) {
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
@@ -188,6 +230,19 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   return {
     findings: normalized.filter(Boolean),
     dropped: normalized.filter((finding) => !finding).length,
+    // Measured against what the model emitted, not what survived normalizing:
+    // the grammar capped the raw list, so that is where the cut happened.
+    //
+    // Only under a schema. On the degraded path no grammar was applied, so a
+    // reply with this many findings was not cut at all, and warning that it
+    // might have been would describe a truncation that cannot have happened.
+    // Exactly the cap, not merely at-or-above it. A grammar-enforcing server can
+    // never exceed it, so the two are identical there; where they differ — a
+    // server that took the schema and ignored `maxItems`, the same case that
+    // keeps `matchesSchema` out of the size business — a longer list proves
+    // nothing was cut, and warning about a cut that did not happen is the defect
+    // this warning exists to prevent, inverted.
+    atCap: structured && parsed.findings.length === MAX_FINDINGS,
     summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
   };
 }

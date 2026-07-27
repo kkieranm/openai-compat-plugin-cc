@@ -3,25 +3,19 @@
 Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 
 **Current theme: make `/oai:review` trustworthy before extending the plugin further.** It works end to
-end but finds a real defect in roughly one run of five, so the order below is: two cheap fixes that
+end but finds a real defect in roughly one run of five, so the order below is: the cheap fixes that
 stop runs being wasted, then measurement, then the two levers that should actually move the hit rate,
 and only then the ergonomics and infrastructure work. Tuning before OAI-12 lands is guesswork —
-every reviewer decision so far rests on hand-verified anecdotes.
+every reviewer decision so far rests on hand-verified anecdotes. OAI-10 closed the first of the five
+wasted-run modes (the runaway); the remaining four are quality, not plumbing.
 
-> **Owed:** one built-in `/code-review high` over OAI-4's vendor-facing modules
-> (`scripts/lib/structured.mjs`, `client.mjs`, `cmd-review.mjs`). The new-module trigger fired —
-> `structured.mjs` carries `response_format` and `reasoning_content` assumptions — but the five-hour
-> window was at 73% when the feature landed, and a run that dies half way costs full price for
-> partial coverage. Run it at the start of a fresh window.
+> **Owed:** one built-in `/code-review high` over the vendor-facing modules
+> (`scripts/lib/structured.mjs`, `client.mjs`, `cmd-review.mjs`). The new-module trigger fired for
+> OAI-4 — `structured.mjs` carries `response_format`, `reasoning_content` and now grammar-keyword
+> assumptions — but the five-hour window was at 73% when it landed, and a run that dies half way
+> costs full price for partial coverage. OAI-10 has since changed two of the three files, so the one
+> run now covers both and should not be split. Run it at the start of a fresh window.
 
-- **OAI-10** — Bound the reasoning, and give it room. `REVIEW_MAX_TOKENS` is 16,384 and a 135-line
-  file still blew it: the `analysis` field rambles without limit, and a run that overruns returns
-  nothing at all (the guard reports it correctly, but the whole pass is wasted). Two halves: cap the
-  analysis in the prompt — a word or section budget, so it stays a reasoning aid rather than an essay
-  — and raise the ceiling, remembering the reserve is capped at half the window, so on the 58k
-  machine anything above ~29k is unreachable. Worth measuring what analysis length actually
-  correlates with finding real defects before picking numbers; the run that found the credential bug
-  used ~6k, the run that found the query-parameter bug 5,450, and the empty runs ~2.3k.
 - **OAI-8** — Liveness for a run in progress: while a review or task is waiting, there is no way to
   tell slow from stuck. Today the user gets one stderr line and then silence — measured waits on the
   author's machine were 26s, 32s, 59s and 99s for the *same* command, and a loop of four reviews hit
@@ -54,6 +48,15 @@ every reviewer decision so far rests on hand-verified anecdotes.
   check). Prototype the scorer against today's five recorded runs before building anything on top of
   it; if the scorer cannot reproduce the verdicts I reached by hand, it is not measuring the right
   thing.
+  **Two experiments deferred here from OAI-10**, both one-line changes whose entire cost is measuring
+  them. (1) A sentence in the prompt telling the model its reasoning budget: it cut a run from ~6,000
+  to 1,333 output tokens and 88s to 22.7s, but that is steering the reviewer to reason *less*, and
+  reasoning less is what made it useless before ADR 003 — worth real money if it costs no recall,
+  worth nothing if it does. (2) Whether a floor on `analysis` (a `minLength`, or the bounded list of
+  reasoning steps ADR 004 rejected) beats the plain bounded string. (3) Whether raising
+  `REVIEW_MAX_TOKENS` — now safe, since the schema is bounded and cannot run away into the extra
+  room — and widening the caps to match buys anything. The half-window rule allows 29,056 on the 58k
+  machine, about double today's reserve.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

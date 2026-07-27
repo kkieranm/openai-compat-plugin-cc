@@ -1,4 +1,5 @@
 // What the model is asked to do, and how its answer is shown.
+import { MAX_FINDINGS } from './structured.mjs';
 
 // Terse and negative: a small model follows a short list of prohibitions far
 // better than a long description of good reviewing.
@@ -32,7 +33,7 @@ function renderFinding(finding) {
  * The findings, ordered by severity. Framed as claims, not conclusions: they
  * come from a small local model and have not been checked against the code yet.
  */
-export function renderFindings({ findings, summary, dropped }, { label, provider, model }) {
+export function renderFindings({ findings, summary, dropped, atCap }, { label, provider, model }) {
   const lines = [`${findings.length} finding(s) from ${model} on ${provider} — ${label}`, ''];
 
   if (findings.length === 0) {
@@ -45,6 +46,17 @@ export function renderFindings({ findings, summary, dropped }, { label, provider
   }
 
   if (summary) lines.push('', `Summary: ${summary}`);
+  // The schema caps the list, so a reply arriving at exactly the cap may have
+  // been cut. There is no way to tell "found this many" from "found more and was
+  // stopped", so this says that rather than inventing a count it cannot know —
+  // but it must be said, because an unreported cut is a defect silently binned.
+  if (atCap) {
+    lines.push(
+      '',
+      `(The findings list hit its limit of ${MAX_FINDINGS}, so there may be more. ` +
+        'Review a smaller target to see the rest.)',
+    );
+  }
   if (dropped > 0) {
     lines.push('', `(${dropped} finding(s) were dropped: they named no file or no defect, so nothing could be checked.)`);
   }

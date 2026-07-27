@@ -6,6 +6,7 @@ import {
   extractJson,
   isFormatRejection,
   matchesSchema,
+  MAX_FINDINGS,
   parseFindings,
   responseFormatFor,
   REVIEW_SCHEMA,
@@ -29,6 +30,82 @@ test('a strict schema declares every property required and forbids extras', () =
     if (node.type === 'array') walk(node.items, `${path}[]`);
   };
   walk(REVIEW_SCHEMA, 'schema');
+});
+
+test('every string and array in the schema carries a ceiling', () => {
+  // The confirmed defect class, promoted from a comment to a guard: an
+  // unbounded field is a runaway waiting to happen, and one measured run
+  // generated all 16,384 tokens it was allowed and returned nothing (ADR 004).
+  // A field added later without a cap fails here rather than in production.
+  const missing = [];
+  const walk = (node, path) => {
+    const types = Array.isArray(node.type) ? node.type : [node.type];
+    if (types.includes('string') && !node.enum && node.maxLength === undefined) missing.push(path);
+    if (types.includes('array')) {
+      if (node.maxItems === undefined) missing.push(path);
+      walk(node.items, `${path}[]`);
+    }
+    for (const [name, child] of Object.entries(node.properties ?? {})) walk(child, `${path}.${name}`);
+  };
+  walk(REVIEW_SCHEMA, 'schema');
+  assert.deepEqual(missing, []);
+});
+
+test('a value over its cap is still findings, not a rejected reply', () => {
+  // Deliberate: conformance proves the reply is the constrained payload, and
+  // that is settled by types and required keys. The size caps instruct the
+  // generator; they are not claims about the payload. A server that accepted
+  // the schema and ignored a cap must not have good findings binned for being
+  // wordy — so this must keep passing if someone teaches matchesSchema lengths.
+  const long = JSON.stringify({
+    analysis: 'x'.repeat(REVIEW_SCHEMA.properties.analysis.maxLength + 5000),
+    findings: [FINDING],
+    summary: 'still usable',
+  });
+  const parsed = parseFindings({ content: long, reasoning: '' }, { structured: true });
+  assert.equal(parsed.findings.length, 1);
+  assert.equal(parsed.summary, 'still usable');
+});
+
+test('a findings list at the cap is flagged, one below it is not', () => {
+  // At exactly the cap we cannot tell "found this many" from "found more and
+  // was cut", so the caller has to be told. An unreported cut is a real defect
+  // silently binned.
+  const atCap = parseFindings(
+    { content: payload(Array(MAX_FINDINGS).fill(FINDING)), reasoning: '' },
+    { structured: true },
+  );
+  assert.equal(atCap.atCap, true);
+
+  const under = parseFindings(
+    { content: payload(Array(MAX_FINDINGS - 1).fill(FINDING)), reasoning: '' },
+    { structured: true },
+  );
+  assert.equal(under.atCap, false);
+});
+
+test('a list longer than the cap proves nothing was cut, so it is not flagged', () => {
+  // Reachable exactly because matchesSchema stays out of the size business: a
+  // server that took the schema and ignored maxItems returns more than the cap.
+  // Every finding is on screen, so telling the user to review a smaller target
+  // to see "the rest" would be a warning about a cut that did not happen.
+  const over = parseFindings(
+    { content: payload(Array(MAX_FINDINGS + 3).fill(FINDING)), reasoning: '' },
+    { structured: true },
+  );
+  assert.equal(over.findings.length, MAX_FINDINGS + 3);
+  assert.equal(over.atCap, false);
+});
+
+test('the cap warning is never raised on the path that has no cap', () => {
+  // Without a schema no grammar ran, so a full list was not cut — saying it
+  // might have been would report a truncation that cannot have happened.
+  const degraded = parseFindings(
+    { content: payload(Array(MAX_FINDINGS).fill(FINDING)), reasoning: '' },
+    { structured: false },
+  );
+  assert.equal(degraded.findings.length, MAX_FINDINGS);
+  assert.equal(degraded.atCap, false);
 });
 
 test('the response_format wrapper asks for strict mode', () => {
