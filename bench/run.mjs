@@ -39,15 +39,23 @@ const SPEC = {
  * a partial bench read as a complete one.
  */
 function reviewOnce(caseDef, options) {
-  const { dir, args } = materialize(caseDef, ROOT);
   // --diff-only cannot apply to a `file` case: there is no diff, and the CLI
   // refuses the combination. So the flag lands on some cases and not others, and
   // the report has to say which — an A/B switch applied to four cases of six
   // while reading as applied to all six is not a comparison any more. Declared
   // out here because the failure path reports it too.
   const diffOnly = Boolean(options['diff-only']) && caseDef.mode === 'commit';
+  // Materialization is inside the try, not above it. Every git call in
+  // corpus.mjs throws UserError, and building the repo happens per case, after
+  // model time has already been spent on earlier ones — so a throw here used to
+  // escape runCase and cases.map() to the top-level handler, discarding every
+  // completed case's results and leaking the temp repo, against this function's
+  // own promise that one case failing must not cancel the rest.
+  let dir;
   try {
-    const flags = ['review', ...args, '--json'];
+    const materialized = materialize(caseDef, ROOT);
+    dir = materialized.dir;
+    const flags = ['review', ...materialized.args, '--json'];
     if (diffOnly) flags.push('--diff-only');
     // The manifest may pin its own provider/model, so a case can name the model
     // it is a fair test of; the command line overrides it. This is what makes
@@ -69,10 +77,17 @@ function reviewOnce(caseDef, options) {
     });
     return { diffOnly, report: JSON.parse(stdout) };
   } catch (error) {
+    // The whole of stderr, not one line of it. Taking the last line returned the
+    // UserError's *hint* — the companion writes the message and the hint as
+    // separate lines — so the record showed "Raise --max-tokens…" as the reason
+    // a run failed while "ran out of tokens" was discarded. Presenting the
+    // remedy as the diagnosis is this repo's signature class, in the very field
+    // whose comment calls itself the evidence the harness exists to keep.
     const said = String(error.stderr ?? '').trim();
-    return { diffOnly, error: said.split('\n').filter(Boolean).pop() ?? error.message };
+    return { diffOnly, error: said || error.message };
   } finally {
-    cleanup(dir);
+    // Only if it got far enough to exist; materialize may be what threw.
+    if (dir) cleanup(dir);
   }
 }
 

@@ -16,15 +16,18 @@ remaining lever on that ratio is an agreement signal to triage by** (OAI-9).
 is worth doing.** `npm run bench` scores the shipped command against 11 catalogued defects in six
 snapshots of this repo's history and writes a per-run record, ending the era where a conclusion was
 kept and its evidence thrown away (ADR 004 says "four runs", `890ee2e` says "five", same experiment,
-neither now checkable). Baseline: **1 of 11 at N=1, 10.9 minutes.** Two results matter more than
-that number:
+neither now checkable). Baseline: **1 of 6 scoreable defects at N=1, 10.9 minutes** — 11 are
+catalogued, but 5 belong to the two cases whose runs were cut mid-reasoning and are unscored rather
+than missed. Two results matter more than that number:
 
 - **Context dilution is measured.** The same defect was **found at 1,575 prompt tokens and missed at
   47,072** — `config-origin` and `scaffold` are the same `config.mjs` bug, alone and buried in 24
   files. That is the mechanism behind ADR 005's observation that every verified true positive so far
   came from `--file`, and it means **narrowing the target may beat any prompt or schema tuning.**
 - **The `analysis` cap bound on 2 of 6 runs and both reported nothing** — a third of the run wasted,
-  on the two largest inputs. That is OAI-8 and OAI-9's argument, restated with numbers.
+  on the two largest inputs, taking **45% of the corpus's defects out of scoring with it**. That is
+  OAI-8 and OAI-9's argument restated with numbers, and it is now also a limit on the instrument:
+  the cases that get cut are the large ones, which are the ones the dilution result says matter most.
 
 What the bench is *not* is a measure of true recall: the denominator counts only defects that could
 be pointed at in the snapshot, which is smaller than what history claims and therefore flatters it.

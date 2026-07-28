@@ -10,6 +10,26 @@ function cutRuns(runs) {
   return runs.filter((run) => run.report?.analysisCut || run.report?.finishReason === 'length');
 }
 
+/**
+ * Runs that answered, exited 0, and still produced nothing scoreable — a reply
+ * that never parsed, without being truncated.
+ *
+ * Counted because they used to fall out of *every* bucket at once: not `scored`
+ * (no findings), not `cut` (`analysisCut` is null and the finish reason is
+ * "stop"), not `failed` (the process succeeded) — while still counting toward
+ * the run total, so a row could print "0 cut, 0 failed" over three runs whose
+ * recall was computed from two. This is the reachable failure of the degraded
+ * rung, where the schema is only a prompt instruction and a weaker model
+ * answering in prose is the expected outcome, not a contrived one.
+ *
+ * Note the `=== true`: `jsonReport` deliberately emits `null` for these flags
+ * when nothing could be parsed, meaning "not determined", and reading that null
+ * as false is how the run disappeared in the first place.
+ */
+function unreadableRuns(runs) {
+  return runs.filter((run) => run.report && run.report.parsed !== true && !cutRuns([run]).length);
+}
+
 function pct(found, total) {
   if (total === 0) return 'n/a';
   return `${Math.round((found / total) * 100)}%`;
@@ -18,7 +38,14 @@ function pct(found, total) {
 function caseRows(results) {
   return results.map((result) => {
     const { caseDef, runs } = result;
-    const scored = runs.filter((run) => run.score);
+    // Cut runs are excluded from the recall denominator, not merely flagged
+    // beside it. A guillotined reply still parses — complete JSON, usually an
+    // empty findings list — so it arrives with a score attached and used to
+    // enter recall as a genuine zero, which blames the reviewer for the
+    // harness's token budget. ADR 006 says these are "counted separately"; this
+    // is what makes that true rather than aspirational.
+    const cut = new Set(cutRuns(runs));
+    const scored = runs.filter((run) => run.score && !cut.has(run));
     const listed = caseDef.defects.length;
     const found = scored.reduce((total, run) => total + run.score.recall.found, 0);
     const anchored = scored.reduce((total, run) => total + run.score.recall.anchored, 0);
@@ -35,6 +62,8 @@ function caseRows(results) {
       unmatched,
       failed,
       cut: cutRuns(runs).length,
+      unreadable: unreadableRuns(runs).length,
+      scored: scored.length,
       runs: runs.length,
       diffOnly: runs.some((run) => run.diffOnly),
       tokens: runs.reduce((total, run) => total + (run.report?.usage?.prompt_tokens ?? 0), 0),
@@ -45,16 +74,21 @@ function caseRows(results) {
 
 function table(rows) {
   const lines = [
-    '| case | defects found | anchored | unmatched | cut runs | failed | prompt tokens | seconds |',
-    '|---|---|---|---|---|---|---|---|',
+    '| case | defects found | anchored | unmatched | scored | cut | unreadable | failed | prompt tokens | seconds |',
+    '|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const row of rows) {
     const recallCell = row.listed === 0
       ? '— (control)'
       : `${row.found}/${row.opportunities} (${pct(row.found, row.opportunities)})`;
+    // `scored` is printed beside `runs` so the row's own arithmetic can be
+    // checked: scored + cut + unreadable + failed must account for every run,
+    // and a reader who cannot see `scored` cannot tell a recall denominator
+    // computed over two runs from one computed over three.
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell} | ${row.anchored} `
-      + `| ${row.unmatched} | ${row.cut}/${row.runs} | ${row.failed} | ${row.tokens} | ${row.seconds} |`,
+      + `| ${row.unmatched} | ${row.scored}/${row.runs} | ${row.cut} | ${row.unreadable} | ${row.failed} `
+      + `| ${row.tokens} | ${row.seconds} |`,
     );
   }
   return lines;
@@ -92,21 +126,34 @@ function caveats(rows, runsPerCase, diffOnly) {
       + 'Raise --runs before drawing an A/B conclusion from any difference here.',
     );
   }
-  const cut = rows.reduce((total, row) => total + row.cut, 0);
-  if (cut > 0) {
+  const unreadable = rows.reduce((total, row) => total + row.unreadable, 0);
+  if (unreadable > 0) {
     notes.push(
-      `**${cut} run(s) were cut off mid-reasoning** and are excluded from nothing — their empty findings `
-      + 'mean the model never finished looking, not that the code was clean. Treat their rows as missing '
-      + 'data rather than as zeroes.',
+      `**${unreadable} run(s) answered but could not be read** — the reply never parsed into findings, and it `
+      + 'was not truncated, so it is neither a cut run nor a failure. They are excluded from the recall '
+      + 'denominator and counted here instead; their raw replies are in the per-run records.',
     );
   }
+  const cut = rows.reduce((total, row) => total + row.cut, 0);
+  if (cut > 0) {
+    const lost = rows.filter((row) => row.cut > 0).reduce((total, row) => total + row.listed, 0);
+    notes.push(
+      `**${cut} run(s) were cut off mid-reasoning, and are excluded from the recall figures above** — `
+      + 'their empty findings mean the model never finished looking, not that the code was clean, so '
+      + `counting them as zeroes would charge the reviewer for the token budget. ${lost} listed defect(s) `
+      + 'went unscored as a result, showing as n/a rather than 0%.',
+    );
+  }
+  const listed = rows.reduce((total, row) => total + row.listed, 0);
+  const scoreable = rows.reduce((total, row) => total + row.opportunities, 0);
   const dropped = rows.reduce((total, row) => total + row.dropped, 0);
   if (dropped > 0) {
     notes.push(
-      `**Recall is measured against ${rows.reduce((total, row) => total + row.listed, 0)} listed defects, `
-      + `not against everything history claims.** ${dropped} further defect(s) are recorded in the manifests `
-      + 'as dropped, each with a reason — they could not be located in the snapshot, so scoring them would '
-      + 'be invention. The denominator is smaller than the truth, which flatters recall.',
+      `**Recall is measured against ${scoreable} scoreable of ${listed} listed defect(s), not against `
+      + `everything history claims.** ${dropped} further defect(s) are recorded in the manifests as `
+      + 'dropped, each with a reason — they could not be located in the snapshot, so scoring them would '
+      + 'be invention. The denominator is therefore smaller than the truth twice over, which flatters '
+      + 'recall; the listed and scoreable counts are printed so the gap is visible rather than implied.',
     );
   }
   notes.push(
@@ -143,8 +190,13 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly }
     lines.push('');
   }
 
+  // Whole stderr, indented, rather than a one-line summary of it: reducing it
+  // was what let a hint be printed as the diagnosis.
   const failures = results.flatMap(({ caseDef, runs }) =>
-    runs.filter((run) => run.error).map((run) => `- \`${caseDef.id}\`: ${run.error}`));
+    runs.filter((run) => run.error).flatMap((run) => [
+      `- \`${caseDef.id}\`:`,
+      ...String(run.error).split('\n').map((line) => `      ${line}`),
+    ]));
   if (failures.length > 0) lines.push('## Runs that did not complete', '', ...failures, '');
 
   return lines.join('\n');

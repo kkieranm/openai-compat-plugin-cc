@@ -211,6 +211,40 @@ the completeness claim requires the list to be empty.
 silently dropped" — and `tests/review-context.test.js` — "a file that could not be read is named,
 and voids the completeness claim".
 
+## A second rendering of the same run must carry every caveat the first does
+
+Instance 16, and the sharpest one yet: it happened **inside the module created to prevent it**.
+`review-report.mjs` exists so the text report and `--json` sit side by side and cannot drift, and its
+own docstring promises "every caveat the text report carries appears here too". It shipped omitting
+the context-budget caveat — the text footer says whether the size guard actually ran, and the JSON
+emitted a bare `estimatedTokens` with nothing to distinguish a checked figure from an unverified
+guess. With the guard disarmed is precisely when an oversized request goes out unrefused.
+
+Two corollaries the same review produced, both worth checking before adding a second view:
+
+- **A field meaning "not determined" must not be read as "did not happen".** `jsonReport` carefully
+  emits `null` for the parse-derived flags when nothing could be parsed; a downstream reader treated
+  that null as `false`, and a run that answered unreadably vanished from every bucket at once — not
+  scored, not cut, not failed — while still counting toward the total.
+- **A summary line must report the cause, not the remedy.** A failed run recorded the *last* stderr
+  line, and `UserError` writes its hint after its message, so the report showed the advice
+  ("Raise `--max-tokens`") as the reason and discarded the fact ("ran out of tokens").
+
+**Guarded by** `tests/review-json.test.js` — "an unarmed size check reaches the JSON, as it always
+has the text footer" — and `tests/bench-report.test.js` — "every run lands in exactly one bucket, so
+the row accounts for itself" and "a failed run reports what happened, not the advice that followed
+it".
+
+## Every field a downstream artifact reads must be validated where cases are loaded
+
+`bench/lib/corpus.mjs` validates the fields a case manifest needs and says so; `dropped` was consumed
+unconditionally by the report and checked nowhere. A manifest missing it loaded fine, every model call
+was paid for, and the render then died on a raw `TypeError` — *before* the per-run records were
+written, so the run lost its report and its evidence together. A validator's promise is only worth the
+fields somebody remembered to list, so derive the list from what is read, not from what came to mind.
+**Guarded by** `tests/bench-corpus.test.js` — "a manifest without \"dropped\" is refused by the
+loader, not by the renderer".
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

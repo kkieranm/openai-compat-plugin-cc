@@ -4,8 +4,18 @@
 // `findings` must not be able to mistake a guillotined run for a clean one.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/structured.mjs';
-import { reasoningCompletion, respondJson, reviewScenario as scenario, runCompanion } from './helpers.mjs';
+import {
+  createRepo,
+  reasoningCompletion,
+  respondJson,
+  reviewScenario as scenario,
+  runCompanion,
+  startFakeServer,
+  writeConfig,
+} from './helpers.mjs';
 
 const clean = JSON.stringify({
   analysis: 'read each changed file in full',
@@ -35,9 +45,17 @@ test('--json emits one object carrying the findings and every caveat field', asy
   assert.equal(report.summary, 'One defect found.');
   // Present, not merely truthy: the harness reads each of these, and a missing
   // key reads as `undefined`, which is falsy and therefore silently reassuring.
-  for (const key of ['dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'usage', 'finishReason']) {
+  for (const key of [
+    'dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'usage', 'finishReason',
+    // Added after a review found them missing: the text footer has always shown
+    // whether the size guard actually ran, and --json did not, while both this
+    // file's docstring and commands/review.md promised it carried every caveat.
+    'contextChecked', 'contextNote',
+  ]) {
     assert.ok(key in report, `--json must report ${key}`);
   }
+  assert.equal(report.contextChecked, true, 'this scenario configures a window, so the guard ran');
+  assert.equal(report.contextNote, null, 'and there is nothing to warn about');
   assert.equal(report.provider, 'local');
   assert.ok(report.estimatedTokens > 0, 'the input size actually sent');
   assert.ok(report.durationMs >= 0);
@@ -101,6 +119,30 @@ test('a findings list at the cap is flagged in the JSON too', async () => {
   const report = parseReport(result);
   assert.equal(report.atCap, true, 'there may be more, and a score must not assume otherwise');
   assert.equal(report.findings.length, MAX_FINDINGS);
+});
+
+test('an unarmed size check reaches the JSON, as it always has the text footer', async () => {
+  // The caveat that went missing. With no contextLength the guard never runs,
+  // so `estimatedTokens` is an unverified guess — and a caller reading only the
+  // JSON had no way to tell it from a checked figure. That is the state in
+  // which an oversized request goes out unrefused, so it is the worst one to
+  // report as if nothing were unusual.
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  const server = await startFakeServer(replies(clean));
+  const { path: configPath } = writeConfig({
+    defaultProvider: 'local',
+    providers: { local: { baseUrl: server.baseUrl, defaultModel: 'test-model' } },
+  });
+
+  const json = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const text = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = parseReport(json);
+  assert.equal(report.contextChecked, false, 'no window was configured, so nothing was checked');
+  assert.match(report.contextNote, /Context window unknown/);
+  assert.match(text.stdout, /Context window unknown/, 'and the text report says the same thing');
 });
 
 test('the JSON and the text report agree about the same run', async () => {

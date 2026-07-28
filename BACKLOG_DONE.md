@@ -8,11 +8,12 @@ Newest first.
   `/oai:review --json`, never a copy of the pipeline** — a bench that scored a reimplementation and
   reported it as the reviewer's score would be this repo's signature defect at the meta level, and
   `structured` (64,357 tokens against a 54,016 threshold) makes it concrete by falling to ADR 005's
-  second rung where the others do not. **Baseline: 1 of 11 catalogued defects at N=1, 10.9 minutes.**
-  Two findings outweigh that number. **Context dilution is now measured**: the same `config.mjs`
-  defect was found at 1,575 prompt tokens and missed at 47,072 — which is the mechanism behind ADR
-  005's note that every verified true positive so far came from `--file`. And **the `analysis` cap
-  bound on 2 of 6 runs, both reporting nothing**, wasting a third of the run.
+  second rung where the others do not. **Baseline: 1 of 6 scoreable defects at N=1, 10.9 minutes** —
+  11 catalogued, 5 unscored because their runs were cut. Two findings outweigh that number.
+  **Context dilution is now measured**: the same `config.mjs` defect was found at 1,575 prompt tokens
+  and missed at 47,072 — the mechanism behind ADR 005's note that every verified true positive so far
+  came from `--file`. And **the `analysis` cap bound on 2 of 6 runs, both reporting nothing**, wasting
+  a third of the run and 45% of the corpus's defects with it.
   **The corpus is smaller than history claims, on purpose.** A defect is listed only if it can be
   pointed at in the snapshot; 8 further claims are recorded as dropped with reasons. Applying that
   rule caught **two of my own attributions being wrong** — a defect assigned to `65373a0`, which does
@@ -23,8 +24,12 @@ Newest first.
   line 83 when the defect is at line 90, so the cheaper file-plus-line-proximity scorer would have
   reported 0/11. **Two guards were earned from defects the corpus itself caused**: `node --test` with
   no path discovered the corpus's historical tests and ran them against today's tree, and a new
-  flag-documentation check found `/oai:task` had been accepting `--system` undocumented. Design in
-  `adr/006-benchmarking-the-reviewer.md`.
+  flag-documentation check found `/oai:task` had been accepting `--system` undocumented.
+  **The lean review then found six more defects, three of them the signature class** — including one
+  in `review-report.mjs`, the module written specifically to stop a caveat being true on one path and
+  absent on the next (instance 16). One of the six is why the baseline reads 1 of 6 and not 1 of 11:
+  cut runs were entering the recall denominator as zeroes while this ADR claimed they were counted
+  separately. Design in `adr/006-benchmarking-the-reviewer.md`.
 
 - **OAI-14** — Review whole changed files, not bare diff hunks. Completed 2026-07-27. Each changed
   file is now sent whole alongside the diff, taken from the revision the diff describes (`git show

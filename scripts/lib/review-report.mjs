@@ -71,7 +71,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, estimatedTokens, durationMs } = context;
+  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs } = context;
   return {
     label: target.label,
     provider: profile.name,
@@ -92,6 +92,15 @@ export function jsonReport(parsed, context) {
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
     estimatedTokens,
+    // Whether `estimatedTokens` was ever tested against a window, and the note
+    // saying so when it was not. The text footer has always carried this as
+    // `contextNote`; omitting it here left `--json` reporting a bare number a
+    // caller could not tell from a checked one — with the size guard disarmed,
+    // which is exactly when an oversized request goes out unrefused. This file
+    // was created to stop a caveat being true on one path and absent on the
+    // next, and it shipped doing that. Instance 16.
+    contextChecked: budget.checked,
+    contextNote: budget.checked ? null : budget.note,
     durationMs,
   };
 }

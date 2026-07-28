@@ -39,7 +39,7 @@ function requireField(manifest, field, id) {
   const value = manifest[field];
   if (value === undefined || value === null || value === '') {
     throw new UserError(`Case "${id}" has no "${field}" in its case.json.`, {
-      hint: 'Every case needs id, label, mode and defects; a "file" case also needs files.',
+      hint: 'Every case needs id, label, mode, defects and dropped; a "file" case also needs files.',
     });
   }
   return value;
@@ -82,6 +82,16 @@ function validateCase(manifest, dirName) {
     throw new UserError(`Case "${id}" lives in bench/cases/${dirName}; the id and the directory name must match.`);
   }
   requireField(manifest, 'label', id);
+  // Validated because the report dereferences it unconditionally, and a manifest
+  // without it crashed the render with a raw TypeError *after* every model call
+  // had been paid for and *before* the raw records were written — losing the
+  // report and its evidence together. Every field the harness reads is checked
+  // here or this loader's promise is only true of the fields somebody remembered.
+  if (!Array.isArray(manifest.dropped)) {
+    throw new UserError(`Case "${id}" has no "dropped" array in its case.json.`, {
+      hint: 'Use [] when every claim in the history could be located; each entry needs a claim and a reason.',
+    });
+  }
   const mode = requireField(manifest, 'mode', id);
   if (mode !== 'commit' && mode !== 'file') {
     throw new UserError(`Case "${id}" has mode ${JSON.stringify(mode)} — expected "commit" or "file".`);

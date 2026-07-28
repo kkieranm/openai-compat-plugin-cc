@@ -149,6 +149,19 @@ test('an absent corpus is a loud failure, not zero cases', () => {
   });
 });
 
+// `dropped` is read unconditionally by the report, so the loader has to require
+// it. Without this, a case missing the field loaded fine, every model call was
+// paid for, and the render then died on a raw TypeError — before the per-run
+// records were written, so the run lost its evidence along with its report.
+test('a manifest without "dropped" is refused by the loader, not by the renderer', () => {
+  const { dropped: unused, ...without } = MANIFEST;
+  assert.throws(() => loadCases(writeCorpus(without, TREE)), (error) => {
+    assert.equal(error.name, 'UserError', 'a manifest problem must not surface as a TypeError');
+    assert.match(error.message, /"dropped"/);
+    return true;
+  });
+});
+
 // A clean target is not a broken case: precision needs one as much as recall
 // needs dirty ones, and the corpus ships a documentation-only commit for it.
 // But an empty defects list is also exactly what a half-written case looks

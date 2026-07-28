@@ -141,11 +141,13 @@ here rather than left in `bench/results/`, which is gitignored.**
 | `caps` | 31,613 | 1,208 | 60 | 0/1 | no | one junk finding (below) |
 | `docs-only` | 4,451 | 207 | 6 | — | no | **control: zero findings, correct** |
 | `scaffold` | 47,072 | 2,370 | 113 | 0/3 | no | — |
-| `model-info` | 41,016 | 7,818 | 217 | 0/2 | **yes** | never finished looking |
-| `structured` | 28,610 | 8,186 | 192 | 0/3 | **yes** | never finished looking |
+| `model-info` | 41,016 | 7,818 | 217 | n/a (2) | **yes** | never finished looking |
+| `structured` | 28,610 | 8,186 | 192 | n/a (3) | **yes** | never finished looking |
 
-**1 of 11 catalogued defects, at N=1.** Four observations, in descending order of how much they
-should change what happens next:
+**1 of 6 scoreable defects, at N=1** — 11 are catalogued, but 5 belong to the two cases whose runs
+were cut and are therefore unscored rather than missed. Counting them as zeroes would charge the
+reviewer for the token budget, so they show as n/a. Four observations, in descending order of how
+much they should change what happens next:
 
 - **Context dilution is real and now measured.** `url-origin-strips-credentials` was **found at 1,575
   prompt tokens and missed at 47,072** — the same defect, the same model, the same afternoon; the
@@ -157,7 +159,9 @@ should change what happens next:
   (41k and 28.6k prompt tokens, 7.8k and 8.2k output). ADR 005 measured 2-in-3 on whole-file diffs
   and ADR 004 measured ~1-in-5 on plain ones; this sits between them and confirms the effect tracks
   input size. **A third of this run was wasted**, which is OAI-8's and OAI-9's argument, not this
-  ADR's — recorded, not acted on.
+  ADR's — recorded, not acted on. It also costs more than a third of the *evidence*: those two cases
+  hold 5 of the 11 catalogued defects, so **45% of the corpus went unscored**, and the cases that get
+  cut are the large ones, which are exactly the ones the dilution result says are hardest.
 - **The anchor scorer earned its keep on the first run.** The model placed its finding at **line 83;
   the defect is at line 90**. A file-plus-line-proximity scorer — the cheapest option the backlog
   listed, and the one a reasonable person would reach for first — would have scored the run's only
@@ -187,6 +191,24 @@ should change what happens next:
   every run: recall is against listed defects only; unmatched is not false-positive; a cut run is
   missing data, not a zero; and at N=1 the number is a sample. A benchmark that overstated its own
   reach would be the same defect class as the reviewer it exists to measure.
+- **The lean review found six defects in this feature, and three were the signature class — inside
+  the module written to prevent it.** Recorded because the pattern is the point, not the fixes:
+  (1) `--json` omitted the context-budget caveat the text footer has always shown, so a caller could
+  not tell an unverified token estimate from a checked one — in `review-report.mjs`, whose docstring
+  promises "every caveat the text report carries appears here too", and whose whole reason to exist
+  is that both renderings sit together. **Instance 16.** (2) A run that answered unreadably fell out
+  of every bucket at once — not scored, not cut, not failed — while still counting toward the run
+  total, so a row asserted full accounting over runs it had dropped; the null-vs-false collapse that
+  caused it came from `jsonReport` correctly emitting `null` for "not determined" and `report.mjs`
+  reading that null as false. (3) A failed run recorded the *last* stderr line, which is a
+  `UserError`'s hint, so the report showed "Raise `--max-tokens`" as the reason a run failed while
+  "ran out of tokens" was discarded — the remedy printed as the diagnosis, in the field whose comment
+  calls itself the evidence the harness exists to keep. The other three were ordinary correctness:
+  `materialize` outside its own `try`, killing a whole run and leaking a temp repo; `dropped`
+  consumed unconditionally by the report but never validated by the loader, crashing the render with
+  a raw `TypeError` after all model time was spent and before the records were written; and cut runs
+  entering the recall denominator as zeroes despite this ADR claiming they were counted separately —
+  **which is why the published baseline is 1 of 6 scoreable and not 1 of 11.**
 - **The scorer was validated against hand verdicts before any number was published**, which is the
   gate the backlog set. Its wording had to change: the gate said to prototype the scorer "against
   today's five recorded runs", but only the *verdicts* were ever kept, never the model's raw output —
