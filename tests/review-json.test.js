@@ -51,6 +51,10 @@ test('--json emits one object carrying the findings and every caveat field', asy
     // whether the size guard actually ran, and --json did not, while both this
     // file's docstring and commands/review.md promised it carried every caveat.
     'contextChecked', 'contextNote',
+    // The measurement behind analysisCut. Recording only the flag made the
+    // ceiling unsizeable: 6 of 15 recorded runs were cut and nothing said how
+    // close the other 9 came.
+    'analysisLength', 'analysisCap',
   ]) {
     assert.ok(key in report, `--json must report ${key}`);
   }
@@ -97,6 +101,25 @@ test('a cut analysis reaches the JSON, so a guillotined run cannot score as clea
   assert.equal(report.parsed, true);
   assert.deepEqual(report.findings, [], 'the model genuinely reported none');
   assert.equal(report.analysisCut, true, 'but it never finished looking, and the JSON must say so');
+  assert.equal(report.analysisLength, REVIEW_SCHEMA.properties.analysis.maxLength);
+  assert.equal(report.analysisCap, REVIEW_SCHEMA.properties.analysis.maxLength);
+});
+
+test('an uncut analysis reports how far short of the cap it stopped', async () => {
+  // The other half, and the one the cap can actually be sized from. A run that
+  // stopped 100 characters short and one that stopped 27,000 short are both
+  // `analysisCut: false`, and choosing a ceiling from that boolean alone is
+  // guesswork — which is how the current value came to sit mid-distribution.
+  const roomy = JSON.stringify({ analysis: 'y'.repeat(1234), findings: [], summary: '' });
+  const { dir, server, configPath } = await scenario(replies(roomy), { contextLength: 131_072 });
+
+  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = parseReport(result);
+  assert.equal(report.analysisCut, false);
+  assert.equal(report.analysisLength, 1234, 'the distance from the ceiling is the measurement');
+  assert.ok(report.analysisLength < report.analysisCap);
 });
 
 test('a findings list at the cap is flagged in the JSON too', async () => {

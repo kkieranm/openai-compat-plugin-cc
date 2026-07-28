@@ -281,6 +281,15 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
     // recorded this behaviour and mistook it for an acceptable trade.
     analysisCut: structured && typeof parsed.analysis === 'string'
       && parsed.analysis.length === schema.properties?.analysis?.maxLength,
+    // The flag says a run was guillotined; these say how close every other run
+    // came. A ceiling can only be sized from the distribution it truncates, and
+    // recording only the boolean left that distribution unobservable: 6 of 15
+    // recorded runs were cut with no way to tell whether the survivors cleared
+    // the cap by a hair or by a mile. `completion_tokens` is not a substitute —
+    // it bundles the reasoning with the findings payload, and on measured runs
+    // the orderings cross (an uncut run at 7,576 sits above a cut one at 7,367).
+    analysisLength: typeof parsed.analysis === 'string' ? parsed.analysis.length : null,
+    analysisCap: schema.properties?.analysis?.maxLength ?? null,
     summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
   };
 }

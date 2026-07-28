@@ -62,7 +62,7 @@ but the bench measures review quality, so cases should not vary git's listing pa
 | case | target | mode | why it is here |
 |---|---|---|---|
 | `config-origin` | `config.mjs@8990173` | `--file` | the target every earlier measurement used — the only continuity back to the pre-benchmark record |
-| `scaffold` | `8990173` | `--commit` | the same two defects buried in 14 code files, so the pair measures context dilution |
+| `scaffold` | `8990173` | `--commit` | the same two defects buried in 14 code files — the pair varies mode *and* framing *and* size together, so it isolates none of them (see below) |
 | `model-info` | `65373a0` | `--commit` | the commit whose review produced this repo's signature defect class |
 | `structured` | `c552bcd` | `--commit` | 64,357 tokens — **the only case that exercises the diff-only rung** |
 | `caps` | `ac58a35` | `--commit` | absence-shaped: the defect is a report that is missing |
@@ -149,19 +149,24 @@ were cut and are therefore unscored rather than missed. Counting them as zeroes 
 reviewer for the token budget, so they show as n/a. Four observations, in descending order of how
 much they should change what happens next:
 
-- **Context dilution is real and now measured.** `url-origin-strips-credentials` was **found at 1,575
-  prompt tokens and missed at 47,072** — the same defect, the same model, the same afternoon; the
-  only difference is that `scaffold` buries `config.mjs` among 24 files. `config-origin` and
-  `scaffold` exist as a pair for exactly this comparison, and it is the first thing this instrument
-  produced that no anecdote had shown. It also supplies the mechanism behind an old observation: ADR
-  005 recorded that every verified true positive so far came from `--file`. This says why.
+- ~~**Context dilution is real and now measured.**~~ **Retracted the next day; see "The three-arm
+  correction" below.** What this section originally claimed — `url-origin-strips-credentials`
+  **found at 1,575 prompt tokens and missed at 47,072**, therefore dilution — was one run per arm
+  across three variables that move together, and the sentence "the only difference is that `scaffold`
+  buries `config.mjs` among 24 files" was simply false: `config-origin` is mode `file`, which
+  `git-diff.mjs` short-circuits into a different code path with no diff and no ladder. The claim is
+  left visible rather than deleted because it is the exact error this ADR's own no-guessing rule
+  exists to catch, and it got into the ADR anyway.
 - **The `analysis` cap bound on 2 of 6 runs, and both reported nothing.** Both were large inputs
   (41k and 28.6k prompt tokens, 7.8k and 8.2k output). ADR 005 measured 2-in-3 on whole-file diffs
-  and ADR 004 measured ~1-in-5 on plain ones; this sits between them and confirms the effect tracks
-  input size. **A third of this run was wasted**, which is OAI-8's and OAI-9's argument, not this
-  ADR's — recorded, not acted on. It also costs more than a third of the *evidence*: those two cases
-  hold 5 of the 11 catalogued defects, so **45% of the corpus went unscored**, and the cases that get
-  cut are the large ones, which are exactly the ones the dilution result says are hardest.
+  and ADR 004 measured ~1-in-5 on plain ones; this sits between them. **A third of this run was
+  wasted**, which is OAI-8's and OAI-9's argument, not this ADR's — recorded, not acted on. It also
+  costs more than a third of the *evidence*: those two cases hold 5 of the 11 catalogued defects, so
+  **45% of the corpus went unscored**. ~~and the cases that get cut are the large ones~~ — **that
+  inference was wrong, and inverted.** Both cut runs here happened to be large, so this section read
+  a correlation off n=2; the three-arm run below cut the corpus's *smallest* input, 1,575 tokens,
+  three times out of three. Cutting tracks how long the model chooses to reason, and a small focused
+  target makes it reason **more**, not less.
 - **The anchor scorer earned its keep on the first run.** The model placed its finding at **line 83;
   the defect is at line 90**. A file-plus-line-proximity scorer — the cheapest option the backlog
   listed, and the one a reasonable person would reach for first — would have scored the run's only
@@ -170,6 +175,64 @@ much they should change what happens next:
   `{file: "a.js", line: 3, summary: "boom", evidence: "x()"}` — the model filling the schema with a
   toy example rather than inventing a plausible-but-wrong claim about real code. Those are different
   failures needing different fixes, and only the printed residue makes the difference visible.
+
+## The three-arm correction
+
+**The first reading's headline result did not survive its first test, and the instrument is what
+killed it.** That is the instrument working — but it is worth being exact about how the error was
+made, because it was made *inside* a document whose central rule is "a defect is listed only if it
+can be pointed at."
+
+The claim was that dilution costs recall, evidenced by `config-origin` (1,575 tokens, found) against
+`scaffold` (47,072 tokens, missed). Those two cases differ in **token count, git mode, prompt shape
+and defect count** — `git-diff.mjs:199-202` returns early for `--file`, so that arm has no diff, no
+droppable `changed` list and never touches the two-rung ladder. One run per arm across four moving
+variables is not a measurement, and the corpus manifest asserted the pair "measures whether context
+dilution costs recall" as though it were designed to isolate one.
+
+Three arms, N=3 each, on 2026-07-28, `qwen3.6-35b-a3b-ud-mlx`. Arm B is the discriminator: same
+case, same mode, same files, roughly half the tokens.
+
+| arm | command | prompt tok | cut | shared defects, uncut runs | findings per run |
+|---|---|---|---|---|---|
+| A | `--case scaffold` | 47,069 | 1/3 | 1/4 | 6, 0, 1 |
+| B | `--case scaffold --diff-only` | 25,563 | 0/3 | 0/6 | 0, 0, 0 |
+| C | `--case config-origin` | 1,575 | **3/3** | n/a — nothing scoreable | 0, 0, 1 |
+
+Scored on the two `config.mjs` defects common to both cases; `scaffold`'s third defect is not in
+`config-origin`'s denominator, so a raw recall comparison would compare different denominators.
+
+- **No dilution effect.** Halving the tokens on the same target (B) produced **zero findings in
+  three runs** — not one, matched or unmatched. The largest arm produced the only clean anchored
+  match. Nothing here is monotone in prompt size.
+- **B cuts tokens by removing content**, so it cannot separate "fewer tokens" from "less
+  information"; it is the OAI-14 effect seen from the other side. What it does refute is the simple
+  form of the claim, that a smaller prompt buys recall.
+- **The cap bound on the smallest input in the corpus, 3 of 3**, at 7,367–9,440 completion tokens
+  against `scaffold`'s 3,552 on thirty times the input. This is the finding that reorders the
+  backlog, and it is unconfounded: **6 of 15 runs ever recorded here never finished looking.** It is
+  also the experiment ADR 004 explicitly parked for this instrument rather than a reversal of it —
+  that ADR states the cap's stated criterion "is not actually met, and cannot be", and names raising
+  the reserve as the only lever. The claim that *is* false is `structured.mjs:20-21`, whose comment
+  says the caps are "sized above every successful run observed, so a healthy pass never reaches
+  them" — contradicting its own ADR, which is this repo's signature class expressed in a comment.
+- **A cut run is not always a silent run.** Arm C run 3 was cut *and* returned a correct anchored
+  finding; arm A run 2 was cut and returned nothing. So `analysisCut ⇒ unscoreable`, which
+  `score.mjs` currently enforces, is discarding real data in at least some cases. Sizing the cap and
+  deciding what a cut run contributes are the same question, and it is now the top backlog item.
+
+**What was almost built on this.** The refuted claim had already been promoted to a proposed
+reordering of the backlog — a partition-and-union feature justified entirely by dilution. It was
+also nearly rescued by a second bad inference: that arm A run 3 and arm C run 3 found *different*
+defects, so a union would score 2/2. Those are two single runs in **different modes** — the same
+cross-arm reasoning error, reappearing one paragraph after it was diagnosed. Within either arm, no
+two uncut passes found different defects. The union hypothesis (OAI-9) remains untested.
+
+**The instrumentation this exposed as missing.** `--json` recorded `analysisCut` as a boolean and
+never the length, so the distribution the cap truncates was unobservable, and `completion_tokens` is
+not a substitute — it bundles reasoning with the findings payload, and on measured runs the
+orderings cross (an uncut run at 7,576 sits above a cut one at 7,367). `analysisLength` and
+`analysisCap` are now in the JSON for exactly this.
 
 ## Consequences
 

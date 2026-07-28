@@ -4,7 +4,7 @@
   "mode": "commit",
   "origin": {
     "commit": "8990173",
-    "note": "The same two config.mjs defects as config-origin, but buried in 14 code files instead of one. The pair measures whether context dilution costs recall."
+    "note": "The same two config.mjs defects as config-origin, but buried in 14 code files instead of one. The pair is the cleanest same-defect comparison in the corpus, but it does NOT isolate size: config-origin is mode `file`, which git-diff.mjs short-circuits entirely (no diff, no droppable files, no ladder), so the pair varies prompt shape and mode alongside token count. A three-arm run on 2026-07-28 settled it — see ADR 006."
   },
   "files": [],
   "provider": null,

@@ -87,6 +87,15 @@ export function jsonReport(parsed, context) {
     dropped: parsed?.dropped ?? null,
     atCap: parsed?.atCap ?? null,
     analysisCut: parsed?.analysisCut ?? null,
+    // Deliberately JSON-only, and that is not the omission this file exists to
+    // prevent: `analysisCut` is the *caveat* and it is in both renderings. These
+    // two are the measurement behind it — a character count and the ceiling it
+    // is counted against — which a harness reads and a human footer would only
+    // be cluttered by. The rule is that a fact changing what the reader should
+    // believe cannot live on one path alone; a diagnostic that changes nothing
+    // is free to.
+    analysisLength: parsed?.analysisLength ?? null,
+    analysisCap: parsed?.analysisCap ?? null,
     hunksOnly,
     unreadable: target.unreadable,
     usage: result.usage ?? null,

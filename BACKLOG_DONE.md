@@ -10,10 +10,12 @@ Newest first.
   `structured` (64,357 tokens against a 54,016 threshold) makes it concrete by falling to ADR 005's
   second rung where the others do not. **Baseline: 1 of 6 scoreable defects at N=1, 10.9 minutes** —
   11 catalogued, 5 unscored because their runs were cut. Two findings outweigh that number.
-  **Context dilution is now measured**: the same `config.mjs` defect was found at 1,575 prompt tokens
-  and missed at 47,072 — the mechanism behind ADR 005's note that every verified true positive so far
-  came from `--file`. And **the `analysis` cap bound on 2 of 6 runs, both reporting nothing**, wasting
-  a third of the run and 45% of the corpus's defects with it.
+  Its first reading claimed context dilution was measured; **a three-arm run the next day retracted
+  that** — the pair behind it varied mode and prompt shape alongside token count, and at N=3 the same
+  case at half the tokens found nothing at all. The instrument refuting its own first headline inside
+  a day is the item working as intended. What survived and grew: **the `analysis` cap bound on 2 of 6
+  runs here and on 6 of 15 runs recorded overall**, both reporting nothing, wasting a third of the run
+  and 45% of the corpus's defects with it — and it binds on the *smallest* input, not the largest.
   **The corpus is smaller than history claims, on purpose.** A defect is listed only if it can be
   pointed at in the snapshot; 8 further claims are recorded as dropped with reasons. Applying that
   rule caught **two of my own attributions being wrong** — a defect assigned to `65373a0`, which does
