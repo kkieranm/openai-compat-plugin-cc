@@ -73,8 +73,16 @@ export function startProgress({
   timer.unref?.();
 
   return {
-    /** Fed the accumulator, so the label names the channel actually in use. */
-    update(answer) {
+    /**
+     * Fed the accumulator, so the label names the channel actually in use.
+     *
+     * `phase` overrides that label for a path where the client genuinely cannot
+     * see what the server is doing: on a whole-JSON reply no deltas arrive, so
+     * claiming `prefill` for the entire generation would assert a server-side
+     * fact from no evidence — the reported-state class this repo keeps finding.
+     */
+    update(answer, phase) {
+      if (phase) state.phase = phase;
       const chars = answer.content.length + answer.reasoning.length;
       if (chars === 0) return;
       // Stamped once: the boundary between prefill and generation is the only

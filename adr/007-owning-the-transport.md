@@ -95,6 +95,14 @@ Every error out of the transport is a `UserError`. That is a contract, not a nic
 and `delegate.mjs` both rethrow anything else, so a plain `Error` would turn one unreachable provider
 into an exit-2 crash of the whole `/oai:setup` report.
 
+**Upholding that contract needs one subtlety, and the first implementation got it wrong.** A
+connection reset *after* headers is destroyed by Node on the **response** object, not the request — so
+a `request.on('error')` handler never runs, the abort sentinel stays null, and a raw `Error: aborted`
+escaped past both `instanceof UserError` gates. The `!response.complete` branch could not catch it
+either, because the async iterator throws before the loop can exit normally. The body generator's
+`catch` therefore wraps anything that is not already a `UserError`. Found by review, reproduced
+end to end, and now pinned by a test that fails without the wrap.
+
 ## Honest limits
 
 - **No total wall-clock cap on a model call.** The guarantee is narrower than "it always exits": the

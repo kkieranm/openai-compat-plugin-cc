@@ -94,8 +94,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   time, so that field disambiguates without guessing. Refusing while holding the answer is the
   weaker half of a good rule. Note this interacts with OAI-11: cross-model passes will make
   "which model is loaded" a per-pass question rather than a config one.
-- **OAI-15** — Size the `analysis` ceiling from the reasoning it actually truncates, and decide what
-  a cut run contributes. **6 of 15 runs ever recorded here never finished looking**, and a cut run
+- **OAI-15 (now the blocker for the dense-27B arm)** — Size the `analysis` ceiling from the reasoning
+  it actually truncates, and decide what a cut run contributes.
+  **Fresh evidence 2026-07-28, after OAI-6 removed the timeout:** `scaffold` ran to completion in
+  959s on the dense 27B — and was still **cut**, scoring 0 of 3 listed defects. So the cap binds on a
+  second model, not just the MoE, and it is now the *only* thing between the benchmark and an answer
+  for task #8. The run no longer fails; it finishes and reports nothing, which is the worse failure
+  of the two because it looks like a result. **6 of 15 runs ever recorded here never finished looking**, and a cut run
   returns valid JSON with `finish_reason: stop` and usually no findings — so the failure is silent by
   construction and only `analysisCut` distinguishes it from a clean pass. **It does not track input
   size** — the 1,575-token case reasoned 7,367–9,440 completion tokens against 3,552 for the

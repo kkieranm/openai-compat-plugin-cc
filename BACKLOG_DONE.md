@@ -23,6 +23,11 @@ Newest first.
   **OAI-8 closes because the heartbeat is timer-driven**, not delta-driven — a delta-driven tick is
   silent through exactly the prefill it was asked to cover, and closing the item on that would have
   been the reported-state-vs-actual class one level up.
+  **Accepted on the benchmark, not on a demo.** `scaffold` — 47,069 prompt tokens, one of the 14 that
+  died — now completes in **959 seconds** with `failed: 0`, and a live `/oai:task` over a 42,043-token
+  cold prompt ran **444s** (≈295s of it silent prefill) where the old code died at 300s. What that does
+  **not** buy is a score: the same run came back `cut: 1`, so 0 of 3 listed defects were scoreable. The
+  dense-27B arm is unblocked and still unanswerable until OAI-15 sizes the `analysis` ceiling.
   Guarded by a new structural test — **nothing calls the global `fetch`** — with no exemptions, because
   the defect was an invisible default rather than a typo. Four defects were caught before commit that
   the suite would not have found: a `'data'` listener racing the consumer, a first-byte timer re-armed

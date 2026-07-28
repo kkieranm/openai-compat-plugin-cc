@@ -95,7 +95,11 @@ const RUNGS = [
   },
   {
     name: 'stream',
-    matches: (error) => refusedField(error, /\bstream\b/i),
+    // `streaming is not supported` is at least as likely a vendor phrasing as
+    // the bare parameter name, and matching only the latter would leave the
+    // fallback unreachable for it. Neither alternative matches `stream_options`:
+    // `_` is a word character, so there is no boundary after `stream`.
+    matches: (error) => refusedField(error, /\bstream(ing)?\b/i),
     note: 'rejected streaming; retrying without it (no progress will be shown)',
     apply: ({ stream_options: _dropped, ...rest }) => ({ ...rest, stream: false }),
   },
@@ -135,6 +139,9 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
     // A finite document, so bytes are the right signal — and without this the
     // first chunk retires the only budget and a stalled body hangs forever.
     response.setIdle(idleMs);
+    // No deltas will arrive on this path, so the heartbeat would otherwise sit
+    // on `prefill` while the model was actively generating a whole answer.
+    onProgress?.(answer, 'waiting');
     applyCompletion(answer, await readJson(response, profile.name));
     return { answer, sawDone: true, streamed: false };
   }

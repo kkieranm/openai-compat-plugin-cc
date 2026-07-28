@@ -105,7 +105,17 @@ async function* bodyStream(request, response, state, { url }) {
     // Ours outranks the socket's: destroying after a budget fires produces an
     // ECONNRESET a tick later, and that generic message is what the user would
     // otherwise see in place of which budget elapsed.
-    throw state.aborted ?? error;
+    //
+    // The wrap is not belt-and-braces. A connection reset *after* headers is
+    // destroyed by Node on the response object, not the request, so the
+    // `request.on('error')` handler never runs, `state.aborted` stays null, and
+    // a raw `Error: aborted` escaped this module — past cmd-setup.mjs's and
+    // delegate.mjs's `instanceof UserError` gates, turning one dropped
+    // connection into a crash of the whole /oai:setup report. The
+    // `!response.complete` branch below cannot catch it either: the iterator
+    // throws before the loop can exit normally.
+    if (state.aborted) throw state.aborted;
+    throw error instanceof UserError ? error : transportError(error, url);
   } finally {
     // Both, and on every exit path — completion, `break`, or a throw. The total
     // deadline deliberately keeps running across the body, so only the end of
