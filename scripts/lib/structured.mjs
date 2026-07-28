@@ -1,77 +1,7 @@
 // Asking an OpenAI-compatible server for JSON, and getting it back out again.
 // This is the one module that encodes structured-output dialect: see ADR 003.
 
-/**
- * The most findings one reply may carry.
- *
- * Exported because `renderFindings` has to say so when a list arrives at exactly
- * this length: unlike the string caps, which only ever trim reasoning, this one
- * can drop a defect the model actually found. Shared rather than copied so the
- * schema and the warning cannot disagree about where the edge is.
- */
-export const MAX_FINDINGS = 20;
-
-// Strict schemas allow no optional properties — every key must be listed in
-// `required`, so an absent value is expressed as a null type, not omission.
-//
-// Every string and array also carries a ceiling. A grammar enforces these, so
-// they are a hard backstop against the failure that wastes a whole pass: one
-// measured run generated all 16,384 tokens it was allowed and returned nothing
-// parseable at all. They are sized above every successful run observed, so a
-// healthy pass never reaches them — see ADR 004.
-//
-// Ceilings belong on output, floors on thinking, and the two are not
-// interchangeable: `maxItems` on a *reasoning* array with no `minItems` hands
-// the model a zero-cost exit, and it takes it (measured: `analysis: []` in six
-// tokens). That is why `analysis` is a bounded string and not a bounded list.
-export const REVIEW_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['analysis', 'findings', 'summary'],
-  properties: {
-    // First, and load-bearing. A grammar constrains generation from the very
-    // first token, so a schema that opens with `findings` forces the model to
-    // commit to defects before it has read anything — measured on one 135-line
-    // file, that produced 112 output tokens and one vague non-defect. The same
-    // model, same prompt, with this field ahead of the findings, produced a
-    // path-by-path analysis and found a real credential-stripping bug. Reasoning
-    // space is not decoration here; removing it is what made the reviewer
-    // useless (ADR 003).
-    // ~7.8k tokens at the measured output density of 3.61 chars/token. 24,000
-    // was the first guess and it bound on a real run — cut mid-sentence while
-    // describing a defect, after which the model reported none at all. The cap
-    // must sit above the verbose-but-productive range, not inside it; what is
-    // left below is only the pathological one. See ADR 004 for what this does
-    // and does not buy.
-    analysis: { type: 'string', maxLength: 28_000 },
-    findings: {
-      type: 'array',
-      maxItems: MAX_FINDINGS,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['file', 'line', 'severity', 'summary', 'evidence'],
-        properties: {
-          file: { type: 'string', maxLength: 200 },
-          line: { type: ['integer', 'null'] },
-          severity: { type: 'string', enum: ['high', 'medium', 'low'] },
-          summary: { type: 'string', maxLength: 300 },
-          // Much roomier than the summary: this is meant to be a quoted line of
-          // source, and one truncated mid-token is not checkable against the
-          // code. 400 was the first guess and it cut a real finding on the first
-          // diff tried — the model writes prose here rather than a bare line,
-          // which ADR 003 already records as a known limit of requiring a field
-          // versus making it useful. Sized to clear that, not to permit it.
-          evidence: { type: 'string', maxLength: 600 },
-        },
-      },
-    },
-    // Listed after findings so the model writes its conclusion having already
-    // committed to the evidence, and has somewhere to say "nothing found"
-    // rather than inventing a finding to fill an empty array.
-    summary: { type: 'string', maxLength: 1500 },
-  },
-};
+import { MAX_FINDINGS } from './review-schema.mjs';
 
 const SEVERITIES = new Set(['high', 'medium', 'low']);
 
@@ -231,33 +161,15 @@ function normalizeFinding(raw) {
 }
 
 /**
- * The findings in a reply, or null if it does not carry any.
- *
- * The reasoning channel is read **only** under a schema: there, generation is
- * grammar-constrained from the first token, so any channel carrying output
- * carries the constrained payload — and parsing it against the schema is what
- * proves that. Without a schema the same text is the model's scratchpad, and
- * presenting scratchpad as an answer is the defect class this repo keeps
- * re-finding (ADR 003).
+ * What the caps did to this reply — every one of these is a claim about
+ * *truncation*, and every one is therefore gated on a grammar having been in
+ * force. Kept together because they share that gate, and because they are the
+ * only part of a parsed reply that describes the request rather than the answer.
  */
-export function parseFindings({ content, reasoning }, { structured = false, schema = REVIEW_SCHEMA } = {}) {
-  const text = structured && !content.trim() ? reasoning : content;
-  if (!text?.trim()) return null;
-
-  const parsed = extractJson(text);
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.findings)) return null;
-
-  // Under a schema, conformance is the whole proof. A server that accepts
-  // `response_format` without enforcing it would otherwise let a scratchpad
-  // draft — the first `{...}` in the reasoning text — be shipped as findings,
-  // which is exactly what reading that channel is supposed to rule out.
-  // Without a schema nothing was promised, so repair what is repairable.
-  if (structured && !matchesSchema(parsed, schema)) return null;
-
-  const normalized = parsed.findings.map(normalizeFinding);
+function capDiagnostics(parsed, { structured, schema }) {
+  const cap = structured ? schema.properties?.analysis?.maxLength ?? null : null;
+  const analysis = typeof parsed.analysis === 'string' ? parsed.analysis : null;
   return {
-    findings: normalized.filter(Boolean),
-    dropped: normalized.filter((finding) => !finding).length,
     // Measured against what the model emitted, not what survived normalizing:
     // the grammar capped the raw list, so that is where the cut happened.
     //
@@ -279,17 +191,65 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
     // was guillotined mid-sentence. Indistinguishable from a genuinely clean
     // pass, which turns a loud failure into a confident wrong answer. ADR 004
     // recorded this behaviour and mistook it for an acceptable trade.
-    analysisCut: structured && typeof parsed.analysis === 'string'
-      && parsed.analysis.length === schema.properties?.analysis?.maxLength,
+    analysisCut: structured && analysis !== null && analysis.length === cap,
     // The flag says a run was guillotined; these say how close every other run
     // came. A ceiling can only be sized from the distribution it truncates, and
-    // recording only the boolean left that distribution unobservable: 6 of 15
+    // recording only the boolean left that distribution unobservable: 17 of 41
     // recorded runs were cut with no way to tell whether the survivors cleared
     // the cap by a hair or by a mile. `completion_tokens` is not a substitute —
     // it bundles the reasoning with the findings payload, and on measured runs
     // the orderings cross (an uncut run at 7,576 sits above a cut one at 7,367).
-    analysisLength: typeof parsed.analysis === 'string' ? parsed.analysis.length : null,
-    analysisCap: schema.properties?.analysis?.maxLength ?? null,
+    analysisLength: analysis === null ? null : analysis.length,
+    // Only under a schema, for the same reason `analysisCut` is. On the degraded
+    // rung the caps are prose in the prompt with no grammar behind them, so
+    // reporting one would name a ceiling that was never enforced — and a reader
+    // comparing `analysisLength` against it would be comparing against fiction.
+    // It is no longer a constant either: the cap is derived per run from the
+    // reply budget granted, so the number that bounded *this* reply is the only
+    // one worth recording. See ADR 008.
+    analysisCap: cap,
+  };
+}
+
+/**
+ * The findings in a reply, or null if it does not carry any.
+ *
+ * The reasoning channel is read **only** under a schema: there, generation is
+ * grammar-constrained from the first token, so any channel carrying output
+ * carries the constrained payload — and parsing it against the schema is what
+ * proves that. Without a schema the same text is the model's scratchpad, and
+ * presenting scratchpad as an answer is the defect class this repo keeps
+ * re-finding (ADR 003).
+ */
+export function parseFindings({ content, reasoning }, { structured = false, schema = null } = {}) {
+  // Not a default, because a default is exactly the bug. `analysisCut` compares
+  // the reply against the cap the *request* carried, and that cap is now derived
+  // per run — so a caller that fell back to some other schema would compare
+  // against a number never sent, and report `analysisCut: false` for a run that
+  // was guillotined. A guard describing itself as armed while disarmed is this
+  // repo's signature class, so the omission has to be loud. Deleting the default
+  // alone would not do it: JavaScript would simply pass `undefined` onward.
+  if (structured && !schema) {
+    throw new TypeError('parseFindings needs the exact schema the request sent when structured');
+  }
+  const text = structured && !content.trim() ? reasoning : content;
+  if (!text?.trim()) return null;
+
+  const parsed = extractJson(text);
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.findings)) return null;
+
+  // Under a schema, conformance is the whole proof. A server that accepts
+  // `response_format` without enforcing it would otherwise let a scratchpad
+  // draft — the first `{...}` in the reasoning text — be shipped as findings,
+  // which is exactly what reading that channel is supposed to rule out.
+  // Without a schema nothing was promised, so repair what is repairable.
+  if (structured && !matchesSchema(parsed, schema)) return null;
+
+  const normalized = parsed.findings.map(normalizeFinding);
+  return {
+    findings: normalized.filter(Boolean),
+    dropped: normalized.filter((finding) => !finding).length,
+    ...capDiagnostics(parsed, { structured, schema }),
     summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
   };
 }

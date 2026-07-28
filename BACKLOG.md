@@ -9,16 +9,30 @@ produced a verified true positive on a real commit diff.** Precision improved; r
 and unchanged — and it came at a cost: **the `analysis` cap now binds in 2 runs of 3 against ~1 in 5
 on diffs, and both capped runs reported nothing**, so the wasted-run rate roughly tripled.
 
-The reviewer is useful once checking its claims costs less than its catches are worth. **Before any
-lever on that ratio can be judged, 40% of runs have to stop being censored** (OAI-15) — an agreement
-signal (OAI-9) measured through a 40% cut rate cannot be separated from reviewer quality.
+The reviewer is useful once checking its claims costs less than its catches are worth. **OAI-15
+(2026-07-28) changed how a censored run is treated, and raised the ceiling — it did not prove the
+censorship gone, and the difference matters.** The `analysis` cap is now derived from the reply budget
+each run is granted rather than fixed at a number the budget only coincidentally afforded, and a run it
+truncates has its findings scored instead of discarded: half the corpus, 17 of 41 recorded runs, was
+being thrown away along with two of the four anchored matches ever produced. So an agreement signal
+(OAI-9) can now be measured through a sample that includes them, with the unresolved part shown as a
+band rather than resolved by guesswork in either direction. **Whether the new ceiling is high enough
+to stop truncating is a measurement, not a claim** — it is a wall-clock number, not one derived from a
+distribution that was never observable. First evidence: `config-origin` on the dense 27B now runs
+**0 of 3 cut** (7,075 / 19,942 / 21,240 characters) where it cut 6 of 9 before, but `structured`
+(4 of 4 cut) and `scaffold` (4 of 11) are unmeasured, and all three of those runs found nothing — so
+this bought an uncensored measurement, not a better reviewer. See
+[ADR 008](adr/008-sizing-the-review-reply.md).
 
 **OAI-12 has landed, so tuning is no longer guesswork — and it has now refuted its own first
 headline, which is the instrument doing its job.** `npm run bench` scores the shipped command
 against 11 catalogued defects in six snapshots of this repo's history and writes a per-run record,
 ending the era where a conclusion was kept and its evidence thrown away (ADR 004 says "four runs",
 `890ee2e` says "five", same experiment, neither now checkable). Baseline: **1 of 6 scoreable defects
-at N=1, 10.9 minutes** — 11 are catalogued, but 5 belong to the two cases whose runs were cut
+at N=1, 10.9 minutes** — **computed under the pre-OAI-15 rule that excluded cut runs from the
+denominator, so it is not directly comparable with anything measured since** (OAI-15 counts them, and
+reports the unresolved part as a band). Re-measure the baseline before using it as an A/B arm; the
+methodology note below is exactly about this. — 11 are catalogued, but 5 belong to the two cases whose runs were cut
 mid-reasoning and are unscored rather than missed. One of its two headline results is now retracted
 and the other has grown:
 
@@ -28,12 +42,16 @@ and the other has grown:
   tokens produced zero findings in three runs**, and the corpus's *smallest* input was cut 3 times
   out of 3. There is no dilution effect in this data, and the reordering it was about to justify has
   been dropped. See the correction section in [ADR 006](adr/006-benchmarking-the-reviewer.md).
-- **The `analysis` cap is the binding constraint, and it is mis-sized.** **6 of 15 runs ever
+- **The `analysis` cap was the binding constraint, and it was mis-sized.** **17 of 41 runs ever
   recorded here never finished looking.** The ceiling was set in OAI-10 "above every observed
-  successful run" from a sample that had not yet seen a normal run reason long — it now sits *inside*
-  the model's ordinary reasoning distribution, so it truncates working reviews rather than runaways.
-  Cutting does **not** track input size: the 1,575-token case reasoned for 7,367–9,440 completion
-  tokens where the 47,072-token case used 3,552. This is now the top item (OAI-15).
+  successful run" from a sample that had not yet seen a normal run reason long — it sat *inside* the
+  model's ordinary reasoning distribution, truncating working reviews rather than runaways. Cutting
+  does **not** track input size: the 1,575-token case reasoned for 7,367–9,440 completion tokens
+  where the 47,072-token case used 3,552, and the corpus's smallest input cut 6 of 9 while a case
+  barely larger cut 0 of 9. **Addressed in OAI-15, 2026-07-28** — and note what that did *not*
+  settle. The reasoning distribution had no observable right edge under a cap truncating 41% of runs,
+  so the new ceiling is sized from wall clock rather than from the distribution, and whether it still
+  binds is a measurement to be read off the next full corpus run.
 
 What the bench is *not* is a measure of true recall: the denominator counts only defects that could
 be pointed at in the snapshot, which is smaller than what history claims and therefore flatters it.
@@ -94,34 +112,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   time, so that field disambiguates without guessing. Refusing while holding the answer is the
   weaker half of a good rule. Note this interacts with OAI-11: cross-model passes will make
   "which model is loaded" a per-pass question rather than a config one.
-- **OAI-15 (now the blocker for the dense-27B arm)** — Size the `analysis` ceiling from the reasoning
-  it actually truncates, and decide what a cut run contributes.
-  **Fresh evidence 2026-07-28, after OAI-6 removed the timeout:** `scaffold` ran to completion in
-  959s on the dense 27B — and was still **cut**, scoring 0 of 3 listed defects. So the cap binds on a
-  second model, not just the MoE, and it is now the *only* thing between the benchmark and an answer
-  for task #8. The run no longer fails; it finishes and reports nothing, which is the worse failure
-  of the two because it looks like a result. **6 of 15 runs ever recorded here never finished looking**, and a cut run
-  returns valid JSON with `finish_reason: stop` and usually no findings — so the failure is silent by
-  construction and only `analysisCut` distinguishes it from a clean pass. **It does not track input
-  size** — the 1,575-token case reasoned 7,367–9,440 completion tokens against 3,552 for the
-  47,072-token case — so this is not fixed by sending less, and the retracted dilution claim above
-  was the wrong lever.
-  **This is the experiment ADR 004 parked, not a reversal of it.** That ADR already states the
-  criterion is unmet and cannot be met — "28,000 is set by what fits the 16,384-token reserve once
-  the findings array is accounted for, not by what clears the observed distribution" — and names
-  **raising `REVIEW_MAX_TOKENS` as the only lever that moves it**, deferring the experiment to
-  OAI-12. OAI-12 now exists. What *is* wrong is `structured.mjs:20-21`, whose comment claims the
-  caps are "sized above every successful run observed, so a healthy pass never reaches them",
-  contradicting its own ADR two files away — the repo's signature class, in a comment.
-  Needs: the measured distribution (`analysisLength`/`analysisCap` are now in `--json` for this), a
-  reserve-and-ceiling pair chosen from it, and the comment corrected. **The tension is real and is
-  the whole decision**: the reserve is subtracted from the input budget on every review, so buying
-  reasoning room costs reviewable input — ADR 004 measured that as 54.0k → 41.7k on a 58k window.
-  Open question the data must settle: **a cut run is not always a silent run** — one returned a
-  correct anchored finding, and the schema explains why (`analysis` is the first property, so the
-  grammar closes the string at the cap and the model proceeds to `findings` with its reasoning
-  guillotined). So `score.mjs` excluding every cut run may be discarding real data, and "how big
-  should the cap be" and "what does a cut run count for" are one decision.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

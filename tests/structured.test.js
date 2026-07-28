@@ -6,11 +6,10 @@ import {
   extractJson,
   isFormatRejection,
   matchesSchema,
-  MAX_FINDINGS,
   parseFindings,
   responseFormatFor,
-  REVIEW_SCHEMA,
 } from '../scripts/lib/structured.mjs';
+import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
 
 const FINDING = { file: 'a.js', line: 3, severity: 'high', summary: 'boom', evidence: 'x()' };
 const payload = (findings = [FINDING], summary = 'one defect') =>
@@ -62,7 +61,7 @@ test('a value over its cap is still findings, not a rejected reply', () => {
     findings: [FINDING],
     summary: 'still usable',
   });
-  const parsed = parseFindings({ content: long, reasoning: '' }, { structured: true });
+  const parsed = parseFindings({ content: long, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA });
   assert.equal(parsed.findings.length, 1);
   assert.equal(parsed.summary, 'still usable');
 });
@@ -73,13 +72,13 @@ test('a findings list at the cap is flagged, one below it is not', () => {
   // silently binned.
   const atCap = parseFindings(
     { content: payload(Array(MAX_FINDINGS).fill(FINDING)), reasoning: '' },
-    { structured: true },
+    { structured: true, schema: REVIEW_SCHEMA },
   );
   assert.equal(atCap.atCap, true);
 
   const under = parseFindings(
     { content: payload(Array(MAX_FINDINGS - 1).fill(FINDING)), reasoning: '' },
-    { structured: true },
+    { structured: true, schema: REVIEW_SCHEMA },
   );
   assert.equal(under.atCap, false);
 });
@@ -91,7 +90,7 @@ test('a list longer than the cap proves nothing was cut, so it is not flagged', 
   // to see "the rest" would be a warning about a cut that did not happen.
   const over = parseFindings(
     { content: payload(Array(MAX_FINDINGS + 3).fill(FINDING)), reasoning: '' },
-    { structured: true },
+    { structured: true, schema: REVIEW_SCHEMA },
   );
   assert.equal(over.findings.length, MAX_FINDINGS + 3);
   assert.equal(over.atCap, false);
@@ -133,10 +132,10 @@ test('a cut analysis is flagged, so an empty result cannot pass as a clean one',
   // a review that looked and found nothing.
   const cap = REVIEW_SCHEMA.properties.analysis.maxLength;
   const cut = JSON.stringify({ analysis: 'x'.repeat(cap), findings: [], summary: '' });
-  assert.equal(parseFindings({ content: cut, reasoning: '' }, { structured: true }).analysisCut, true);
+  assert.equal(parseFindings({ content: cut, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }).analysisCut, true);
 
   const whole = JSON.stringify({ analysis: 'x'.repeat(cap - 1), findings: [], summary: '' });
-  assert.equal(parseFindings({ content: whole, reasoning: '' }, { structured: true }).analysisCut, false);
+  assert.equal(parseFindings({ content: whole, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }).analysisCut, false);
 });
 
 test('the response_format wrapper asks for strict mode', () => {
@@ -162,7 +161,7 @@ test('a brace inside a string does not end the object early', () => {
 test('under a schema, the reasoning channel carries the payload', () => {
   // The constrained grammar leaves the model unable to close its think block,
   // so this is the normal case, not the exception.
-  const parsed = parseFindings({ content: '', reasoning: payload() }, { structured: true });
+  const parsed = parseFindings({ content: '', reasoning: payload() }, { structured: true, schema: REVIEW_SCHEMA });
   assert.equal(parsed.findings.length, 1);
   assert.equal(parsed.findings[0].file, 'a.js');
 });
@@ -176,7 +175,7 @@ test('without a schema, the reasoning channel is never read', () => {
 test('content wins over reasoning when both are present', () => {
   const parsed = parseFindings(
     { content: payload([{ ...FINDING, file: 'real.js' }]), reasoning: payload([{ ...FINDING, file: 'scratch.js' }]) },
-    { structured: true },
+    { structured: true, schema: REVIEW_SCHEMA },
   );
   assert.equal(parsed.findings[0].file, 'real.js');
 });
@@ -204,7 +203,7 @@ test('under a schema, a reply that misses a required key is rejected, not repair
   // The schema is the whole proof that the reasoning channel holds the answer
   // rather than a draft, so a near-miss must not be patched up into findings.
   const draft = JSON.stringify({ analysis: 'a', findings: [{ file: 'a.js', summary: 'maybe' }], summary: 'draft' });
-  assert.equal(parseFindings({ content: '', reasoning: draft }, { structured: true }), null);
+  assert.equal(parseFindings({ content: '', reasoning: draft }, { structured: true, schema: REVIEW_SCHEMA }), null);
 
   // Nothing was promised without one, so there repair is the right behaviour.
   const repaired = parseFindings({ content: draft, reasoning: '' }, { structured: false });
@@ -226,8 +225,8 @@ test('schema conformance is checked against the schema, not a copy of it', () =>
 });
 
 test('a reply without a findings array is not findings', () => {
-  assert.equal(parseFindings({ content: '{"verdict":"looks fine"}', reasoning: '' }, { structured: true }), null);
-  assert.equal(parseFindings({ content: 'the code looks fine to me', reasoning: '' }, { structured: true }), null);
+  assert.equal(parseFindings({ content: '{"verdict":"looks fine"}', reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }), null);
+  assert.equal(parseFindings({ content: 'the code looks fine to me', reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }), null);
 });
 
 test('only a rejection of the format itself triggers the fallback', () => {

@@ -1,5 +1,5 @@
 // What the model is asked to do, and how its answer is shown.
-import { MAX_FINDINGS } from './structured.mjs';
+import { MAX_FINDINGS } from './review-schema.mjs';
 
 // Terse and negative: a small model follows a short list of prohibitions far
 // better than a long description of good reviewing.

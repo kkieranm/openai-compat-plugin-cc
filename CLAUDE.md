@@ -28,6 +28,10 @@ with an explicit first-byte budget and an optional absolute deadline, streaming 
 SSE, while the first-token and idle budgets that mean "the model is working" live in `chat.mjs` —
 see [ADR 007](adr/007-owning-the-transport.md).
 
+`scripts/lib/review-schema.mjs` sizes the reply from the budget each run is granted —
+`reviewSchemaFor(reserve)` — and a run its `analysis` ceiling truncates has its findings scored while
+its silence widens the benchmark's recall into a band — see [ADR 008](adr/008-sizing-the-review-reply.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see

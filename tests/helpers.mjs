@@ -246,6 +246,18 @@ export async function reviewScenario(handler, { contextLength = 8192, seed = 'se
   return { dir, server, configPath: path };
 }
 
+/**
+ * The `analysis` ceiling the request actually carried.
+ *
+ * Read off the wire rather than imported, because the cap is derived per run
+ * from the reply budget granted — so a test that imported a constant would pass
+ * whenever the two happened to agree, which is precisely the coincidence the
+ * derivation removes. A reply built to this length is cut by definition.
+ */
+export function sentAnalysisCap(record) {
+  return record.body?.response_format?.json_schema?.schema?.properties?.analysis?.maxLength ?? null;
+}
+
 /** The chat requests a fake server received, in order. */
 export function chatRequests(server) {
   return server.requests.filter((request) => request.url.includes('/chat/completions'));

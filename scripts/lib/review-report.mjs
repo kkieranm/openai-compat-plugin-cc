@@ -23,8 +23,17 @@ function unparsedReply(result, { structured, profile }) {
   // problem. Showing the fragment and calling it a bad shape blames the model
   // for damage we did, and hides the one flag that fixes it.
   if (result.finishReason === 'length') {
+    // The old hint said "raise --max-tokens" and stopped there, which is now
+    // sometimes advice that cannot work: below the wall-clock ceiling every
+    // extra token widens `analysis`, not the findings tail, so a reply overrun
+    // by its ninth long finding fails again at a larger budget — and on a big
+    // input `prepareRequest` may shrink the raised value straight back to the
+    // window's leftovers. Reviewing less is the lever that moves both.
     throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
-      hint: 'Raise --max-tokens, or review a smaller target — the model reasons at length before reporting.',
+      hint:
+        'Review a smaller target — a single commit with --commit, or specific files with --file. '
+        + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
+        + 'reasoning rather than more room for the findings themselves.',
     });
   }
 

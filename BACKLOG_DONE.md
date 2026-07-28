@@ -2,6 +2,47 @@
 
 Newest first.
 
+- **OAI-15** — Size the reply from the budget the run actually has, and stop discarding the runs the
+  cap censors. Completed 2026-07-28. The `analysis` ceiling was a flat 28,000 characters while the
+  budget paying for it shrank per run, so the two agreed only by coincidence — and on the largest
+  input they did not: `scaffold` sent `max_tokens: 11,043` against a schema envelope of ~15,695
+  tokens. `scripts/lib/review-schema.mjs` now derives the cap from the reserve granted
+  (`reviewSchemaFor`), clamped between a floor and a **wall-clock** ceiling of 74,000 characters
+  (~28 min of generation on a dense 27B; verified that LM Studio compiles a grammar that large before
+  relying on it). `REVIEW_MAX_TOKENS` rose 16,384 → 32,768 where the window is known, reversing
+  ADR 004's refusal on the evidence that made it — **the cost it feared no longer existed**, because
+  the `minReserve` shrink recorded in that same ADR means a review is refused only when under 4,096
+  tokens remain, whatever the constant says. BACKLOG's "the tension is real and is the whole
+  decision" was describing pre-`minReserve` behaviour.
+  **The reserve was never the constraint — the accounting was.** On five of six cases the reserve was
+  ~55,700 characters while `analysis` got 28,000, because ~24,500 was held back for a 20-finding
+  reply. Six is the most any reply has ever carried, so the budget now reserves for eight; the schema
+  still permits twenty and the rare overrun fails loudly. **That eight is a policy bet, not a
+  measurement** — every observation behind it was taken under the old cap, and more room may itself
+  produce more findings.
+  **The half that changed most is what a censored run is worth, and it came from the plan challenge
+  rather than the code.** Both obvious readings are wrong: discarding cut runs threw away 17 of 41
+  recorded runs carrying two of the four anchored matches ever produced, while folding them in counts
+  every finding the run never reached as a confirmed miss. A truncated run's positives are
+  trustworthy and its absences are unknown, so `defects found` now reports **only what was observed**
+  and a new `unresolved` column says how much of the denominator is uninterpretable, with the upper
+  bound stated in prose. A low–high band was built first and removed by the adversarial review: an
+  unobserved figure printed under a heading that says "found" made a wholly censored run
+  indistinguishable from a perfect one. Rows with nothing cut are unchanged, so past figures stay
+  comparable.
+  **Measured after the change** (3 runs, `config-origin`, dense 27B, derived cap 74,000): analysis
+  lengths **7,075 / 19,942 / 21,240, cut 0 of 3** where that case cut 6 of 9 before — and the right
+  edge of the distribution is observable for the first time, since every value at the old 28,000 was
+  previously indistinguishable from one that would have run to 90,000. The longest run stopped
+  *below* the old ceiling, which contradicts ADR 004's "the model fills whatever it is given" for
+  this model and case. Read no further than that: one case, one model, N=3; `structured` (4 of 4 cut)
+  and `scaffold` (4 of 11) have not been re-run; **all three runs found nothing**, so this buys
+  measurement, not review quality; and it costs wall clock (129–363s against 49–156s).
+  Nothing claims the reply fits its budget: `RESERVED_CHARS` is documented as an estimate
+  (`maxLength` caps decoded strings, not serialized JSON; `line` has unbounded width;
+  `CHARS_PER_TOKEN` was calibrated on input code), and the tests assert the formula rather than a
+  guarantee. See [ADR 008](adr/008-sizing-the-review-reply.md).
+
 - **OAI-6 + OAI-17a + OAI-8** — Streaming, and owning the timeouts it exposes. Completed 2026-07-28.
   `timeoutSeconds` never worked above five minutes: Node's `fetch` is undici, undici applies its own
   300s `headersTimeout`, and an `AbortSignal` beside it can only *lower* the bound — so the real

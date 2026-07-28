@@ -6,13 +6,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/structured.mjs';
+import { MAX_FINDINGS, analysisCapFor } from '../scripts/lib/review-schema.mjs';
 import {
+  chatRequests,
   createRepo,
   reasoningFrames,
   respondStream,
   reviewScenario as scenario,
   runCompanion,
+  sentAnalysisCap,
   startFakeServer,
   writeConfig,
 } from './helpers.mjs';
@@ -87,22 +89,32 @@ test('a cut analysis reaches the JSON, so a guillotined run cannot score as clea
   // Trap instance 14 in machine-readable form: bounding `analysis` makes a
   // truncated review *valid* — complete JSON, finish_reason stop, empty
   // findings — and indistinguishable from a genuinely clean pass without this.
-  const guillotined = JSON.stringify({
-    analysis: 'x'.repeat(REVIEW_SCHEMA.properties.analysis.maxLength),
+  // Built from the schema the request actually carried, not from a constant.
+  // The cap is derived per run now, so this run is cut only if the schema that
+  // was sent is the same instance the parser compared the reply against — which
+  // makes this the regression guard for that threading.
+  const guillotined = (record) => JSON.stringify({
+    analysis: 'x'.repeat(sentAnalysisCap(record)),
     findings: [],
     summary: '',
   });
-  const { dir, server, configPath } = await scenario(replies(guillotined), { contextLength: 131_072 });
+  const { dir, server, configPath } = await scenario(
+    (record, response) => respondStream(response, reasoningFrames(guillotined(record))),
+    { contextLength: 131_072 },
+  );
 
   const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const cap = sentAnalysisCap(chatRequests(server)[0]);
   await server.close();
 
   const report = parseReport(result);
   assert.equal(report.parsed, true);
   assert.deepEqual(report.findings, [], 'the model genuinely reported none');
   assert.equal(report.analysisCut, true, 'but it never finished looking, and the JSON must say so');
-  assert.equal(report.analysisLength, REVIEW_SCHEMA.properties.analysis.maxLength);
-  assert.equal(report.analysisCap, REVIEW_SCHEMA.properties.analysis.maxLength);
+  assert.equal(report.analysisLength, cap);
+  assert.equal(report.analysisCap, cap);
+  assert.equal(cap, analysisCapFor(chatRequests(server)[0].body.max_tokens),
+    'the cap sent must be the one the budget on the wire pays for');
 });
 
 test('an uncut analysis reports how far short of the cap it stopped', async () => {

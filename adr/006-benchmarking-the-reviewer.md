@@ -108,9 +108,15 @@ precisely what this scorer cannot judge — so instead:
 - **unmatched findings are printed in full and called *unmatched*, never "false positives".** The
   scorer undercounts paraphrase, so the residue holds both real catches it missed and genuine noise.
   Only `docs-only`, which contains no code, turns unmatched into false-positive by construction.
-- **cut runs are counted separately.** A run with `analysisCut` or `finishReason: "length"` scores
+- **cut runs are counted separately.** ~~A run with `analysisCut` or `finishReason: "length"` scores
   recall 0 while never having finished looking; averaging it in blames the reviewer for the harness's
-  budget. That is trap instance 14 in arithmetic form.
+  budget.~~ **Revised 2026-07-28 by OAI-15.** Half right: averaging a cut run in as a zero does blame
+  the reviewer for the budget, but *excluding* it discards findings that are perfectly good — the cut
+  lands on `analysis`, which the schema orders first, so the model still emits its findings normally.
+  Discarding them cost 17 of 41 recorded runs and two of the four anchored matches ever produced.
+  A cut run's **positives count and its absences are unknown**, so recall is now reported as a band
+  that collapses to a single number wherever nothing was censored. `finishReason: "length"` is a
+  separate predicate now — that reply never parsed and has nothing in it to score. See ADR 008.
 
 Findings are not consumed, so one finding may satisfy two defects. That is a known inflation risk,
 which is why the corpus avoids co-locating defects — a property of the corpus, not something the code
@@ -217,9 +223,11 @@ Scored on the two `config.mjs` defects common to both cases; `scaffold`'s third 
   says the caps are "sized above every successful run observed, so a healthy pass never reaches
   them" — contradicting its own ADR, which is this repo's signature class expressed in a comment.
 - **A cut run is not always a silent run.** Arm C run 3 was cut *and* returned a correct anchored
-  finding; arm A run 2 was cut and returned nothing. So `analysisCut ⇒ unscoreable`, which
-  `score.mjs` currently enforces, is discarding real data in at least some cases. Sizing the cap and
-  deciding what a cut run contributes are the same question, and it is now the top backlog item.
+  finding; arm A run 2 was cut and returned nothing. So `analysisCut ⇒ unscoreable` was discarding
+  real data. **Settled by OAI-15 on 2026-07-28**, and the corpus-wide figure is larger than this
+  paragraph guessed: 6 of 17 cut runs emitted findings, 2 of them anchored matches — the same number
+  the 24 uncut runs produced. Sizing the cap and deciding what a cut run contributes were indeed the
+  same question; see ADR 008 for both answers.
 
 **What was almost built on this.** The refuted claim had already been promoted to a proposed
 reordering of the backlog — a partition-and-union feature justified entirely by dilution. It was

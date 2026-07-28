@@ -15,7 +15,8 @@ import {
   reviewScenario as scenario,
   runCompanion,
 } from './helpers.mjs';
-import { MAX_FINDINGS } from '../scripts/lib/structured.mjs';
+import { MAX_FINDINGS } from '../scripts/lib/review-schema.mjs';
+import { REVIEW_MAX_TOKENS } from '../scripts/lib/cmd-review.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',
@@ -270,7 +271,7 @@ test('a large window gets the full reasoning budget', async () => {
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(chatRequests(server)[0].body.max_tokens, 16_384);
+  assert.equal(chatRequests(server)[0].body.max_tokens, REVIEW_MAX_TOKENS);
 });
 
 test('the review reserves more headroom than a task does', async () => {

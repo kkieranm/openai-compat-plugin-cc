@@ -16,6 +16,20 @@ const CASE = {
   dropped: [],
 };
 
+/**
+ * A row cell by its column *name*. Positional indexes silently shift when a
+ * column is added — which is how a test can keep passing while asserting about
+ * the wrong number.
+ */
+function cell(report, column) {
+  const lines = report.split('\n');
+  const header = lines.find((line) => line.startsWith('| case |')).split('|').map((part) => part.trim());
+  const row = lines.find((line) => line.startsWith('| `sample`')).split('|').map((part) => part.trim());
+  const index = header.indexOf(column);
+  assert.ok(index > 0, `no such column: ${column}`);
+  return row[index];
+}
+
 /** A run that parsed and scored the one defect. */
 function goodRun() {
   return {
@@ -64,11 +78,13 @@ test('a run that answered unreadably is counted, not silently dropped', () => {
   assert.match(report, /answered but could not be read/, 'and the caveat must name the gap');
 });
 
-test('a cut run is excluded from recall, not entered into it as a zero', () => {
+test('a cut run\'s findings count, and its silence is reported beside them', () => {
   // A guillotined reply parses — complete JSON, empty findings — so it arrives
-  // with a score attached. Counting that as "found nothing" charges the
-  // reviewer for a run the token budget stopped. The fixture therefore carries
-  // a score, exactly as bench/run.mjs would attach one.
+  // with a score attached. Two wrong readings of it, and this pins the third:
+  // counting the empty findings as "found nothing" charges the reviewer for a
+  // run the cap stopped, while discarding the run outright throws away the
+  // findings it did emit (17 of 41 recorded runs, and two real matches). The
+  // positives count; the absences are unknown and become the gap.
   const cut = {
     diffOnly: false,
     report: { parsed: true, findings: [], analysisCut: true, finishReason: 'stop', usage: {}, durationMs: 1 },
@@ -76,8 +92,47 @@ test('a cut run is excluded from recall, not entered into it as a zero', () => {
   };
   const report = render([cut]);
 
-  assert.match(report, /0\/0 \(n\/a\)/, 'nothing was scoreable, which is not the same as nothing found');
-  assert.doesNotMatch(report, /0\/1 \(0%\)/, 'a cut run must not appear as a defect the reviewer missed');
+  assert.equal(cell(report, 'defects found'), '0/1 (0%)', 'the found column reports only what was observed');
+  assert.equal(cell(report, 'unresolved'), '1', 'and the silence is carried beside it, not inside it');
+  assert.match(report, /their findings ARE counted above/, 'the caveat must say which reading applies');
+  assert.match(report, /between 0% and 100%/, 'and must state the bound rather than printing it as a result');
+  assert.doesNotMatch(report, /0–1\/1/, 'an unobserved figure must never appear under "defects found"');
+});
+
+test('with nothing censored, the row is identical to what it always printed', () => {
+  // The band is not a new metric — it is the old one when `unresolved` is zero.
+  // A change that quietly turned every row into a range would make every past
+  // figure in this repo incomparable.
+  const report = render([goodRun()]);
+  assert.equal(cell(report, 'defects found'), '1/1 (100%)', 'unchanged where nothing was cut');
+  assert.equal(cell(report, 'unresolved'), '0');
+});
+
+test('recall can never print above 100%, even if a cut run arrives without a score', () => {
+  // The high estimate adds a cut run's unreported defects to the numerator, so
+  // it stays sound only while every cut run is also a scored one. bench/run.mjs
+  // guarantees that today by attaching a score to every parsed reply — this
+  // pins the guarantee where the arithmetic depends on it, rather than where it
+  // happens to be produced.
+  const scoreless = {
+    diffOnly: false,
+    report: { parsed: true, findings: [], analysisCut: true, finishReason: 'stop', usage: {}, durationMs: 1 },
+  };
+  const report = render([scoreless]);
+  const found = cell(report, 'defects found');
+  assert.doesNotMatch(found, /1\/0|[2-9]\d\d%/, `a scoreless run must not inflate recall: ${found}`);
+  assert.equal(cell(report, 'unresolved'), '0', 'nor contribute unresolved opportunities it has no denominator for');
+
+  // And it must still land in a bucket. Testing `parsed !== true` described one
+  // known way to produce nothing scoreable, so this run — parsed, unscored —
+  // belonged to none of them while counting toward the run total.
+  const [scored, total] = cell(report, 'scored').split(/[/(]/).map((part) => Number(part.trim()));
+  const bucket = (name) => Number(cell(report, name));
+  assert.equal(
+    scored + bucket('truncated') + bucket('unreadable') + bucket('failed'),
+    total,
+    'a run that fits no bucket is how a denominator silently shrinks',
+  );
 });
 
 test('every run lands in exactly one bucket, so the row accounts for itself', () => {
@@ -95,10 +150,18 @@ test('every run lands in exactly one bucket, so the row accounts for itself', ()
   const row = report.split('\n').find((line) => line.startsWith('| `sample`'));
   assert.ok(row, 'the case row must be rendered');
   const cells = row.split('|').map((cell) => cell.trim());
-  const [scored, total] = cells[5].split('/').map(Number);
-  const [cutCount, unreadable, failedCount] = [Number(cells[6]), Number(cells[7]), Number(cells[8])];
+  // `scored` now carries its cut sub-count in parentheses — those runs ARE
+  // scored, so they must not also occupy a bucket of their own. The exclusive
+  // partition is scored / truncated / unreadable / failed.
+  const [scored, total] = cell(report, 'scored').split(/[/(]/).map((part) => Number(part.trim()));
+  const bucket = (name) => Number(cell(report, name));
   assert.equal(total, runs.length);
-  assert.equal(scored + cutCount + unreadable + failedCount, total, `buckets must sum to runs: ${row}`);
+  assert.equal(
+    scored + bucket('truncated') + bucket('unreadable') + bucket('failed'),
+    total,
+    `buckets must sum to runs: ${row}`,
+  );
+  assert.match(cell(report, 'scored'), /\(1 cut\)/, 'and the cut count rides inside the scored cell');
 });
 
 test('a failed run reports what happened, not the advice that followed it', () => {

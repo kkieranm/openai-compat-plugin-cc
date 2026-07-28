@@ -1,8 +1,26 @@
 # 004 — Bounding the review reply
 
 Date: 2026-07-27
-Status: accepted
+Status: accepted; the sizing below is superseded by [ADR 008](008-sizing-the-review-reply.md)
 Builds on: [ADR 003](003-structured-findings.md)
+
+> **Superseded in two places, 2026-07-28 — both by this ADR's own reasoning, followed further.**
+>
+> 1. **The 28,000 rationale.** This ADR states plainly that the number "is set by what fits the
+>    16,384-token reserve once the findings array is accounted for, not by what clears the observed
+>    distribution", and names raising `REVIEW_MAX_TOKENS` as the only lever. Both halves turned out
+>    to be movable: the *reserve* is no longer fixed (it shrinks toward `REVIEW_MIN_TOKENS`, which
+>    this ADR itself introduced), and the *findings account* was reserving room for twenty findings
+>    where six is the most ever observed. The cap is now derived per run from the budget actually
+>    granted. See ADR 008.
+> 2. **"Raising `REVIEW_MAX_TOKENS` is now safe … and is untried."** Tried, and taken: 16,384 →
+>    32,768 where the window is known. The cost this ADR feared — a reserve withheld from the input
+>    on every review — was already removed by the `minReserve` shrink recorded further down this same
+>    file, so the two consequences below were describing a tension that no longer existed when they
+>    were written.
+>
+> What stands unchanged is the harder-won half: **a cap cannot tell verbose from runaway**, and a
+> guard that turns a loud failure into a valid-looking result must make the result carry the reason.
 
 ## Context
 

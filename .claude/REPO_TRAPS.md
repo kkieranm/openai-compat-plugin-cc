@@ -271,6 +271,39 @@ satisfies forever — activity that proves nothing about generation.
 **Guarded by** `tests/structure.test.js` — "nothing calls the global fetch" — plus the budget tests in
 `tests/http.test.js`, and ADR 007 records the measurements.
 
+## A budget that discards its own censored data
+
+**Confirmed 2026-07-28 (OAI-15).** A guard that truncates output leaves *right-censored* data behind,
+and the two obvious readings of it are both wrong. `bench/lib/report.mjs` excluded every guillotined
+run from recall — half the corpus, 17 of 41 runs, carrying two of the four anchored matches ever
+recorded. The opposite reading, folding them in as ordinary runs, is equally wrong: it counts every
+finding the run never reached as a confirmed miss.
+
+The rule: **a truncated run's positives are trustworthy and its absences are unknown.** Report the
+gap rather than resolving it in either direction.
+
+**And report it under a name that is true.** The first attempt printed a low–high band in the
+`defects found` column, which failed the same test one step later: the high endpoint is the
+counterfactual that continued reasoning would have found everything remaining, so a wholly censored
+run rendered as `0–3/3 (0%–100%)` — overlapping a perfect reviewer, under a heading promising
+observation. Uncertainty belongs *beside* the measurement, in its own column and in prose, never
+inside a figure whose name claims something was seen.
+
+Two sibling shapes to watch for, both found in the same review:
+
+- **A constant that has to agree with a variable will disagree.** The `analysis` cap was fixed at
+  28,000 while the budget paying for it shrank per run; on the largest input the schema's envelope
+  exceeded the `max_tokens` actually sent. Nothing had tripped it, so nothing reported it. Derive one
+  from the other — `reviewSchemaFor(reserve)`.
+- **A test named for a guarantee the code does not give.** Budgeting for eight findings while the
+  schema permits twenty is a deliberate trade, not an arithmetic bound — so the test asserts the
+  formula, never "the envelope fits". Naming it for the guarantee would institutionalise a false
+  claim behind a green tick.
+
+**Guarded by** `tests/review-schema.test.js` (formula and clamps across a swept range of reserves,
+and the per-run cut judgement) and `tests/bench-report.test.js` (the band collapses when nothing is
+cut; the buckets still sum to the run count). ADR 008 records the measurements.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly
