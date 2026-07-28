@@ -85,6 +85,25 @@ test('a final event with no trailing blank line is still delivered at EOF', () =
   assert.equal(done, false, 'EOF is not [DONE]');
 });
 
+test('an empty data field is a legal event carrying nothing, not a parse failure', () => {
+  // Spec-legal filler, emitted by proxies beside `:` comments. Dispatching it as
+  // `''` sent an empty string to JSON.parse and killed a run whose answer had
+  // already fully arrived — with no degrade rung able to retry it.
+  assert.deepEqual(parse('data:\n\n').seen, []);
+  assert.deepEqual(parse('data: \n\n').seen, []);
+  assert.deepEqual(parse('data:\n\ndata: {"a":1}\n\n').seen, ['{"a":1}']);
+});
+
+test('a final [DONE] terminated by a bare CR is still the terminator', () => {
+  // scanLines holds back a trailing `\r` in case it is half of a split `\r\n`.
+  // At EOF it is a line ending, and leaving it attached made the payload
+  // "[DONE]\r" — failing the equality test and reaching JSON.parse, so a
+  // complete reply was reported as a protocol failure.
+  const { seen, done } = parse('data: {"a":1}\r\rdata: [DONE]\r');
+  assert.deepEqual(seen, ['{"a":1}']);
+  assert.equal(done, true);
+});
+
 test('[DONE] terminates and is never emitted as an event', () => {
   const { seen, done } = parse('data: {"a":1}\n\ndata: [DONE]\n\ndata: {"after":true}\n\n');
   assert.deepEqual(seen, ['{"a":1}'], 'nothing after the terminator is read');

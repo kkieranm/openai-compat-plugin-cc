@@ -155,7 +155,15 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   run does not consume the main session's context.
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
-- **OAI-13** — The five PLAUSIBLE findings from the OAI-4/OAI-10 built-in review, all vendor-
+- **OAI-13** — Vendor-dependent findings that need a second server to settle. **Now six.** Added
+  2026-07-28 from the OAI-6 built-in review: `refusedField` accepts 400/422 and pattern-matches the
+  quoted error body, so a validation error that *echoes the request JSON* contains `stream` and
+  `stream_options` and matches both capability rungs — two spurious retries with stderr claiming a
+  cause that was never established, before the real error surfaces. Bounded (each rung fires once)
+  and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
+  the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
+  one — read the server's status or error `type`/`code` field instead of its prose.
+  The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
   wait for one rather than being fixed blind. (1) `isFormatRejection` reads `error.message`, which
   `client.mjs` truncates to 400 characters — a server whose validation dump names `response_format`

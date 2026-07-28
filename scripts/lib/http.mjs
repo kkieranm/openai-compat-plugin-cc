@@ -203,6 +203,18 @@ function onResponse({ request, response, state, target, resolve, fail, release }
      */
     setIdle: (ms) => {
       state.idleMs = ms > 0 ? ms : null;
+      // Armed immediately, not on the first chunk. A non-2xx reply with a
+      // *zero-byte* body never enters the loop, so an arm-on-chunk budget was
+      // never created at all — leaving the chat path (which passes no totalMs)
+      // bounded only by the 600s first-token budget. Worse, the caller swallows
+      // that eventual failure, so the error body arrives empty and
+      // structured.mjs cannot see the field name its degrade path matches on.
+      clearTimeout(state.idleTimer);
+      if (!state.idleMs) return;
+      state.idleTimer = arm(state.idleMs, () => {
+        state.aborted = budgetError('idle', state.idleMs, state.received, target.host);
+        request.destroy();
+      });
     },
     dispose: () => {
       release();

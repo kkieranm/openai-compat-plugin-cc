@@ -1,6 +1,9 @@
 import { readJson } from './body.mjs';
 import { applyCompletion, applyFrame, emptyAnswer } from './completion.mjs';
 import { budgetError } from './http-errors.mjs';
+
+/** A completion far larger than any context window could produce. */
+const MAX_COMPLETION_CHARS = 8_000_000;
 import { request } from './provider.mjs';
 import { readSse } from './sse.mjs';
 
@@ -22,15 +25,19 @@ import { readSse } from './sse.mjs';
  * nothing about generation, so a byte-driven timer would let a server emitting
  * `:\n\n` every 30 seconds run forever while the plugin reported it bounded.
  */
-function createDeadline({ firstTokenMs, idleMs, onExpire }) {
+function createDeadline({ firstTokenMs, idleMs, reportMs, onExpire }) {
   let started = false;
   let timer = null;
-  const set = (budget, ms) => {
+  const set = (budget, ms, reported = ms) => {
     clearTimeout(timer);
-    timer = setTimeout(() => onExpire(budget, ms), ms);
+    timer = setTimeout(() => onExpire(budget, reported), ms);
     timer.unref?.();
   };
-  set('first-token', firstTokenMs);
+  // The timer runs for what is *left* of the budget; the message names the
+  // budget the user actually configured. Reporting the remainder produced
+  // "sent no output within 5s" — and at the floor, "within 0.0s" — for a value
+  // nobody set, which sends someone to change a number that was never the cause.
+  set('first-token', firstTokenMs, reportMs ?? firstTokenMs);
   return {
     progress() {
       started = true;
@@ -45,12 +52,13 @@ function createDeadline({ firstTokenMs, idleMs, onExpire }) {
   };
 }
 
-async function collectStream(response, profile, { firstTokenMs, idleMs, onProgress }) {
+async function collectStream(response, profile, { firstTokenMs, reportMs, idleMs, onProgress }) {
   const answer = emptyAnswer();
   const outcome = {};
   let expired = null;
   const deadline = createDeadline({
     firstTokenMs,
+    reportMs,
     idleMs,
     onExpire: (budget, ms) => {
       expired = budgetError(budget, ms, answer.content.length + answer.reasoning.length, profile.name);
@@ -142,10 +150,19 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
     // No deltas will arrive on this path, so the heartbeat would otherwise sit
     // on `prefill` while the model was actively generating a whole answer.
     onProgress?.(answer, 'waiting');
-    applyCompletion(answer, await readJson(response, profile.name));
+    // Bounded: the idle budget stops a *stalled* body, but a steady endless one
+    // would be accumulated until the process died. A completion is small — the
+    // model's own token limit bounds it — so this only ever trips on a peer that
+    // is not sending a completion at all.
+    applyCompletion(answer, await readJson(response, profile.name, { maxChars: MAX_COMPLETION_CHARS }));
     return { answer, sawDone: true, streamed: false };
   }
   const remaining = Math.max(1, deadlineAt - Date.now());
-  const streamed = await collectStream(response, profile, { firstTokenMs: remaining, idleMs, onProgress });
+  const streamed = await collectStream(response, profile, {
+    firstTokenMs: remaining,
+    reportMs: firstTokenMs,
+    idleMs,
+    onProgress,
+  });
   return { ...streamed, streamed: true };
 }

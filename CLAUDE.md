@@ -25,7 +25,7 @@ see [ADR 004](adr/004-bounding-the-review-reply.md).
 
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
-SSE, while the first-token and idle budgets that mean "the model is working" live in `client.mjs` —
+SSE, while the first-token and idle budgets that mean "the model is working" live in `chat.mjs` —
 see [ADR 007](adr/007-owning-the-transport.md).
 
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a

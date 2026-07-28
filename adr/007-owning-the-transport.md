@@ -55,7 +55,7 @@ would have been choosing the bug.
 
 - **Transport (`http.mjs`)** — `firstByteMs`, plus an optional absolute `totalMs`. This is all a
   transport can honestly measure.
-- **Semantics (`client.mjs`)** — one budget reset only by a parsed delta whose `content` or
+- **Semantics (`chat.mjs`)** — one budget reset only by a parsed delta whose `content` or
   `reasoning_content` is a **string**: `firstTokenMs` until the first arrives, then `idleMs`.
 
 The first draft bounded bytes at both levels, which is defeatable: an SSE comment (`: keepalive`), a

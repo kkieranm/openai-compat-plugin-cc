@@ -13,7 +13,7 @@ import { UserError } from './errors.mjs';
 // Set *below* the densest measurement rather than at it: at 3.5 the estimate
 // still fell 300 tokens short of the second sample, and "close enough" is the
 // wrong target for a number whose only job is to stay on the safe side.
-const CHARS_PER_TOKEN = 3.4;
+export const CHARS_PER_TOKEN = 3.4;
 
 // Headroom left for the model's reply, since the window covers prompt + completion.
 export const DEFAULT_RESERVE_TOKENS = 1024;

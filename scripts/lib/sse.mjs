@@ -70,8 +70,15 @@ export function createSseParser(onEvent) {
     if (data.length === 0) return;
     const payload = data.join('\n');
     data = [];
-    if (payload === '[DONE]') done = true;
-    else onEvent(payload);
+    if (payload === '[DONE]') {
+      done = true;
+      return;
+    }
+    // A lone `data:` with no value is a legal event that carries nothing, and
+    // servers and proxies emit them as filler beside `:` comments. Passing `''`
+    // to JSON.parse would kill a run whose answer had already fully arrived.
+    if (payload === '') return;
+    onEvent(payload);
   };
 
   const line = (raw) => {
@@ -96,6 +103,11 @@ export function createSseParser(onEvent) {
      * frame carrying `usage`.
      */
     end() {
+      // scanLines holds back a trailing bare `\r` in case it is half of a split
+      // `\r\n`. At EOF it is a line terminator, and leaving it attached makes
+      // `[DONE]\r` fail the terminator test and reach JSON.parse — reporting a
+      // complete reply as a protocol failure.
+      if (buffer.endsWith('\r')) buffer = buffer.slice(0, -1);
       if (buffer) line(buffer);
       buffer = '';
       dispatch();

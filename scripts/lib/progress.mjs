@@ -1,3 +1,5 @@
+import { CHARS_PER_TOKEN } from './context-guard.mjs';
+
 /**
  * A liveness signal for a run that would otherwise sit silent for minutes.
  *
@@ -24,7 +26,9 @@ const DEFAULT_INTERVAL_MS = 10_000;
 export async function withProgress(run) {
   const progress = startProgress();
   try {
-    return await run((answer) => progress.update(answer));
+    // Forwards every argument. A one-argument arrow here silently dropped the
+    // `phase` override, so the fix that added it was inert while looking applied.
+    return await run((...args) => progress.update(...args));
   } finally {
     progress.stop();
   }
@@ -39,15 +43,21 @@ export async function withProgress(run) {
  * seconds were spent before a single token existed. A figure labelled tok/s that
  * is not tok/s is the defect class this whole feature exists to remove.
  */
-function rate(deltas, generatingMs) {
-  if (!generatingMs || generatingMs <= 0 || deltas === 0) return null;
-  return (deltas / (generatingMs / 1000)).toFixed(1);
+function rate(chars, generatingMs) {
+  if (!generatingMs || generatingMs <= 0 || chars === 0) return null;
+  // Estimated from characters with the repo's own estimator, not from the frame
+  // count. Frames are not tokens — a server may batch several into one chunk or
+  // split one across two — so dividing frames by seconds and printing "tok/s"
+  // labels a figure as something it is not. This is still an estimate, which is
+  // what the leading `~` says; the footer's figure comes from `usage` and is
+  // exact.
+  return (chars / CHARS_PER_TOKEN / (generatingMs / 1000)).toFixed(1);
 }
 
 function line(state, elapsedMs, now) {
   const seconds = Math.round(elapsedMs / 1000);
   if (state.chars === 0) return `  ${state.phase.padEnd(9)}  ${seconds}s\n`;
-  const speed = rate(state.deltas, state.firstTokenAt ? now - state.firstTokenAt : 0);
+  const speed = rate(state.chars, state.firstTokenAt ? now - state.firstTokenAt : 0);
   const size = `${state.chars.toLocaleString('en-US')} chars`;
   return `  ${state.phase.padEnd(9)}  ${size.padStart(14)}  ${String(seconds).padStart(4)}s${speed ? `  ~${speed} tok/s` : ''}\n`;
 }

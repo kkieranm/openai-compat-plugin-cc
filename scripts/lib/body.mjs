@@ -28,8 +28,16 @@ export async function readText(response, { limit } = {}) {
 }
 
 /** The whole body, parsed. `what` names the source so a failure says whose. */
-export async function readJson(response, what) {
-  const text = await readText(response);
+export async function readJson(response, what, { maxChars } = {}) {
+  const text = await readText(response, maxChars ? { limit: maxChars + 1 } : {});
+  if (maxChars && text.length > maxChars) {
+    const failure = new UserError(`${what} sent more than ${maxChars} characters without completing a JSON document.`, {
+      hint: 'The reply is not a completion; check what is actually listening on that port.',
+    });
+    failure.reason = 'protocol';
+    failure.serverResponded = true;
+    throw failure;
+  }
   try {
     return JSON.parse(text);
   } catch (error) {
