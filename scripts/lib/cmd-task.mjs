@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
-import { parseNumericOptions, prepareRequest, resolveTarget, resolveTimeout } from './delegate.mjs';
+import { parseNumericOptions, prepareRequest, resolveIdle, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
+import { withProgress } from './progress.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { renderTaskFooter } from './render.mjs';
 
@@ -67,17 +68,20 @@ export async function runTask(argv) {
     system: options.system,
   });
 
-  // Non-streaming against a slow local model looks like a hang without this.
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
   const startedAt = Date.now();
-  const result = await chatCompletion(profile, {
-    model,
-    messages,
-    timeoutMs: resolveTimeout(profile, timeoutSeconds),
-    temperature,
-    maxTokens,
-  });
+  const result = await withProgress((onProgress) =>
+    chatCompletion(profile, {
+      model,
+      messages,
+      timeoutMs: resolveTimeout(profile, timeoutSeconds),
+      idleMs: resolveIdle(profile),
+      temperature,
+      maxTokens,
+      onProgress,
+    }),
+  );
 
   // Fails loudly rather than printing nothing: an empty answer with a footer
   // reads as a successful run that had nothing to say.

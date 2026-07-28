@@ -16,6 +16,7 @@ Core constraints:
 - Return the companion script's stdout verbatim: no paraphrasing, summarising, or commentary before or after it.
 - Do not act on what the local model says — no edits, no fixes, no follow-up tasks. If its answer suggests changes, leave that for the user to ask for.
 - Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens`, `--temperature`, `--system`) exactly as given.
+- `--timeout` bounds the wait for the model's **first token** — connecting plus reading the prompt, which is silent and can take minutes on a large input. Once tokens are flowing the run is not time-limited; a separate idle budget (`idleSeconds` in the provider config, 60s by default) ends it only if output stops.
 
 Building the call:
 

@@ -2,6 +2,35 @@
 
 Newest first.
 
+- **OAI-6 + OAI-17a + OAI-8** — Streaming, and owning the timeouts it exposes. Completed 2026-07-28.
+  `timeoutSeconds` never worked above five minutes: Node's `fetch` is undici, undici applies its own
+  300s `headersTimeout`, and an `AbortSignal` beside it can only *lower* the bound — so the real
+  limit was always `min(timeoutMs, 300_000)` and **14 of 18 benchmark runs died** with 1800 in the
+  config. `scripts/lib/http.mjs` now owns the request on `node:http`, streaming chat completions as
+  SSE. **The obvious fix was not enough, and finding that out is the result worth keeping**: streaming
+  moves the wall from `headersTimeout` to `bodyTimeout` rather than removing it, because prefill emits
+  no body — a cache-busted 52k-token prompt took **393.7s to its first token** (9.3s warm). OAI-17a's
+  own text claimed streaming would settle it; that claim was written before it was measured.
+  **The budgets bound tokens, not bytes**, which is the correction the plan challenge forced: an SSE
+  keepalive comment, a role-only delta and a half-delivered frame are all socket activity proving
+  nothing about generation, so a byte-driven budget would have let `:\n\n` every 30s run forever while
+  reporting itself armed — the defect class the feature exists to remove, reintroduced by its own fix.
+  The transport bounds `firstByteMs` plus an optional absolute `totalMs`; the first-token and idle
+  budgets live in `client.mjs` and reset only on a parsed delta carrying a string. `totalMs` is what
+  keeps `/oai:setup` safe, since its probes are bounded totals today and it awaits every provider.
+  Chosen over a working `Symbol.for('undici.globalDispatcher.1')` wrapper **on failure mode, not size**:
+  the symbol is not public API and a future Node moving it would disarm the override silently.
+  **OAI-8 closes because the heartbeat is timer-driven**, not delta-driven — a delta-driven tick is
+  silent through exactly the prefill it was asked to cover, and closing the item on that would have
+  been the reported-state-vs-actual class one level up.
+  Guarded by a new structural test — **nothing calls the global `fetch`** — with no exemptions, because
+  the defect was an invisible default rather than a typo. Four defects were caught before commit that
+  the suite would not have found: a `'data'` listener racing the consumer, a first-byte timer re-armed
+  at headers (silently doubling the advertised budget), `idleSeconds` validated but dropped by
+  `buildProfile` so it did nothing, and — found by the design review — **every existing test replying
+  `application/json`, so all 198 would have taken the degrade path and reported a green suite with no
+  streaming coverage at all.** Design in [ADR 007](adr/007-owning-the-transport.md).
+
 - **OAI-12** — A labelled corpus and a benchmark harness. Completed 2026-07-28. `npm run bench` runs
   the shipped `/oai:review` against six committed snapshots of this repo's own history and scores the
   findings; `--runs N`, `--case <id>`, `--diff-only`. **It drives the real CLI through a new

@@ -23,6 +23,11 @@ from whichever channel carries it, and degrades to prompt-and-parse when a serve
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
 see [ADR 004](adr/004-bounding-the-review-reply.md).
 
+`scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
+with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
+SSE, while the first-token and idle budgets that mean "the model is working" live in `client.mjs` —
+see [ADR 007](adr/007-owning-the-transport.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see

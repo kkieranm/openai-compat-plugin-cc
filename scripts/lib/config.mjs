@@ -68,7 +68,7 @@ function validateConfig(config, path) {
     }
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
-    for (const key of ['contextLength', 'timeoutSeconds']) {
+    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds']) {
       const value = profile[key];
       if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
         throw new UserError(`Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a positive whole number.`);
@@ -136,6 +136,10 @@ export function buildProfile(name, rawProfile) {
     defaultModel: rawProfile.defaultModel,
     contextLength: rawProfile.contextLength,
     timeoutSeconds: rawProfile.timeoutSeconds,
+    // This list is a whitelist, so a key added to validation and forgotten here
+    // validates fine and then does nothing — a configured value the code never
+    // reads is the same defect as one it reports as armed.
+    idleSeconds: rawProfile.idleSeconds,
     apiKey: resolveApiKey(rawProfile, name),
   };
 }

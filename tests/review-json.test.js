@@ -9,8 +9,8 @@ import { join } from 'node:path';
 import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/structured.mjs';
 import {
   createRepo,
-  reasoningCompletion,
-  respondJson,
+  reasoningFrames,
+  respondStream,
   reviewScenario as scenario,
   runCompanion,
   startFakeServer,
@@ -23,7 +23,7 @@ const clean = JSON.stringify({
   summary: 'One defect found.',
 });
 
-const replies = (body, extra) => (request, response) => respondJson(response, reasoningCompletion(body, extra));
+const replies = (body, options) => (request, response) => respondStream(response, reasoningFrames(body, options));
 
 /** The single JSON object `--json` promises on stdout. */
 function parseReport(result) {
@@ -191,21 +191,9 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   // One set of rules for "is this run reportable at all". Emitting a cheerful
   // object for a reply we cut off mid-object would let the harness record a
   // budget failure as a finished run that found nothing.
-  // The helpers default to finish_reason "stop", and "stop" is precisely what
-  // this case is not, so the reply is built here.
-  const truncated = (request, response) =>
-    respondJson(response, {
-      id: 'chatcmpl-test',
-      model: 'test-model',
-      choices: [
-        {
-          index: 0,
-          message: { role: 'assistant', content: '', reasoning_content: '{"analysis": "half a th' },
-          finish_reason: 'length',
-        },
-      ],
-      usage: { prompt_tokens: 11, completion_tokens: 16_384 },
-    });
+  // "length", not the helpers' default "stop": the budget ran out mid-object,
+  // which is the whole point of the case.
+  const truncated = replies('{"analysis": "half a th', { finishReason: 'length' });
 
   const { dir, server, configPath } = await scenario(truncated, { contextLength: 131_072 });
   const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });

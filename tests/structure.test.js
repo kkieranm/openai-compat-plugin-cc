@@ -24,6 +24,18 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', '.claude']);
 const SKIP_PATHS = new Set(['bench/cases']);
 const SOURCE_EXT = /\.(js|mjs|cjs|ts|jsx|tsx|sh)$/;
 
+/**
+ * Source with comments blanked out, for guards that forbid a *call*.
+ *
+ * Known limitation, stated rather than hidden: this is a regex, so a `//` inside
+ * a string literal or a regex literal is treated as a comment. That can only
+ * make a guard miss an offender in an oddly-written line, never invent one — and
+ * the alternative, matching prose, produces false failures that get silenced.
+ */
+function withoutComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
 function* sourceFiles(dir) {
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
@@ -88,6 +100,29 @@ test('tests never spawn a child synchronously', () => {
     }
   }
   assert.deepEqual(offenders, [], 'use the async runCompanion helper instead');
+});
+
+// Confirmed defect class, promoted from "a reviewer should catch it" to a guard.
+// The global fetch is undici, and undici applies its own headersTimeout and
+// bodyTimeout — 300s each, configurable by nothing at the call site. A
+// configured `timeoutSeconds: 1800` was therefore decoration, and 14 of 18
+// benchmark runs died at the 300s wall while the config advertised half an hour.
+// The defect is an invisible default, so the call site is what this forbids;
+// scripts/lib/http.mjs owns the request on node:http and makes every budget an
+// argument. There are no exemptions: http.mjs itself has no reason to call fetch.
+test('nothing calls the global fetch — every request goes through http.mjs', () => {
+  // Comments are stripped first, because the modules that replaced fetch have to
+  // be able to *say* "fetch()" while explaining why they exist — and a guard
+  // that forbids naming the thing it forbids would be edited away rather than
+  // obeyed. Markdown is outside SOURCE_EXT, so ADR prose is unaffected, and
+  // bench/cases is already excluded via SKIP_PATHS: the frozen corpus holds
+  // copies of the old client, byte-identical precisely because they contain
+  // this defect.
+  const offenders = [];
+  for (const file of sourceFiles(ROOT)) {
+    if (/\bfetch\s*\(/.test(withoutComments(readFileSync(file, 'utf8')))) offenders.push(relative(ROOT, file));
+  }
+  assert.deepEqual(offenders, [], 'use send() from scripts/lib/http.mjs, which requires an explicit budget');
 });
 
 // Confirmed defect class, promoted from "I noticed it" to a guard: `node --test`

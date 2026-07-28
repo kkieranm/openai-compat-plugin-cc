@@ -245,6 +245,32 @@ fields somebody remembered to list, so derive the list from what is read, not fr
 **Guarded by** `tests/bench-corpus.test.js` — "a manifest without \"dropped\" is refused by the
 loader, not by the renderer".
 
+## A library's invisible default outranks the value you configured
+
+Node's global `fetch` is undici, and undici applies its own `headersTimeout` and `bodyTimeout` — 300s
+each, reachable from nothing in `fetch()`'s options. An `AbortSignal.timeout()` beside them can only
+*lower* the effective bound, so `timeoutSeconds: 1800` was really `min(1800s, 300s)`: **14 of 18
+benchmark runs died at five minutes while the config advertised half an hour**, and the error carried
+no hint because `describeFailure` matched only `TimeoutError`/`AbortError`. The hint it would have
+given — "raise the timeout" — was wrong anyway, which is this repo's signature class: a remedy for a
+cause the code never diagnosed.
+
+Two general rules, both earned here:
+
+- **A configured value is not in force until something proves it is.** Nothing in the plugin ever
+  observed a timeout above 300s taking effect; the number was read back from config and believed.
+- **Fixing the visible half can move the wall rather than remove it.** `stream: true` was believed to
+  settle this, because headers then arrive at once (measured: 0.0s). But `bodyTimeout` is the same
+  300s and **prefill emits no body**, so a cold 52k-token prompt — 393.7s to its first token — still
+  died, now as `UND_ERR_BODY_TIMEOUT`. The claim was written into the backlog as settled before it was
+  measured.
+
+The corollary for budgets generally: **bound the thing you mean, not a proxy for it.** The first fix
+here reset an idle timer on raw TCP chunks, which an SSE keepalive comment or a role-only delta
+satisfies forever — activity that proves nothing about generation.
+**Guarded by** `tests/structure.test.js` — "nothing calls the global fetch" — plus the budget tests in
+`tests/http.test.js`, and ADR 007 records the measurements.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

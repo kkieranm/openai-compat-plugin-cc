@@ -3,18 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { completion, modelList, reasoningCompletion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { completion, completionFrames, modelList, respondJson, respondStream, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 
-function route({ models = () => modelList('test-model'), chat = () => completion('local model says hi') } = {}) {
+// Chat streams, everything else does not: that is what a real server does, and
+// the fallback is covered deliberately by its own test below.
+function route({ models = () => modelList('test-model'), chat = () => completionFrames('local model says hi') } = {}) {
   return (request, response) => {
     if (request.url.endsWith('/models')) return respondJson(response, models(request));
-    if (request.url.endsWith('/chat/completions')) return respondJson(response, chat(request));
+    if (request.url.endsWith('/chat/completions')) return respondStream(response, chat(request));
     return respondJson(response, { error: 'no such route' }, 404);
   };
 }
 
 test('task round-trips a prompt and prints the answer with a footer', async () => {
-  const server = await startFakeServer(route({ chat: () => completion('The file defines two exports.') }));
+  const server = await startFakeServer(route({ chat: () => completionFrames('The file defines two exports.') }));
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
 
   const result = await runCompanion(['task', 'what does this do'], { configPath: path });
@@ -27,8 +29,28 @@ test('task round-trips a prompt and prints the answer with a footer', async () =
   assert.match(result.stderr, /Contacting local \(test-model\)/);
 
   const chat = server.requests.find((request) => request.url.endsWith('/chat/completions'));
-  assert.equal(chat.body.stream, false);
+  assert.equal(chat.body.stream, true);
+  // Without this the token counts vanish and nothing else notices.
+  assert.equal(chat.body.stream_options?.include_usage, true);
   assert.equal(chat.body.messages.at(-1).content, 'what does this do');
+});
+
+// The degrade path: a server that ignores `stream: true` answers with a whole
+// JSON completion, which is the same answer read a different way.
+test('a server that ignores stream: true is read as a whole completion', async () => {
+  const server = await startFakeServer((request, response) => {
+    if (request.url.endsWith('/models')) return respondJson(response, modelList('test-model'));
+    return respondJson(response, completion('read back as one whole reply'));
+  });
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+  const result = await runCompanion(['task', 'what does this do'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /read back as one whole reply/);
+  const chat = server.requests.find((request) => request.url.endsWith('/chat/completions'));
+  assert.equal(chat.body.stream, true, 'the request asked for a stream; the server simply did not give one');
 });
 
 test('task accepts the whole flag string as one argument, as $ARGUMENTS delivers it', async () => {
@@ -253,7 +275,6 @@ test('an unknown flag is rejected rather than sent as prompt text', async () => 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown option "--modle"/);
 });
-
 
 test('an unknown subcommand is rejected', async () => {
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });

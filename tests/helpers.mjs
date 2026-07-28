@@ -78,6 +78,75 @@ export function reasoningCompletion(reasoning, extra = {}) {
 }
 
 /**
+ * Reply as an SSE stream, one frame per element, then close.
+ *
+ * Deliberately the same shape as respondJson, so a suite moves between the
+ * streaming path and the JSON degrade by changing one call. `done: false`
+ * reproduces a server that closes without ever sending [DONE].
+ */
+export function respondStream(response, frames, { done = true } = {}) {
+  response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
+  for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`);
+  if (done) response.write('data: [DONE]\n\n');
+  response.end();
+}
+
+/** One `chat.completion.chunk`, the frame every streaming server sends. */
+export function deltaFrame(delta, extra = {}) {
+  return {
+    id: 'chatcmpl-test',
+    object: 'chat.completion.chunk',
+    model: 'test-model',
+    choices: [{ index: 0, delta, finish_reason: null }],
+    ...extra,
+  };
+}
+
+/**
+ * The frames a streaming server sends for `completion(content)` — same model,
+ * same finish_reason, same usage figures, so a suite that switches to
+ * respondStream keeps its footer assertions untouched.
+ *
+ * The text is split across two frames on purpose: one frame per completion
+ * leaves the accumulator's join untested, and a delta whose leading space was
+ * trimmed is invisible unless a word boundary lands on the seam. The opening
+ * frame carries `content: null`, which is what a real server sends and what
+ * must not count as "saw this channel".
+ */
+export function completionFrames(text, { channel = 'content', usage = true, finishReason = 'stop' } = {}) {
+  const key = channel === 'reasoning' ? 'reasoning_content' : 'content';
+  const seam = Math.ceil(text.length / 2);
+  return [
+    deltaFrame({ role: 'assistant', content: null }),
+    deltaFrame({ [key]: text.slice(0, seam) }),
+    deltaFrame({ [key]: text.slice(seam) }),
+    { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: finishReason }] },
+    // What `stream_options: { include_usage: true }` buys, and the shape that
+    // breaks any accumulator indexing choices[0]: `choices` is empty here, and
+    // finish_reason arrived on the frame before it.
+    ...(usage
+      ? [
+          {
+            id: 'chatcmpl-test',
+            object: 'chat.completion.chunk',
+            model: 'test-model',
+            choices: [],
+            usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
+          },
+        ]
+      : []),
+  ];
+}
+
+/**
+ * The streaming twin of reasoningCompletion: the whole reply in the reasoning
+ * channel with `content` never appearing in any delta (ADR 003).
+ */
+export function reasoningFrames(reasoning, options = {}) {
+  return completionFrames(reasoning, { ...options, channel: 'reasoning' });
+}
+
+/**
  * Async, for the same reason runCompanion is: sync spawn deadlocks the suite.
  * Resolves the command's stdout, so a test can assert on what git *said* and
  * not merely that it exited zero — callers that only sequence commands ignore

@@ -4,7 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chatRequests, completion, reasoningCompletion, respondJson, reviewScenario as scenario, runCompanion } from './helpers.mjs';
+import {
+  chatRequests,
+  completionFrames,
+  deltaFrame,
+  reasoningCompletion,
+  reasoningFrames,
+  respondJson,
+  respondStream,
+  reviewScenario as scenario,
+  runCompanion,
+} from './helpers.mjs';
 import { MAX_FINDINGS } from '../scripts/lib/structured.mjs';
 
 const FINDINGS = JSON.stringify({
@@ -15,7 +25,7 @@ const FINDINGS = JSON.stringify({
 
 test('findings arriving in the reasoning channel are reported as findings', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(FINDINGS)),
+    respondStream(response, reasoningFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -32,12 +42,27 @@ test('findings arriving in the reasoning channel are reported as findings', asyn
   assert.match(sent.messages[1].content, /--- DIFF ---/);
 });
 
+// The degrade path, kept covered on purpose: a server that ignores `stream: true`
+// answers with a whole JSON completion, and the findings must survive it.
+test('a review from a server that ignores stream: true is read as a whole completion', async () => {
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondJson(response, reasoningCompletion(FINDINGS)),
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /the seed is wrong/);
+  assert.equal(chatRequests(server)[0].body.stream, true, 'the request asked for a stream regardless');
+});
+
 test('a server that rejects response_format is retried without it', async () => {
   const { dir, server, configPath } = await scenario((request, response) => {
     if (request.body?.response_format) {
       return respondJson(response, { error: "'response_format.type' must be 'json_schema' or 'text'" }, 400);
     }
-    return respondJson(response, completion(`Here are the findings:\n\`\`\`json\n${FINDINGS}\n\`\`\``));
+    return respondStream(response, completionFrames(`Here are the findings:\n\`\`\`json\n${FINDINGS}\n\`\`\``));
   });
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -68,7 +93,7 @@ test('a 400 that is not about the format is not retried', async () => {
 
 test('a reply that is not findings is shown verbatim, not interpreted', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion('I had a look and it seems fine to me.')),
+    respondStream(response, reasoningFrames('I had a look and it seems fine to me.')),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -86,7 +111,7 @@ test('without a schema, reasoning is never passed off as the review', async () =
     if (request.body?.response_format) {
       return respondJson(response, { error: 'response_format unsupported' }, 400);
     }
-    return respondJson(response, reasoningCompletion('Let me think about what the diff does...'));
+    return respondStream(response, reasoningFrames('Let me think about what the diff does...'));
   });
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -101,11 +126,12 @@ test('a reply with nothing in either channel is a failure, not an empty verbatim
   // finish_reason "stop", so the token budget is not the explanation — this
   // must still refuse rather than print an empty "verbatim" block.
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, {
-      id: 'chatcmpl-test',
-      model: 'test-model',
-      choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: 'stop' }],
-    }),
+    // The content channel was seen and carried nothing, which is not the same
+    // as never having been sent — completionFrames always carries text.
+    respondStream(response, [
+      deltaFrame({ role: 'assistant', content: '' }),
+      { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+    ]),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -120,17 +146,7 @@ test('a reply cut off mid-JSON blames the token budget, not the model', async ()
   // We did the truncating, so reporting a "shape" problem sends the user to fix
   // the wrong thing and hides the flag that would work.
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, {
-      id: 'chatcmpl-test',
-      model: 'test-model',
-      choices: [
-        {
-          index: 0,
-          message: { role: 'assistant', content: '', reasoning_content: '{"findings": [{"file": "a.js", "line": 3, "sev' },
-          finish_reason: 'length',
-        },
-      ],
-    }),
+    respondStream(response, reasoningFrames('{"findings": [{"file": "a.js", "line": 3, "sev', { finishReason: 'length' })),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -146,9 +162,9 @@ test('a schema-shaped reply that does not match the schema is not findings', asy
   // A server that accepts response_format without enforcing it would otherwise
   // let the first {...} in the scratchpad ship as findings.
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(
+    respondStream(
       response,
-      reasoningCompletion('Draft: {"findings": [{"file": "a.js"}]} — no wait, let me reconsider that.'),
+      reasoningFrames('Draft: {"findings": [{"file": "a.js"}]} — no wait, let me reconsider that.'),
     ),
   );
 
@@ -175,7 +191,7 @@ test('a findings list at the schema cap says so, rather than binning the rest qu
     summary: 'a great many',
   });
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(capped)),
+    respondStream(response, reasoningFrames(capped)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -188,7 +204,7 @@ test('a findings list at the schema cap says so, rather than binning the rest qu
 
 test('a diff too large for the window is refused with both numbers', async () => {
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    (request, response) => respondStream(response, reasoningFrames(FINDINGS)),
     { contextLength: 5000 },
   );
   writeFileSync(join(dir, 'huge.js'), `// ${'x'.repeat(200_000)}\n`);
@@ -204,7 +220,7 @@ test('a diff too large for the window is refused with both numbers', async () =>
 
 test('a clean tree refuses rather than reviewing something else', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(FINDINGS)),
+    respondStream(response, reasoningFrames(FINDINGS)),
   );
   writeFileSync(join(dir, 'seed.txt'), 'seed\n'); // back to the committed content
 
@@ -218,7 +234,7 @@ test('a clean tree refuses rather than reviewing something else', async () => {
 
 test('trailing text is forwarded to the reviewer verbatim', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(FINDINGS)),
+    respondStream(response, reasoningFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review', "focus on the guard's edge cases"], { configPath, cwd: dir });
@@ -233,7 +249,7 @@ test('the reserve never takes more than half a small window', async () => {
   // A flat 16k reserve would refuse every review on a small-window model,
   // blaming an input that would comfortably have fit.
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    (request, response) => respondStream(response, reasoningFrames(FINDINGS)),
     { contextLength: 8192 },
   );
 
@@ -246,7 +262,7 @@ test('the reserve never takes more than half a small window', async () => {
 
 test('a large window gets the full reasoning budget', async () => {
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    (request, response) => respondStream(response, reasoningFrames(FINDINGS)),
     { contextLength: 131_072 },
   );
 
@@ -259,7 +275,7 @@ test('a large window gets the full reasoning budget', async () => {
 
 test('the review reserves more headroom than a task does', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(FINDINGS)),
+    respondStream(response, reasoningFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });

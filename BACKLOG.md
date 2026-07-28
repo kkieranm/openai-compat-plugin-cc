@@ -39,11 +39,6 @@ What the bench is *not* is a measure of true recall: the denominator counts only
 be pointed at in the snapshot, which is smaller than what history claims and therefore flatters it.
 See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same caveats every run.
 
-**OAI-8 may deserve to move up now, and that is a decision, not an oversight.** Its item said the
-wait was a moving target until the context work settled. It has settled: whole-file reviews measured
-38–245s against 7–27s for diff-only, 4–10× worse, and the `analysis` cap binds on 40% of runs. It
-still moves neither half of the useful-output ratio, so it stays where it is until asked.
-
 **A standing methodology note, earned the hard way.** Two claims in this file were promoted from a
 single run per arm, and both were wrong: "context dilution is measured" (retracted above) and, one
 paragraph after diagnosing that error, "two passes found different defects, so a union would score
@@ -60,24 +55,17 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-17a (BLOCKING, and it makes OAI-6 the next item)** — **`timeoutSeconds` does not work above
-  300s, and the failure is misreported.** `client.mjs:42` sets `AbortSignal.timeout(timeoutMs)`,
-  which governs the whole request — but Node's `fetch` is undici, and undici applies its **own
-  `headersTimeout`, defaulting to 300s**, which nothing configures. LM Studio does not stream, so
-  response headers do not arrive until generation *finishes*; any run over five minutes therefore
-  dies as `UND_ERR_HEADERS_TIMEOUT` **no matter what the config says**. Measured 2026-07-28: with
-  `timeoutSeconds: 1800` set, **14 of 18 benchmark runs failed**, and the 4 survivors took 60/147/199/238s
-  — every one under 300. Second defect on top: `describeFailure` only matches `TimeoutError`/`AbortError`,
-  so this renders as a generic "Request failed: fetch failed (UND_ERR_HEADERS_TIMEOUT)" **without the
-  raise-the-timeout hint** — and the hint would have been wrong anyway, which is the signature class
-  again: a remedy offered for a cause the code has not actually diagnosed.
-  **The fix is OAI-6, not a bigger number.** With `stream: true` headers arrive at once, so
-  `headersTimeout` cannot fire, and undici's `bodyTimeout` measures *inactivity between chunks* —
-  satisfied continuously at 12–17 tok/s. Streaming is therefore not a UX nicety here: **it is the
-  only thing that lets a slow model finish at all**, and it delivers OAI-8's liveness signal as a
-  by-product. The alternatives are worse: `undici` is not importable (`node:undici` is not a builtin)
-  and this repo has **zero dependencies** by design, so the non-streaming fix means replacing `fetch`
-  with `node:http` wholesale.
+- **OAI-18** — **The prompt cache makes repeated runs of one case incomparable, and the bench does not
+  know it.** Measured 2026-07-28 while probing OAI-6: the same 52k-token prompt reached its first token
+  at **393.7s cold and 9.3s warm** — a 42× difference from LM Studio's prefix cache, on identical
+  input. `--runs 3` therefore measures run 1 cold and runs 2–3 warm, so `durationMs` is not comparable
+  *within* a case, let alone across an A/B. This silently corrupts exactly what OAI-17 exists to
+  measure, and it also flatters every repeat: the second run of a case is doing materially less work.
+  Needs a decision, not just a fix: either bust the cache per run (a nonce in the *first* message —
+  a suffix does not work, since a prefix cache reuses the shared prefix), or accept warm runs and
+  report cold and warm separately rather than averaging them. **Note the interaction with OAI-9**:
+  multi-pass review over one target would be warm from pass two onward, which makes extra passes far
+  cheaper than the first — good for the feature, misleading for any timing measured through it.
 - **OAI-17** — Throughput is a product constraint, and nothing measures it. Swapping to a dense 27B
   at 6-bit produced **7.4 tokens/sec**, at which a run reasoning to the 28,000-character `analysis`
   cap needs ~17.5 minutes — so **all three benchmark runs died on the 300s client timeout**, and only
@@ -155,23 +143,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   target — then this is a config change, not a rewrite. Open question worth an experiment before
   committing: whether three lenses on one model beats three plain passes, since that would deliver
   most of the value with no second model to install.
-- **OAI-8** — Liveness for a run in progress: while a review or task is waiting, there is no way to
-  tell slow from stuck. Today the user gets one stderr line and then silence — measured waits on the
-  author's machine were 26s, 32s, 59s and 99s for the *same* command, and a loop of four reviews hit
-  a 10-minute limit having printed nothing at all. Wants at minimum an elapsed-time heartbeat on
-  stderr, ideally a token-rate figure and an estimate, so a stall is distinguishable from work.
-  Overlaps **OAI-6** (streaming) — streaming would supply the signal for free on servers that
-  support it, so decide whether this is a fallback for non-streaming servers or a separate progress
-  line that works either way. Note the wait grew with OAI-4: the `analysis` field means the model now
-  reasons for thousands of tokens before emitting anything at all. **OAI-14 has now landed and the
-  wait is measured: 38–245s for a whole-file review against 7–27s diff-only, 4–10× worse, with a
-  245s run that then reported nothing.** That was the "moving target" this item was waiting on, so
-  the reason for deferring it has expired. **And the old justification no longer holds either**: a
-  four-minute run that reports nothing *is* a wasted pass, which is the same quantity OAI-9 exists to
-  reduce — so this does move the ratio, contrary to what this item said while the wait was unmeasured.
-  It sits here only because nobody has re-decided the order. Ask before treating that as settled.
-- **OAI-6** — Streaming output for `/oai:task`, so a slow local model shows progress rather than
-  sitting silent behind a single stderr line.
 - **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.
   Port the reference plugin's generic job model (per-workspace state dir, light index + per-job
   record, detached self re-exec worker); replace its RPC interrupt with an `AbortController`.

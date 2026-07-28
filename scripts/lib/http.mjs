@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { UserError } from './errors.mjs';
+import { assertDecodable, budgetError, transportError } from './http-errors.mjs';
 
 /**
  * This repo's only HTTP client, and it exists because of a bug the previous one
@@ -17,13 +18,15 @@ import { UserError } from './errors.mjs';
  *                 a 52k-token prompt measured 393.7s before its first token.
  *   totalMs     — an optional absolute deadline for the whole exchange.
  *
- * **There is deliberately no byte-level idle budget**, because bytes are the
- * wrong unit and a plausible-looking one here would be worse than none. An SSE
- * comment (`: keepalive`), a role-only delta or a half-delivered frame are all
- * "activity" that proves nothing about generation, so a server emitting `:\n\n`
- * every 30 seconds would hold a byte-driven timer open forever while the plugin
- * reported it armed. Whether progress is real is a question only the chat layer
- * can answer — it owns the first-token and idle budgets, reset by parsed deltas.
+ * `idleMs` bounds the gap between body chunks, and it is **only ever correct for
+ * reading a finite document** — a JSON body, or an error body. There, bytes are
+ * the whole signal: the document is a fixed size and a gap means the peer
+ * stopped. It is emphatically wrong for a *stream*, where an SSE comment
+ * (`: keepalive`), a role-only delta or a half-delivered frame are all activity
+ * that proves nothing about generation — a server emitting `:\n\n` every 30
+ * seconds would hold a byte-driven timer open forever while the plugin reported
+ * it armed. So the chat path omits it and owns first-token and idle budgets of
+ * its own, reset by parsed deltas carrying text.
  *
  * `totalMs` is what keeps the control plane safe. `/v1/models` and the
  * `model-info` probes are bounded totals today (10s and 2s) and can never reach
@@ -49,85 +52,11 @@ export function mediaType(headerValue) {
     .toLowerCase();
 }
 
-export function budgetError(budget, budgetMs, received, host) {
-  // Rounding alone reports a sub-second budget as "0s", which reads as a bug in
-  // the plugin rather than a short deadline.
-  const seconds = budgetMs < 10_000 ? `${(budgetMs / 1000).toFixed(1)}` : Math.round(budgetMs / 1000);
-  const messages = {
-    'first-byte': [
-      `${host} sent no response body within ${seconds}s.`,
-      'A large prompt can take minutes to ingest before the first token — raise --timeout, or timeoutSeconds in the config.',
-    ],
-    total: [
-      `${host} did not finish within its ${seconds}s deadline.`,
-      'This is a control-plane request with a fixed budget, not a model call.',
-    ],
-    'first-token': [
-      `${host} sent no output within ${seconds}s of the request.`,
-      'A large prompt can take minutes to ingest before the first token — raise --timeout, or timeoutSeconds in the config.',
-    ],
-    idle: [
-      `${host} stopped after ${received} characters, with no further output for ${seconds}s.`,
-      'The model began answering and then stalled — check the server log; raising --timeout will not help.',
-    ],
-  };
-  const [message, hint] = messages[budget];
-  const error = new UserError(message, { hint });
-  error.reason = `${budget}-timeout`;
-  error.budgetMs = budgetMs;
-  error.received = received;
-  // Anything past the first byte means a status line arrived, so the server is
-  // up and answering — the distinction cmd-setup.mjs draws to avoid telling
-  // someone to restart a server that is already running.
-  if (budget !== 'first-byte') error.serverResponded = true;
-  return error;
-}
-
-/**
- * Every failure leaving this module is a `UserError`, and that is a contract,
- * not a nicety: `cmd-setup.mjs:28` and `delegate.mjs:59` both rethrow anything
- * else, so a plain Error turns one unreachable provider into an exit-2 crash of
- * the whole report and makes an optional probe fatal.
- */
-function transportError(error, url) {
-  // Node 18.18 turned on address-family autoselection, so a host resolving to
-  // both A and AAAA fails as an AggregateError whose useful code sits in
-  // `errors[]` — and `error.code` on the outer object is undefined. Reading only
-  // the outer one turns "connection refused", with its start-the-server hint,
-  // into a bare "Request failed".
-  const cause = error.code ? error : (error.errors?.find((inner) => inner?.code) ?? error);
-  const wrapped = new UserError(`Request to ${url.host} failed: ${cause.message ?? error.message}`);
-  wrapped.reason = 'transport';
-  // describeFailure already reads `error?.cause?.code ?? error?.code`, and the
-  // provider-specific start hints hang off this.
-  wrapped.code = cause.code;
-  wrapped.cause = cause;
-  return wrapped;
-}
-
 function arm(ms, onFire) {
   const timer = setTimeout(onFire, ms);
   // A pending budget must never be the reason a CLI stays alive.
   timer.unref?.();
   return timer;
-}
-
-/**
- * `fetch` transparently decompressed; `node:http` does not, and it does not ask
- * for compression either. A gzipped body would reach the parser as mojibake,
- * produce no `data:` line, and die on the idle budget — a symptom
- * indistinguishable from the bug this module fixes. So the request asks for
- * `identity` and a server that compresses anyway is refused by name.
- */
-function assertDecodable(response, url) {
-  const encoding = response.headers['content-encoding'];
-  if (!encoding || encoding === 'identity') return null;
-  const error = new UserError(`${url.host} sent a ${encoding}-compressed response, which this client cannot decode.`, {
-    hint: 'The request asks for `accept-encoding: identity`; a proxy or server is overriding it.',
-  });
-  error.reason = 'protocol';
-  error.serverResponded = true;
-  return error;
 }
 
 /**
@@ -143,12 +72,21 @@ async function* bodyStream(request, response, state, { url }) {
       if (state.received === 0) {
         // The first-byte budget is retired here and only here. Clearing it when
         // the *headers* arrive would disarm it entirely: on a streaming server
-        // headers come back at 0.0s. Nothing replaces it — see the module note
-        // on why a byte-level idle budget would be worse than none.
+        // headers come back at 0.0s.
         clearTimeout(state.firstByteTimer);
         state.firstByteTimer = null;
       }
       state.received += chunk.length;
+      // Only when a caller asked for it — see setIdle, and the module note on
+      // why bytes are the wrong unit for a stream but the right one for a
+      // finite document.
+      if (state.idleMs) {
+        clearTimeout(state.idleTimer);
+        state.idleTimer = arm(state.idleMs, () => {
+          state.aborted = budgetError('idle', state.idleMs, state.received, url.host);
+          request.destroy();
+        });
+      }
       yield chunk;
     }
     if (state.aborted) throw state.aborted;
@@ -174,6 +112,7 @@ async function* bodyStream(request, response, state, { url }) {
     // the iteration retires it.
     clearTimeout(state.firstByteTimer);
     clearTimeout(state.totalTimer);
+    clearTimeout(state.idleTimer);
     if (!response.complete) request.destroy();
   }
 }
@@ -244,6 +183,17 @@ function onResponse({ request, response, state, target, resolve, fail, release }
     headers: response.headers,
     contentType: mediaType(response.headers['content-type']),
     stream: bodyStream(request, response, state, { url: target }),
+    /**
+     * Bound the gap between body chunks from here on.
+     *
+     * Opt-in, and settable *after* headers, because one response can need both
+     * answers: a 200 SSE body must never be bounded by bytes, while the error
+     * body of that same request — read only once the status is known to be a
+     * failure — has no stream to protect and must not be able to hang.
+     */
+    setIdle: (ms) => {
+      state.idleMs = ms > 0 ? ms : null;
+    },
     dispose: () => {
       release();
       request.destroy();
@@ -260,10 +210,19 @@ export function send(url, { method = 'GET', headers = {}, body, firstByteMs, tot
   if (!(firstByteMs > 0)) throw new Error('send(): firstByteMs is required');
 
   return new Promise((resolve, reject) => {
-    const state = { aborted: null, received: 0, settled: false, firstByteTimer: null, totalTimer: null };
+    const state = {
+      aborted: null,
+      received: 0,
+      settled: false,
+      firstByteTimer: null,
+      totalTimer: null,
+      idleMs: null,
+      idleTimer: null,
+    };
     const release = () => {
       clearTimeout(state.firstByteTimer);
       clearTimeout(state.totalTimer);
+      clearTimeout(state.idleTimer);
     };
     const fail = (error) => {
       if (state.settled) return;

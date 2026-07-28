@@ -15,7 +15,9 @@
  * failure the size guard exists to prevent.
  */
 
+import { readJson } from './body.mjs';
 import { authHeaders } from './client.mjs';
+import { send } from './http.mjs';
 
 const PROBE_TIMEOUT_MS = 2000;
 
@@ -23,12 +25,19 @@ const PROBE_TIMEOUT_MS = 2000;
  * Fetch JSON, yielding null for every failure mode — 404, HTML, bad JSON,
  * refused connection, timeout. The chain must be able to try the next dialect
  * without an error escaping.
+ *
+ * `totalMs` as well as `firstByteMs`, because this is a probe, not a model call:
+ * a server that dribbles a byte every second must not hold `/oai:setup` open,
+ * and setup awaits every provider before it prints anything.
  */
 async function probeJson(url, { headers, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
   try {
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
-    if (!response.ok) return null;
-    return await response.json();
+    const response = await send(url, { headers, firstByteMs: timeoutMs, totalMs: timeoutMs });
+    if (response.status < 200 || response.status >= 300) {
+      response.dispose();
+      return null;
+    }
+    return await readJson(response, 'probe');
   } catch {
     return null;
   }

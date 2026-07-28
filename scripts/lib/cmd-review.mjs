@@ -1,9 +1,10 @@
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
 import { chatCompletion } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
-import { parseNumericOptions, prepareRequest, resolveTarget, resolveTimeout } from './delegate.mjs';
+import { parseNumericOptions, prepareRequest, resolveIdle, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
+import { withProgress } from './progress.mjs';
 import { report } from './review-report.mjs';
 import { buildReviewPrompt, REVIEW_SYSTEM_PROMPT } from './review.mjs';
 import { isFormatRejection, parseFindings, responseFormatFor, REVIEW_SCHEMA, schemaInstruction } from './structured.mjs';
@@ -110,7 +111,7 @@ function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' 
  * validation error, returned before any generation happens.
  */
 async function requestFindings(profile, plan) {
-  const { model, timeoutMs, temperature, reserve, contextLength, target, instructions } = plan;
+  const { model, timeoutMs, idleMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
   const shared = {
     profile,
     model,
@@ -122,7 +123,7 @@ async function requestFindings(profile, plan) {
       'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
       'specific files with --file — or raise the model context length in the server and config.',
   };
-  const send = { model, timeoutMs, temperature };
+  const send = { model, timeoutMs, idleMs, temperature, onProgress };
   const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
   const first = prepareLadder(shared, ladder);
@@ -180,15 +181,21 @@ export async function runReview(argv) {
   const startedAt = Date.now();
   process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
 
-  const { result, structured, budget, estimatedTokens, hunksOnly } = await requestFindings(profile, {
-    model,
-    contextLength,
-    target,
-    instructions,
-    reserve,
-    temperature,
-    timeoutMs: resolveTimeout(profile, timeoutSeconds),
-  });
+  // A review is the long silent run this exists for: whole-file passes measured
+  // 38–245s before, and a cold prefill alone is minutes.
+  const { result, structured, budget, estimatedTokens, hunksOnly } = await withProgress((onProgress) =>
+    requestFindings(profile, {
+      model,
+      contextLength,
+      target,
+      instructions,
+      reserve,
+      temperature,
+      timeoutMs: resolveTimeout(profile, timeoutSeconds),
+      idleMs: resolveIdle(profile),
+      onProgress,
+    }),
+  );
 
   report(parseFindings(result, { structured }), {
     result,

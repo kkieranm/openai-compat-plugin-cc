@@ -1,6 +1,6 @@
 // The delegation path shared by every command that sends work to a model:
 // which model, how big its window is, and does the request fit.
-import { fetchModels, DEFAULT_TIMEOUT_MS } from './client.mjs';
+import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { describeModels, planSelection, windowFor } from './model-info.mjs';
@@ -131,7 +131,22 @@ export function prepareRequest({
   return { messages, estimatedTokens, budget, reserve };
 }
 
+/**
+ * How long to wait for the model's *first token* — connect and prefill, which
+ * are legitimately silent. It used to mean total wall clock, and meant nothing
+ * above five minutes: undici capped it at 300s regardless (ADR 007).
+ */
 export function resolveTimeout(profile, timeoutSeconds) {
   if (timeoutSeconds) return timeoutSeconds * 1000;
   return (profile.timeoutSeconds ?? 0) * 1000 || DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * How long a gap between tokens may be once output has started. Separate from
+ * the above because the two silences mean different things: a long prefill is
+ * normal, whereas a model that began answering and then stopped has stalled.
+ */
+export function resolveIdle(profile, idleSeconds) {
+  if (idleSeconds) return idleSeconds * 1000;
+  return (profile.idleSeconds ?? 0) * 1000 || DEFAULT_IDLE_MS;
 }
