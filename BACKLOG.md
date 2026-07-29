@@ -31,9 +31,10 @@ ending the era where a conclusion was kept and its evidence thrown away (ADR 004
 `890ee2e` says "five", same experiment, neither now checkable). Baseline: **1 of 6 scoreable defects
 at N=1, 10.9 minutes** — **computed under the pre-OAI-15 rule that excluded cut runs from the
 denominator, so it is not directly comparable with anything measured since** (OAI-15 counts them, and
-reports the unresolved part as a band). Re-measure the baseline before using it as an A/B arm; the
-methodology note below is exactly about this. — 11 are catalogued, but 5 belong to the two cases whose runs were cut
-mid-reasoning and are unscored rather than missed. One of its two headline results is now retracted
+reports the unresolved part as a band). 11 defects are catalogued, but 5 belong to the two cases whose
+runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule
+is OAI-19, the top item**, because everything below wants a number to beat and the methodology note
+below is exactly about this. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -73,6 +74,30 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
+- **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
+  arm is read as an improvement. **This is a measurement, not a feature, and it is first because
+  every item below it wants a number to beat.** The recorded baseline — **1 of 6 scoreable defects,
+  10.9 minutes, N=1** — was computed under the pre-OAI-15 rule that *excluded* cut runs from the
+  denominator, and 17 of 41 runs recorded at the time were cut. OAI-15 now counts them and reports
+  the unresolved part as a band, so that figure cannot be differenced against anything measured
+  since: an OAI-9 union scoring "2 of 6" against it would be comparing two denominators, which is
+  the N=1-per-arm error in the methodology note above wearing a different hat.
+  Two things changed at once and must be separated, which is the whole design of the run: the
+  **scoring rule** (OAI-15) and the **model** (the local server moved from the MoE
+  `qwen3.6-35b-a3b-ud-mlx` to the dense `qwen/qwen3.6-27b`). Measuring only the dense arm would
+  leave every prior number unusable and attribute the OAI-15 rule change to the model swap. So:
+  both models, full corpus, `--runs 3` — N=1 is a lottery ticket, established twice in this file at
+  the cost of two retracted claims — and one arm per model with nothing else varying.
+  Read off the same run, because it is already paid for: **whether OAI-15's wall-clock ceiling still
+  binds** (per-case cut counts — `structured` was 4 of 4 cut and `scaffold` 4 of 11, both unmeasured
+  since), and OAI-18's `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a
+  warm pass honestly. Note the throughput caveat under OAI-11 does **not** apply: both arms are one
+  LM Studio, so `gen tok/s` is comparable here.
+  Expect a JIT model load between arms, so the first case of each arm carries a cold prefill that is
+  not the model's — OAI-9's cache measurement (421.7s cold, 11.5s warm on one 56,805-token request)
+  says how large that distortion is, and `--cold` exists to make it uniform rather than incidental.
+  Done when both arms are recorded with their bands, the pre-OAI-15 figure is struck through in this
+  file, and the comparable one replaces it as the number OAI-9 and OAI-11 are scored against.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
