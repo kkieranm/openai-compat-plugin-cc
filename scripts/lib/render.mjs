@@ -1,6 +1,7 @@
 import { START_HINTS } from './config.mjs';
 import { formatTokens } from './context-guard.mjs';
 import { effectiveWindow, planSelection } from './model-info.mjs';
+import { formatRate, tokensPerSecond } from './throughput.mjs';
 
 const MAX_LISTED_MODELS = 12;
 
@@ -125,11 +126,22 @@ function timingParts(durationMs, prefillMs) {
   return [total, `prefill: ${(prefillMs / 1000).toFixed(1)}s`];
 }
 
-export function renderTaskFooter({ providerName, model, usage, durationMs, prefillMs, contextNote, finishReason }) {
+export function renderTaskFooter({
+  providerName, model, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
+}) {
   const parts = [`provider: ${providerName}`, `model: ${model}`, ...timingParts(durationMs, prefillMs)];
   if (usage?.prompt_tokens !== undefined) {
     parts.push(`tokens: ${usage.prompt_tokens} in / ${usage.completion_tokens ?? '?'} out`);
   }
+  // On the human path for the same reason prefill is, and it fails the same test
+  // if left off: "is this model too slow to use" is a fact that changes what the
+  // reader should believe, and it cannot be worked out from the numbers already
+  // here — ADR 009 established that `durationMs - prefillMs` is not generation,
+  // so no arithmetic on this footer recovers the rate.
+  //
+  // Omitted, never zeroed, when either operand is missing. See throughput.mjs.
+  const rate = formatRate(tokensPerSecond(usage, generationMs));
+  if (rate) parts.push(`${rate} tok/s`);
   if (finishReason && finishReason !== 'stop') parts.push(`finish_reason: ${finishReason}`);
   const lines = [`\n---\n${parts.join('  |  ')}`];
   if (contextNote) lines.push(contextNote);

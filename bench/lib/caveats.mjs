@@ -111,23 +111,53 @@ function cacheNote(rows) {
     // input, so a generation figure moves with how much the model chose to say.
     '**Generation is what the cache does not touch — which is not the same as comparable.** A model '
     + 'that reasons for twice as long generates for twice as long on the same input, so these figures '
-    + 'are only like-for-like once divided by the tokens actually produced. That quotient is OAI-17\'s '
-    + 'work; until it exists, read the generation column beside `prompt tokens` and the per-run '
-    + 'records, not on its own.',
+    + 'are only like-for-like once divided by the tokens actually produced — which is what the '
+    + '`gen tok/s` column beside them is. Read that for speed and the generation column for cost; a '
+    + 'model can be fast per token and still slow to answer, because it chose to say more.',
   ];
 }
 
 /**
- * The caveats, stated every time rather than left to the reader's memory.
+ * What was switched on for this run, stated whenever it was.
  *
- * Each is a way this table is narrower than it looks, and each has already
- * misled someone in this repo's own record: a single run was read as a result
- * (OAI-9 measured a 20% hit rate per run), a cut run was read as a clean pass
- * (trap instance 14), and an unmatched finding was called a false positive when
- * it may be a real catch the anchor missed.
+ * Split from `caveats` at the function size budget, and the seam holds: these
+ * describe *how the harness was invoked*, where the rest describe what the
+ * corpus can and cannot measure. Every one exists because a reader comparing two
+ * report files would otherwise credit a difference to the reviewer that belongs
+ * to a flag.
  */
-function caveats(rows, runsPerCase, { diffOnly, cold }) {
+function flagNotes(rows, { diffOnly, cold, timeoutSeconds, maxSeconds }) {
   const notes = [];
+  // Stated whenever set, for the same reason --cold is: a reader comparing two
+  // report files has to know that one of them was run under a wall-clock cap,
+  // or a row with fewer completed runs reads as a worse model rather than a
+  // shorter leash.
+  const capped = rows.reduce((total, row) => total + row.capped, 0);
+  if (maxSeconds || capped > 0) {
+    notes.push(
+      (maxSeconds
+        ? `**\`--max-seconds ${maxSeconds}\` was on**`
+        : '**A wall-clock cap was in force, from the provider config rather than a flag** — this harness '
+          + 'was never told the number, and infers it only from the runs it killed')
+      + `, so any run still generating at that point was cut off and recorded as a failure with reason `
+      + '`deadline-timeout`. '
+      + `**${capped} run(s) here ended on the cap specifically** — the \`(N timed out)\` beside the `
+      + '`failed` column is a wider count, covering every budget including the first-token one, so the '
+      + 'two numbers differ legitimately and neither is the other. Those runs are a limit this harness '
+      + 'imposed, not a result about the reviewer, and a capped report must not be set beside an '
+      + 'uncapped one as if they were like for like. '
+      + '**And the timing columns describe the runs that survived it**, which under a cap are the fast '
+      + 'ones: `prefill s`, `generate s` and `gen tok/s` are computed over runs that reported, so a case '
+      + 'whose slow runs were all cut shows the speed of its quick ones with no sign of what is missing. '
+      + 'Read those cells against the `failed` count, never alone.',
+    );
+  }
+  if (timeoutSeconds) {
+    notes.push(
+      `**\`--timeout ${timeoutSeconds}\` was on**, which bounds the wait for each run's *first token* only — `
+      + 'prefill, not generation. It does not cap a run that is producing output.',
+    );
+  }
   // Stated when it was on, like --diff-only below: a reader comparing two report
   // files needs to know that one of them deliberately paid the cold cost on
   // every run, or the timings look like a regression.
@@ -152,6 +182,20 @@ function caveats(rows, runsPerCase, { diffOnly, cold }) {
         : ''),
     );
   }
+  return notes;
+}
+
+/**
+ * The caveats, stated every time rather than left to the reader's memory.
+ *
+ * Each is a way this table is narrower than it looks, and each has already
+ * misled someone in this repo's own record: a single run was read as a result
+ * (OAI-9 measured a 20% hit rate per run), a cut run was read as a clean pass
+ * (trap instance 14), and an unmatched finding was called a false positive when
+ * it may be a real catch the anchor missed.
+ */
+function caveats(rows, runsPerCase, flags) {
+  const notes = flagNotes(rows, flags);
   if (runsPerCase === 1) {
     notes.push(
       '**One run per case: this is a sample, not a score.** The same command has produced 1,709 and '
@@ -165,7 +209,7 @@ function caveats(rows, runsPerCase, { diffOnly, cold }) {
   // saying no run could be served from cache and, three lines later, that
   // repeats may be, recommending a flag that was already on. Contradictory
   // guidance in the artifact whose whole job is to be quoted as evidence.
-  if (!cold) notes.push(...cacheNote(rows));
+  if (!flags.cold) notes.push(...cacheNote(rows));
   const listed = rows.reduce((total, row) => total + row.listed, 0);
   const scoreable = rows.reduce((total, row) => total + row.opportunities, 0);
   const dropped = rows.reduce((total, row) => total + row.dropped, 0);

@@ -57,7 +57,19 @@ export async function chatCompletion(profile, options) {
   // catch — so a `stream` rejection arriving after `stream_options` had been
   // dropped escaped with no fallback at all. Each capability is removed at most
   // once, which is also what bounds the loop.
-  const result = await postWithDegrade(profile, body, { firstTokenMs, idleMs, onProgress });
+  //
+  // `expiresAt` is an instant shared by every attempt this answer costs, not a
+  // per-attempt duration — see `capBudgets` in chat.mjs. `maxMs` rides beside
+  // it only so a cap that fires names the number the caller set rather than
+  // whatever was left of it by then. Both are undefined unless --max-seconds
+  // was passed; the run is then bounded exactly as it was before.
+  const result = await postWithDegrade(profile, body, {
+    firstTokenMs,
+    idleMs,
+    onProgress,
+    expiresAt: options.expiresAt,
+    maxMs: options.maxMs,
+  });
   return finishAnswer(result.answer, {
     profile,
     requestedModel: model,

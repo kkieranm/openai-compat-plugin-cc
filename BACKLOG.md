@@ -73,21 +73,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-17** — Throughput is a product constraint, and nothing measures it. Swapping to a dense 27B
-  at 6-bit produced **7.4 tokens/sec**, at which a run reasoning to the 28,000-character `analysis`
-  cap needs ~17.5 minutes — so **all three benchmark runs died on the 300s client timeout**, and only
-  the 4,448-token control finished at all. Three things follow. (1) **`bench/run.mjs` has no
-  `--timeout`**, so a slow model cannot be benchmarked without hand-editing the provider config —
-  which blocks OAI-11's cross-model passes outright, since the whole point there is running models of
-  differing speed. (2) **Nothing records tokens/sec** — and note the divisor moved. OAI-18 landed
-  `generationMs`, which is the right one: dividing `usage` by `durationMs` would fold prefill into
-  the divisor, and prefill dwarfs generation on a large prompt (measured, one 56,805-token request:
-  421.7s to first token against ~3s generating, so the quotient would have read ~7× low). A model
-  that is accurate but 10× too slow should be visible as such in the report, not inferred afterwards.
-  (3) A timeout is currently
-  indistinguishable in the record from a model that failed — both are a stderr blob — where the
-  first is a harness limit and the second is a result. **This reframes OAI-9**: multiplying passes
-  multiplies a wall clock that is already the binding constraint on the more capable models.
 - **OAI-16** — A served model that is not the requested model must be said out loud, and a loaded
   model should not need pinning. Both found on 2026-07-28 by swapping the local model, and the first
   is the repo's signature class aimed straight at the benchmark.
@@ -122,7 +107,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   a per-pass average meaningless, and any timing quoted for "a review" must say whether it is the
   cold one. OAI-18 landed `prefillMs`/`generationMs`, so this is now visible per pass rather than
   hidden inside a total; use them when costing this.
-- **OAI-11** — Diverse passes: different models, and different lenses. **OAI-9 decorrelates sampling
+- **OAI-11** — Diverse passes: different models, and different lenses.
+  **Check the rate metric before comparing across *servers*.** OAI-17's `gen tok/s` divides
+  provider-reported `completion_tokens` by a window running from the first text frame to the end of
+  the stream, so a server that delays its `usage`/`[DONE]` frame inflates the divisor by however long
+  it delays — unbounded, and undetectable from here. Within one server (lenses, or JIT-swapped models
+  on LM Studio) the figure is sound and this does not apply. Across two providers it is only sound if
+  both terminate promptly, so a cross-server pass needs that checked first or the comparison measures
+  protocol behaviour rather than throughput. Raised by the OAI-17 adversarial review at 0.96
+  confidence and left stated rather than fixed, because on the measured case the divisor was 81–265s
+  against sub-millisecond terminators. **OAI-9 decorrelates sampling
   noise; this decorrelates blind spots**, which is the more valuable axis — repeated samples of one
   model share its failure modes, so agreement between them says much less than agreement between two
   models trained differently. That makes cross-model agreement a genuinely strong confidence signal

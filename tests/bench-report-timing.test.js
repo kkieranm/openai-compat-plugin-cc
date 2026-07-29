@@ -140,3 +140,105 @@ test('--cold says so, because it changes what the timings mean', async () => {
   assert.match(report, /`--cold` was on/);
   assert.match(report, /not a byte-identical repeat/);
 });
+
+/** A run that reported both a generation time and a token count. */
+function ratedRun(completionTokens, generationMs) {
+  const run = goodRun();
+  return {
+    ...run,
+    report: {
+      ...run.report,
+      generationMs,
+      usage: { ...run.report.usage, completion_tokens: completionTokens },
+    },
+  };
+}
+
+test('the rate column is each run\'s own rate, never the pooled quotient', async () => {
+  // The trap this column exists inside. `sum(tokens) / sum(ms)` is a real
+  // quantity — the corpus's length-weighted average — but not the one a cell
+  // showing endpoints claims, and it is the same shape as the `prompt tokens`
+  // sum fixed one commit earlier in this file.
+  //
+  // The numbers are chosen so the two answers cannot coincide: 10 tok/s for one
+  // second and 2 tok/s for a hundred pool to 2.08, which is neither endpoint and
+  // is not even inside the interval a reader would infer from one.
+  const report = renderReport(
+    [{ caseDef: CASE, runs: [ratedRun(10, 1_000), ratedRun(200, 100_000)] }],
+    { runsPerCase: 2, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'gen tok/s'), '2.0–10.0');
+});
+
+test('a run whose server withheld token counts contributes no rate', async () => {
+  // `usage` is null outright whenever a server refused `stream_options`, and
+  // `completion_tokens` is optional even when `usage` is present. Either way the
+  // run drops out of the numerator rather than entering it as a zero — and the
+  // cell says how much of the case it actually covers, so a one-run rate cannot
+  // read as if it described all three.
+  const withoutUsage = { ...goodRun(), report: { ...goodRun().report, generationMs: 1_000, usage: null } };
+  const report = renderReport(
+    [{ caseDef: CASE, runs: [ratedRun(50, 1_000), withoutUsage] }],
+    { runsPerCase: 2, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'gen tok/s'), '50.0 (1/2 measured)');
+});
+
+test('a generation that rounded to zero milliseconds reports no rate, not an infinite one', async () => {
+  // `timings()` rounds to whole milliseconds, so a genuinely fast generation can
+  // land on 0 — and 0 as a divisor yields Infinity, which would render as a
+  // throughput figure nobody measured.
+  const report = renderReport(
+    [{ caseDef: CASE, runs: [ratedRun(7, 0)] }],
+    { runsPerCase: 1, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'gen tok/s'), '—');
+});
+
+test('a run the wall-clock cap killed is counted inside failed, and named there', async () => {
+  // Two facts in one cell on purpose. A capped run *is* a failed run, so the row
+  // invariant `scored + truncated + unreadable + failed = runs` still holds —
+  // but a harness limit and a model that could not answer are different things,
+  // and only the second is a result about the reviewer.
+  const report = renderReport(
+    [{
+      caseDef: CASE,
+      runs: [
+        { diffOnly: false, error: 'local did not finish within the 60s cap.', reason: 'deadline-timeout' },
+        { diffOnly: false, error: 'local returned HTTP 500', reason: null },
+      ],
+    }],
+    { runsPerCase: 2, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'failed'), '2 (1 timed out)');
+});
+
+test('a failure that never said why is not counted as a timeout', async () => {
+  // Absent evidence is not evidence of the other branch. A run that died before
+  // the envelope could be written has `reason: null`, and guessing "probably a
+  // timeout" from the message text is the class this whole field replaced.
+  const report = renderReport(
+    [{ caseDef: CASE, runs: [{ diffOnly: false, error: 'lmstudio timed out, probably', reason: null }] }],
+    { runsPerCase: 1, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'failed'), '1');
+});
+
+test('a generation window too short to have been measured reports no rate', async () => {
+  // `> 0` was not a sufficient guard. `timings()` rounds to whole milliseconds,
+  // so a server that buffers its SSE output and flushes the reply in one write
+  // produces a 1ms window — ±50% quantisation — and the quotient renders as a
+  // five-digit measurement, arriving in the bench as the *upper endpoint* of the
+  // range with no coverage suffix to warn anyone. Found by the code review.
+  const report = renderReport(
+    [{ caseDef: CASE, runs: [ratedRun(7, 1)] }],
+    { runsPerCase: 1, provider: 'local', model: 'test-model' },
+  );
+
+  assert.equal(cell(report, 'gen tok/s'), '—');
+});

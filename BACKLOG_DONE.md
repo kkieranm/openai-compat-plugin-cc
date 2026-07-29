@@ -2,6 +2,61 @@
 
 Newest first.
 
+- **OAI-17** — Bound a run in wall clock, and report what it generated per second. Completed
+  2026-07-29. Three gaps, and the probe reshaped two of them.
+  **Nothing bounded a run that was working, and the item did not know that.** It asked for a bench
+  `--timeout`, but `--timeout` names the wait for the *first* token only: once text arrives that
+  budget is retired and the idle budget takes over, resetting on every text-bearing frame. Confirmed
+  against the code by an independent read — *"there is no absolute total deadline for the streamed
+  response"*. With ADR 009's own figures (generation spanning 165–747s on one case), a six-case
+  corpus at N=3 had no worst case at all, which is the thing that actually blocks OAI-11. So the
+  feature added `--max-seconds` as well as forwarding `--timeout`: a wall-clock cap on the model
+  call, opt-in with no default, arming the transport's `deadline` budget from **one expiry minted per
+  command and shared by every retry**. That last part was a plan-challenge correction, and the reason
+  matters: the first draft armed a fresh cap per attempt, so three attempts under `--max-seconds 600`
+  could have run 1,800s with each honouring its cap — and its defence, that refused capabilities cost
+  nothing, is a claim ADR 009 had *already recorded as unverified*.
+  **A timeout was indistinguishable from a model failure in the record.** The reason was structured
+  internally all along (`error.reason`) and thrown away at the exit, which left `bench/run.mjs` a
+  prose blob to pattern-match — the class this repo files as OAI-13 items 1 and 2. Now `--json` is
+  machine-readable on **both** paths: a failed run prints `{error, reason, message, hint}` to stdout
+  and still exits 1 with the same prose on stderr, and the bench records `reason` beside the stderr
+  it already kept. The envelope covers everything after argument parsing, guards and internal crashes
+  included; the single stated exception is a malformed command line, because parsing is what
+  establishes `--json` was passed at all.
+  **Nothing reported a rate.** `tokensPerSecond` divides the reply's `completion_tokens` by
+  `generationMs` — never `durationMs`, which would fold a 421s prefill into the divisor and read ~7×
+  low — and appears in the `/oai:review` footer and a `gen tok/s` benchmark column, per run and
+  ranged, never `sum(tokens)/sum(ms)`. The figure is named for what it is: **provider-reported
+  completion tokens per measured generation second**. An earlier draft called it "thinking included",
+  which the plan challenge refused as a vendor convention this repo cannot confirm.
+  **The item's motivating number was stale and is not repeated.** It said runs "died on the 300s
+  client timeout"; that is the pre-ADR-007 undici cap, and the default first-token budget has been
+  600s since. The gap was real, the figure was not current.
+  Three defects were caught in this feature's own code before it shipped, all by the delta
+  re-challenge: `serverResponded` captured at arm time (always false) rather than read in the timer
+  callback; a live cap reporting its *remaining* time as the configured number; and a tie-break that
+  relied on `setTimeout`'s FIFO ordering, which Node documents as approximate. The last is now
+  suppression rather than a race, with all four cases of the truth table pinned — including a cap
+  *longer* than the first-byte budget, the only one that proves the rule is a rule.
+  **Live, and quoted here because `bench/results/` is gitignored.** `config-origin --runs 2` on the
+  dense 27B rendered `prompt tokens 1575 | prefill s 1–3 | generate s 81–265 | gen tok/s 14.5–16.6`.
+  That row is the argument for the column: generation spread **3.3×** on an identical prompt while
+  the rate spread **1.15×**, so the model was not varying in speed, it was varying in how much it
+  chose to say — and `81–265` alone reads as the opposite. The same case under `--max-seconds 20`
+  produced `failed: 1 (1 timed out)` with `reason: "deadline-timeout"` in the record, cut after
+  82,775 characters, and the hint that rendered was the mid-generation one rather than the
+  nothing-arrived one — the conditional a Codex finding added.
+  **Six defects in this feature's own code were caught before it shipped, none of them by the tests**
+  — a per-attempt cap, a flag captured at arm time instead of read at fire time (twice, the second
+  by copying the first fix's shape without its wrapper), a cap reporting its remaining time as the
+  configured one, a FIFO-dependent tie-break, a cap above ~24.8 days that would have fired
+  immediately, and a hint claiming the model was generating on the strength of raw SSE bytes. That
+  last one is the instructive one: the branch existed only because an earlier reviewer objected to a
+  hint claiming more than was known, so a fix for one false assertion introduced another from a
+  worse signal. Three of four review finders converged on it independently.
+  296 tests green (275 at the start). See [ADR 010](adr/010-bounding-and-rating-a-run.md).
+
 - **OAI-18** — Measure prefill and generation separately, and pin the corpus commit. Completed
   2026-07-29. The bench reported one wall-clock number per run and ranged it across `--runs 3`; that
   number is two quantities added together, and a server-side prompt cache moves one by ~37× and

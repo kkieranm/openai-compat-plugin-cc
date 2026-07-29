@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { UserError } from './errors.mjs';
+import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
 
 // Seeded on first run. These ports are the documented defaults for each server
 // but are NOT verified facts — `setup` prints the config path so they can be
@@ -68,10 +69,19 @@ function validateConfig(config, path) {
     }
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
-    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds']) {
+    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds', 'maxSeconds']) {
       const value = profile[key];
       if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
         throw new UserError(`Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a positive whole number.`);
+      }
+      // A budget above what setTimeout can express is clamped by Node to 1ms —
+      // so an enormous number here would arm an *immediate* timeout, which is
+      // the opposite of what anyone writing it meant. Same ceiling the flags
+      // use; `contextLength` is not a duration and is exempt.
+      if (key !== 'contextLength' && value > MAX_BUDGET_SECONDS) {
+        throw new UserError(
+          `Provider "${name}" in ${path} has "${key}": ${value} — above the ${MAX_BUDGET_SECONDS}s a timer can express.`,
+        );
       }
     }
   }
@@ -140,6 +150,7 @@ export function buildProfile(name, rawProfile) {
     // validates fine and then does nothing — a configured value the code never
     // reads is the same defect as one it reports as armed.
     idleSeconds: rawProfile.idleSeconds,
+    maxSeconds: rawProfile.maxSeconds,
     apiKey: resolveApiKey(rawProfile, name),
   };
 }

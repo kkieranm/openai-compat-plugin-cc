@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { UserError } from './errors.mjs';
+import { arm, armBudgets } from './http-budgets.mjs';
 import { assertDecodable, budgetError, transportError } from './http-errors.mjs';
 
 /**
@@ -32,7 +33,13 @@ import { assertDecodable, budgetError, transportError } from './http-errors.mjs'
  * `model-info` probes are bounded totals today (10s and 2s) and can never reach
  * undici's 300s; handing them a phase-based budget with no ceiling would let a
  * slow drip block `/oai:setup` forever, since it awaits every provider. Chat
- * omits it — a run still producing tokens is working however long it takes.
+ * omits it by default — a run still producing tokens is working however long it
+ * takes — but passes it, labelled `deadline` via `totalBudget`, when a caller
+ * sets `--max-seconds`. That is the only ceiling on a streamed run: the
+ * first-token budget is retired once text arrives and the idle budget resets on
+ * every text-bearing frame, so a model that keeps emitting is otherwise
+ * unbounded. `totalBudget` exists because the two uses need different prose and
+ * different tie-break priority; see `armBudgets`.
  *
  * **There are no default budgets here on purpose.** A default in this module
  * would be the same invisible number it was written to abolish, so every caller
@@ -50,13 +57,6 @@ export function mediaType(headerValue) {
     .split(';')[0]
     .trim()
     .toLowerCase();
-}
-
-function arm(ms, onFire) {
-  const timer = setTimeout(onFire, ms);
-  // A pending budget must never be the reason a CLI stays alive.
-  timer.unref?.();
-  return timer;
 }
 
 /**
@@ -151,24 +151,6 @@ function requestOptions(target, method, headers) {
   };
 }
 
-/**
- * Arms the transport-level budgets. Both destroy the request and settle, because
- * `destroy()` does not reliably emit `'error'` across Node lines and a fired
- * budget that only destroys would hang forever.
- */
-function armBudgets(request, state, { firstByteMs, totalMs, host, fail }) {
-  const fire = (budget, ms) => () => {
-    state.aborted = budgetError(budget, ms, state.received, host);
-    request.destroy();
-    fail(state.aborted);
-  };
-  // Armed before anything is written, and cleared by the first body character
-  // rather than by the headers.
-  state.firstByteTimer = arm(firstByteMs, fire('first-byte', firstByteMs));
-  // The absolute deadline, for control-plane calls that must not outlive it
-  // however steadily the peer drips. Chat omits it deliberately.
-  if (totalMs > 0) state.totalTimer = arm(totalMs, fire('total', totalMs));
-}
 
 /** Headers have arrived: hand back a reader, or refuse what we cannot decode. */
 function onResponse({ request, response, state, target, resolve, fail, release }) {
@@ -223,7 +205,8 @@ function onResponse({ request, response, state, target, resolve, fail, release }
   });
 }
 
-export function send(url, { method = 'GET', headers = {}, body, firstByteMs, totalMs } = {}) {
+export function send(url, options = {}) {
+  const { method = 'GET', headers = {}, body, firstByteMs, totalMs, totalBudget = 'total', totalReportMs } = options;
   const target = new URL(url);
   const transport = TRANSPORTS[target.protocol];
   if (!transport) throw new UserError(`Unsupported protocol "${target.protocol}" in ${url}.`);
@@ -257,7 +240,7 @@ export function send(url, { method = 'GET', headers = {}, body, firstByteMs, tot
       onResponse({ request, response, state, target, resolve, fail, release }),
     );
 
-    armBudgets(request, state, { firstByteMs, totalMs, host: target.host, fail });
+    armBudgets(request, state, { firstByteMs, totalMs, totalBudget, totalReportMs, host: target.host, fail });
 
     // Attached before the body is written: a refused connection otherwise
     // throws unhandled instead of reaching describeFailure.

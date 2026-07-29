@@ -162,6 +162,34 @@ export function jsonReport(parsed, context) {
 }
 
 /**
+ * A run that failed, as one object — the other half of the `--json` contract.
+ *
+ * Without it, `--json` was machine-readable on success and prose on failure, so
+ * a harness could tell *that* a run failed but never *why*: `bench/run.mjs`
+ * stored the whole of stderr and could only distinguish a wall-clock cap from a
+ * 500 by pattern-matching the message. This repo has that pattern on file as a
+ * defect class twice over (OAI-13 items 1 and 2), and the fix recorded there is
+ * the same one taken here — read the structured field, not the prose.
+ *
+ * `reason` is the transport's own vocabulary where there is one
+ * (`deadline-timeout`, `idle-timeout`, `oversize`, `protocol`, …) and `null`
+ * otherwise, including for an internal failure. Null means "nothing was
+ * determined", exactly as it does in `jsonReport` — never a guess, and never a
+ * category invented here to fill the field.
+ *
+ * The prose is carried too rather than replaced: a reason is a category, and the
+ * message is what actually happened.
+ */
+export function errorReport(error) {
+  return {
+    error: true,
+    reason: error?.reason ?? null,
+    message: error?.message ?? String(error),
+    hint: error?.hint ?? null,
+  };
+}
+
+/**
  * One run, two renderings, kept side by side so a fact present in one cannot
  * quietly go missing from the other — the rule `jsonRow` already follows in
  * `cmd-setup.mjs`. Both derive from the same parsed object and the same
@@ -182,6 +210,7 @@ export function report(parsed, context) {
       usage: result.usage,
       durationMs,
       prefillMs: result.prefillMs,
+      generationMs: result.generationMs,
       contextNote: budget.checked ? `~${estimatedTokens} tokens sent.` : budget.note,
       finishReason: result.finishReason,
     })}\n`,

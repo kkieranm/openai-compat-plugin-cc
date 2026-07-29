@@ -18,7 +18,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/oai-companion.mjs" review [flags] "<extra in
 
 Put every flag **before** the instructions, and quote the instruction text as one argument. From its first word onward it is taken verbatim, so apostrophes, quotes and backslashes must survive exactly as the user typed them — never rewrite or re-escape them. If the instructions themselves need to name one of this command's flags, put them after a bare `--`.
 
-The script decides what to review — do not build a diff yourself or paste one into the arguments. With no flags it reviews uncommitted work (working tree, staged changes, and untracked files). `--staged`, `--base <ref>`, `--commit <ref>` and repeated `--file <path>` change the target; `--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens` and `--temperature` behave as in `/oai:task`, except that `--max-tokens` has a floor here: a review reply carries a findings array and a reasoning field, and a budget too small to hold both is refused rather than sent, naming the minimum. Pass the user's flags through exactly. Any trailing text is forwarded as extra instructions for the reviewer, verbatim.
+The script decides what to review — do not build a diff yourself or paste one into the arguments. With no flags it reviews uncommitted work (working tree, staged changes, and untracked files). `--staged`, `--base <ref>`, `--commit <ref>` and repeated `--file <path>` change the target; `--provider`, `--model`, `--base-url`, `--timeout`, `--max-seconds`, `--max-tokens` and `--temperature` behave as in `/oai:task`, except that `--max-tokens` has a floor here: a review reply carries a findings array and a reasoning field, and a budget too small to hold both is refused rather than sent, naming the minimum. Pass the user's flags through exactly. Any trailing text is forwarded as extra instructions for the reviewer, verbatim.
 
 Each changed file is sent whole alongside the diff, so the model can resolve anything defined outside the changed hunks. `--diff-only` sends just the diff — faster on a slow local model, at the cost of the "X is not defined" false positives that whole files exist to prevent. It cannot be combined with `--file`, which has no diff.
 
@@ -42,3 +42,10 @@ Handling failures:
 
 - The script exits 1 with a specific message for user-fixable problems (nothing to review, server down, no model loaded, diff too large for the window). Show that message. Do not retry with a different target to make it fit, and do not fall back to reviewing the code yourself unless the user asks.
 - If it reports that no provider is reachable, suggest `/oai:setup`.
+
+With `--json`, stdout is machine-readable on **both** paths: a successful run prints the report, and a
+failed one prints `{"error": true, "reason": ..., "message": ..., "hint": ...}` and still exits 1 with the
+same prose on stderr. `reason` carries the transport's own vocabulary — `deadline-timeout`,
+`idle-timeout`, `first-token-timeout`, `oversize`, and so on — or `null` where nothing was determined, so
+a caller can tell a wall-clock cap from a server error without matching prose. The one case that stays
+prose-only is a malformed command line: parsing is what establishes that `--json` was passed at all.

@@ -194,7 +194,7 @@ function systemPromptFor(cacheBuster) {
  * validation error, returned before any generation happens.
  */
 export async function requestFindings(profile, plan) {
-  const { model, timeoutMs, idleMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
+  const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
   const shared = {
     profile,
     model,
@@ -206,7 +206,18 @@ export async function requestFindings(profile, plan) {
       'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
       'specific files with --file — or raise the model context length in the server and config.',
   };
-  const send = { model, timeoutMs, idleMs, temperature, onProgress };
+  // Minted once, here, because this function is the outermost layer that can
+  // retry a model call: the `response_format` catch below sends a *second*
+  // completion, and each of those may itself climb the capability ladder in
+  // chat.mjs. A cap handed down as a duration would be re-armed whole at every
+  // one of those attempts, so `--max-seconds 600` could run for 1,800s with
+  // every individual attempt honouring its cap. An instant cannot be re-armed.
+  //
+  // It starts when the model work starts, not when the command did, so the flag
+  // bounds what it says it bounds — git collection and model resolution are
+  // outside it, and the docs say so.
+  const expiresAt = maxMs === undefined ? undefined : performance.now() + maxMs;
+  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, onProgress };
   const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
   const first = prepareLadder(shared, ladder);

@@ -17,6 +17,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
+import { parseNumber } from '../scripts/lib/delegate.mjs';
+import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
 import { renderReport } from './lib/report.mjs';
@@ -26,7 +28,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds'],
   booleanFlags: ['diff-only', 'cold'],
   repeatableFlags: ['case'],
 };
@@ -50,6 +52,65 @@ const INVOCATION = randomUUID();
  * input" is a result about the reviewer, and silently missing rows would make
  * a partial bench read as a complete one.
  */
+/**
+ * The command line for one run of one case.
+ *
+ * Lifted out of `reviewOnce` at the function size budget, and the seam is a
+ * clean one: this decides *what to ask for*, while the caller decides what to do
+ * with the answer — including how to record a failure, which is the half that
+ * kept growing.
+ */
+function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
+  const flags = ['review', ...materializedArgs, '--json'];
+  if (diffOnly) flags.push('--diff-only');
+  // Unique per run *and* per invocation. Without the run index every run of a
+  // case would share a prefix and only the first would be cold — the exact
+  // thing --cold exists to prevent, reintroduced by the fix.
+  if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
+  // The manifest may pin its own provider/model, so a case can name the model
+  // it is a fair test of; the command line overrides it. This is what makes
+  // OAI-11's cross-model passes configuration rather than a rewrite.
+  const provider = options.provider ?? caseDef.provider;
+  const model = options.model ?? caseDef.model;
+  if (provider) flags.push('--provider', provider);
+  if (model) flags.push('--model', model);
+  // No manifest fallback for the budgets, unlike provider/model: a case pins
+  // the model it is a fair test of, but how long the harness is willing to
+  // wait is a property of this invocation, not of the case. Command line only.
+  if (options.timeout) flags.push('--timeout', options.timeout);
+  if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
+  return flags;
+}
+
+/**
+ * Why a run failed, in the command's own vocabulary — or null when it did not say.
+ *
+ * Read from the `--json` error envelope on stdout. The alternative was matching
+ * stderr for phrases like "timed out", which this repo has on file as a defect
+ * class twice over (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a
+ * server's prose asserts a cause it only guessed. `reason` is what the transport
+ * itself decided; the stderr blob beside it stays the record of what happened.
+ *
+ * `error: true` identifies the *document*, not just the field. A run can flush a
+ * success report to stdout and then exit non-zero, and that report claims
+ * nothing about why. Keying on the envelope marker is what keeps `reason`
+ * meaning "the command said it failed, and named this cause" rather than "some
+ * JSON on stdout had a field by that name" — the latter would be the same
+ * guessing reappearing inside the fix meant to end it.
+ *
+ * Unparseable stdout is not a failure of this harness: the run simply did not
+ * say why, and null is exactly that. It never throws, because the whole promise
+ * of the path it sits on is that one case failing does not cancel the rest.
+ */
+function reasonFrom(stdout) {
+  try {
+    const parsed = JSON.parse(String(stdout ?? ''));
+    return parsed?.error === true ? parsed.reason ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
 function reviewOnce(caseDef, options, runIndex) {
   // --diff-only cannot apply to a `file` case: there is no diff, and the CLI
   // refuses the combination. So the flag lands on some cases and not others, and
@@ -67,19 +128,7 @@ function reviewOnce(caseDef, options, runIndex) {
   try {
     const materialized = materialize(caseDef, ROOT);
     dir = materialized.dir;
-    const flags = ['review', ...materialized.args, '--json'];
-    if (diffOnly) flags.push('--diff-only');
-    // Unique per run *and* per invocation. Without the run index every run of a
-    // case would share a prefix and only the first would be cold — the exact
-    // thing --cold exists to prevent, reintroduced by the fix.
-    if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
-    // The manifest may pin its own provider/model, so a case can name the model
-    // it is a fair test of; the command line overrides it. This is what makes
-    // OAI-11's cross-model passes configuration rather than a rewrite.
-    const provider = options.provider ?? caseDef.provider;
-    const model = options.model ?? caseDef.model;
-    if (provider) flags.push('--provider', provider);
-    if (model) flags.push('--model', model);
+    const flags = reviewFlags(materialized.args, caseDef, options, { diffOnly, runIndex });
 
     // stderr is captured rather than inherited: a failed run's reason is the
     // evidence this harness exists to keep, and letting it scroll past into the
@@ -100,7 +149,13 @@ function reviewOnce(caseDef, options, runIndex) {
     // remedy as the diagnosis is this repo's signature class, in the very field
     // whose comment calls itself the evidence the harness exists to keep.
     const said = String(error.stderr ?? '').trim();
-    return { diffOnly, error: said || error.message };
+    // The category alongside the prose, read from the command's own `--json`
+    // error envelope on stdout. The alternative was matching stderr for phrases
+    // like "timed out", which this repo has on file as a defect class twice over
+    // (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a server's prose
+    // asserts a cause it only guessed. `reason` is what the transport itself
+    // decided; `said` stays the record of what actually happened.
+    return { diffOnly, error: said || error.message, reason: reasonFrom(error.stdout) };
   } finally {
     // Only if it got far enough to exist; materialize may be what threw.
     if (dir) cleanup(dir);
@@ -142,6 +197,24 @@ async function main() {
   if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
     throw new UserError(`--runs must be a positive integer, got "${options.runs}".`);
   }
+  // Validated with the review command's *own* validator, and with exactly its
+  // options — bench only forwards these flags, so any stricter rule here would
+  // give one flag two domains: `--timeout 1.5` rejected by the harness while
+  // `/oai:review --timeout 1.5` accepts it. Hence `{ min: 1 }` and no
+  // `integer: true`; fractional seconds are a legitimate duration. `--runs`
+  // above stays integer-only for the opposite reason — it is a count, not a
+  // duration. Called for the throw alone, before any case runs, so a mistyped
+  // budget costs nothing rather than surfacing after the first model round trip.
+  // `max` included, not just `min` — the comment above says "exactly its
+  // options" and it has to be true. Omitting the ceiling let
+  // `--max-seconds 99999999` clear this guard and be refused by every child
+  // instead: a 6-case N=3 sweep would materialize 18 repos, spawn 18 processes
+  // and record 18 failed runs with `reason: null`, then render a full table of
+  // all-zero recall — in place of one refusal in milliseconds, which is the
+  // entire point of validating here.
+  const budget = { min: 1, max: MAX_BUDGET_SECONDS };
+  if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
+  if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
 
   const cases = selectCases(loadCases(ROOT), options.case);
   const results = cases.map((caseDef) => runCase(caseDef, options, runsPerCase));
@@ -156,6 +229,8 @@ async function main() {
     model: answered?.model ?? options.model ?? 'unknown',
     diffOnly: Boolean(options['diff-only']),
     cold: Boolean(options.cold),
+    timeoutSeconds: options.timeout,
+    maxSeconds: options['max-seconds'],
   });
 
   // Raw records beside the summary: the summary is an argument, and an argument

@@ -15,8 +15,9 @@ Core constraints:
 - This command delegates. It does not do the work itself.
 - Return the companion script's stdout verbatim: no paraphrasing, summarising, or commentary before or after it.
 - Do not act on what the local model says — no edits, no fixes, no follow-up tasks. If its answer suggests changes, leave that for the user to ask for.
-- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-tokens`, `--temperature`, `--system`) exactly as given.
-- `--timeout` bounds the wait for the model's **first token** — connecting plus reading the prompt, which is silent and can take minutes on a large input. Once tokens are flowing the run is not time-limited; a separate idle budget (`idleSeconds` in the provider config, 60s by default) ends it only if output stops.
+- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-seconds`, `--max-tokens`, `--temperature`, `--system`) exactly as given.
+- `--timeout` bounds the wait for the model's **first token** — connecting plus reading the prompt, which is silent and can take minutes on a large input. Once tokens are flowing it no longer applies; a separate idle budget (`idleSeconds` in the provider config, 60s by default) ends the run only if output *stops*.
+- `--timeout` therefore does not bound a run that keeps producing. `--max-seconds` does: it is a wall-clock cap on the whole model call, retries included, and a run that hits it fails saying so rather than being reported as a slow success. There is **no default** — without the flag a run that is still generating is not time-limited, which is the behaviour that has always applied here. It bounds the model call only; collecting files and resolving the model sit outside it. Settable per provider as `maxSeconds` in the config.
 
 Building the call:
 

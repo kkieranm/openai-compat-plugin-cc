@@ -363,6 +363,85 @@ false), `tests/bench-corpus.test.js` (the pinned commit date), and `tests/bench-
 `Infinity×`, and a prompt-size column asserted over **three** runs so a sum cannot pass). ADR 009
 records the measurements.
 
+## A budget handed down as a duration is re-armed by every retry
+
+Found 2026-07-29, by the plan challenge, before any of it was written.
+
+`--max-seconds` was drafted as a duration passed into each request. Two retry ladders nest here —
+`postWithDegrade` retries when a server refuses `stream`/`stream_options`, and `requestFindings`
+retries *that* when a server refuses `response_format` — so three attempts under a 600s cap could
+have run for 1,800s with every individual attempt honouring the number. The fix is to pass an
+**instant, not a duration**: an expiry cannot be re-armed, and each attempt subtracts from it.
+
+Two things generalise past the timer.
+
+**The defence was this repo's own unverified note, quoted back as a fact.** The draft argued that a
+refused capability is rejected before any generation, so retries cost nothing — which is exactly
+what ADR 009's known limits already record as *not established*: a server may prefill before
+refusing a field, and nothing here detects it. A caveat written to mark uncertainty had, one feature
+later, become the premise of a design. When a design leans on a claim, check whether the claim is one
+of ours, and whether we wrote it down as a guess.
+
+**Reporting has to follow the same split as arming.** With one expiry shared across retries, a
+later attempt's *remaining* time is not a number anyone configured, so the timer must run for what is
+left while the message names what was set — the split `createDeadline` had already made for the
+first-token budget, and which the first draft of this one did not copy. Caught by the delta
+re-challenge.
+
+## A value read when a timer is armed is not the value when it fires
+
+Same feature, same review pass. `budgetError` gained an explicit `serverResponded`, and the transport
+passed `{ serverResponded: state.settled }` — evaluated at arm time, where it is **always false**. A
+cap firing after headers would have reported that nothing was heard from the server, which is the
+precise falsehood the parameter was added to prevent, arrived at by a different route. It has to be
+read inside the callback.
+
+**It then happened a second time, in the same feature, after being written up.** A later review
+found the *other* timer needed the same treatment; the fix was applied by copying the first one's
+shape — and the wrapping arrow, which is the entire mechanism, was dropped. Two instances, hours
+apart, one of them by someone who had just documented the class. Copying a line that works is not
+copying the reason it works, and a value read through a closure looks identical to one captured by
+value at the call site.
+
+The broader shape, which is the one worth keeping: **an inference that is a safe proxy until a new
+case is added to it.** `serverResponded` had been derived from the budget's *name* — every budget
+except `first-byte` was assumed to mean a status line had arrived — and that held for as long as
+every other budget was armed after headers. A budget spanning all phases broke it silently, and
+`cmd-setup.mjs` reads that field to decide whether to tell someone to start a server that is already
+running. When adding a case to a set, check what the existing members were quietly guaranteeing.
+
+## A counter is not evidence of what produced it
+
+Found 2026-07-29 by the built-in review, in a fix written hours earlier for a different reviewer's
+finding — three of four finders converged on it independently.
+
+`budgetError`'s `received` parameter carries **model text** when `chat.mjs` passes it and **raw body
+bytes** when the transport does. A hint added to stop the code asserting unobserved activity branched
+on that counter to say *"the model was still generating"* — from the transport, where it counts SSE
+framing, keepalive comments and role-only deltas. A server emitting `:\n\n` every thirty seconds
+moves it while producing nothing, and `http.mjs`'s own module note already refuses exactly that
+inference for exactly that reason. The same count was also printed to the user as "characters", which
+overstates a reply by roughly an order of magnitude at ~130 bytes of envelope per delta.
+
+Two things to carry forward. **One parameter carrying two quantities is the defect**, and it survives
+because both are plausible integers — the name `received` is true of either. And **a fix aimed at one
+false assertion is a normal place for the next one to appear**: this branch existed only because a
+reviewer objected to a hint claiming more than was known, and it replaced that claim with a different
+one from a worse signal.
+
+## Scheduler ordering is not a tie-break you may report to a user
+
+Same feature. Two budgets due at the same instant: the draft armed the one it wanted to win first and
+relied on `setTimeout` resolving equal delays in registration order. Node documents that ordering as
+approximate. Which failure a user is told about — and, through `serverResponded`, what they are told
+to do about it — is not a thing to leave to scheduler behaviour.
+
+The fix is suppression rather than a race: a cap due no later than an inner budget subsumes it, so
+the inner timer is not armed at all. And the guard has to cover the branch **in both directions** —
+every end-to-end test set a cap shorter than the inner budget, so reversing the comparison would have
+left the whole suite green. The case that makes the others mean anything is the one where the cap is
+*longer*.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

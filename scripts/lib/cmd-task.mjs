@@ -2,14 +2,16 @@ import { readFileSync } from 'node:fs';
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
-import { parseNumericOptions, prepareRequest, resolveIdle, resolveTarget, resolveTimeout } from './delegate.mjs';
+import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { withProgress } from './progress.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { renderTaskFooter } from './render.mjs';
 
 export const TASK_SPEC = {
-  valueFlags: ['provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-tokens', 'temperature'],
+  valueFlags: [
+    'provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
+  ],
   repeatableFlags: ['file'],
 };
 
@@ -45,7 +47,7 @@ function resolvePrompt(options, inlinePrompt, terminated) {
 
 export async function runTask(argv) {
   const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
-  const { maxTokens, temperature, timeoutSeconds } = parseNumericOptions(options);
+  const { maxTokens, temperature, timeoutSeconds, maxSeconds } = parseNumericOptions(options);
 
   const { config } = loadConfig();
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
@@ -70,6 +72,7 @@ export async function runTask(argv) {
 
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
+  const maxMs = resolveMax(profile, maxSeconds);
   const startedAt = Date.now();
   const result = await withProgress((onProgress) =>
     chatCompletion(profile, {
@@ -77,6 +80,11 @@ export async function runTask(argv) {
       messages,
       timeoutMs: resolveTimeout(profile, timeoutSeconds),
       idleMs: resolveIdle(profile),
+      // One instant for the whole answer, minted at the last moment before the
+      // call: chat.mjs's capability ladder can retry this request, and a
+      // duration would give each retry the whole cap over again.
+      expiresAt: maxMs === undefined ? undefined : performance.now() + maxMs,
+      maxMs,
       temperature,
       maxTokens,
       onProgress,
@@ -86,13 +94,26 @@ export async function runTask(argv) {
   // Fails loudly rather than printing nothing: an empty answer with a footer
   // reads as a successful run that had nothing to say.
   process.stdout.write(requireAnswer(result, profile).trim());
+  writeFooter(result, { profile, budget, durationMs: Date.now() - startedAt });
+}
+
+/**
+ * The footer, lifted out at the function size budget.
+ *
+ * Every field the human path shows is named here in one place, which is the
+ * point: `/oai:review` renders the same footer from `review-report.mjs`, and a
+ * figure added to one call site and forgotten at the other is how a fact ends up
+ * true on one path and absent on the next.
+ */
+function writeFooter(result, { profile, budget, durationMs }) {
   process.stdout.write(
     `${renderTaskFooter({
       providerName: profile.name,
       model: result.model,
       usage: result.usage,
-      durationMs: Date.now() - startedAt,
+      durationMs,
       prefillMs: result.prefillMs,
+      generationMs: result.generationMs,
       contextNote: budget.checked ? null : budget.note,
       finishReason: result.finishReason,
     })}\n`,

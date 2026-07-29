@@ -83,7 +83,7 @@ async function assertOk(profile, path, response) {
   throw error;
 }
 
-export async function request(profile, path, { method = 'GET', body, firstByteMs, totalMs } = {}) {
+export async function request(profile, path, { method = 'GET', body, firstByteMs, totalMs, totalBudget, totalReportMs } = {}) {
   // The profile's query string belongs after the request path, not inside the
   // base URL (e.g. Azure-style "?api-version=").
   const url = `${profile.baseUrl}${path}${profile.query ?? ''}`;
@@ -95,6 +95,8 @@ export async function request(profile, path, { method = 'GET', body, firstByteMs
       body: body === undefined ? undefined : JSON.stringify(body),
       firstByteMs,
       totalMs,
+      totalBudget,
+      totalReportMs,
     });
   } catch (error) {
     throw describeFailure(error, profile);

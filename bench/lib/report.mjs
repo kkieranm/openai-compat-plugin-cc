@@ -1,38 +1,17 @@
 // Turning benchmark runs into something a person can read and paste into an ADR.
 //
-// Which bucket each run falls into lives in `run-buckets.mjs`, and the prose
-// qualifying every figure lives in `caveats.mjs`; this file is the table and the
-// arithmetic behind it.
+// Three files, three questions, all three seams cut by the size ratchet and all
+// three real. `run-buckets.mjs` decides which bucket a run falls into;
+// `case-rows.mjs` turns runs into the counts and samples a row is made of;
+// `caveats.mjs` writes the prose qualifying every figure. What is left here is
+// the rendering: cells, the table, and the document around it.
 //
-// Both seams were cut by the size ratchet and both are real. The split worth
-// stating is this one: a number and the sentence explaining what it does not
-// mean have different reasons to change, and keeping them in one file is how the
-// sentence quietly stops matching the number.
+// The split worth stating is the last one. A number and the sentence explaining
+// what it does not mean have different reasons to change, and keeping them in
+// one file is how the sentence quietly stops matching the number.
+import { formatRate } from '../../scripts/lib/throughput.mjs';
+import { caseRows } from './case-rows.mjs';
 import { caveats, pct } from './caveats.mjs';
-import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
-
-/**
- * The two halves of a run's wall clock, gathered separately because a
- * server-side prompt cache moves one of them and not the other.
- *
- * Measured: the same 56,805-token prompt reached its first token in 421.7s cold
- * and 11.5s warm, generating for ~3s in both. So a `seconds` range of `13–425`
- * across three runs of one case was never a spread in the reviewer — it was one
- * cold run and two cache hits, reported as if they were samples of one thing.
- *
- * `Number.isFinite` is the gate, not truthiness or `!= null`. A non-streamed
- * reply reports null for both because no first-token boundary was observed, and
- * `null` arithmetic silently yields a number: `durationMs - null` is
- * `durationMs`, which would relabel a whole run's wall clock as generation. The
- * count of what was measured is returned alongside the values so a cell can say
- * `2/3 measured` rather than quietly ranging over the runs that happened to
- * carry a figure. See ADR 009.
- */
-export function timingSamples(runs, field) {
-  const completed = runs.filter((run) => run.report);
-  const values = completed.map((run) => run.report[field]).filter((value) => Number.isFinite(value));
-  return { values, measured: values.length, completed: completed.length };
-}
 
 /**
  * A seconds range, and how much of the case it actually covers.
@@ -50,24 +29,19 @@ function rangeCell({ values, measured, completed }) {
 }
 
 /**
- * The prompt's size, **per run** — the one figure in this row that is a property
- * of the input rather than a count over the runs.
+ * A rate range, reusing the measured-coverage suffix the timing cells carry.
  *
- * It was a `reduce` summing every run's `prompt_tokens`, which is invisible at
- * N=1 (where sum equals per-run) and wrong by exactly a factor of `runs`
- * everywhere else. ADR 006 harvested all six of its per-case figures from an N=1
- * sweep and quotes them as prompt sizes — `config-origin` at 1,575, `model-info`
- * at 41,016 — so the first N>1 report printed 4,725 and 82,020 for those same
- * cases, in a column a reader has every reason to divide a generation figure by.
- * Two quantities welded into one number, which is the defect ADR 009 exists to
- * remove, surviving in the table it added its own columns to.
- *
- * A range rather than one number when runs disagree, because they can: `--cold`
- * prepends a per-run nonce, so the prompt genuinely differs run to run and a
- * single figure would have to pick one and call it the prompt.
+ * Rendered through `formatRate`, not a local `toFixed` — the footer prints the
+ * same quantity, and two hand-written renderings of one number is how a table
+ * and a footer end up disagreeing at the last decimal about a figure they both
+ * computed from the same helper.
  */
-function promptSamples(runs) {
-  return runs.map((run) => run.report?.usage?.prompt_tokens).filter((value) => Number.isFinite(value));
+function rateCell({ values, measured, completed }) {
+  if (measured === 0) return '—';
+  const low = formatRate(Math.min(...values));
+  const high = formatRate(Math.max(...values));
+  const range = low === high ? low : `${low}–${high}`;
+  return measured === completed ? range : `${range} (${measured}/${completed} measured)`;
 }
 
 function tokenCell(values) {
@@ -77,64 +51,6 @@ function tokenCell(values) {
   const low = Math.min(...values);
   const high = Math.max(...values);
   return low === high ? `${low}` : `${low}–${high}`;
-}
-
-function caseRows(results) {
-  return results.map((result) => {
-    const { caseDef, runs } = result;
-    // Three readings of a cut run, two of them wrong. Discarding it throws away
-    // findings that are perfectly good — the cut lands on `analysis`, which the
-    // schema orders first, so the model still emitted its findings normally.
-    // Folding it in as an ordinary run counts every defect it never reached as a
-    // confirmed miss. What is true is narrower than either: its findings are
-    // observations and its silence is not, so the silence is counted once, as
-    // `unresolved`, and reported beside the figure instead of inside it.
-    //
-    // `unresolved` is zero wherever nothing was cut, which is what keeps a row
-    // comparable with every figure this table printed before.
-    const truncated = new Set(truncatedRuns(runs));
-    const scored = runs.filter((run) => run.score && !truncated.has(run));
-    // Intersected with `scored`, not merely collected — the whole table rests on
-    // cut runs being a *subset* of the scored ones. A cut run that somehow
-    // carried no score would otherwise report unresolved opportunities against a
-    // denominator it never contributed to, so the caveat's stated upper bound
-    // could exceed 100%. Enforced rather than assumed, because the assumption
-    // holds only while `run.mjs` attaches a score to every parsed reply, and
-    // nothing here would notice if it stopped.
-    const scoredSet = new Set(scored);
-    const cut = analysisCutRuns(runs).filter((run) => scoredSet.has(run));
-    const listed = caseDef.defects.length;
-    const found = scored.reduce((total, run) => total + run.score.recall.found, 0);
-    const anchored = scored.reduce((total, run) => total + run.score.recall.anchored, 0);
-    const unmatched = scored.reduce((total, run) => total + run.score.unmatched.length, 0);
-    const unresolved = cut.reduce((total, run) => total + (listed - (run.score?.recall.found ?? 0)), 0);
-    const failed = runs.filter((run) => run.error).length;
-    const prefill = timingSamples(runs, 'prefillMs');
-    const generation = timingSamples(runs, 'generationMs');
-    return {
-      id: caseDef.id,
-      listed,
-      dropped: caseDef.dropped.length,
-      opportunities: listed * scored.length,
-      found,
-      unresolved,
-      anchored,
-      unmatched,
-      failed,
-      truncated: truncated.size,
-      // A sub-count of `scored`, not a bucket beside it — stated here because a
-      // number that looks like a bucket and is not is exactly the ambiguity the
-      // sum invariant below exists to prevent.
-      cut: cut.length,
-      unreadable: unreadableRuns(runs, scoredSet).length,
-      scored: scored.length,
-      runs: runs.length,
-      diffOnly: runs.some((run) => run.diffOnly),
-      tokens: promptSamples(runs),
-      prefill,
-      generation,
-    };
-  });
 }
 
 /**
@@ -160,8 +76,9 @@ function table(rows) {
     // of the same quantity: a prompt cache moves the first by tens of times and
     // leaves the second alone, so summing them produces a figure that describes
     // neither, which is exactly what the `seconds` column they replace did.
-    '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed | prompt tokens | prefill s | generate s |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed '
+    + '| prompt tokens | prefill s | generate s | gen tok/s |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const row of rows) {
     // `scored` is printed beside `runs` so the row's own arithmetic can be
@@ -172,17 +89,21 @@ function table(rows) {
     // scored — printing it as a fifth column would break the sum and read as a
     // bucket it is not.
     const scoredCell = row.cut ? `${row.scored}/${row.runs} (${row.cut} cut)` : `${row.scored}/${row.runs}`;
+    // The same shape, for the same reason: a run the wall-clock cap killed is
+    // still a failed run, so it stays inside `failed` and the sum holds. What it
+    // is *not* is a result about the reviewer — a harness limit and a model that
+    // could not answer were one number until the CLI started saying which.
+    const failedCell = row.timedOut ? `${row.failed} (${row.timedOut} timed out)` : `${row.failed}`;
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
-      + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${row.failed} `
-      + `| ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} |`,
+      + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
+      + `| ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
     );
   }
   return lines;
 }
 
-
-export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold }) {
+export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, timeoutSeconds, maxSeconds }) {
   const rows = caseRows(results);
   const lines = [
     `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`,
@@ -192,7 +113,7 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
     ...table(rows),
     '',
   ];
-  for (const note of caveats(rows, runsPerCase, { diffOnly, cold })) lines.push(note, '');
+  for (const note of caveats(rows, runsPerCase, { diffOnly, cold, timeoutSeconds, maxSeconds })) lines.push(note, '');
 
   const unmatched = results.flatMap(({ caseDef, runs }) =>
     runs.flatMap((run) => (run.score?.unmatched ?? []).map((finding) => ({ caseId: caseDef.id, finding }))));

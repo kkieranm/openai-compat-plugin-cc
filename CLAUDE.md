@@ -37,6 +37,11 @@ its silence widens the benchmark's recall into a band — see [ADR 008](adr/008-
 second alone; `/oai:review --cache-buster <token>` defeats that cache for a measurement, and the
 benchmark's `--cold` uses it — see [ADR 009](adr/009-measuring-prefill-and-generation.md).
 
+`--max-seconds` caps a whole model call in wall clock, retries included — `scripts/lib/http-budgets.mjs`
+arms it as the transport's `deadline` budget from one expiry `requestFindings` mints per command, and
+`scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
+measured over — see [ADR 010](adr/010-bounding-and-rating-a-run.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see

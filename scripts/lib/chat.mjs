@@ -174,7 +174,40 @@ export async function postWithDegrade(profile, body, budgets) {
   }
 }
 
-async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
+/**
+ * What is left of the caller's wall-clock cap, or `undefined` when there is none.
+ *
+ * The cap is passed down as an **instant**, not a duration, and that is the whole
+ * point of it. An earlier design armed a fresh `maxMs` inside each attempt, which
+ * makes the name a lie: `postWithDegrade` retries this function, and the
+ * `response_format` ladder in `review-request.mjs` retries *that*, so three
+ * attempts under `--max-seconds 600` could run for 1,800s while every individual
+ * attempt honoured its cap. The defence for it — a refused capability is rejected
+ * before any generation — is a claim this repo has already written down as
+ * unverified: `review-report.mjs` records that a server may prefill before
+ * refusing a field and that nothing here detects it.
+ *
+ * So one expiry is minted per command and every attempt subtracts from it.
+ * `performance.now()` because a wall-clock step must not lengthen a cap.
+ */
+function capBudgets(profile, expiresAt, maxMs) {
+  if (!Number.isFinite(expiresAt)) return {};
+  const totalMs = expiresAt - performance.now();
+  // Refused rather than dispatched. A request sent with a non-positive budget
+  // would be aborted by its own timer a tick later, so the round trip is pure
+  // waste — and worse, `armBudgets` gates on `totalMs > 0`, so a zero would arm
+  // *nothing* and the attempt would run unbounded past a cap that had already
+  // expired. The same error a live expiry produces, because it is the same fact.
+  //
+  // Reported as the cap the caller *set*, not as the nothing that was left —
+  // the same choice `createDeadline` makes above, and for the same reason:
+  // "did not finish within the 0.0s cap" sends someone to change a number
+  // nobody configured.
+  if (totalMs <= 0) throw budgetError('deadline', maxMs ?? 0, 0, profile.name, { serverResponded: false });
+  return { totalMs, totalBudget: 'deadline', totalReportMs: maxMs };
+}
+
+async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, expiresAt, maxMs }) {
   // One absolute deadline for the whole attempt. Arming the semantic budget with
   // a *fresh* firstTokenMs after the transport has already waited would grant up
   // to twice the number the config advertises — the same double-count as
@@ -188,7 +221,12 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
   // neither prefills nor warms a cache, and the attempt that answers is the one
   // whose cost is real.
   const startedAt = performance.now();
-  const response = await request(profile, '/chat/completions', { method: 'POST', body, firstByteMs: firstTokenMs });
+  const response = await request(profile, '/chat/completions', {
+    method: 'POST',
+    body,
+    firstByteMs: firstTokenMs,
+    ...capBudgets(profile, expiresAt, maxMs),
+  });
   const answer = emptyAnswer();
   // Chosen by response shape, not by config: a server that ignores `stream`
   // answers with a whole JSON completion, and that is the same answer read a

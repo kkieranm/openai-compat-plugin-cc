@@ -213,5 +213,16 @@ test('--json refuses a truncated reply exactly as the text report does', async (
 
   assert.equal(result.status, 1, 'a run that ran out of tokens is not a reportable result');
   assert.match(result.stderr, /ran out of tokens/);
-  assert.equal(result.stdout.trim(), '', 'and nothing that looks like a report is printed');
+
+  // Stdout is no longer empty here — OAI-17 made `--json` machine-readable on
+  // the failure path too — but the invariant this test was written to protect is
+  // unchanged and is now asserted directly rather than via emptiness: whatever
+  // is printed must be unmistakably *not* a report. A caller keying on
+  // `findings` or `parsed` must find neither, so a budget failure can never be
+  // read as a finished run that found nothing.
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.error, true);
+  assert.equal('findings' in envelope, false);
+  assert.equal('parsed' in envelope, false);
+  assert.match(envelope.message, /ran out of tokens/);
 });

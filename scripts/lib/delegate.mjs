@@ -3,6 +3,7 @@
 import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
+import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
 import { describeModels, planSelection, windowFor } from './model-info.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
 
@@ -39,7 +40,18 @@ export function parseNumericOptions(options) {
         : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 }),
     temperature:
       options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
-    timeoutSeconds: options.timeout === undefined ? undefined : parseNumber(options.timeout, 'timeout', { min: 1 }),
+    // Both bounded above, for the reason MAX_BUDGET_SECONDS states. `--timeout`
+    // carried the same latent flaw before this feature existed; it is one
+    // expression away and left unfixed only if you decide a known immediate-fire
+    // bug is fine next to the one you just closed.
+    timeoutSeconds:
+      options.timeout === undefined
+        ? undefined
+        : parseNumber(options.timeout, 'timeout', { min: 1, max: MAX_BUDGET_SECONDS }),
+    maxSeconds:
+      options['max-seconds'] === undefined
+        ? undefined
+        : parseNumber(options['max-seconds'], 'max-seconds', { min: 1, max: MAX_BUDGET_SECONDS }),
   };
 }
 
@@ -149,4 +161,24 @@ export function resolveTimeout(profile, timeoutSeconds) {
 export function resolveIdle(profile, idleSeconds) {
   if (idleSeconds) return idleSeconds * 1000;
   return (profile.idleSeconds ?? 0) * 1000 || DEFAULT_IDLE_MS;
+}
+
+/**
+ * The wall-clock cap on the model call, or `undefined` when nobody set one.
+ *
+ * **No default, deliberately.** The two budgets above have one because a request
+ * with no bound at all is a hang; this one is a ceiling on work that is
+ * *succeeding*, and a default would be a number picked from the successful runs
+ * this repo happens to have observed. That is precisely the shape OAI-15 had to
+ * undo on the `analysis` cap, which was set "above every observed successful
+ * run" from a sample that had not yet seen a normal run reason long, and spent
+ * its life truncating working reviews. So the unset case is the old behaviour,
+ * exactly: unbounded once tokens are flowing.
+ *
+ * `undefined` rather than 0. They behave alike downstream — `armBudgets` gates
+ * on `totalMs > 0` — but 0 reads as "instant" to anyone who finds it.
+ */
+export function resolveMax(profile, maxSeconds) {
+  const seconds = maxSeconds ?? profile.maxSeconds;
+  return seconds ? seconds * 1000 : undefined;
 }
