@@ -12,6 +12,12 @@ makes one `fetch` call. See [ADR 001](adr/001-generic-openai-compatible-plugin.m
 endpoints by response shape, trusting only served windows over model ceilings — see
 [ADR 002](adr/002-context-window-detection.md).
 
+`scripts/lib/model-selection.mjs` is the single authority on which model a task will use:
+`planSelection` picks the one the server reports `loaded` when several are offered and none was
+named, and refuses an id a recognised catalogue does not list; `scripts/lib/model-identity.mjs`
+`substitution()` is the one comparison that says the model which answered is not the one requested —
+see [ADR 011](adr/011-which-model-actually-answered.md).
+
 `scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff, taking content from the
 revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by
 no diff) from droppable `changed`, and the reply falls back to the diff alone when the window is too

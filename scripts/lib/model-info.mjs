@@ -18,6 +18,7 @@
 import { readJson } from './body.mjs';
 import { authHeaders } from './client.mjs';
 import { send } from './http.mjs';
+import { planSelection } from './model-selection.mjs';
 
 const PROBE_TIMEOUT_MS = 2000;
 
@@ -166,73 +167,55 @@ function merge(ids, detected) {
   const byKey = new Map(detected.models.map((model) => [matchKey(model.id), model]));
   const authoritative = ids.length > 0 ? ids : detected.models.map((model) => model.id);
 
-  const models = authoritative.map((id) => ({
-    ...(byId.get(id) ?? byKey.get(matchKey(id)) ?? {}),
-    // Keep the spelling the chat endpoint accepts, not the dialect's.
-    id,
-    ...(detected.serverWindow ? { window: detected.serverWindow } : {}),
-  }));
-  return { models, source: detected.source };
+  const models = authoritative.map((id) => {
+    // How the record was joined, because the loose join is trustworthy for some
+    // uses of it and not others. It is conservative for the `type` denylist — a
+    // loose hit can only ADD an embedder exclusion — but a routing decision made
+    // on it would send an id no evidence covers: a /v1/models offering
+    // `qwen@4bit` while the dialect reports `qwen` as loaded must not be
+    // selected as "the loaded one". Same data, two trust levels; see
+    // `statesUsable` in model-selection.mjs.
+    const exact = byId.get(id);
+    return {
+      ...(exact ?? byKey.get(matchKey(id)) ?? {}),
+      // Keep the spelling the chat endpoint accepts, not the dialect's.
+      id,
+      exactMatch: Boolean(exact),
+      ...(detected.serverWindow ? { window: detected.serverWindow } : {}),
+    };
+  });
+  // The ids the DIALECT itself enumerated, carried separately because `models`
+  // above is keyed on the /v1/models list and drops anything that list omits.
+  //
+  // Two jobs, and both need this rather than a boolean. It says whether the
+  // dialect published a catalogue at all — llama.cpp's /props and TGI's /info
+  // are recognised and carry a server-wide window while publishing
+  // `models: []`, and those servers ignore the requested model name entirely,
+  // so refusing an id absent from a catalogue nobody published would break a
+  // working setup. And it is half of what `unservedProblem` tests membership
+  // against: gating on "the dialect published a catalogue" while checking
+  // "is it in the bare /v1/models list" mixes two sources in one decision, and
+  // would refuse a model the dialect reports as `loaded` whenever /v1/models is
+  // narrower — filtered, aliased or permission-scoped. adr/011 says in as many
+  // words that absence from a bare /v1/models list is not evidence; this is
+  // what keeps that true. Found by the lean review, reproduced end to end.
+  //
+  // Not every dialect's list is exhaustive, and that is safe rather than
+  // overlooked: `readVllm` and `readOmlx` keep only entries carrying a window,
+  // so their ids are a FILTERED view. Both build from the `/v1/models` payload
+  // itself, so what they filter out is still in `ids` above and still in the
+  // union `unservedProblem` tests — the two halves cover each other. Only
+  // `readLmStudio` can contribute an id `/v1/models` lacks, and it filters
+  // nothing. So there is no id this pair can both miss while the server would
+  // serve it. Raised as a completeness-provenance gap; kept as is because no
+  // failing case exists, and a `catalogueComplete` flag would be ceremony
+  // asserting something no caller could act on.
+  return { models, source: detected.source, catalogueIds: detected.models.map((model) => model.id) };
 }
 
 /** The window to guard with, or undefined when only a ceiling (or nothing) is known. */
 export function windowFor(described, modelId) {
   return described.models.find((model) => model.id === modelId)?.window;
-}
-
-export const MAX_LISTED_MODELS = 12;
-
-function listModelIds(ids) {
-  const shown = ids.slice(0, MAX_LISTED_MODELS);
-  const extra = ids.length - shown.length;
-  return `${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`;
-}
-
-/**
- * THE authority on which model a task will use — or why it cannot pick one.
- *
- * Every other view of that decision must call this rather than re-deriving it.
- * Three separate implementations of "what will happen" (selection, the readiness
- * marker, the window report) is what produced this repo's most-repeated defect
- * class: status output promising something the real path then refuses.
- */
-export function planSelection({ defaultModel } = {}, explicitModel, described) {
-  if (explicitModel) return { modelId: explicitModel };
-
-  if (defaultModel) {
-    // A configured model is taken on trust when the server does not list it: it
-    // may be downloaded but not loaded, and will be loaded on demand. But if the
-    // server does list it and calls it an embedder, that is a real conflict.
-    const known = described?.models?.find((model) => model.id === defaultModel);
-    if (known?.type === 'embeddings') {
-      return {
-        problem: {
-          message: `Configured defaultModel "${defaultModel}" is an embedding model and cannot answer a chat request.`,
-          hint: 'Point defaultModel at a chat model, or pass --model <id>.',
-        },
-      };
-    }
-    return { modelId: defaultModel };
-  }
-
-  const candidates = chatCandidates(described ?? { models: [] });
-  if (candidates.length === 0) {
-    return {
-      problem: {
-        message: 'This provider offers no model that can answer a chat request.',
-        hint: 'Load a chat model in the server, or pass --model <id> to have it loaded on demand.',
-      },
-    };
-  }
-  if (candidates.length > 1) {
-    return {
-      problem: {
-        message: `This provider offers ${candidates.length} models: ${listModelIds(candidates.map((model) => model.id))}.`,
-        hint: 'Pass --model <id>, or set "defaultModel" for this provider in the config.',
-      },
-    };
-  }
-  return { modelId: candidates[0].id };
 }
 
 /**
@@ -253,24 +236,34 @@ export function effectiveWindow(profile = {}, described, explicitModel) {
       window: configured,
       source: 'config',
       modelId: plan.modelId,
+      // Why that model, not just which. An auto-selected id is a fact with a
+      // source, and adr/002's rule is that a fact names its source so a guess
+      // never reads as a measurement. Carried on every branch that carries
+      // `modelId`, because a caveat true on one path and absent from the next is
+      // how two views of one run come to disagree.
+      because: plan.because,
       detected: chosen?.window && chosen.window !== configured ? chosen.window : undefined,
       problem: plan.problem,
     };
   }
-  if (!described) return { window: undefined, source: null, problem: plan.problem };
+  // `modelId` and `because` here too, and the comment above is exactly why this
+  // branch was wrong to omit them. A server that is up but serves no
+  // `/v1/models` reaches here with `described: null` and a `defaultModel` the
+  // planner resolves happily — so the text report printed `ok` and listed the
+  // provider under "Ready:" while `--json` reported `selectedModel: null`. Two
+  // views of one run disagreeing about whether a model had even been chosen,
+  // which is the defect the line above declares itself against. Found by the
+  // built-in review, reproduced by execution.
+  if (!described) {
+    return { window: undefined, source: null, modelId: plan.modelId, because: plan.because, problem: plan.problem };
+  }
 
   return {
     window: chosen?.window,
     ceiling: chosen?.ceiling,
     modelId: plan.modelId,
+    because: plan.because,
     source: chosen?.window ? described.source : null,
     problem: plan.problem,
   };
-}
-
-/** Models eligible for automatic selection: everything the server did not call an embedder. */
-export function chatCandidates(described) {
-  // A denylist, not an allowlist: the loaded chat model on the verification
-  // machine reports type "vlm", and future types must keep working.
-  return described.models.filter((model) => model.type !== 'embeddings');
 }

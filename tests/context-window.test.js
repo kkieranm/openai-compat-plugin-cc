@@ -118,10 +118,19 @@ test('a configured window that disagrees with the server is flagged as possibly 
   assert.match(result.stdout, /server reports it is serving 8\.2k/);
 });
 
-test('a fully configured profile performs no probes at all', async () => {
-  // Proven by counting requests: a regression that dropped the short-circuit
-  // was invisible to the suite, because the fully-configured tests all pointed
-  // at an unreachable port where the extra probe failed silently.
+test('a fully configured profile lists models anyway, so setup and task agree', async () => {
+  // This asserted the OPPOSITE until OAI-16, and the reversal is deliberate.
+  // ADR 002 made a fully configured profile skip the probe to save a round trip.
+  // That became untenable once `planSelection` could refuse a model for being
+  // absent from the catalogue: `/oai:setup` probes unconditionally, so it printed
+  // "cannot run here" and "No provider can take a task right now" about a task
+  // that then ran fine. One planner fed two different inputs is the same defect
+  // class as two planners — REPO_TRAPS records nine instances of it — and the
+  // only fix with one authority is one input.
+  //
+  // Still proven by counting requests, which is what caught the original
+  // regression: the fully-configured tests all pointed at an unreachable port
+  // where an extra probe failed silently.
   const server = await startFakeServer((request, response) => {
     const path = request.url.split('?')[0];
     if (path.endsWith('/chat/completions')) return respondJson(response, completion('done'));
@@ -139,8 +148,8 @@ test('a fully configured profile performs no probes at all', async () => {
   const paths = server.requests.map((request) => request.url.split('?')[0]);
   assert.deepEqual(
     paths.filter((requestPath) => !requestPath.endsWith('/chat/completions')),
-    [],
-    'nothing but the chat call should have been requested',
+    ['/v1/models'],
+    'the catalogue is fetched so the task sees what setup sees — and nothing more than that',
   );
 });
 

@@ -4,7 +4,8 @@ import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
-import { describeModels, planSelection, windowFor } from './model-info.mjs';
+import { describeModels, windowFor } from './model-info.mjs';
+import { planSelection } from './model-selection.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
 
 export const PROBE_TIMEOUT_MS = 5000;
@@ -82,21 +83,36 @@ export function selectModel(profile, explicit, described) {
 }
 
 /**
- * Which model to send to, and how big its window is. The server is consulted
- * only for what the config does not already answer, so a fully configured
- * profile performs no probes at all.
+ * Which model to send to, and how big its window is.
+ *
+ * The server is consulted every time, and it did not used to be: a profile
+ * answering both questions in config — `defaultModel` plus `contextLength` —
+ * skipped the probe entirely, which ADR 002 recorded as a feature. That became
+ * untenable the moment `planSelection` could refuse an id for being absent from
+ * the catalogue, because `/oai:setup` probes unconditionally and this did not.
+ * Same authority, two different inputs: setup printed `reachable, but /oai:task
+ * cannot run here` and `No provider can take a task right now`, while the task
+ * it was describing ran perfectly well.
+ *
+ * That is this repo's most-repeated defect class with its sign flipped — the
+ * REPO_TRAPS entry says two review rounds produced nine instances of setup
+ * promising what a task refused, and that "the cure was a single authority, not
+ * a better approximation". Calling one planner is not enough if the two callers
+ * feed it different evidence, and the only fix with ONE authority is one input.
+ * Teaching setup this function's probing rule would be a second copy of it.
+ *
+ * The cost is one `/v1/models` GET, against a server the next line is about to
+ * post a whole prompt to. `required: mustChooseModel` is unchanged, so a probe
+ * that fails is still only fatal when there is no configured model to fall back
+ * on. Found by the built-in review, reproduced end to end.
  */
 export async function resolveTarget(profile, options) {
   const mustChooseModel = !options.model && !profile.defaultModel;
-  const mustDetectWindow = !profile.contextLength;
 
-  let described = { models: [], source: null };
-  if (mustChooseModel || mustDetectWindow) {
-    // Probing precedes the "Contacting…" line and can stall on an endpoint that
-    // black-holes unknown paths, so say what is happening before it starts.
-    process.stderr.write(`Checking ${profile.name} for available models and context window...\n`);
-    described = await describeProvider(profile, { required: mustChooseModel });
-  }
+  // Probing precedes the "Contacting…" line and can stall on an endpoint that
+  // black-holes unknown paths, so say what is happening before it starts.
+  process.stderr.write(`Checking ${profile.name} for available models and context window...\n`);
+  const described = await describeProvider(profile, { required: mustChooseModel });
 
   const model = selectModel(profile, options.model, described);
   return { model, contextLength: profile.contextLength ?? windowFor(described, model) };

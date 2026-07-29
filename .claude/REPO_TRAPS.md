@@ -66,7 +66,7 @@ place — `selectModel` decided what would happen, and `canDelegate` and `effect
 re-derived that decision independently. Three models of one truth drift by construction, so every
 branch fixed left the others free to disagree.
 
-**The fix is one authority, never a patched branch.** `planSelection()` in `model-info.mjs` is now
+**The fix is one authority, never a patched branch.** `planSelection()` in `model-selection.mjs` is now
 the only code that decides which model a task will use, or why it cannot pick one. `selectModel`
 throws its `problem`, the readiness marker is `!problem`, and the report *formats* it. A new view of
 that decision must call it, not re-implement it. The same rule applies to the window: one
@@ -441,6 +441,52 @@ the inner timer is not armed at all. And the guard has to cover the branch **in 
 every end-to-end test set a cap shorter than the inner budget, so reversing the comparison would have
 left the whole suite green. The case that makes the others mean anything is the one where the cap is
 *longer*.
+
+## A test fixture whose last frame silently overwrites what the test set
+
+`applyFrame` lets the LAST streaming frame carrying a `model` win, and `tests/helpers.mjs`'
+`completionFrames` emits a trailing usage frame that carries one. A test for OAI-16 that set the
+served model on the text frames alone would have been overwritten by that frame and passed no matter
+what the code did — green, asserting the opposite of what it claimed. Any fixture field an
+accumulator takes "last wins" on has to be threaded through *every* frame able to carry it, not just
+the interesting ones. Mutation-check fixtures like this one: if the assertion cannot go red, it is
+decoration.
+
+## Refusing while holding the answer
+
+`planSelection` refused with "this provider offers N models" while `readLmStudio` was already
+reading and storing each model's `state`, using it only to gate a context window. A refuse-to-guess
+rule is right, but check what the code already knows before applying it — the weak half of a good
+rule is refusing over a question already answered.
+
+Its mirror, from the same feature: a *present key* is not a *known value*. `state: entry.state`
+creates the property even when the value is `undefined`, so `'state' in model` is true for a
+response that said nothing about state. Testing presence rather than value would have concluded
+"none loaded" from no evidence at all. Partial coverage is the same defect one step along: a
+conclusion drawn over a subset asserts something about the whole.
+
+## One authority, two inputs — the setup-vs-task class, with its sign flipped
+
+The nine-instance entry above says the cure for "setup promises what a task refuses" was a single
+authority: both paths call `planSelection`. OAI-16 found the loophole. Both callers *did* call it,
+and they still disagreed, because `/oai:setup` probes the server unconditionally while
+`resolveTarget` used to skip the probe for a fully configured profile. Same function, different
+evidence, opposite verdicts — setup printed "No provider can take a task right now" about a task
+that ran fine.
+
+**A shared authority only agrees if its callers hand it the same input.** When adding a rule to
+`planSelection` (or any such single authority), check what every caller passes as well as that they
+call it. And note the direction is not the safety: this instance was the *safe* direction and still
+had to be fixed, because a false refusal in the status command is a lie about the task command.
+
+## An invariant enforced in a different file from the one that depends on it
+
+`case-rows.mjs` computes `scored + truncated + unreadable + failed = runs`. Three of those buckets
+filtered `!run.error` themselves; `scored` did not, and stayed correct only because `run.mjs`
+declined to attach a score to a failed run. `unreadableRuns` documents this exact hazard about
+itself — "the assumption holds only while run.mjs attaches a score to every parsed reply, and
+nothing here would notice if it stopped" — and it came true the moment a run could carry a report, a
+scoreable reply and a failure at once. Enforce a sum's precondition where the sum is computed.
 
 ## Reviewer notes that are not yet defect classes
 

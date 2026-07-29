@@ -51,7 +51,11 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
     process.stdout.write(
       renderFindings(
         { ...parsed, hunksOnly, unreadable: target.unreadable },
-        { label: target.label, provider: profile.name, model },
+        // The model that ANSWERED, not the one requested. This block heads the
+        // report and the footer closes it; handing one the requested id and the
+        // other the served id would produce a single report naming two different
+        // models, which is worse than the silence it replaced.
+        { label: target.label, provider: profile.name, model: result.model || model },
       ),
     );
     return;
@@ -124,6 +128,20 @@ export function jsonReport(parsed, context) {
     // What answered, not what was asked for: a server may serve a different
     // build than the id requested, and the run belongs to the one that ran.
     model: result.model || model,
+    // …and what was asked for, beside it, because "the run belongs to the model
+    // that ran" is only half the fact. Recording the served id alone is what let
+    // a benchmark arm spend its whole wall clock on a model it did not claim to
+    // test and leave a record that read as clean. Measured: LM Studio answers a
+    // request for a model it does not have with a normal completion from
+    // whatever IS loaded.
+    //
+    // No `substituted` boolean beside these: it is `model !== requestedModel`,
+    // and a stored copy of a derived fact is the mirror-don't-generate defect.
+    // Consumers call `substitution()`.
+    // The `??` is unreachable — `finishAnswer` always returns it — and must stay
+    // that way: were it ever taken, both fields would collapse and a reader
+    // would see "checked, they matched" where nothing was determined.
+    requestedModel: result.requestedModel ?? model,
     parsed: Boolean(parsed),
     // Never an empty findings list for a reply we could not read — that is
     // indistinguishable from a clean review, and one of the two is a failure.
@@ -207,6 +225,7 @@ export function report(parsed, context) {
     `${renderTaskFooter({
       providerName: profile.name,
       model: result.model,
+      requestedModel: result.requestedModel,
       usage: result.usage,
       durationMs,
       prefillMs: result.prefillMs,

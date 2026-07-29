@@ -7,6 +7,7 @@ import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, resolveIdle, resolveMax, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
+import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { errorReport, report } from './review-report.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
@@ -112,6 +113,11 @@ async function reviewFlow(options, instructions, terminated) {
       onProgress,
     }),
   );
+
+  // On stderr and before `report`, because `--json` routes around every human
+  // rendering: a harness gets the pair in the envelope, an operator gets it here.
+  const notice = substitutionNotice(result);
+  if (notice) process.stderr.write(notice);
 
   report(parseFindings(result, { structured, schema }), {
     result,

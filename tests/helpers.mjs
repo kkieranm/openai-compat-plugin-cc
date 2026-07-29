@@ -92,11 +92,11 @@ export function respondStream(response, frames, { done = true } = {}) {
 }
 
 /** One `chat.completion.chunk`, the frame every streaming server sends. */
-export function deltaFrame(delta, extra = {}) {
+export function deltaFrame(delta, extra = {}, model = 'test-model') {
   return {
     id: 'chatcmpl-test',
     object: 'chat.completion.chunk',
-    model: 'test-model',
+    model,
     choices: [{ index: 0, delta, finish_reason: null }],
     ...extra,
   };
@@ -112,15 +112,23 @@ export function deltaFrame(delta, extra = {}) {
  * trimmed is invisible unless a word boundary lands on the seam. The opening
  * frame carries `content: null`, which is what a real server sends and what
  * must not count as "saw this channel".
+ *
+ * `model` threads through EVERY frame, including the trailing usage one, and
+ * that is not tidiness. `applyFrame` lets the last frame carrying a model win,
+ * so a test that set the id on the text frames alone would have it silently
+ * overwritten here and assert nothing — green, and proving the opposite of what
+ * it claims. Any frame able to name a model has to take the override.
  */
-export function completionFrames(text, { channel = 'content', usage = true, finishReason = 'stop' } = {}) {
+export function completionFrames(text, {
+  channel = 'content', usage = true, finishReason = 'stop', model = 'test-model',
+} = {}) {
   const key = channel === 'reasoning' ? 'reasoning_content' : 'content';
   const seam = Math.ceil(text.length / 2);
   return [
-    deltaFrame({ role: 'assistant', content: null }),
-    deltaFrame({ [key]: text.slice(0, seam) }),
-    deltaFrame({ [key]: text.slice(seam) }),
-    { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: finishReason }] },
+    deltaFrame({ role: 'assistant', content: null }, {}, model),
+    deltaFrame({ [key]: text.slice(0, seam) }, {}, model),
+    deltaFrame({ [key]: text.slice(seam) }, {}, model),
+    { ...deltaFrame({}, {}, model), choices: [{ index: 0, delta: {}, finish_reason: finishReason }] },
     // What `stream_options: { include_usage: true }` buys, and the shape that
     // breaks any accumulator indexing choices[0]: `choices` is empty here, and
     // finish_reason arrived on the frame before it.
@@ -129,7 +137,7 @@ export function completionFrames(text, { channel = 'content', usage = true, fini
           {
             id: 'chatcmpl-test',
             object: 'chat.completion.chunk',
-            model: 'test-model',
+            model,
             choices: [],
             usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
           },

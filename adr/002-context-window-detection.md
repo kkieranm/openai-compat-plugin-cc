@@ -3,6 +3,7 @@
 Date: 2026-07-27
 Status: accepted
 Amends: [ADR 001](001-generic-openai-compatible-plugin.md)
+Amended by: [ADR 011](011-which-model-actually-answered.md) — automatic selection now reads `state` to pick the loaded model, and an id absent from a recognised catalogue is refused before the run.
 
 ## Context
 
@@ -63,8 +64,13 @@ model could have been sent a chat request.
 - The guard is armed by default on LM Studio, vLLM, llama.cpp and TGI with no configuration; the
   hand-set `contextLength` that verification previously required has been removed from the author's
   own config, since a stale explicit value would now silently outrank correct detection.
-- A fully configured profile (`defaultModel` + `contextLength`) performs no probes at all; detection
-  runs only for what the config leaves unanswered.
+- ~~A fully configured profile (`defaultModel` + `contextLength`) performs no probes at all; detection
+  runs only for what the config leaves unanswered.~~ **Superseded by [ADR 011](011-which-model-actually-answered.md).**
+  Once `planSelection` could refuse a model for being absent from the server's catalogue, this
+  short-circuit meant `/oai:setup` (which always probes) and `/oai:task` (which did not) fed the same
+  planner different evidence — and disagreed about the same provider. `resolveTarget` now always
+  fetches the model list. The consequence below, that a stale hand-set `contextLength` silently
+  outranks correct detection, is why this path was already discouraged.
 - Servers that report nothing (LocalAI, mlx-openai-server) or only a ceiling (Ollama) keep the old
   behaviour: proceed and warn, with `contextLength` available as the override. Detection is
   best-effort in the strict sense — when the model is already known and only the window is being

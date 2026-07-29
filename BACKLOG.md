@@ -73,22 +73,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-16** — A served model that is not the requested model must be said out loud, and a loaded
-  model should not need pinning. Both found on 2026-07-28 by swapping the local model, and the first
-  is the repo's signature class aimed straight at the benchmark.
-  (1) **The server silently substituted.** The config pinned `qwen3.6-35b-a3b-ud-mlx`, which no
-  longer existed; LM Studio served `qwen/qwen3.6-27b` and answered normally. `jsonReport` recorded
-  the served model correctly — `result.model || model` — but **nothing warned that served ≠
-  requested**, and the only visible symptom was a context note naming the absent model. A whole A/B
-  arm can therefore run against a different model than the one it claims to test, and the record
-  would look clean. The request names a model; when the reply names another, say so.
-  (2) **Model auto-selection refuses when several are downloaded.** With the pin removed, `setup`
-  reported `cannotDelegate: "This provider offers 5 models"` — correct per ADR 002's refuse-to-guess
-  rule, but LM Studio publishes `state: "loaded"` on `/api/v0/models`, **the same endpoint
-  `model-info.mjs` already reads for `loaded_context_length`**. Exactly one model is loaded at a
-  time, so that field disambiguates without guessing. Refusing while holding the answer is the
-  weaker half of a good rule. Note this interacts with OAI-11: cross-model passes will make
-  "which model is loaded" a per-pass question rather than a config one.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

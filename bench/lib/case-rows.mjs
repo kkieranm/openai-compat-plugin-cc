@@ -11,6 +11,36 @@ import { tokensPerSecond } from '../../scripts/lib/throughput.mjs';
 import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 
 /**
+ * Runs whose figures describe what this row claims to measure.
+ *
+ * `!run.error` as well as `run.report`, because a run can now carry both: a
+ * substituted run parsed a perfectly good reply and was timed accurately — on
+ * the WRONG MODEL. Gating on the report alone let its prefill, generation and
+ * tok/s into a row whose failed cell disowned it, so the table could print
+ * throughput for a model it also said had not run.
+ */
+function measurable(runs) {
+  return runs.filter((run) => run.report && !run.error);
+}
+
+/**
+ * The denominator the `N/M measured` suffix counts against: runs that COMPLETED,
+ * which is a different question from runs that are usable.
+ *
+ * Excluding a substituted run from both would make the exclusion invisible —
+ * `measured === completed` prints no suffix at all, so a range over one of two
+ * completed runs would read as fully measured. Counting it here and dropping it
+ * from the values instead renders `(1/2 measured)`, which is the true statement.
+ *
+ * A timed-out run is correctly absent from this count as well as from the
+ * values: it has no report because it did not complete. Same predicate, and the
+ * two cases differ in reality rather than in the bookkeeping.
+ */
+function completedRuns(runs) {
+  return runs.filter((run) => run.report);
+}
+
+/**
  * The two halves of a run's wall clock, gathered separately because a
  * server-side prompt cache moves one of them and not the other.
  *
@@ -28,9 +58,8 @@ import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mj
  * carry a figure. See ADR 009.
  */
 function timingSamples(runs, field) {
-  const completed = runs.filter((run) => run.report);
-  const values = completed.map((run) => run.report[field]).filter((value) => Number.isFinite(value));
-  return { values, measured: values.length, completed: completed.length };
+  const values = measurable(runs).map((run) => run.report[field]).filter((value) => Number.isFinite(value));
+  return { values, measured: values.length, completed: completedRuns(runs).length };
 }
 
 /**
@@ -51,7 +80,15 @@ function timingSamples(runs, field) {
  * single figure would have to pick one and call it the prompt.
  */
 function promptSamples(runs) {
-  return runs.map((run) => run.report?.usage?.prompt_tokens).filter((value) => Number.isFinite(value));
+  // The same `{ values, measured, completed }` shape as its two neighbours, and
+  // for the same reason they have it: a substituted run is dropped from the
+  // values, and a bare array gives the cell no way to say so. Prompt tokens are
+  // emphatically NOT model-independent — the count comes from the tokenizer of
+  // the model that answered — so including them instead was not an option.
+  const values = measurable(runs)
+    .map((run) => run.report.usage?.prompt_tokens)
+    .filter((value) => Number.isFinite(value));
+  return { values, measured: values.length, completed: completedRuns(runs).length };
 }
 
 /**
@@ -70,11 +107,10 @@ function promptSamples(runs) {
  * rounded to 0ms drops out rather than contributing a fabricated rate.
  */
 function rateSamples(runs) {
-  const completed = runs.filter((run) => run.report);
-  const values = completed
+  const values = measurable(runs)
     .map((run) => tokensPerSecond(run.report.usage, run.report.generationMs))
     .filter((value) => value !== null);
-  return { values, measured: values.length, completed: completed.length };
+  return { values, measured: values.length, completed: completedRuns(runs).length };
 }
 
 /**
@@ -102,6 +138,11 @@ function failureStats(runs) {
     // that then reads as uncapped invites exactly the comparison it must not:
     // a capped run set against an uncapped one as if they were like for like.
     capped: failed.filter((run) => run.reason === 'deadline-timeout').length,
+    // A run the server answered with a model other than the one requested. It
+    // is the only "failure" here that produced a complete, readable reply — the
+    // failure is of attribution, not of the reviewer — so the cell has to name
+    // it rather than let it read as a model that could not answer.
+    substituted: failed.filter((run) => run.reason === 'model-substituted').length,
   };
 }
 
@@ -122,7 +163,16 @@ function buckets(runs) {
   // observations and its silence is not, so the silence is counted once, as
   // `unresolved`, and reported beside the figure instead of inside it.
   const truncated = new Set(truncatedRuns(runs));
-  const scored = runs.filter((run) => run.score && !truncated.has(run));
+  // `!run.error` here, not only in `run.mjs`. The other three buckets each
+  // begin with that filter (`run-buckets.mjs`), and this one used to hold the
+  // partition together by relying on `run.mjs` declining to attach a score to a
+  // failed run — an invariant living in a different file, which is exactly the
+  // fragility `unreadableRuns` documents about itself: "the assumption holds
+  // only while run.mjs attaches a score to every parsed reply, and nothing here
+  // would notice if it stopped". A substituted run is the first that can carry
+  // a report, a score-worthy reply and a failure at once, so the guard moves
+  // here where the sum is computed.
+  const scored = runs.filter((run) => run.score && !run.error && !truncated.has(run));
   // Intersected with `scored`, not merely collected — the whole table rests on
   // cut runs being a *subset* of the scored ones. A cut run that somehow
   // carried no score would otherwise report unresolved opportunities against a
@@ -145,7 +195,7 @@ export function caseRows(results) {
     const anchored = scored.reduce((total, run) => total + run.score.recall.anchored, 0);
     const unmatched = scored.reduce((total, run) => total + run.score.unmatched.length, 0);
     const unresolved = cut.reduce((total, run) => total + (listed - (run.score?.recall.found ?? 0)), 0);
-    const { failed, timedOut, capped } = failureStats(runs);
+    const { failed, timedOut, capped, substituted } = failureStats(runs);
     const prefill = timingSamples(runs, 'prefillMs');
     const generation = timingSamples(runs, 'generationMs');
     const rate = rateSamples(runs);
@@ -164,6 +214,7 @@ export function caseRows(results) {
       // for every run.
       timedOut,
       capped,
+      substituted,
       truncated: truncated.size,
       // A sub-count of `scored`, not a bucket beside it — stated here because a
       // number that looks like a bucket and is not is exactly the ambiguity the

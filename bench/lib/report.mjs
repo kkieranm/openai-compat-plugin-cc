@@ -44,13 +44,18 @@ function rateCell({ values, measured, completed }) {
   return measured === completed ? range : `${range} (${measured}/${completed} measured)`;
 }
 
-function tokenCell(values) {
+function tokenCell({ values, measured, completed }) {
   // Em dash, not 0. The old `?? 0` printed a zero-token prompt for a case whose
   // runs all failed, which is a measurement nobody made.
   if (values.length === 0) return '—';
   const low = Math.min(...values);
   const high = Math.max(...values);
-  return low === high ? `${low}` : `${low}–${high}`;
+  const range = low === high ? `${low}` : `${low}–${high}`;
+  // Carrying coverage like the timing cells rather than printing a bare range.
+  // A prompt size is read from the tokenizer of the model that answered, so a
+  // substituted run's is dropped — and without the suffix that exclusion is
+  // invisible here while its neighbours declare theirs.
+  return measured === completed ? range : `${range} (${measured}/${completed} measured)`;
 }
 
 /**
@@ -93,7 +98,15 @@ function table(rows) {
     // still a failed run, so it stays inside `failed` and the sum holds. What it
     // is *not* is a result about the reviewer — a harness limit and a model that
     // could not answer were one number until the CLI started saying which.
-    const failedCell = row.timedOut ? `${row.failed} (${row.timedOut} timed out)` : `${row.failed}`;
+    //
+    // A list, not one sub-count: both kinds can occur in the same case, and a
+    // cell that could only name one of them would have to pick, silently
+    // dropping the other from view while still counting it in `failed`.
+    const why = [
+      ...(row.timedOut ? [`${row.timedOut} timed out`] : []),
+      ...(row.substituted ? [`${row.substituted} substituted`] : []),
+    ];
+    const failedCell = why.length > 0 ? `${row.failed} (${why.join(', ')})` : `${row.failed}`;
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
       + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
@@ -129,14 +142,37 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
     lines.push('');
   }
 
+  // Substitutions are excluded here and given their own section below. They are
+  // recorded as failures, but this heading says "did not complete" and a
+  // substituted run completed perfectly — it answered, parsed and was timed.
+  // What failed was the attribution, and filing it under a heading that says
+  // otherwise is the kind of near-miss label this report exists to remove.
+  //
   // Whole stderr, indented, rather than a one-line summary of it: reducing it
   // was what let a hint be printed as the diagnosis.
   const failures = results.flatMap(({ caseDef, runs }) =>
-    runs.filter((run) => run.error).flatMap((run) => [
+    runs.filter((run) => run.error && run.reason !== 'model-substituted').flatMap((run) => [
       `- \`${caseDef.id}\`:`,
       ...String(run.error).split('\n').map((line) => `      ${line}`),
     ]));
   if (failures.length > 0) lines.push('## Runs that did not complete', '', ...failures, '');
+
+  const substituted = results.flatMap(({ caseDef, runs }) =>
+    runs.filter((run) => run.reason === 'model-substituted')
+      .map((run) => `- \`${caseDef.id}\`: asked for \`${run.report?.requestedModel}\`, `
+        + `\`${run.report?.model}\` answered.`));
+  if (substituted.length > 0) {
+    lines.push(
+      '## Runs answered by a different model',
+      '',
+      'The server was asked for one model and answered as another. These runs completed and their'
+      + ' replies are kept in the per-run record, but they are excluded from scoring and from every'
+      + ' timing figure above: they measure the model that answered, not the one this report names.',
+      '',
+      ...substituted,
+      '',
+    );
+  }
 
   return lines.join('\n');
 }

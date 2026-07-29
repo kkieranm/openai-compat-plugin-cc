@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   completion,
   completionFrames,
+  modelList,
   reasoningFrames,
   respondJson,
   respondStream,
@@ -161,6 +162,10 @@ test('a run that took two requests says so, so an odd prefill can be explained',
   // at a suspiciously fast prefill has no other way to learn a retry happened.
   let seen = 0;
   const handler = (request, response) => {
+    // `seen` counts chat attempts, so the context probe must not be one — it now
+    // runs on every task, and counting it made "the first request" the probe
+    // rather than the completion this test refuses.
+    if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
     seen += 1;
     if (seen === 1) {
       response.writeHead(400, { 'content-type': 'application/json' });
@@ -201,6 +206,10 @@ test('a retry in the transport ladder counts too, not just the schema one', asyn
   // field whose name promises otherwise.
   let seen = 0;
   const handler = (request, response) => {
+    // `seen` counts chat attempts, so the context probe must not be one — it now
+    // runs on every task, and counting it made "the first request" the probe
+    // rather than the completion this test refuses.
+    if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
     seen += 1;
     if (seen === 1) {
       response.writeHead(400, { 'content-type': 'application/json' });

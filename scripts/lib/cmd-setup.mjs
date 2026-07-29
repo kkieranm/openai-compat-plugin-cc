@@ -53,8 +53,11 @@ function jsonRow({ profile, rawProfile, models, error, described }) {
     contextSource: resolved.source ?? null,
     detectedWindow: resolved.detected ?? null,
     // The model a task would use, or why it could not pick one — from the same
-    // planner the text report and the task path use.
+    // planner the text report and the task path use. The reason travels beside
+    // it: the text report says the id was chosen because the server reports it
+    // loaded, and a caveat true on one rendering may not be absent from the next.
     selectedModel: resolved.modelId ?? null,
+    selectedModelReason: resolved.because ?? null,
     cannotDelegate: resolved.problem?.message ?? null,
     hasApiKey: Boolean(profile.apiKey),
     apiKeyEnv: rawProfile?.apiKeyEnv ?? null,

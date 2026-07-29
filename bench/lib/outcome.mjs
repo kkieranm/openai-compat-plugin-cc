@@ -1,0 +1,72 @@
+// What a finished child process counts as.
+//
+// Split from `run.mjs` under the size ratchet, and the seam is the one the two
+// functions already shared: both read a completed run's stdout and decide what
+// it *means*, while `run.mjs` owns spawning it and the temp repo it ran in.
+// Neither knows anything about the corpus, the table, or the filesystem.
+//
+// Distinct from `run-buckets.mjs`, which classifies a run once it exists. This
+// file is what produces the record that file then sorts.
+import { substitution } from '../../scripts/lib/model-identity.mjs';
+
+/**
+ * Why a run failed, in the command's own vocabulary — or null when it did not say.
+ *
+ * Read from the `--json` error envelope on stdout. The alternative was matching
+ * stderr for phrases like "timed out", which this repo has on file as a defect
+ * class twice over (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a
+ * server's prose asserts a cause it only guessed. `reason` is what the transport
+ * itself decided; the stderr blob beside it stays the record of what happened.
+ *
+ * `error: true` identifies the *document*, not just the field. A run can flush a
+ * success report to stdout and then exit non-zero, and that report claims
+ * nothing about why. Keying on the envelope marker is what keeps `reason`
+ * meaning "the command said it failed, and named this cause" rather than "some
+ * JSON on stdout had a field by that name" — the latter would be the same
+ * guessing reappearing inside the fix meant to end it.
+ *
+ * Unparseable stdout is not a failure of this harness: the run simply did not
+ * say why, and null is exactly that. It never throws, because the whole promise
+ * of the path it sits on is that one case failing does not cancel the rest.
+ */
+export function reasonFrom(stdout) {
+  try {
+    const parsed = JSON.parse(String(stdout ?? ''));
+    return parsed?.error === true ? parsed.reason ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A completed run, as one of two outcomes — and the second is not an error the
+ * process reported.
+ *
+ * A run the server answered with a different model than the one asked for is not
+ * a measurement of the model this sweep claims to test. It is recorded as
+ * failed, and the record is KEPT so nothing is thrown away and it can be
+ * re-read, but it is excluded from scoring and from every timing sample —
+ * otherwise a case aggregate silently mixes two models, which is the one thing a
+ * reader takes this table to rule out.
+ *
+ * Deliberately not the same call as a truncated run. A cut run is this model
+ * measured incompletely, and OAI-15 established those are scored because
+ * discarding them cost half the corpus. This one is a *different model* measured
+ * correctly: the number is not uncertain, it is mislabelled, and no amount of
+ * sampling fixes a wrong label.
+ *
+ * Lifted out at the function size budget, and the seam is real: this decides
+ * what a completed run counts as, while `reviewOnce` owns the subprocess and the
+ * temp repo.
+ */
+export function outcomeFor(stdout, diffOnly) {
+  const report = JSON.parse(stdout);
+  const swap = substitution(report?.requestedModel, report?.model);
+  if (!swap) return { diffOnly, report };
+  return {
+    diffOnly,
+    report,
+    error: `Asked for "${swap.requested}" but ${swap.served} answered; the server substituted a model.`,
+    reason: 'model-substituted',
+  };
+}

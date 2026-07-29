@@ -114,6 +114,160 @@ test('an embedding model is never chosen automatically', async () => {
   assert.equal(chat.body.model, 'qwen-chat');
 });
 
+/**
+ * An LM Studio-shaped provider: the dialect's catalogue at `/api/v0/models`
+ * beside the ids `/v1/models` lists, which is the pair `merge` joins. The two
+ * lists are the same by default, so a test that needs them to differ says so.
+ */
+function lmStudioServer(entries, ids = entries.map((entry) => entry.id)) {
+  return startFakeServer((request, response) => {
+    const path = request.url.split('?')[0];
+    if (path.endsWith('/api/v0/models')) return respondJson(response, { data: entries });
+    if (path.endsWith('/models')) return respondJson(response, modelList(...ids));
+    if (path.endsWith('/chat/completions')) return respondJson(response, completion('answered'));
+    return respondJson(response, { error: 'not found' }, 404);
+  });
+}
+
+/**
+ * One catalogue entry. `max_context_length` is what makes the payload
+ * recognisable as LM Studio's at all; `state` is left off entirely when none is
+ * given, which is the stateless response `readLmStudio` still writes a `state`
+ * key for — undefined, but present.
+ */
+function chatModel(id, state) {
+  return {
+    id,
+    type: 'llm',
+    max_context_length: 8192,
+    ...(state ? { state } : {}),
+    ...(state === 'loaded' ? { loaded_context_length: 4096 } : {}),
+  };
+}
+
+const localConfig = (server) => writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+test('the model the server reports loaded is the one an unnamed selection picks', async () => {
+  const server = await lmStudioServer([
+    chatModel('chat-a', 'not-loaded'), chatModel('chat-b', 'loaded'), chatModel('chat-c', 'not-loaded'),
+  ]);
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const chat = server.requests.find((request) => request.url.endsWith('/chat/completions'));
+  assert.equal(chat.body.model, 'chat-b', 'residency is the evidence, so the resident model is what gets sent');
+});
+
+test('setup names the evidence for an automatic choice, on both renderings', async () => {
+  // "selected: x" alone would read as a preference the config never expressed,
+  // and a caveat true on the human path and absent from --json is how two views
+  // of one run come to disagree.
+  const server = await lmStudioServer([chatModel('chat-a', 'not-loaded'), chatModel('chat-b', 'loaded')]);
+  const { path } = localConfig(server);
+
+  const setup = await runCompanion(['setup'], { configPath: path });
+  const json = await runCompanion(['setup', '--json'], { configPath: path });
+  await server.close();
+
+  assert.match(setup.stdout, /selected: chat-b — the chat model the server reports loaded/);
+  assert.match(setup.stdout, /Ready: local/);
+  const [provider] = JSON.parse(json.stdout).providers;
+  assert.equal(provider.selectedModel, 'chat-b');
+  assert.equal(provider.selectedModelReason, 'loaded');
+});
+
+test('several chat models with none loaded is a different refusal from having none', async () => {
+  // Conflating them is this repo's signature class: one needs a download, the
+  // other needs a load.
+  const server = await lmStudioServer([
+    chatModel('chat-a', 'not-loaded'), chatModel('chat-b', 'not-loaded'), chatModel('chat-c', 'not-loaded'),
+  ]);
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /offers 3 chat models, but none of them is loaded/);
+  assert.doesNotMatch(result.stderr, /no model that can answer a chat request/, 'three of them can; none is resident');
+});
+
+test('two loaded models are ambiguous, and only the loaded ones are named', async () => {
+  const server = await lmStudioServer([
+    chatModel('chat-a', 'loaded'), chatModel('chat-b', 'loaded'), chatModel('chat-c', 'not-loaded'),
+  ]);
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /has 2 models loaded: chat-a, chat-b/);
+  assert.doesNotMatch(result.stderr, /chat-c/, 'a model nobody said was loaded must not be offered as a candidate');
+});
+
+test('a catalogue that reports no state at all falls back to naming every candidate', async () => {
+  // The subtle one. `readLmStudio` writes `state: entry.state` unconditionally,
+  // so the key exists on every LM-Studio-shaped record and key presence proves
+  // nothing — reading it as observable would report "none is loaded" about a
+  // server that never said.
+  const server = await lmStudioServer([chatModel('chat-a'), chatModel('chat-b'), chatModel('chat-c')]);
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /offers 3 models: chat-a, chat-b, chat-c/);
+  assert.doesNotMatch(result.stderr, /none of them is loaded/, 'nothing measured residency, so nothing may be said about it');
+});
+
+test('partial state coverage decides nothing, so nothing is selected', async () => {
+  // A candidate whose state is unknown might also be loaded, so a 1-loaded
+  // conclusion drawn over an incomplete set asserts something nobody measured.
+  const server = await lmStudioServer([chatModel('chat-a', 'loaded'), chatModel('chat-b')]);
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /offers 2 models: chat-a, chat-b/);
+  assert.doesNotMatch(result.stderr, /none of them is loaded/);
+  assert.equal(
+    server.requests.filter((request) => request.url.includes('/chat/completions')).length,
+    0,
+    'the one model with a state must not be sent to on the strength of an incomplete set',
+  );
+});
+
+test('a loosely joined id is never selected as the loaded one', async () => {
+  // The second half of `statesUsable`. The loose `matchKey` join is conservative
+  // for the embeddings denylist — a loose hit can only ADD an exclusion — but as
+  // a routing decision it would send `qwen@4bit` on the strength of the server
+  // reporting `qwen` resident: an id no evidence covers. Same data, two trust
+  // levels.
+  const server = await lmStudioServer(
+    [chatModel('chat-a', 'not-loaded'), chatModel('qwen', 'loaded')],
+    ['chat-a', 'qwen@4bit'],
+  );
+  const { path } = localConfig(server);
+
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /offers 2 models: chat-a, qwen@4bit/);
+  assert.equal(
+    server.requests.filter((request) => request.url.includes('/chat/completions')).length,
+    0,
+    'an id the dialect never named must not be sent as the resident model',
+  );
+});
+
 test('several candidate models with none named is refused, listing them', async () => {
   const server = await startFakeServer((request, response) => {
     const path = request.url.split('?')[0];

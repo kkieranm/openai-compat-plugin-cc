@@ -2,6 +2,72 @@
 
 Newest first.
 
+- **OAI-16** — Say when the served model is not the requested one, and select the loaded one.
+  Completed 2026-07-29. The probe made the first half considerably worse than the item described.
+  **The item said a stale pin got substituted; the truth is that *any* wrong id does.** Reproduced
+  live in a single call: `POST /v1/chat/completions` naming `totally-not-a-real-model` returned
+  **HTTP 200 and a normal completion from `qwen/qwen3.6-27b`**, the model that happened to be loaded.
+  Not a stale-config problem — a server that answers as something else whenever it is asked for
+  anything it does not have. `jsonReport` already recorded the served id correctly and *nothing
+  compared it to the id requested*, so the fact was recorded and never used: a benchmark arm could
+  spend its whole wall clock on a model it did not claim to test and leave a clean-looking record.
+  Now one predicate — `substitution()` in `scripts/lib/model-identity.mjs` — is the only comparison,
+  used by the footer, the stderr warning and the bench alike. It is **exact, never `matchKey`**,
+  because the second probe finding is that `@4bit` is a real identity: requesting
+  `qwen/qwen3.6-27b@4bit` made LM Studio try to load a *different* model and fail on resources, so
+  normalising the suffix would hide precisely the quantization swap that contaminates an A/B arm most
+  quietly. It returns null when either id is missing — absent is "nothing was determined", never
+  evidence of a swap.
+  **Caught twice, and the second catch is the one the item asked for.** Before the run,
+  `planSelection` refuses an id a recognised catalogue does not list, on both the `--model` and
+  `defaultModel` paths, so a wrong id costs milliseconds rather than a full run. After it, the footer
+  renders `model: <served> (requested <requested>)` — inside the `model:` field rather than on a line
+  of its own, because that is the field a reader consults to learn which model produced the output —
+  plus a stderr warning. A substitution **warns and never fails**: the work is already paid for, and
+  ADR 008 records what discarding runs cost when it was tried.
+  **The second half: refusing while holding the answer.** `planSelection` refused with "offers N
+  models" while `readLmStudio` was already reading each model's `state` and using it only to gate a
+  context window. It now selects the one the server reports `loaded` — a fact being read, not a
+  guess, since ADR 002 already treats `loaded` as authoritative (it is why `loaded_context_length` is
+  trusted and `max_context_length` is not), and the OAI-2b defect it warned against was taking the
+  *first* entry, which is arbitrary. Two conditions gate it, both from the plan challenge: every
+  candidate must carry a **recognised value** (`state: entry.state` creates the key even when
+  undefined, so presence proves nothing, and partial coverage would draw a conclusion over a subset),
+  and every record must have been **joined on an exact id** (the `matchKey` join is conservative for
+  the embeddings denylist but would become a routing decision here). "None loaded" and "several
+  loaded" each get their own message; nothing measured says a server holds only one model resident,
+  so the code does not depend on it.
+  **The reviews changed the shape of this twice, and both are worth recording.** The first version
+  left the up-front refusal *opportunistic* — `resolveTarget` probed only for what the config left
+  unanswered, so a profile setting both `defaultModel` and `contextLength` never fetched a catalogue
+  and never got the check. That shipped documented and tested as a deliberate compromise, and the
+  built-in review showed the framing was hiding a defect: `/oai:setup` probes **unconditionally**, so
+  it *did* refuse, printing `No provider can take a task right now` about a task that ran fine.
+  That is this repo's signature class with its sign flipped, and it defeats the cure ADR 002
+  prescribes for it — **one authority is not enough when its two callers feed it different
+  evidence.** `resolveTarget` now always fetches the list, superseding an ADR 002 consequence; the
+  cost is a `/v1/models` GET on a path that was about to post a whole prompt anyway, and the
+  recommended config (no `contextLength`) was already paying it.
+  Second: membership is tested against the **union** of `/v1/models` and the dialect's own catalogue.
+  Keying it on `/v1/models` alone refused a model the dialect reported `loaded` — the one the server
+  had resident — whenever that list was narrower. The adversarial review raised this at 0.98
+  confidence, **it was dismissed**, and the lean review then reproduced it end to end. The refusal is
+  also gated on the dialect having published a per-model catalogue rather than merely being
+  recognised: llama.cpp and TGI are recognised, publish no list, and ignore the requested name, so
+  the stricter gate would have broken a working setup.
+  Benchmark side: a substituted run is recorded **failed** with reason `model-substituted`, rendered
+  as `(N substituted)` inside the failed cell and in its own report section — not under "Runs that
+  did not complete", because it did complete. Deliberately a different call from a truncated run,
+  which ADR 008 scores: a cut run is this model measured incompletely, while this is a *different*
+  model measured correctly, so the number is not uncertain but mislabelled. Two latent defects fell
+  out of that: the timing, throughput and prompt-size samples gated on a report alone and would have
+  contributed wrong-model figures to a row that disowned the run, and the `scored` bucket was the one
+  of four with no `!run.error` guard — held together only by `run.mjs` declining to attach a score,
+  the exact cross-file fragility `unreadableRuns` documents about itself.
+  Leaves for **OAI-11**: which model answered is now per-run evidence rather than a config
+  assumption, which is what cross-model passes need.
+  See [ADR 011](adr/011-which-model-actually-answered.md).
+
 - **OAI-17** — Bound a run in wall clock, and report what it generated per second. Completed
   2026-07-29. Three gaps, and the probe reshaped two of them.
   **Nothing bounded a run that was working, and the item did not know that.** It asked for a bench

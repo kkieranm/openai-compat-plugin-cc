@@ -4,6 +4,7 @@ import { chatCompletion, requireAnswer } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
+import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { renderTaskFooter } from './render.mjs';
@@ -91,6 +92,11 @@ export async function runTask(argv) {
     }),
   );
 
+  // Before the answer, not after: the operator should learn which model is
+  // speaking before reading what it said.
+  const notice = substitutionNotice(result);
+  if (notice) process.stderr.write(notice);
+
   // Fails loudly rather than printing nothing: an empty answer with a footer
   // reads as a successful run that had nothing to say.
   process.stdout.write(requireAnswer(result, profile).trim());
@@ -110,6 +116,7 @@ function writeFooter(result, { profile, budget, durationMs }) {
     `${renderTaskFooter({
       providerName: profile.name,
       model: result.model,
+      requestedModel: result.requestedModel,
       usage: result.usage,
       durationMs,
       prefillMs: result.prefillMs,

@@ -1,9 +1,9 @@
 import { START_HINTS } from './config.mjs';
 import { formatTokens } from './context-guard.mjs';
-import { effectiveWindow, planSelection } from './model-info.mjs';
+import { substitution } from './model-identity.mjs';
+import { effectiveWindow } from './model-info.mjs';
+import { listModelIds, planSelection } from './model-selection.mjs';
 import { formatRate, tokensPerSecond } from './throughput.mjs';
-
-const MAX_LISTED_MODELS = 12;
 
 /**
  * Describe where a provider's credential comes from, never the value. When the
@@ -44,12 +44,51 @@ function describeContext(profile, described) {
 }
 
 /**
- * Whether a task against this provider could actually pick a model. A named
- * defaultModel is taken on trust: it may be downloaded but not yet loaded, and
- * the server will load it on demand.
+ * Everything under one provider's header line. Extracted to keep both this and
+ * `renderSetupReport` under the size ratchet, and given the row's already-made
+ * `plan` rather than re-deriving it: three calls to the same authority in one
+ * row is how two lines of one report come to disagree.
  */
-function canDelegate(profile, described) {
-  return !planSelection(profile, undefined, described).problem;
+function providerLines({ profile, rawProfile, models, error, built, described, listUnavailable }, plan) {
+  const lines = [];
+  if (error) {
+    lines.push(`      ${error.message}`);
+    const hint = error.hint ?? START_HINTS[profile.name];
+    if (hint) lines.push(`      ${hint}`);
+  } else if (listUnavailable) {
+    lines.push(`      reachable, but it does not serve a model list (${listUnavailable}).`);
+    lines.push('      Delegation still works with a configured defaultModel or an explicit --model.');
+  } else if (models.length === 0) {
+    lines.push('      reachable, but no models are loaded or downloaded.');
+  } else {
+    lines.push(`      ${models.length} model(s): ${listModelIds(models)}`);
+    if (profile.defaultModel) lines.push(`      defaultModel: ${profile.defaultModel}`);
+    // Name the evidence, not just the outcome: several models were on offer and
+    // this one was picked because the server reports it resident. Saying only
+    // "selected: x" would read as a preference the config never expressed.
+    //
+    // "the chat model", not "the only model": the count behind `because` is over
+    // chat candidates, and an embedder may be loaded beside it. Claiming sole
+    // residency would assert something the selection never measured.
+    if (plan.because === 'loaded') {
+      lines.push(`      selected: ${plan.modelId} — the chat model the server reports loaded`);
+    }
+  }
+
+  if (!error && plan.problem) {
+    // The exact message a task would fail with, from the same planner.
+    lines.push(`      reachable, but /oai:task cannot run here: ${plan.problem.message}`);
+    lines.push(`      ${plan.problem.hint}`);
+  }
+
+  // Shown on error rows too: --json reports the configured window regardless,
+  // and the two views must not disagree about the same run.
+  const context = describeContext(profile, described);
+  if (context) lines.push(`      ${context}`);
+
+  const auth = describeAuth(profile, rawProfile, built);
+  if (auth) lines.push(`     ${auth}`);
+  return lines;
 }
 
 export function renderSetupReport({ configPath, created, results, defaultProvider }) {
@@ -57,47 +96,23 @@ export function renderSetupReport({ configPath, created, results, defaultProvide
   lines.push(`Config: ${configPath}${created ? '  (created now with default providers)' : ''}`);
   lines.push('');
 
-  for (const { profile, rawProfile, models, error, built, described, listUnavailable } of results) {
+  // One plan per provider, for the row and for the closing summary alike. The
+  // marker and the "Ready:" list are the same claim stated twice, and deriving
+  // them from two calls is how they came to disagree in the first place.
+  const rows = results.map((result) => ({ result, plan: planSelection(result.profile, undefined, result.described) }));
+
+  for (const { result, plan } of rows) {
+    const { profile, error } = result;
     const isDefault = profile.name === defaultProvider;
     // "ok" must mean a task would actually run. A server offering only
     // embedders is reachable but has nothing to delegate to, and saying "ok"
     // there sends the user to a command that fails immediately.
-    const usable = !error && canDelegate(profile, described);
+    const usable = !error && !plan.problem;
     lines.push(`${error ? 'x' : usable ? 'ok' : '!'}  ${profile.name}${isDefault ? ' (default)' : ''} - ${profile.baseUrl}`);
-
-    if (error) {
-      lines.push(`      ${error.message}`);
-      const hint = error.hint ?? START_HINTS[profile.name];
-      if (hint) lines.push(`      ${hint}`);
-    } else if (listUnavailable) {
-      lines.push(`      reachable, but it does not serve a model list (${listUnavailable}).`);
-      lines.push('      Delegation still works with a configured defaultModel or an explicit --model.');
-    } else if (models.length === 0) {
-      lines.push('      reachable, but no models are loaded or downloaded.');
-    } else {
-      const shown = models.slice(0, MAX_LISTED_MODELS);
-      const extra = models.length - shown.length;
-      lines.push(`      ${models.length} model(s): ${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`);
-      if (profile.defaultModel) lines.push(`      defaultModel: ${profile.defaultModel}`);
-    }
-
-    if (!error && !usable) {
-      // The exact message a task would fail with, from the same planner.
-      const { problem } = planSelection(profile, undefined, described);
-      lines.push(`      reachable, but /oai:task cannot run here: ${problem.message}`);
-      lines.push(`      ${problem.hint}`);
-    }
-
-    // Shown on error rows too: --json reports the configured window regardless,
-    // and the two views must not disagree about the same run.
-    const context = describeContext(profile, described);
-    if (context) lines.push(`      ${context}`);
-
-    const auth = describeAuth(profile, rawProfile, built);
-    if (auth) lines.push(`     ${auth}`);
+    lines.push(...providerLines(result, plan));
   }
 
-  const ready = results.filter((result) => !result.error && canDelegate(result.profile, result.described));
+  const ready = rows.filter(({ result, plan }) => !result.error && !plan.problem).map(({ result }) => result);
   lines.push('');
   if (ready.length === 0) {
     lines.push('No provider can take a task right now. Start one of the servers above, or load a chat model in one that is already running.');
@@ -126,10 +141,28 @@ function timingParts(durationMs, prefillMs) {
   return [total, `prefill: ${(prefillMs / 1000).toFixed(1)}s`];
 }
 
+/**
+ * What answered, and what was asked for when they differ.
+ *
+ * Inside the `model:` part rather than on a line of its own: this is the field a
+ * reader goes to in order to learn which model produced the output, so the
+ * correction belongs where the mistake would otherwise be read. A separate
+ * warning line is skimmed past; this one cannot be, because there is no way to
+ * read the model without reading it.
+ *
+ * Measured, and the reason this exists: LM Studio answers a request for a model
+ * it does not have with a normal completion from whatever is loaded. See
+ * model-identity.mjs.
+ */
+function modelPart(model, requestedModel) {
+  const swap = substitution(requestedModel, model);
+  return swap ? `model: ${swap.served} (requested ${swap.requested})` : `model: ${model}`;
+}
+
 export function renderTaskFooter({
-  providerName, model, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
+  providerName, model, requestedModel, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
 }) {
-  const parts = [`provider: ${providerName}`, `model: ${model}`, ...timingParts(durationMs, prefillMs)];
+  const parts = [`provider: ${providerName}`, modelPart(model, requestedModel), ...timingParts(durationMs, prefillMs)];
   if (usage?.prompt_tokens !== undefined) {
     parts.push(`tokens: ${usage.prompt_tokens} in / ${usage.completion_tokens ?? '?'} out`);
   }

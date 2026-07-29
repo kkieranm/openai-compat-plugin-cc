@@ -21,6 +21,7 @@ import { parseNumber } from '../scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
+import { outcomeFor, reasonFrom } from './lib/outcome.mjs';
 import { renderReport } from './lib/report.mjs';
 import { recall, scoreRun } from './lib/score.mjs';
 
@@ -44,14 +45,6 @@ const SPEC = {
  */
 const INVOCATION = randomUUID();
 
-/**
- * One review, through the real command.
- *
- * A non-zero exit is recorded rather than thrown: one case failing must not
- * cancel the rest, and a run that failed is data — "the reviewer refused this
- * input" is a result about the reviewer, and silently missing rows would make
- * a partial bench read as a complete one.
- */
 /**
  * The command line for one run of one case.
  *
@@ -83,34 +76,13 @@ function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex })
 }
 
 /**
- * Why a run failed, in the command's own vocabulary — or null when it did not say.
+ * One review, through the real command.
  *
- * Read from the `--json` error envelope on stdout. The alternative was matching
- * stderr for phrases like "timed out", which this repo has on file as a defect
- * class twice over (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a
- * server's prose asserts a cause it only guessed. `reason` is what the transport
- * itself decided; the stderr blob beside it stays the record of what happened.
- *
- * `error: true` identifies the *document*, not just the field. A run can flush a
- * success report to stdout and then exit non-zero, and that report claims
- * nothing about why. Keying on the envelope marker is what keeps `reason`
- * meaning "the command said it failed, and named this cause" rather than "some
- * JSON on stdout had a field by that name" — the latter would be the same
- * guessing reappearing inside the fix meant to end it.
- *
- * Unparseable stdout is not a failure of this harness: the run simply did not
- * say why, and null is exactly that. It never throws, because the whole promise
- * of the path it sits on is that one case failing does not cancel the rest.
+ * A non-zero exit is recorded rather than thrown: one case failing must not
+ * cancel the rest, and a run that failed is data — "the reviewer refused this
+ * input" is a result about the reviewer, and silently missing rows would make
+ * a partial bench read as a complete one.
  */
-function reasonFrom(stdout) {
-  try {
-    const parsed = JSON.parse(String(stdout ?? ''));
-    return parsed?.error === true ? parsed.reason ?? null : null;
-  } catch {
-    return null;
-  }
-}
-
 function reviewOnce(caseDef, options, runIndex) {
   // --diff-only cannot apply to a `file` case: there is no diff, and the CLI
   // refuses the combination. So the flag lands on some cases and not others, and
@@ -140,7 +112,7 @@ function reviewOnce(caseDef, options, runIndex) {
       maxBuffer: 64e6,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { diffOnly, report: JSON.parse(stdout) };
+    return outcomeFor(stdout, diffOnly);
   } catch (error) {
     // The whole of stderr, not one line of it. Taking the last line returned the
     // UserError's *hint* — the companion writes the message and the hint as
@@ -170,7 +142,14 @@ function runCase(caseDef, options, runsPerCase) {
     // Only a run that produced readable findings can be scored. `parsed: false`
     // is not an empty findings list, and scoring it as one would enter a failed
     // read as a clean review — the distinction --json exists to preserve.
-    if (outcome.report?.parsed) {
+    //
+    // `!outcome.error` as well, now that a run can carry both a report and a
+    // failure: a substituted run parsed perfectly and is still not a
+    // measurement of the requested model. `case-rows.mjs` enforces the same
+    // exclusion on its own side rather than trusting this line, because an
+    // invariant that lives in one file and is relied on by another is how the
+    // partition quietly stopped being exhaustive last time.
+    if (outcome.report?.parsed && !outcome.error) {
       const score = scoreRun(outcome.report.findings, caseDef.defects);
       outcome.score = { ...score, recall: recall(score.byDefect) };
     }
@@ -191,8 +170,12 @@ function selectCases(all, wanted) {
   return all.filter((caseDef) => wanted.includes(caseDef.id));
 }
 
-async function main() {
-  const { options } = parseArgs(process.argv.slice(2), SPEC);
+/**
+ * Every flag checked before any case runs, so a mistyped budget costs a
+ * refusal in milliseconds rather than surfacing after the first model round
+ * trip. Lifted out of `main` at the function size budget.
+ */
+function validateOptions(options) {
   const runsPerCase = options.runs ? Number(options.runs) : 1;
   if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
     throw new UserError(`--runs must be a positive integer, got "${options.runs}".`);
@@ -215,6 +198,12 @@ async function main() {
   const budget = { min: 1, max: MAX_BUDGET_SECONDS };
   if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
   if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
+  return runsPerCase;
+}
+
+async function main() {
+  const { options } = parseArgs(process.argv.slice(2), SPEC);
+  const runsPerCase = validateOptions(options);
 
   const cases = selectCases(loadCases(ROOT), options.case);
   const results = cases.map((caseDef) => runCase(caseDef, options, runsPerCase));
@@ -222,11 +211,34 @@ async function main() {
   // The model that actually answered, taken from a run rather than from the
   // request: a server may serve a different build than the id asked for, and
   // the report belongs to the one that ran.
-  const answered = results.flatMap(({ runs }) => runs).find((run) => run.report)?.report;
+  //
+  // `!run.error` as well, so a substituted run cannot name the whole sweep. The
+  // title has to describe what the table describes, and the table excludes
+  // those runs — taking the first report regardless would headline the report
+  // with a model whose every run was dropped from it. The substitutions get
+  // their own section, which is where a sweep spanning several
+  // requested-to-served pairs is stated in full rather than collapsed to one id.
+  //
+  // But `!run.error` alone loses the sweep's identity entirely when EVERY run was
+  // substituted — and that is the modal case, not a corner: substitution is a
+  // property of one requested id against one server, so a server that renames
+  // the model for the first run renames it for all of them. `options.model` is
+  // undefined on a normal invocation (the config supplies it), so the title
+  // became `# Benchmark — unknown / unknown` above a table of nothing but
+  // failures: the report losing the identity of the server it ran against at
+  // exactly the moment a reader needs it. Confirmed by the built-in review.
+  //
+  // So: `provider` from any report at all, since a substitution says nothing
+  // about which server answered. `model` from a COUNTED run, and where none
+  // exists, the requested id marked as unconfirmed rather than stated as fact.
+  const everyRun = results.flatMap(({ runs }) => runs);
+  const answered = everyRun.find((run) => run.report && !run.error)?.report;
+  const anyReport = everyRun.find((run) => run.report)?.report;
+  const requested = anyReport?.requestedModel ?? options.model;
   const markdown = renderReport(results, {
     runsPerCase,
-    provider: answered?.provider ?? options.provider ?? 'unknown',
-    model: answered?.model ?? options.model ?? 'unknown',
+    provider: answered?.provider ?? anyReport?.provider ?? options.provider ?? 'unknown',
+    model: answered?.model ?? (requested ? `${requested} (requested; no run was answered by it)` : 'unknown'),
     diffOnly: Boolean(options['diff-only']),
     cold: Boolean(options.cold),
     timeoutSeconds: options.timeout,

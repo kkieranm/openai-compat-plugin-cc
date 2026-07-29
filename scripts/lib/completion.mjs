@@ -103,6 +103,14 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
     content: answer.content,
     reasoning: answer.reasoning,
     model: answer.model ?? requestedModel,
+    // Carried beside what answered so the pair travels together to every
+    // consumer, rather than each renderer being handed the requested id
+    // separately — which is how one of the two call sites gets forgotten.
+    //
+    // The `??` above stays, and is not a loss: a server that never names a
+    // model yields requested === served, so it cannot report a substitution
+    // that nothing observed.
+    requestedModel,
     usage: answer.usage,
     finishReason: answer.finishReason,
     // Measured by the transport, defaulted to null here rather than omitted: a

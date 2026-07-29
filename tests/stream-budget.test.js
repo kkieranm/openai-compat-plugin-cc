@@ -78,11 +78,15 @@ test('a server refusing BOTH stream_options and streaming still gets an answer',
   const seen = [];
   const server = await startFakeServer((record, response) => {
     if (record.url.includes('/models')) return respondJson(response, modelList('test-model'));
+    // Only a chat POST is an attempt. The native context probes (/props, /info)
+    // reach this handler too, and counting them as ladder rungs made the
+    // assertion below measure the wrong thing.
+    if (!record.url.includes('/chat/completions')) return respondJson(response, { error: 'not found' }, 404);
     seen.push(record.body);
-    if (record.body.stream_options) {
+    if (record.body?.stream_options) {
       return respondJson(response, { error: { message: "unknown field 'stream_options'" } }, 400);
     }
-    if (record.body.stream === true) {
+    if (record.body?.stream === true) {
       return respondJson(response, { error: { message: 'stream is not supported by this deployment' } }, 400);
     }
     return respondJson(response, completion('the answer after two degrades'));
@@ -167,8 +171,12 @@ test('"streaming is not supported" degrades, not just the bare parameter name', 
   const seen = [];
   const server = await startFakeServer((record, response) => {
     if (record.url.includes('/models')) return respondJson(response, modelList('test-model'));
+    // Only a chat POST is an attempt. The native context probes (/props, /info)
+    // reach this handler too, and counting them as ladder rungs made the
+    // assertion below measure the wrong thing.
+    if (!record.url.includes('/chat/completions')) return respondJson(response, { error: 'not found' }, 404);
     seen.push(record.body);
-    if (record.body.stream === true) {
+    if (record.body?.stream === true) {
       return respondJson(response, { error: { message: 'streaming is not supported for this model' } }, 400);
     }
     return respondJson(response, completion('answered without streaming'));
