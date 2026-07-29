@@ -16,14 +16,13 @@ function describeAuth(profile, rawProfile, built) {
 }
 
 /**
- * Where the guard's window comes from. Naming the source matters: a detected
- * number and a hand-set one carry different confidence, and one probe shape
- * (oMLX) is documented rather than verified.
- */
-/**
- * Formats whatever effectiveWindow resolved. Reporting the window of the model
- * a task would actually use is the point: naming some other loaded model's
- * window would promise a guard the task will not have.
+ * Formats whatever `effectiveWindow` resolved, and says where it came from.
+ *
+ * Naming the source matters: a detected number and a hand-set one carry
+ * different confidence, and one probe shape (oMLX) is documented rather than
+ * verified. Reporting the window of the model a task would actually use is the
+ * point — naming some other loaded model's window would promise a guard the task
+ * will not have.
  */
 function describeContext(profile, described) {
   const resolved = effectiveWindow(profile, described);
@@ -107,8 +106,27 @@ export function renderSetupReport({ configPath, created, results, defaultProvide
   return lines.join('\n');
 }
 
-export function renderTaskFooter({ providerName, model, usage, durationMs, contextNote, finishReason }) {
-  const parts = [`provider: ${providerName}`, `model: ${model}`, `${(durationMs / 1000).toFixed(1)}s`];
+/**
+ * Prefill is on the human path too, not JSON-only.
+ *
+ * The rule this file follows is that a diagnostic changing nothing may live on
+ * one path, but a fact changing what the reader should believe may not — and
+ * this one does. A bare `424.6s` invites "the model is slow"; `424.6s | prefill:
+ * 421.7s` says the model spent 421 of those seconds reading the prompt, and that
+ * the same request served from the server's cache costs 14s. Measured, both
+ * figures, on one prompt. See ADR 009.
+ *
+ * Omitted rather than zeroed when unknown: on a non-streamed reply there is no
+ * first-token boundary to have measured.
+ */
+function timingParts(durationMs, prefillMs) {
+  const total = `${(durationMs / 1000).toFixed(1)}s`;
+  if (!Number.isFinite(prefillMs)) return [total];
+  return [total, `prefill: ${(prefillMs / 1000).toFixed(1)}s`];
+}
+
+export function renderTaskFooter({ providerName, model, usage, durationMs, prefillMs, contextNote, finishReason }) {
+  const parts = [`provider: ${providerName}`, `model: ${model}`, ...timingParts(durationMs, prefillMs)];
   if (usage?.prompt_tokens !== undefined) {
     parts.push(`tokens: ${usage.prompt_tokens} in / ${usage.completion_tokens ?? '?'} out`);
   }

@@ -1,17 +1,82 @@
 // Turning benchmark runs into something a person can read and paste into an ADR.
 //
-// Which bucket each run falls into lives in `run-buckets.mjs`; this file is
-// about wording and arithmetic.
+// Which bucket each run falls into lives in `run-buckets.mjs`, and the prose
+// qualifying every figure lives in `caveats.mjs`; this file is the table and the
+// arithmetic behind it.
 //
-// The wording here is load-bearing, not decoration. Every number this prints is
-// about to be quoted in a design document as evidence, so each one has to say
-// what it actually measured — which is narrower than "how good the reviewer is"
-// in three separate ways, all named below.
+// Both seams were cut by the size ratchet and both are real. The split worth
+// stating is this one: a number and the sentence explaining what it does not
+// mean have different reasons to change, and keeping them in one file is how the
+// sentence quietly stops matching the number.
+import { caveats, pct } from './caveats.mjs';
 import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 
-function pct(found, total) {
-  if (total === 0) return 'n/a';
-  return `${Math.round((found / total) * 100)}%`;
+/**
+ * The two halves of a run's wall clock, gathered separately because a
+ * server-side prompt cache moves one of them and not the other.
+ *
+ * Measured: the same 56,805-token prompt reached its first token in 421.7s cold
+ * and 11.5s warm, generating for ~3s in both. So a `seconds` range of `13–425`
+ * across three runs of one case was never a spread in the reviewer — it was one
+ * cold run and two cache hits, reported as if they were samples of one thing.
+ *
+ * `Number.isFinite` is the gate, not truthiness or `!= null`. A non-streamed
+ * reply reports null for both because no first-token boundary was observed, and
+ * `null` arithmetic silently yields a number: `durationMs - null` is
+ * `durationMs`, which would relabel a whole run's wall clock as generation. The
+ * count of what was measured is returned alongside the values so a cell can say
+ * `2/3 measured` rather than quietly ranging over the runs that happened to
+ * carry a figure. See ADR 009.
+ */
+export function timingSamples(runs, field) {
+  const completed = runs.filter((run) => run.report);
+  const values = completed.map((run) => run.report[field]).filter((value) => Number.isFinite(value));
+  return { values, measured: values.length, completed: completed.length };
+}
+
+/**
+ * A seconds range, and how much of the case it actually covers.
+ *
+ * The `(2/3 measured)` suffix is the point. Ranging over whatever figures
+ * happened to arrive would print a complete-looking cell for a case where one
+ * run never reported one, which is the same defect as a recall denominator
+ * computed over two runs while the row says three.
+ */
+function rangeCell({ values, measured, completed }) {
+  if (measured === 0) return '—';
+  const seconds = values.map((ms) => ms / 1000);
+  const range = `${Math.min(...seconds).toFixed(0)}–${Math.max(...seconds).toFixed(0)}`;
+  return measured === completed ? range : `${range} (${measured}/${completed} measured)`;
+}
+
+/**
+ * The prompt's size, **per run** — the one figure in this row that is a property
+ * of the input rather than a count over the runs.
+ *
+ * It was a `reduce` summing every run's `prompt_tokens`, which is invisible at
+ * N=1 (where sum equals per-run) and wrong by exactly a factor of `runs`
+ * everywhere else. ADR 006 harvested all six of its per-case figures from an N=1
+ * sweep and quotes them as prompt sizes — `config-origin` at 1,575, `model-info`
+ * at 41,016 — so the first N>1 report printed 4,725 and 82,020 for those same
+ * cases, in a column a reader has every reason to divide a generation figure by.
+ * Two quantities welded into one number, which is the defect ADR 009 exists to
+ * remove, surviving in the table it added its own columns to.
+ *
+ * A range rather than one number when runs disagree, because they can: `--cold`
+ * prepends a per-run nonce, so the prompt genuinely differs run to run and a
+ * single figure would have to pick one and call it the prompt.
+ */
+function promptSamples(runs) {
+  return runs.map((run) => run.report?.usage?.prompt_tokens).filter((value) => Number.isFinite(value));
+}
+
+function tokenCell(values) {
+  // Em dash, not 0. The old `?? 0` printed a zero-token prompt for a case whose
+  // runs all failed, which is a measurement nobody made.
+  if (values.length === 0) return '—';
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  return low === high ? `${low}` : `${low}–${high}`;
 }
 
 function caseRows(results) {
@@ -44,7 +109,8 @@ function caseRows(results) {
     const unmatched = scored.reduce((total, run) => total + run.score.unmatched.length, 0);
     const unresolved = cut.reduce((total, run) => total + (listed - (run.score?.recall.found ?? 0)), 0);
     const failed = runs.filter((run) => run.error).length;
-    const seconds = runs.filter((run) => run.report).map((run) => run.report.durationMs / 1000);
+    const prefill = timingSamples(runs, 'prefillMs');
+    const generation = timingSamples(runs, 'generationMs');
     return {
       id: caseDef.id,
       listed,
@@ -64,8 +130,9 @@ function caseRows(results) {
       scored: scored.length,
       runs: runs.length,
       diffOnly: runs.some((run) => run.diffOnly),
-      tokens: runs.reduce((total, run) => total + (run.report?.usage?.prompt_tokens ?? 0), 0),
-      seconds: seconds.length ? `${Math.min(...seconds).toFixed(0)}–${Math.max(...seconds).toFixed(0)}` : '—',
+      tokens: promptSamples(runs),
+      prefill,
+      generation,
     };
   });
 }
@@ -89,8 +156,12 @@ function recallCell(row) {
 
 function table(rows) {
   const lines = [
-    '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed | prompt tokens | seconds |',
-    '|---|---|---|---|---|---|---|---|---|---|---|',
+    // Prefill and generation are two columns, never one. They are not two views
+    // of the same quantity: a prompt cache moves the first by tens of times and
+    // leaves the second alone, so summing them produces a figure that describes
+    // neither, which is exactly what the `seconds` column they replace did.
+    '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed | prompt tokens | prefill s | generate s |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const row of rows) {
     // `scored` is printed beside `runs` so the row's own arithmetic can be
@@ -104,125 +175,24 @@ function table(rows) {
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
       + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${row.failed} `
-      + `| ${row.tokens} | ${row.seconds} |`,
+      + `| ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} |`,
     );
   }
   return lines;
 }
 
-/**
- * The three ways a run can produce less than a whole answer, each stated only
- * when it happened. Split from `caveats` at the size budget, and the seam is a
- * real one: these are all claims about *what the harness did to a run*, where
- * the rest describe what the corpus can and cannot measure.
- */
-function censorshipNotes(rows) {
-  const notes = [];
-  const unreadable = rows.reduce((total, row) => total + row.unreadable, 0);
-  if (unreadable > 0) {
-    notes.push(
-      `**${unreadable} run(s) answered but could not be read** — the reply never parsed into findings, and it `
-      + 'was not truncated, so it is neither a cut run nor a failure. They are excluded from the recall '
-      + 'denominator and counted here instead; their raw replies are in the per-run records.',
-    );
-  }
-  const truncated = rows.reduce((total, row) => total + row.truncated, 0);
-  if (truncated > 0) {
-    notes.push(
-      `**${truncated} run(s) ran out of tokens before finishing their reply** — the JSON never parsed, so `
-      + 'there is nothing in them to score and they are excluded from the figures above. This is a '
-      + 'harness limit, not a reviewer result: raise the reply budget or review a smaller target.',
-    );
-  }
-  const cut = rows.reduce((total, row) => total + row.cut, 0);
-  const unresolved = rows.reduce((total, row) => total + row.unresolved, 0);
-  // Gated on `unresolved`, not on `cut`. A cut run that still named every listed
-  // defect leaves nothing uncertain, and a caveat announcing an uncertainty band
-  // of X% to X% would be a warning firing when it is provably wrong — the
-  // inverse of the defect this whole item is about. The `(N cut)` in the scored
-  // cell still says the truncation happened; there is simply nothing to caveat.
-  if (unresolved > 0) {
-    const found = rows.reduce((total, row) => total + row.found, 0);
-    const opportunities = rows.reduce((total, row) => total + row.opportunities, 0);
-    notes.push(
-      `**${cut} run(s) were cut off mid-reasoning, and their findings ARE counted above** — the cut lands `
-      + 'on the reasoning field, which the schema puts first, so the model still emitted its findings '
-      + 'normally and those are as checkable as any other run\'s. What cannot be read is their silence: a '
-      + `defect such a run did not name may be one it never reached. So ${unresolved} of the `
-      + `${opportunities} opportunit(ies) above are **unresolved**, not observed misses, and the "defects `
-      + 'found" column counts them against the reviewer because that is the conservative reading. True '
-      + `recall is therefore somewhere between ${pct(found, opportunities)} and `
-      + `${pct(found + unresolved, opportunities)} — the upper figure is what cannot be ruled out, not `
-      + 'something anyone measured, which is why it is stated here rather than printed as a result.',
-    );
-  }
-  return notes;
-}
 
-/**
- * The caveats, stated every time rather than left to the reader's memory.
- *
- * Each is a way this table is narrower than it looks, and each has already
- * misled someone in this repo's own record: a single run was read as a result
- * (OAI-9 measured a 20% hit rate per run), a cut run was read as a clean pass
- * (trap instance 14), and an unmatched finding was called a false positive when
- * it may be a real catch the anchor missed.
- */
-function caveats(rows, runsPerCase, diffOnly) {
-  const notes = [];
-  // Named, not assumed. --diff-only cannot apply to a `file` case, so asking for
-  // it switches some cases and not others; a reader comparing two runs would
-  // otherwise credit the difference to a switch that never reached every row.
-  if (diffOnly) {
-    const applied = rows.filter((row) => row.diffOnly).map((row) => `\`${row.id}\``);
-    const skipped = rows.filter((row) => !row.diffOnly).map((row) => `\`${row.id}\``);
-    notes.push(
-      `**\`--diff-only\` applied to ${applied.join(', ') || 'no cases'}.**`
-      + (skipped.length
-        ? ` It does not apply to ${skipped.join(', ')} — a file case has no diff to reduce to, so `
-          + 'those rows are unchanged and are not part of the comparison.'
-        : ''),
-    );
-  }
-  if (runsPerCase === 1) {
-    notes.push(
-      '**One run per case: this is a sample, not a score.** The same command has produced 1,709 and '
-      + '5,450 output tokens on identical input, and a single pass found a real defect in 1 run of 5. '
-      + 'Raise --runs before drawing an A/B conclusion from any difference here.',
-    );
-  }
-  notes.push(...censorshipNotes(rows));
-  const listed = rows.reduce((total, row) => total + row.listed, 0);
-  const scoreable = rows.reduce((total, row) => total + row.opportunities, 0);
-  const dropped = rows.reduce((total, row) => total + row.dropped, 0);
-  if (dropped > 0) {
-    notes.push(
-      `**Recall is measured against ${scoreable} scoreable of ${listed} listed defect(s), not against `
-      + `everything history claims.** ${dropped} further defect(s) are recorded in the manifests as `
-      + 'dropped, each with a reason — they could not be located in the snapshot, so scoring them would '
-      + 'be invention. The denominator is therefore smaller than the truth twice over, which flatters '
-      + 'recall; the listed and scoreable counts are printed so the gap is visible rather than implied.',
-    );
-  }
-  notes.push(
-    '**"Unmatched" is not "false positive".** The scorer matches a quoted anchor line or a line range, so '
-    + 'it undercounts a finding that describes a known defect in different words. Only `docs-only` — which '
-    + 'contains no code — turns unmatched into false-positive by construction.',
-  );
-  return notes;
-}
-
-export function renderReport(results, { runsPerCase, model, provider, diffOnly }) {
+export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold }) {
   const rows = caseRows(results);
   const lines = [
-    `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}`,
+    `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`,
     '',
     `${results.length} case(s), ${runsPerCase} run(s) each.`,
     '',
     ...table(rows),
     '',
   ];
-  for (const note of caveats(rows, runsPerCase, diffOnly)) lines.push(note, '');
+  for (const note of caveats(rows, runsPerCase, { diffOnly, cold })) lines.push(note, '');
 
   const unmatched = results.flatMap(({ caseDef, runs }) =>
     runs.flatMap((run) => (run.score?.unmatched ?? []).map((finding) => ({ caseId: caseDef.id, finding }))));

@@ -87,7 +87,7 @@ export function applyCompletion(answer, payload) {
  * footer, and is missing its tail. A terminator or a `finish_reason` is the proof
  * it finished; text with neither is reported as cut short.
  */
-export function finishAnswer(answer, { profile, requestedModel, sawDone, streamed }) {
+export function finishAnswer(answer, { profile, requestedModel, sawDone, streamed, prefillMs = null, generationMs = null, attempts = 1 }) {
   if (!answer.sawContent && !answer.sawReasoning) {
     throw new UserError(
       `${profile.name} returned a completion with no message content (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
@@ -105,5 +105,15 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
     model: answer.model ?? requestedModel,
     usage: answer.usage,
     finishReason: answer.finishReason,
+    // Measured by the transport, defaulted to null here rather than omitted: a
+    // caller reading `result.prefillMs` must get "not determined" from every
+    // path, including the whole-JSON one and any future caller that does not
+    // pass them, not `undefined` that a `?? 0` downstream would turn into a
+    // measurement nobody took.
+    prefillMs,
+    generationMs,
+    // How many requests this one answer cost. Defaults to 1 so a caller that
+    // never retried is not reported as unknown.
+    attempts,
   };
 }

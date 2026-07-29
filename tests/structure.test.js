@@ -88,6 +88,48 @@ test('no top-level function exceeds the function size budget', () => {
   assert.deepEqual(failures, []);
 });
 
+// Confirmed twice, so promoted from a reviewer's prompt to a guard. Extracting a
+// function under the size ratchet means inserting one above an existing
+// declaration, and twice now the new function has landed *between* a docblock
+// and the function that docblock described — leaving the old comment attached to
+// unrelated code and its subject with none. It reads as harmless placement and
+// is not: the orphaned block in `review-report.mjs` ended "Exported for the
+// tests that pin those fields", which was then false of the private helper it
+// had come to sit above.
+//
+// Two consecutive `/**` blocks with nothing between them is the exact shape, and
+// nothing else in this repo produces it.
+test('no doc comment is orphaned from the thing it documents', () => {
+  const offenders = [];
+  for (const dir of ['scripts', 'bench']) {
+    for (const file of sourceFiles(join(ROOT, dir))) {
+      const lines = readFileSync(file, 'utf8').split('\n');
+      let closedAt = -1;
+      // Only once a function has been declared. Before that, a floating block is
+      // a module header — this repo writes them in both `/** */` and `//` form —
+      // which documents the file and is attached to nothing on purpose. Scoping
+      // by position rather than by content is what keeps the guard from calling
+      // the convention a defect.
+      let seenFunction = false;
+      lines.forEach((line, index) => {
+        const text = line.trim();
+        if (text === '*/') closedAt = index;
+        // A second block opening with only blank lines since the last one
+        // closed: whatever the first block described, it is not the next
+        // declaration any more.
+        if (seenFunction && text.startsWith('/**') && closedAt >= 0) {
+          if (lines.slice(closedAt + 1, index).every((between) => between.trim() === '')) {
+            offenders.push(`${relative(ROOT, file)}:${closedAt + 1}: doc comment is followed by another, not by a declaration`);
+          }
+        }
+        if (/^(export\s+)?(async\s+)?function\s/.test(text)) seenFunction = true;
+        if (text !== '*/' && text !== '') closedAt = -1;
+      });
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 // Confirmed defect class, promoted from a review note to a guard: spawnSync
 // blocks this process's event loop, so the in-process fake server can never
 // answer and the suite hangs until the client timeout instead of failing.

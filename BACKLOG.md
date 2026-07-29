@@ -73,26 +73,18 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-18** — **The prompt cache makes repeated runs of one case incomparable, and the bench does not
-  know it.** Measured 2026-07-28 while probing OAI-6: the same 52k-token prompt reached its first token
-  at **393.7s cold and 9.3s warm** — a 42× difference from LM Studio's prefix cache, on identical
-  input. `--runs 3` therefore measures run 1 cold and runs 2–3 warm, so `durationMs` is not comparable
-  *within* a case, let alone across an A/B. This silently corrupts exactly what OAI-17 exists to
-  measure, and it also flatters every repeat: the second run of a case is doing materially less work.
-  Needs a decision, not just a fix: either bust the cache per run (a nonce in the *first* message —
-  a suffix does not work, since a prefix cache reuses the shared prefix), or accept warm runs and
-  report cold and warm separately rather than averaging them. **Note the interaction with OAI-9**:
-  multi-pass review over one target would be warm from pass two onward, which makes extra passes far
-  cheaper than the first — good for the feature, misleading for any timing measured through it.
 - **OAI-17** — Throughput is a product constraint, and nothing measures it. Swapping to a dense 27B
   at 6-bit produced **7.4 tokens/sec**, at which a run reasoning to the 28,000-character `analysis`
   cap needs ~17.5 minutes — so **all three benchmark runs died on the 300s client timeout**, and only
   the 4,448-token control finished at all. Three things follow. (1) **`bench/run.mjs` has no
   `--timeout`**, so a slow model cannot be benchmarked without hand-editing the provider config —
   which blocks OAI-11's cross-model passes outright, since the whole point there is running models of
-  differing speed. (2) **Nothing records tokens/sec**, though `usage` and `durationMs` are both
-  already in the JSON and the figure is their quotient; a model that is accurate but 10× too slow
-  should be visible as such in the report, not inferred afterwards. (3) A timeout is currently
+  differing speed. (2) **Nothing records tokens/sec** — and note the divisor moved. OAI-18 landed
+  `generationMs`, which is the right one: dividing `usage` by `durationMs` would fold prefill into
+  the divisor, and prefill dwarfs generation on a large prompt (measured, one 56,805-token request:
+  421.7s to first token against ~3s generating, so the quotient would have read ~7× low). A model
+  that is accurate but 10× too slow should be visible as such in the report, not inferred afterwards.
+  (3) A timeout is currently
   indistinguishable in the record from a model that failed — both are a stderr blob — where the
   first is a harness limit and the second is a result. **This reframes OAI-9**: multiplying passes
   multiplies a wall clock that is already the binding constraint on the more capable models.
@@ -123,6 +115,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   independent passes is itself a confidence signal worth showing, since it is the closest thing to a
   free verifier. Decide whether passes run concurrently (one local model, so probably not) and how
   this interacts with OAI-8's progress reporting, which it makes far more necessary.
+  **The "~40–90s each" estimate is wrong for passes 2..N, and now measurably so.** Every pass after
+  the first sends the same prompt, so it is a prompt-cache hit: measured on a 56,805-token request,
+  first token at 421.7s cold against 11.5s warm. The marginal pass is therefore *much* cheaper than
+  the first — good for the feature, and an argument for more passes rather than fewer — but it makes
+  a per-pass average meaningless, and any timing quoted for "a review" must say whether it is the
+  cold one. OAI-18 landed `prefillMs`/`generationMs`, so this is now visible per pass rather than
+  hidden inside a total; use them when costing this.
 - **OAI-11** — Diverse passes: different models, and different lenses. **OAI-9 decorrelates sampling
   noise; this decorrelates blind spots**, which is the more valuable axis — repeated samples of one
   model share its failure modes, so agreement between them says much less than agreement between two

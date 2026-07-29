@@ -32,6 +32,11 @@ see [ADR 007](adr/007-owning-the-transport.md).
 `reviewSchemaFor(reserve)` — and a run its `analysis` ceiling truncates has its findings scored while
 its silence widens the benchmark's recall into a band — see [ADR 008](adr/008-sizing-the-review-reply.md).
 
+`scripts/lib/chat.mjs` times each attempt on both sides of its first token — `prefillMs` and
+`generationMs` — because a server-side prompt cache moves the first by tens of times and leaves the
+second alone; `/oai:review --cache-buster <token>` defeats that cache for a measurement, and the
+benchmark's `--cold` uses it — see [ADR 009](adr/009-measuring-prefill-and-generation.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see

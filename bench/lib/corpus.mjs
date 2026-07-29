@@ -17,9 +17,13 @@ const NUL = String.fromCharCode(0);
  * harness has neither: it builds and scores one case at a time, and every
  * server it talks to is a separate process.
  */
-function git(args, cwd) {
+function git(args, cwd, { env } = {}) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // Merged over `process.env`, never replacing it: a bare env object strips
+    // PATH, HOME and everything else git expects, so the subprocess fails for a
+    // reason that has nothing to do with what was being set.
+    const environment = env ? { ...process.env, ...env } : process.env;
+    return execFileSync('git', args, { cwd, encoding: 'utf8', env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (error) {
     const detail = String(error.stderr || error.message).trim();
     throw new UserError(`git ${args.join(' ')} failed: ${detail}`, { hint: 'Is git installed and on PATH?' });
@@ -158,9 +162,36 @@ function initRepo() {
   return dir;
 }
 
+/**
+ * The instant every case commit claims to have been made.
+ *
+ * Fixed, with an explicit offset, because the commit date is *in the prompt*.
+ * `--commit HEAD` sends `git show HEAD`, whose first three lines are the sha,
+ * the author and the date — so a repo built fresh for each run produced a
+ * different sha whenever two runs fell in different clock seconds, which in a
+ * real bench is always. Measured before the fix: back-to-back inside one second
+ * the two were byte-identical, 1.5s apart they were not.
+ *
+ * That made the corpus not quite a fixed target, and it made the server's prompt
+ * cache behave differently by mode: the varying lines sit at the tail of a
+ * whole-file request, where the file bulk still caches, but `--diff-only` sends
+ * no file blocks at all, so they land within the first few hundred characters
+ * and effectively nothing cached. The A/B control this repo uses was the arm
+ * being accidentally cache-busted. See ADR 009.
+ */
+export const CASE_COMMIT_DATE = '2026-01-01T00:00:00+00:00';
+
 function commitAll(dir, message, { allowEmpty = false } = {}) {
   git(['add', '-A'], dir);
-  git(['commit', '--quiet', ...(allowEmpty ? ['--allow-empty'] : []), '-m', message], dir);
+  git(
+    // Signing is disabled per-command rather than trusted to be off: an ambient
+    // `commit.gpgSign = true` would put a signature — which embeds its own
+    // timestamp — into the commit object, so the sha would drift again, and on a
+    // machine without a usable key materialization would fail outright.
+    ['-c', 'commit.gpgSign=false', 'commit', '--quiet', ...(allowEmpty ? ['--allow-empty'] : []), '-m', message],
+    dir,
+    { env: { GIT_AUTHOR_DATE: CASE_COMMIT_DATE, GIT_COMMITTER_DATE: CASE_COMMIT_DATE } },
+  );
 }
 
 /**

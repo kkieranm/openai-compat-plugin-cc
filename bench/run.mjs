@@ -12,6 +12,7 @@
 // Deliberately not part of `npm test`: it needs a real model and is
 // non-deterministic. See ADR 006.
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,9 +27,20 @@ const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
   valueFlags: ['runs', 'provider', 'model'],
-  booleanFlags: ['diff-only'],
+  booleanFlags: ['diff-only', 'cold'],
   repeatableFlags: ['case'],
 };
+
+/**
+ * One value per bench invocation, so `--cold` runs cannot collide with each
+ * other *or* with a run from an hour ago.
+ *
+ * A UUID rather than a timestamp, which was the first draft and is wrong twice:
+ * two invocations launched inside one clock tick would share it, and a wall
+ * clock can step backwards onto a value already used. What has to be true is
+ * that the server has never seen this prefix, and only uniqueness delivers that.
+ */
+const INVOCATION = randomUUID();
 
 /**
  * One review, through the real command.
@@ -38,7 +50,7 @@ const SPEC = {
  * input" is a result about the reviewer, and silently missing rows would make
  * a partial bench read as a complete one.
  */
-function reviewOnce(caseDef, options) {
+function reviewOnce(caseDef, options, runIndex) {
   // --diff-only cannot apply to a `file` case: there is no diff, and the CLI
   // refuses the combination. So the flag lands on some cases and not others, and
   // the report has to say which — an A/B switch applied to four cases of six
@@ -57,6 +69,10 @@ function reviewOnce(caseDef, options) {
     dir = materialized.dir;
     const flags = ['review', ...materialized.args, '--json'];
     if (diffOnly) flags.push('--diff-only');
+    // Unique per run *and* per invocation. Without the run index every run of a
+    // case would share a prefix and only the first would be cold — the exact
+    // thing --cold exists to prevent, reintroduced by the fix.
+    if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
     // The manifest may pin its own provider/model, so a case can name the model
     // it is a fair test of; the command line overrides it. This is what makes
     // OAI-11's cross-model passes configuration rather than a rewrite.
@@ -95,7 +111,7 @@ function runCase(caseDef, options, runsPerCase) {
   const runs = [];
   for (let index = 0; index < runsPerCase; index += 1) {
     process.stderr.write(`${caseDef.id} — run ${index + 1}/${runsPerCase}...\n`);
-    const outcome = reviewOnce(caseDef, options);
+    const outcome = reviewOnce(caseDef, options, index);
     // Only a run that produced readable findings can be scored. `parsed: false`
     // is not an empty findings list, and scoring it as one would enter a failed
     // read as a clean review — the distinction --json exists to preserve.
@@ -139,6 +155,7 @@ async function main() {
     provider: answered?.provider ?? options.provider ?? 'unknown',
     model: answered?.model ?? options.model ?? 'unknown',
     diffOnly: Boolean(options['diff-only']),
+    cold: Boolean(options.cold),
   });
 
   // Raw records beside the summary: the summary is an argument, and an argument

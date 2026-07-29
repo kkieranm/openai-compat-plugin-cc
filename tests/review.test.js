@@ -16,7 +16,7 @@ import {
   runCompanion,
 } from './helpers.mjs';
 import { MAX_FINDINGS } from '../scripts/lib/review-schema.mjs';
-import { REVIEW_MAX_TOKENS } from '../scripts/lib/cmd-review.mjs';
+import { REVIEW_MAX_TOKENS } from '../scripts/lib/review-request.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',

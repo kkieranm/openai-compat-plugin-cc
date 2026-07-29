@@ -9,13 +9,14 @@ import {
   chatRequests,
   completionFrames,
   reasoningCompletion,
+  reasoningFrames,
   respondJson,
   respondStream,
   reviewScenario as scenario,
   runCompanion,
   sentAnalysisCap,
 } from './helpers.mjs';
-import { REVIEW_MAX_TOKENS, REVIEW_MIN_TOKENS } from '../scripts/lib/cmd-review.mjs';
+import { REVIEW_MAX_TOKENS, REVIEW_MIN_TOKENS } from '../scripts/lib/review-request.mjs';
 import { analysisCapFor, MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
 
 const FINDINGS = JSON.stringify({
@@ -185,4 +186,38 @@ test('a cut analysis warns loudly rather than reading as a clean review', async 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /still reasoning when it hit its length limit/);
   assert.match(result.stdout, /incomplete/);
+});
+
+test('--cache-buster leads the system message, where a prefix cache diverges', async () => {
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondStream(response, reasoningFrames(FINDINGS)),
+  );
+
+  const result = await runCompanion(['review', '--cache-buster', 'abc-123'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const [system, user] = chatRequests(server)[0].body.messages;
+  // At the *head*, and asserted as a prefix rather than a substring. A prefix
+  // cache reuses the longest shared leading run, so a marker anywhere but the
+  // front leaves everything before it cached — a test matching /abc-123/ would
+  // pass for a suffix that busts nothing at all.
+  assert.equal(system.role, 'system');
+  assert.ok(system.content.startsWith('cache-buster abc-123'), `system began: ${system.content.slice(0, 40)}`);
+  // And the review's own instructions survive it: the marker is prepended, not
+  // substituted, or the model would be told to do something else entirely.
+  assert.match(system.content, /You are a code reviewer\./);
+  assert.doesNotMatch(user.content, /abc-123/, 'one marker, at the front — not sprayed through the prompt');
+});
+
+test('without the flag nothing is prepended, so ordinary runs stay cacheable', async () => {
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondStream(response, reasoningFrames(FINDINGS)),
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(chatRequests(server)[0].body.messages[0].content.startsWith('You are a code reviewer.'));
 });

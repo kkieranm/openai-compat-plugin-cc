@@ -68,6 +68,43 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
 }
 
 /**
+ * What the run's wall clock was made of, and whether it took more than one try.
+ *
+ * The two halves of `durationMs` that a prompt cache treats differently: prefill
+ * moves by ~37× between a cold and a warm run of the same prompt while
+ * generation does not move at all, so a single total is two measurements welded
+ * together — and the benchmark was averaging across the seam. Both are measured
+ * inside the answering attempt rather than derived from `durationMs`, which
+ * starts earlier and absorbs prompt building and any rejected attempt. Null on a
+ * non-streamed reply, where no boundary was observed. See ADR 009.
+ *
+ * `retried` is here because the timings cannot show it. They belong to the
+ * attempt that answered; a refused attempt is rejected at request validation
+ * before any generation, so it neither prefills nor warms a cache — but that is
+ * a property of every server observed, not a guarantee. Against one that
+ * prefilled before refusing, the prefill above would understate the run, and
+ * this flag is what turns an undetectable limit into one a reader can see.
+ *
+ * **It counts both ladders, which the first version did not.** Deriving it from
+ * `structured` alone saw only the `response_format` retry and missed the
+ * `stream`/`stream_options` rungs in `postWithDegrade` — and those are not
+ * hypothetical: `tests/stream-budget.test.js` drives three HTTP attempts for one
+ * answer through the real CLI. A field whose own name promises "more than one
+ * try" reporting `false` for a run that tried three times is the reported-state
+ * class this repo keeps finding, in the field added to prevent it. `degraded` is
+ * kept beside it for the narrower fact it actually names: the schema was refused
+ * and the reply was parsed from prose.
+ */
+function runTimings(result, structured) {
+  return {
+    prefillMs: result.prefillMs ?? null,
+    generationMs: result.generationMs ?? null,
+    retried: (result.attempts ?? 1) > 1 || !structured,
+    degraded: !structured,
+  };
+}
+
+/**
  * The same run, as one object.
  *
  * Every caveat the text report carries appears here too. A caller reading only
@@ -80,7 +117,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs } = context;
+  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs, structured } = context;
   return {
     label: target.label,
     provider: profile.name,
@@ -120,6 +157,7 @@ export function jsonReport(parsed, context) {
     contextChecked: budget.checked,
     contextNote: budget.checked ? null : budget.note,
     durationMs,
+    ...runTimings(result, structured),
   };
 }
 
@@ -143,6 +181,7 @@ export function report(parsed, context) {
       model: result.model,
       usage: result.usage,
       durationMs,
+      prefillMs: result.prefillMs,
       contextNote: budget.checked ? `~${estimatedTokens} tokens sent.` : budget.note,
       finishReason: result.finishReason,
     })}\n`,

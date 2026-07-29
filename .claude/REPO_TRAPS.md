@@ -304,6 +304,65 @@ Two sibling shapes to watch for, both found in the same review:
 and the per-run cut judgement) and `tests/bench-report.test.js` (the band collapses when nothing is
 cut; the buckets still sum to the run count). ADR 008 records the measurements.
 
+## A measurement that averages across a boundary it cannot see
+
+**Instance 18 (OAI-18, 2026-07-29).** The benchmark reported one wall-clock number per run and ranged
+it across `--runs 3`. That number was two quantities added together, and a server-side prompt cache
+moves one by ~37× and leaves the other alone: the same 56,805-token prompt reached its first token in
+421.7s cold and 11.5s warm, generating for ~3s in both. The `seconds` cell said `13–425` and was
+quoted as a spread in the reviewer. It was one cold run and two cache hits.
+
+Three shapes worth recognising, each of which cost a draft:
+
+- **The reply does not always carry the fact you want to condition on.** LM Studio publishes no
+  `cached_tokens` and an empty `stats` object, so nothing observable says whether a run was a cache
+  hit. The tempting substitute — "run 1 of a case is the cold one" — is *inference from position*,
+  and it is wrong: a first call in a fresh process came back warm because an earlier process had
+  prefilled the same prefix. **Position is not evidence.**
+- **A derived figure inherits every clock it was not measured against.** Computing generation as
+  `durationMs - prefillMs` looks free and is not: `durationMs` starts before prompt building and any
+  rejected `response_format` attempt, so a schema rejection alone would appear as seconds of
+  "generation" for a reply that generated instantly. **Measure both sides of a boundary inside one
+  attempt, or measure neither.** And a null on one side must never reach the arithmetic —
+  `durationMs - null` is `durationMs`, which relabels a whole run's wall clock as generation without
+  raising anything.
+- **A fixture that is only accidentally fixed.** `materialize()` builds a fresh repo per run and
+  `--commit HEAD` sends `git show HEAD`, whose first three lines carry the commit sha and date — so
+  the "same" case sent different bytes whenever two runs fell in different clock seconds. Inside one
+  second they agree, which is what a test reproduces; minutes apart they do not, which is what a real
+  run reproduces. **When a test and production sample a clock at different rates, the test proves the
+  case that never happens.** The guard therefore asserts the pinned date is in force, not merely that
+  two materializations agree — agreement alone passes against the defect.
+
+**A fourth shape, and the one that took two goes to get right.** The sentence explaining the split
+wanted a symmetry it does not have. Draft one: *"prefill figures are not comparable run to run;
+generation is."* Refuted by the adversarial review — generation moves with how much the model chose
+to emit, and this repo has measured 1,709 against 5,450 output tokens on identical input. Draft two
+weakened it to *"prefill varied 12× here, where generation — which a cache does not touch — did
+not"*, and the very first live run that printed the sentence disproved it in its own row: prefill
+1–10s, generation 165–747s. **"The cache does not affect X" and "X is comparable" are different
+claims, and the tidy contrast between them is exactly what invites the second to be smuggled in.**
+The note now states only the ratio it counted.
+
+**A fifth shape: an aggregate that is correct at N=1.** `prompt tokens` summed `usage.prompt_tokens`
+over a case's runs. Every figure ADR 006 quotes came from an N=1 sweep, where a sum *is* the per-run
+value — so the column was right for its whole history and became wrong by a factor of `runs` the
+first time anything ran a case twice, printing 82,020 for a case recorded elsewhere at 41,016.
+The test is not "is this a reduce" — `found`, `anchored`, `unmatched` and `unresolved` in the same
+row are reduces and are all correct. It is **what the column's name promises**: a figure the runs each
+*sampled independently* (defects found) sums legitimately, while one the runs *share* (the prompt
+they were all sent) does not. **Sum what varied per run; never sum what was held constant.** And no
+test written at N=1 can tell the two apart, because there the sum equals the value. This one shipped
+past a plan challenge, two Codex reviews, a lean review and a mutation check, and was caught only by
+asking why two live runs disagreed on a figure that is a property of the input.
+
+**Guarded by** `tests/timing.test.js` (a fake server stalling on both sides of its first token, so a
+stamp taken at either end fails; two delays, because one leaves the assertion flaky rather than
+false), `tests/bench-corpus.test.js` (the pinned commit date), and `tests/bench-report-timing.test.js`
+(separate columns, partial-measurement cells, a computed ratio omitted rather than printed as
+`Infinity×`, and a prompt-size column asserted over **three** runs so a sum cannot pass). ADR 009
+records the measurements.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

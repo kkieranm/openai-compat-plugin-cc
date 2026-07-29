@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
-import { cleanup, loadCases, materialize } from '../bench/lib/corpus.mjs';
+import { CASE_COMMIT_DATE, cleanup, loadCases, materialize } from '../bench/lib/corpus.mjs';
 import { git } from './helpers.mjs';
 
 const MANIFEST = {
@@ -70,6 +70,33 @@ test('a materialized case is an ordinary commit with a parent, not a root commit
   // property the bench wants either way.
   await assert.doesNotReject(git(['rev-parse', 'HEAD^'], dir), 'the case commit must have a parent');
   assert.deepEqual(args, ['--commit', 'HEAD']);
+});
+
+test('two materializations of one case send the model identical bytes', async (t) => {
+  // The corpus is meant to be a fixed target, and it was not. `--commit HEAD`
+  // puts `git show HEAD` in the prompt, whose first three lines are the sha, the
+  // author and the date — and a repo built fresh per run got a new date, hence a
+  // new sha, whenever two runs fell in different clock seconds. In a real bench
+  // that is always; in a test it is almost never, which is why this went
+  // unnoticed and why the assertion below cannot be *only* that the two agree.
+  const root = writeCorpus(MANIFEST, TREE);
+  const [caseDef] = loadCases(root);
+  const first = materialize(caseDef, root);
+  const second = materialize(caseDef, root);
+  t.after(() => {
+    cleanup(first.dir);
+    cleanup(second.dir);
+  });
+
+  const shown = await Promise.all([git(['show', 'HEAD'], first.dir), git(['show', 'HEAD'], second.dir)]);
+  assert.equal(shown[0], shown[1], 'the same case must produce the same prompt');
+  // The load-bearing half. Two materializations inside one second agree even
+  // with no pinning at all, so agreement alone would pass against the defect.
+  // Only the pinned date proves the environment is actually in force — and it
+  // also makes the sha stable across days, not just across a fast test.
+  const stamp = new Date(CASE_COMMIT_DATE).getTime();
+  const committed = Number(await git(['log', '-1', '--format=%ct', 'HEAD'], first.dir)) * 1000;
+  assert.equal(committed, stamp, 'the case commit must carry the pinned date, not the wall clock');
 });
 
 test('the case commit changes exactly the files the case describes', async (t) => {

@@ -92,6 +92,7 @@ export async function runTask(argv) {
       model: result.model,
       usage: result.usage,
       durationMs: Date.now() - startedAt,
+      prefillMs: result.prefillMs,
       contextNote: budget.checked ? null : budget.note,
       finishReason: result.finishReason,
     })}\n`,

@@ -8,41 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReport } from '../bench/lib/report.mjs';
-
-const CASE = {
-  id: 'sample',
-  label: 'a case',
-  defects: [{ id: 'the-defect', file: 'x.mjs', lines: [1, 3], anchor: 'boom();' }],
-  dropped: [],
-};
-
-/**
- * A row cell by its column *name*. Positional indexes silently shift when a
- * column is added — which is how a test can keep passing while asserting about
- * the wrong number.
- */
-function cell(report, column) {
-  const lines = report.split('\n');
-  const header = lines.find((line) => line.startsWith('| case |')).split('|').map((part) => part.trim());
-  const row = lines.find((line) => line.startsWith('| `sample`')).split('|').map((part) => part.trim());
-  const index = header.indexOf(column);
-  assert.ok(index > 0, `no such column: ${column}`);
-  return row[index];
-}
-
-/** A run that parsed and scored the one defect. */
-function goodRun() {
-  return {
-    diffOnly: false,
-    report: { parsed: true, findings: [], analysisCut: false, finishReason: 'stop', usage: { prompt_tokens: 10 }, durationMs: 1000 },
-    score: {
-      matched: [{ id: 'the-defect', via: 'anchor' }],
-      unmatched: [],
-      byDefect: [{ id: 'the-defect', found: true, via: 'anchor' }],
-      recall: { total: 1, found: 1, anchored: 1, ranged: 0 },
-    },
-  };
-}
+import { CASE, cell, goodRun } from './bench-report-fixtures.mjs';
 
 /**
  * A reply that arrived, exited 0, and never parsed — the degraded rung's
@@ -183,3 +149,4 @@ test('the control case is not reported as a recall failure', () => {
 
   assert.match(report, /— \(control\)/, 'zero defects found out of zero is not 0%');
 });
+

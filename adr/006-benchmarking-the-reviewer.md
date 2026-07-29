@@ -242,6 +242,25 @@ not a substitute — it bundles reasoning with the findings payload, and on meas
 orderings cross (an uncut run at 7,576 sits above a cut one at 7,367). `analysisLength` and
 `analysisCap` are now in the JSON for exactly this.
 
+## Correction, 2026-07-29 (OAI-18)
+
+Two claims this ADR rests on were wrong, and both are fixed rather than merely noted.
+
+**The corpus was not a fixed target.** `materialize()` builds a throwaway repo per run and
+`--commit HEAD` sends `git show HEAD`, whose first three lines carry the commit sha and date — so two
+runs of the "same" case sent different bytes whenever they fell in different clock seconds, which in
+a real bench is always. The case commit's identity is now pinned, and a test asserts the pinned date
+is in force rather than merely that two materializations agree (agreement alone passes against the
+defect, because inside one second the old code agreed too).
+
+**The `seconds` column measured two things at once and is gone**, replaced by `prefill s` and
+`generate s`. A server-side prompt cache moves prefill by ~37× and leaves generation alone, so a
+range across `--runs 3` was one cold run and two cache hits reported as a spread. Any `seconds`
+figure quoted from this ADR or from a report predating the change carries that confound — and
+**`--diff-only` figures specifically are not comparable across the change**, because the drifting sha
+was accidentally busting the cache for that mode alone. See
+[ADR 009](009-measuring-prefill-and-generation.md).
+
 ## Consequences
 
 - **Two structural guards were earned on the way, both from defects the corpus itself caused.**

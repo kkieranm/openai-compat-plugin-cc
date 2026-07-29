@@ -2,6 +2,53 @@
 
 Newest first.
 
+- **OAI-18** — Measure prefill and generation separately, and pin the corpus commit. Completed
+  2026-07-29. The bench reported one wall-clock number per run and ranged it across `--runs 3`; that
+  number is two quantities added together, and a server-side prompt cache moves one by ~37× and
+  leaves the other alone. Measured on one 56,805-token prompt, three consecutive requests: first
+  token at **421,660 ms cold and 11,457 / 10,257 ms warm**, generating ~3 s in all three. So a
+  `seconds` cell reading `13–425` was one cold run and two cache hits, printed as a spread in the
+  reviewer. `chat.mjs` now stamps the first frame carrying text and the end of the stream, and
+  `prefillMs`/`generationMs` reach `--json`, the text footer and two benchmark columns that replace
+  `seconds`. Live, after the change: `model-info` at 41,010 prompt tokens over two runs reported
+  **prefill 7–289s and generation 398–726s** — a 39× spread the report computed itself, beside a 1.8×
+  spread that has nothing to do with the cache. Welded together, that row read `687–1015` and looked
+  like ordinary variance.
+  **The claim that generation is comparable is false and was written twice before it was caught.**
+  The adversarial review refuted the first version; the first live run to print the second version
+  disproved it in its own row (`config-origin`: prefill 1–10s, generation 165–747s). The cache not
+  touching generation and generation being comparable are different claims — the tidy contrast keeps
+  inviting the second. The note now states only the ratio it counted, and the tokens-per-second
+  quotient that would make generation comparable is OAI-17's.
+  `--cold` verified live on `config-origin --runs 3`: prefill `10–10s` against `1–10s` without it —
+  three independent cold samples instead of one cold and two hits — and the report swaps the cache
+  caveat for a statement that the flag was on.
+  **The `prompt tokens` column was the same defect, one column to the left.** It summed
+  `usage.prompt_tokens` across runs, which is invisible at N=1 (every figure in ADR 006 came from an
+  N=1 sweep) and wrong by a factor of `runs` after that: it printed 82,020 for a case ADR 006 records
+  at 41,016. Caught by checking why two live runs disagreed on a figure that is a property of the
+  input, *after* every review stage had passed over the diff. Now per-run, ranged when the runs
+  genuinely differ, with the ADR's own pasted table corrected.
+  **The item proposed two options and the probe killed one of them.** "Accept warm runs and report
+  cold and warm separately" has nothing to label from: LM Studio publishes no `cached_tokens` and an
+  empty `stats`, and position is not evidence — a *first* call in a fresh process came back warm at
+  956 ms because an earlier process had prefilled the same prefix. So the cache is measured, not
+  classified, and `--cold` (via a new `/oai:review --cache-buster`) buys independent runs when they
+  are wanted. Busting always was rejected on cost and fidelity: three cold runs of that case cost
+  ~21 min of prefill against ~7.5, and real `/oai:review` usage is warm.
+  **Generation is measured, not derived, and that came from the plan challenge.** The draft computed
+  it as `durationMs - prefillMs`, which is not generation — `durationMs` starts before prompt
+  building and any rejected `response_format` attempt, so a schema rejection alone would have shown
+  as seconds of "generation" for a reply that generated instantly.
+  **A Codex probe check also refuted the claim that the bench sends the same bytes twice**, which
+  nothing had noticed: `materialize()` builds a fresh repo per run and `--commit HEAD` sends
+  `git show HEAD`, so the commit sha and date differed whenever two runs fell in different clock
+  seconds. Inside one second they agree — which is what a test reproduces — and minutes apart they do
+  not, which is what a real run reproduces. Now pinned. Note the consequence: this removes an
+  accidental cache bust that applied to `--diff-only` alone, so **that arm's timings from before this
+  change are not comparable with figures after it.**
+  See [ADR 009](adr/009-measuring-prefill-and-generation.md).
+
 - **OAI-15** — Size the reply from the budget the run actually has, and stop discarding the runs the
   cap censors. Completed 2026-07-28. The `analysis` ceiling was a flat 28,000 characters while the
   budget paying for it shrank per run, so the two agreed only by coincidence — and on the largest

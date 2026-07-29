@@ -63,6 +63,9 @@ export async function chatCompletion(profile, options) {
     requestedModel: model,
     sawDone: result.sawDone,
     streamed: result.streamed,
+    prefillMs: result.prefillMs,
+    generationMs: result.generationMs,
+    attempts: result.attempts,
   });
 }
 

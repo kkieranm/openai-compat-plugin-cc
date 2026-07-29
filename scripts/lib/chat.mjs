@@ -52,10 +52,37 @@ function createDeadline({ firstTokenMs, idleMs, reportMs, onExpire }) {
   };
 }
 
-async function collectStream(response, profile, { firstTokenMs, reportMs, idleMs, onProgress }) {
+/**
+ * How long the model spent before its first token, and how long it spent after.
+ *
+ * Two numbers rather than one, because a server-side prompt cache moves one of
+ * them by ~37× and leaves the other alone: the same 56,805-token prompt reached
+ * its first token in 421.7s cold and 11.5s warm on this machine, generating for
+ * ~3s in both. A single total welds the two together, and the benchmark then
+ * ranged `13–425` across three runs of one case and called it a result. See
+ * ADR 009.
+ *
+ * `performance.now()`, not `Date.now()`. A 400-second prefill is long enough for
+ * a wall-clock adjustment to land inside it, and a duration measured across one
+ * would be a reported figure that is not the figure.
+ *
+ * Both are null when no text ever arrived — there is no boundary to measure, and
+ * `finishAnswer` refuses that reply anyway.
+ */
+function timings(startedAt, firstTextAt, endedAt) {
+  if (firstTextAt === null) return { prefillMs: null, generationMs: null };
+  // Rounded, because `performance.now()` returns sub-millisecond floats and
+  // these sit in `--json` beside an integer `durationMs`. Sub-millisecond
+  // precision on a figure whose interesting range is 10s to 400s is noise that
+  // reads as significance.
+  return { prefillMs: Math.round(firstTextAt - startedAt), generationMs: Math.round(endedAt - firstTextAt) };
+}
+
+async function collectStream(response, profile, { startedAt, firstTokenMs, reportMs, idleMs, onProgress }) {
   const answer = emptyAnswer();
   const outcome = {};
   let expired = null;
+  let firstTextAt = null;
   const deadline = createDeadline({
     firstTokenMs,
     reportMs,
@@ -68,7 +95,15 @@ async function collectStream(response, profile, { firstTokenMs, reportMs, idleMs
 
   try {
     for await (const frame of readSse(response, profile.name, outcome)) {
-      if (applyFrame(answer, frame)) deadline.progress();
+      // The same condition the idle budget uses, and deliberately so: a frame
+      // that carried text is the only evidence that generation has begun. A
+      // role-only frame or a keepalive would put the boundary before the model
+      // had produced anything, which is the figure this measurement exists to
+      // separate out.
+      if (applyFrame(answer, frame)) {
+        firstTextAt ??= performance.now();
+        deadline.progress();
+      }
       onProgress?.(answer);
     }
   } catch (error) {
@@ -79,7 +114,7 @@ async function collectStream(response, profile, { firstTokenMs, reportMs, idleMs
   } finally {
     deadline.clear();
   }
-  return { answer, sawDone: outcome.sawDone };
+  return { answer, sawDone: outcome.sawDone, ...timings(startedAt, firstTextAt, performance.now()) };
 }
 
 /** A 400 that names the field it refused, rather than the request as a whole. */
@@ -116,9 +151,16 @@ const RUNGS = [
 export async function postWithDegrade(profile, body, budgets) {
   const removed = new Set();
   let payload = body;
+  // Counted and returned, because the timings above belong to the attempt that
+  // answered and nothing else would show that earlier ones existed. A server
+  // refusing `stream_options` but accepting `stream` sends two requests and
+  // still streams, so a measured prefill can sit beside a retry that no output
+  // mentions — which is exactly the situation the reader needs to know about.
+  let attempts = 0;
   for (;;) {
     try {
-      return await postChat(profile, payload, budgets);
+      attempts += 1;
+      return { ...(await postChat(profile, payload, budgets)), attempts };
     } catch (error) {
       const rung = RUNGS.find((candidate) => !removed.has(candidate.name) && candidate.matches(error));
       if (!rung) throw error;
@@ -138,6 +180,14 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
   // to twice the number the config advertises — the same double-count as
   // re-arming at headers, one layer up.
   const deadlineAt = Date.now() + firstTokenMs;
+  // Stamped per attempt, not per call. `postWithDegrade` retries this function
+  // when a server refuses a capability, so an answer can cost two or three
+  // requests — and timing from the *first* of them would charge the answering
+  // attempt for a round trip it never made. Each refused attempt is rejected at
+  // request validation before any generation (see the ladder above), so it
+  // neither prefills nor warms a cache, and the attempt that answers is the one
+  // whose cost is real.
+  const startedAt = performance.now();
   const response = await request(profile, '/chat/completions', { method: 'POST', body, firstByteMs: firstTokenMs });
   const answer = emptyAnswer();
   // Chosen by response shape, not by config: a server that ignores `stream`
@@ -155,10 +205,15 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }) {
     // model's own token limit bounds it — so this only ever trips on a peer that
     // is not sending a completion at all.
     applyCompletion(answer, await readJson(response, profile.name, { maxChars: MAX_COMPLETION_CHARS }));
-    return { answer, sawDone: true, streamed: false };
+    // Null, not zero, and not the elapsed time. Nothing here observed the
+    // boundary between waiting and generating — the whole reply arrived at
+    // once — so any number would be this layer asserting a server-side fact it
+    // has no evidence for. `analysisCut` already uses null for "not determined".
+    return { answer, sawDone: true, streamed: false, prefillMs: null, generationMs: null };
   }
   const remaining = Math.max(1, deadlineAt - Date.now());
   const streamed = await collectStream(response, profile, {
+    startedAt,
     firstTokenMs: remaining,
     reportMs: firstTokenMs,
     idleMs,

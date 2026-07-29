@@ -63,10 +63,6 @@ function renderFinding(finding) {
 }
 
 /**
- * The findings, ordered by severity. Framed as claims, not conclusions: they
- * come from a small local model and have not been checked against the code yet.
- */
-/**
  * A fact about the *request*, so every path that shows output derived from it
  * says the same thing — defined once rather than written out at each. The
  * parsed and unparseable paths diverging is how this repo produced instance 11:
