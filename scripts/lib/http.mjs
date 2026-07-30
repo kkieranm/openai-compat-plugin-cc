@@ -99,6 +99,12 @@ async function* bodyStream(request, response, state, { url }) {
       );
       error.reason = 'transport';
       error.serverResponded = true;
+      // How much arrived before the close. Carried on the error, not only in the
+      // message: it is the only evidence distinguishing a connection that died
+      // before the server read the prompt from one that died 50,000 characters
+      // into the reply, and the attempt ledger needs exactly that to decide
+      // whether a retry of the same prompt could be served warm.
+      error.received = state.received;
       throw error;
     }
   } catch (error) {

@@ -30,9 +30,31 @@ import { substitution } from '../../scripts/lib/model-identity.mjs';
  * of the path it sits on is that one case failing does not cancel the rest.
  */
 export function reasonFrom(stdout) {
+  return failureEnvelope(stdout)?.reason ?? null;
+}
+
+/**
+ * The physical attempts a FAILED run made, off the same envelope.
+ *
+ * Read here rather than left to `errorReport` alone, because the harness's
+ * failure path keeps only `reason` and the prose — so a record emitted by the
+ * command would have been dropped on the floor by its own reader. A run whose
+ * every attempt died is the run carrying the most reliability evidence, and this
+ * is where it was being thrown away.
+ */
+export function attemptsFrom(stdout) {
+  return failureEnvelope(stdout)?.attempts ?? null;
+}
+
+/** Which model a FAILED run asked for, where the command got far enough to know. */
+export function requestedModelFrom(stdout) {
+  return failureEnvelope(stdout)?.requestedModel ?? null;
+}
+
+function failureEnvelope(stdout) {
   try {
     const parsed = JSON.parse(String(stdout ?? ''));
-    return parsed?.error === true ? parsed.reason ?? null : null;
+    return parsed?.error === true ? parsed : null;
   } catch {
     return null;
   }

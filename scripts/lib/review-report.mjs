@@ -103,8 +103,38 @@ function runTimings(result, structured) {
   return {
     prefillMs: result.prefillMs ?? null,
     generationMs: result.generationMs ?? null,
-    retried: (result.attempts ?? 1) > 1 || !structured,
+    retried: (result.requestCount ?? 1) > 1 || !structured,
     degraded: !structured,
+  };
+}
+
+/**
+ * What could be read out of the reply, or nulls where nothing was determined.
+ *
+ * Lifted out of `jsonReport` at the function size budget. The parse-derived
+ * fields are `null` rather than `false`/`[]` for a reply that could not be read:
+ * an empty findings list is indistinguishable from a clean review, and one of
+ * those two is a failure.
+ *
+ * `analysisLength`/`analysisCap` are deliberately JSON-only, and that is not the
+ * omission this file exists to prevent: `analysisCut` is the *caveat* and it is
+ * in both renderings. These two are the measurement behind it — a character
+ * count and the ceiling it is counted against — which a harness reads and a
+ * human footer would only be cluttered by. The rule is that a fact changing what
+ * the reader should believe cannot live on one path alone; a diagnostic that
+ * changes nothing is free to.
+ */
+function parseFields(parsed, result, context) {
+  return {
+    parsed: Boolean(parsed),
+    findings: parsed?.findings ?? null,
+    summary: parsed?.summary ?? null,
+    raw: parsed ? null : unparsedReply(result, context),
+    dropped: parsed?.dropped ?? null,
+    atCap: parsed?.atCap ?? null,
+    analysisCut: parsed?.analysisCut ?? null,
+    analysisLength: parsed?.analysisLength ?? null,
+    analysisCap: parsed?.analysisCap ?? null,
   };
 }
 
@@ -121,7 +151,7 @@ function runTimings(result, structured) {
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs, structured } = context;
+  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs, structured, ledger } = context;
   return {
     label: target.label,
     provider: profile.name,
@@ -142,24 +172,7 @@ export function jsonReport(parsed, context) {
     // that way: were it ever taken, both fields would collapse and a reader
     // would see "checked, they matched" where nothing was determined.
     requestedModel: result.requestedModel ?? model,
-    parsed: Boolean(parsed),
-    // Never an empty findings list for a reply we could not read — that is
-    // indistinguishable from a clean review, and one of the two is a failure.
-    findings: parsed?.findings ?? null,
-    summary: parsed?.summary ?? null,
-    raw: parsed ? null : unparsedReply(result, context),
-    dropped: parsed?.dropped ?? null,
-    atCap: parsed?.atCap ?? null,
-    analysisCut: parsed?.analysisCut ?? null,
-    // Deliberately JSON-only, and that is not the omission this file exists to
-    // prevent: `analysisCut` is the *caveat* and it is in both renderings. These
-    // two are the measurement behind it — a character count and the ceiling it
-    // is counted against — which a harness reads and a human footer would only
-    // be cluttered by. The rule is that a fact changing what the reader should
-    // believe cannot live on one path alone; a diagnostic that changes nothing
-    // is free to.
-    analysisLength: parsed?.analysisLength ?? null,
-    analysisCap: parsed?.analysisCap ?? null,
+    ...parseFields(parsed, result, context),
     hunksOnly,
     unreadable: target.unreadable,
     usage: result.usage ?? null,
@@ -176,6 +189,13 @@ export function jsonReport(parsed, context) {
     contextNote: budget.checked ? null : budget.note,
     durationMs,
     ...runTimings(result, structured),
+    // One entry per PHYSICAL request — the first try, a capability degrade, the
+    // response_format fallback, a retry after the server dropped one. The
+    // timings above belong to the attempt that *answered*; these are how the
+    // benchmark separates recall (a property of logical runs) from reliability
+    // (a property of every request that went on the wire). A failed attempt is
+    // missing data, never an observed miss. See attempt-ledger.mjs.
+    attempts: ledger ? ledger.entries() : null,
   };
 }
 
@@ -204,6 +224,17 @@ export function errorReport(error) {
     reason: error?.reason ?? null,
     message: error?.message ?? String(error),
     hint: error?.hint ?? null,
+    // The attempt record survives the failure path, and this is the path where
+    // it matters most: a run whose every attempt died is the run carrying the
+    // most reliability evidence, and the easiest place to lose it. `null` where
+    // the failure happened before any request — nothing was determined, which is
+    // not the same as no attempts having been made.
+    attempts: error?.attemptRecords ?? null,
+    // Which model the run asked for, where the failure happened late enough to
+    // know. A run whose every attempt died produced no report, so this is the
+    // only place the id survives — without it the reliability table cannot
+    // attribute an all-failed sweep to the model that failed.
+    requestedModel: error?.requestedModel ?? null,
   };
 }
 

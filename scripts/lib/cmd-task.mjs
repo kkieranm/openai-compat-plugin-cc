@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
+import { createLedger } from './attempt-ledger.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
-import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveTarget, resolveTimeout } from './delegate.mjs';
+import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveRetryDelay, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
@@ -12,6 +13,7 @@ import { renderTaskFooter } from './render.mjs';
 export const TASK_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
+    'max-attempts',
   ],
   repeatableFlags: ['file'],
 };
@@ -48,7 +50,7 @@ function resolvePrompt(options, inlinePrompt, terminated) {
 
 export async function runTask(argv) {
   const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
-  const { maxTokens, temperature, timeoutSeconds, maxSeconds } = parseNumericOptions(options);
+  const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = parseNumericOptions(options);
 
   const { config } = loadConfig();
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
@@ -74,23 +76,27 @@ export async function runTask(argv) {
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
   const maxMs = resolveMax(profile, maxSeconds);
+  const ledger = createLedger();
   const startedAt = Date.now();
-  const result = await withProgress((onProgress) =>
-    chatCompletion(profile, {
-      model,
-      messages,
-      timeoutMs: resolveTimeout(profile, timeoutSeconds),
-      idleMs: resolveIdle(profile),
-      // One instant for the whole answer, minted at the last moment before the
-      // call: chat.mjs's capability ladder can retry this request, and a
-      // duration would give each retry the whole cap over again.
-      expiresAt: maxMs === undefined ? undefined : performance.now() + maxMs,
-      maxMs,
-      temperature,
-      maxTokens,
-      onProgress,
-    }),
-  );
+  const request = {
+    model,
+    messages,
+    timeoutMs: resolveTimeout(profile, timeoutSeconds),
+    idleMs: resolveIdle(profile),
+    retryDelayMs: resolveRetryDelay(profile),
+    // One instant for the whole answer, minted at the last moment before the
+    // call: chat.mjs's capability ladder can retry this request, and a
+    // duration would give each retry the whole cap over again.
+    expiresAt: maxMs === undefined ? undefined : performance.now() + maxMs,
+    maxMs,
+    temperature,
+    maxTokens,
+    maxAttempts,
+    // One ledger for the whole command, so every physical request this answer
+    // costs lands in one record with continuous indexes.
+    ledger,
+  };
+  const result = await withProgress((onProgress) => chatCompletion(profile, { ...request, onProgress }));
 
   // Before the answer, not after: the operator should learn which model is
   // speaking before reading what it said.

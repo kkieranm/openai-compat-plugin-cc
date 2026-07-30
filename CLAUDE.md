@@ -48,6 +48,12 @@ arms it as the transport's `deadline` budget from one expiry `requestFindings` m
 `scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
 measured over — see [ADR 010](adr/010-bounding-and-rating-a-run.md).
 
+`scripts/lib/failure-shape.mjs` names the four shapes in which a server drops a request rather than
+answering badly, and `scripts/lib/answer-attempts.mjs` `answerWithRetry` retries only those, spanning
+`postWithDegrade` and `finishAnswer` so it can see all four; `scripts/lib/attempt-ledger.mjs` records
+one entry per physical request so scoring reads the attempt that answered while reliability reads
+every attempt — see [ADR 012](adr/012-surviving-the-server.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see
@@ -56,7 +62,7 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 ## Commands
 
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns)
-- Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`)
+- Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
 - Load the plugin in a scratch session: `claude --plugin-dir /Users/kieran/Code/openai-compat-plugin-cc -p "/oai:setup"`
 - No build step; the plugin is markdown + JSON + ESM scripts.
 
@@ -80,8 +86,9 @@ the real CLI via `--json` and matched on a quoted anchor line — see
   (27/72 runs, 2026-07-30, both models — so the locus is the shared serving path; the mechanism
   and the role of sustained load are unresolved): empty completion (`finish_reason: unknown`) or a
   stream drop ~50k chars into reasoning. It can also wedge with a model stuck `GENERATING`
-  (fix: `~/.lmstudio/bin/lms unload`). OAI-20 owns characterizing this before a client retry is
-  called sufficient; until it lands, expect long bench arms to lose runs.
+  (fix: `~/.lmstudio/bin/lms unload`). **OAI-20 landed the client-side answer** — those shapes are
+  classified and retried, and every physical attempt is recorded — but whether retry *recovers* the
+  37.5% is a measurement OAI-19 reads off that record, not a settled fact.
 - A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
   for the same model here. `model-info.mjs` encodes this; never "simplify" it to the larger field.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.

@@ -516,6 +516,53 @@ at all.
 Prose entries in BACKLOG/ADRs have no test harness, which is why this class lands there: the lean
 review's trap finder is currently the only guard, so keep it primed with this entry.
 
+## A timer used as WORK, unref'd like a watchdog
+
+Every timer in this repo is a budget — a watchdog that must never keep the process alive — so
+`unref()` is the reflex. The retry delay is the opposite: it *is* the work. Unref'd, Node found an
+empty event loop mid-wait and **exited 0** on a run that had failed and was about to try again,
+printing nothing. Caught by the existing suite (2026-07-31, OAI-20).
+
+The rule: **before `unref`-ing a timer, ask whether the process finishing during it would be
+correct.** For a budget, yes. For anything the program is waiting *on*, no.
+
+## Warm/cold eligibility derived from identity without asking what the server did
+
+A retry re-sends a byte-identical prompt, so "same prompt as an earlier request" looks like a
+sufficient test for "the server could serve this from cache". It is not — it says nothing about
+whether the earlier request was ever *processed*. Two instances in one build: a capability degrade
+changes only `stream`/`stream_options`, leaving the messages identical, so every degraded run's
+answering attempt was marked warm and its prefill silently dropped from the benchmark's cold
+samples; then the fix's own first version accepted a raw socket byte count, which keepalive frames
+satisfy.
+
+The rule: **eligibility needs evidence of model execution, not of message identity** — here, a
+measured `prefillMs`. And note the asymmetry that decides ties: over-marking DELETES real
+measurements with no trace, under-marking quotes a possibly-warm figure beside a caveat. Only the
+second failure is one a reader can see.
+
+## An outcome inferred from a status code rather than recorded by the layer that acted
+
+A 400 that the plugin answers by sending a different shape is negotiation; a 400 that is terminal is
+a failure. Both look identical at the catch site. Classifying on the status alone was wrong in both
+directions within one build: first every capability refusal was recorded as a server *fault*
+(a server refusing `stream_options` would have headlined a 50% failure rate while answering 100% of
+shaped requests), then the fix over-corrected and marked *every* 4xx as negotiation — hiding
+terminal failures like a context-limit rejection behind a claim that another shape was accepted.
+
+The rule: **an outcome that depends on what the program did next must be recorded by the code that
+does it**, not inferred from what the server returned. `refuseLast()` is called only on the branch
+that actually sends the replacement.
+
+## Child-process argv built prompt-before-flags
+
+`/oai:task` deliberately refuses a flag-looking word inside the request text, so an argv with the
+prompt first is rejected in milliseconds. The bench warm-up built exactly that, and because warm-up
+*records* its outcome rather than throwing, an arm would have carried on with a `warmed` entry that
+had warmed nothing and a first case still paying the model load. Invisible except by running it —
+and a `durationMs` of 84ms against the expected ~11s was the only tell. Guarded now by
+`tests/bench-warm-up.test.js`.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

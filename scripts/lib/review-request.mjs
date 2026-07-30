@@ -8,6 +8,7 @@
 // rather than there because `requestFindings` is their only consumer — leaving
 // them behind would have meant either a circular import or two homes for one
 // number, and this repo has already paid for the second.
+import { withLedger } from './attempt-ledger.mjs';
 import { chatCompletion } from './client.mjs';
 import { prepareRequest } from './delegate.mjs';
 import { UserError } from './errors.mjs';
@@ -188,6 +189,53 @@ function systemPromptFor(cacheBuster) {
 }
 
 /**
+ * The parts of the request that do not change between ladder rungs. Lifted out
+ * of `requestFindings` at the function size budget.
+ */
+function sharedRequest(profile, plan) {
+  return {
+    profile,
+    model: plan.model,
+    contextLength: plan.contextLength,
+    maxTokens: plan.reserve,
+    minReserve: REVIEW_MIN_TOKENS,
+    system: systemPromptFor(plan.cacheBuster),
+    oversizeHint:
+      'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
+      'specific files with --file — or raise the model context length in the server and config.',
+  };
+}
+
+/**
+ * The request that follows a refused schema, and the ledger discipline around it.
+ *
+ * Lifted out of `requestFindings` at the function size budget. Two things happen
+ * here that cannot happen anywhere else: the refused attempt is recorded as
+ * NEGOTIATION rather than a fault — this is the only layer that knows a fallback
+ * actually follows, which a status code alone never establishes — and every error
+ * leaving the branch carries the shared ledger, because `degradedLadder` can
+ * refuse an oversized prompt without ever reaching `answerWithRetry`.
+ */
+async function degraded({ profile, shared, ladder, send, ledger, error }) {
+  ledger?.refuseLast(error);
+  try {
+    // The instruction has to fit the window too, so the guard runs again —
+    // *before* the retry is announced. Announcing first meant a guard refusal
+    // arrived right after "Retrying without it", blaming the user's diff size
+    // for a request that was never sent and a retry that never happened.
+    const second = degradedLadder(shared, ladder);
+
+    // Said out loud: a silent retry would hide a schema this plugin got wrong
+    // just as well as it hides a server that cannot take one.
+    process.stderr.write(`${profile.name} rejected response_format (${error.message}). Retrying without it.\n`);
+    const result = await chatCompletion(profile, { ...send, maxTokens: second.reserve, messages: second.messages });
+    return { result, structured: false, ...second };
+  } catch (fallbackError) {
+    throw withLedger(fallbackError, ledger);
+  }
+}
+
+/**
  * Ask for findings, degrading if the server will not take a schema.
  *
  * The retry is near-free: an unsupported `response_format` is a request
@@ -195,17 +243,8 @@ function systemPromptFor(cacheBuster) {
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
-  const shared = {
-    profile,
-    model,
-    contextLength,
-    maxTokens: reserve,
-    minReserve: REVIEW_MIN_TOKENS,
-    system: systemPromptFor(plan.cacheBuster),
-    oversizeHint:
-      'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
-      'specific files with --file — or raise the model context length in the server and config.',
-  };
+  const { maxAttempts, ledger, retryDelayMs } = plan;
+  const shared = sharedRequest(profile, plan);
   // Minted once, here, because this function is the outermost layer that can
   // retry a model call: the `response_format` catch below sends a *second*
   // completion, and each of those may itself climb the capability ladder in
@@ -217,7 +256,10 @@ export async function requestFindings(profile, plan) {
   // bounds what it says it bounds — git collection and model resolution are
   // outside it, and the docs say so.
   const expiresAt = maxMs === undefined ? undefined : performance.now() + maxMs;
-  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, onProgress };
+  // `ledger` rides with the budgets and is shared by BOTH completion calls
+  // below, so the schema request and the degraded one after it land in one
+  // record with continuous indexes rather than each starting from 1.
+  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, maxAttempts, retryDelayMs, ledger, onProgress };
   const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
   const first = prepareLadder(shared, ladder);
@@ -235,19 +277,8 @@ export async function requestFindings(profile, plan) {
     return { result, structured: true, schema, ...first };
   } catch (error) {
     if (!isFormatRejection(error)) throw error;
-
-    // The instruction has to fit the window too, so the guard runs again —
-    // *before* the retry is announced. Announcing first meant a guard refusal
-    // arrived right after "Retrying without it", blaming the user's diff size
-    // for a request that was never sent and a retry that never happened.
     // The whole ladder is climbed again, not just the guard: the instruction
     // makes the prompt longer, so the rung that fit a moment ago may not now.
-    const second = degradedLadder(shared, ladder);
-
-    // Said out loud: a silent retry would hide a schema this plugin got wrong
-    // just as well as it hides a server that cannot take one.
-    process.stderr.write(`${profile.name} rejected response_format (${error.message}). Retrying without it.\n`);
-    const result = await chatCompletion(profile, { ...send, maxTokens: second.reserve, messages: second.messages });
-    return { result, structured: false, ...second };
+    return degraded({ profile, shared, ladder, send, ledger, error });
   }
 }

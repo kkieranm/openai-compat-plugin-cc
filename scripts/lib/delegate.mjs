@@ -28,6 +28,15 @@ export function parseNumber(raw, flag, { integer = false, min, max } = {}) {
 }
 
 /**
+ * A ceiling on `--max-attempts`, for the reason `MAX_BUDGET_SECONDS` exists.
+ *
+ * Retries multiply an already-unbounded wall clock: without `--max-seconds` a
+ * single attempt is up to the first-token budget plus generation that only the
+ * idle budget bounds, so a large attempt count is a run nobody can wait out.
+ */
+export const MAX_ATTEMPTS_CEILING = 10;
+
+/**
  * Validate every numeric flag before any network work, so a bad flag fails in
  * milliseconds instead of after a round trip that was never going to be used.
  * The window covers prompt + completion, so --max-tokens is also the headroom
@@ -53,6 +62,20 @@ export function parseNumericOptions(options) {
       options['max-seconds'] === undefined
         ? undefined
         : parseNumber(options['max-seconds'], 'max-seconds', { min: 1, max: MAX_BUDGET_SECONDS }),
+    // Answer attempts, not physical requests — the two differ, and deliberately.
+    // A capability degrade already costs an extra request inside one answer
+    // attempt, so capping physical requests at 1 would disable the degrade
+    // ladder rather than disabling retry. `1` here means "behave exactly as the
+    // plugin did before retry existed", which is what makes it usable as the
+    // control arm when measuring how often the server drops a request.
+    //
+    // Bounded above for the same reason the budgets are: `--max-attempts 1e9` is
+    // a typo, and the honest response is a refusal in milliseconds rather than a
+    // run nobody can stop.
+    maxAttempts:
+      options['max-attempts'] === undefined
+        ? undefined
+        : parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING }),
   };
 }
 
@@ -197,4 +220,19 @@ export function resolveIdle(profile, idleSeconds) {
 export function resolveMax(profile, maxSeconds) {
   const seconds = maxSeconds ?? profile.maxSeconds;
   return seconds ? seconds * 1000 : undefined;
+}
+
+/**
+ * The pause before a retry, in milliseconds.
+ *
+ * Configurable per provider because it is a guess about *that server*: the
+ * failures it answers correlate with sustained load, and how long a server needs
+ * to recover is a property of the server, not of this plugin. Zero is a
+ * meaningful setting — it is what the test suite uses so a retry path costs
+ * nothing in wall clock — so `?? `, never `||`, or a deliberate 0 would silently
+ * become the default.
+ */
+export function resolveRetryDelay(profile) {
+  const seconds = profile.retrySeconds;
+  return seconds === undefined || seconds === null ? undefined : seconds * 1000;
 }

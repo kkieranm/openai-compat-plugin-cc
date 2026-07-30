@@ -5,6 +5,7 @@ import { budgetError } from './http-errors.mjs';
 /** A completion far larger than any context window could produce. */
 const MAX_COMPLETION_CHARS = 8_000_000;
 import { request } from './provider.mjs';
+import { RUNGS } from './capability-ladder.mjs';
 import { readSse } from './sse.mjs';
 
 /**
@@ -110,66 +111,79 @@ async function collectStream(response, profile, { startedAt, firstTokenMs, repor
     // Ours outranks the socket's: disposing produces a generic transport error a
     // tick later, and that would replace "stalled after 4,210 characters" with
     // nothing useful.
-    throw expired ?? error;
+    const failure = expired ?? error;
+    // Measured, then carried out on the error rather than discarded. A stream
+    // that died 50,000 characters into reasoning observed a real prefill and a
+    // real partial generation; throwing them away leaves the attempt record
+    // unable to say whether failures cluster before or after the first token,
+    // which is the first question this data gets asked.
+    if (failure && failure.timings === undefined) {
+      failure.timings = timings(startedAt, firstTextAt, performance.now());
+    }
+    throw failure;
   } finally {
     deadline.clear();
   }
   return { answer, sawDone: outcome.sawDone, ...timings(startedAt, firstTextAt, performance.now()) };
 }
 
-/** A 400 that names the field it refused, rather than the request as a whole. */
-function refusedField(error, pattern) {
-  if (error?.status !== 400 && error?.status !== 422) return false;
-  return pattern.test(error.message ?? '');
+/**
+ * The negotiated request, owned by the caller so it survives an answer retry.
+ *
+ * `removed` and `payload` used to be locals here, reset on every call — which
+ * was fine while nothing retried this function, and a defect the moment
+ * something did. The sequence: a server refuses `stream_options`, the degraded
+ * request streams and is then truncated, and an answer retry starting from the
+ * original body knowingly re-sends the field the server already rejected,
+ * collects the same 400, and reclimbs the whole ladder. One wasted round trip
+ * per retry, and a stderr line blaming a capability that was settled two
+ * requests ago.
+ */
+export function createNegotiation(body) {
+  return { removed: new Set(), payload: body, lastRung: null };
 }
 
 /**
- * The capability this failure blames, or null if it is not a capability problem.
+ * One answer's worth of requests, degrading as capabilities are refused.
  *
- * `\bstream\b` does not match inside `stream_options` — `_` is a word character,
- * so there is no boundary — which is what keeps the two rungs distinct.
+ * Every iteration is one physical request and gets one ledger entry. The entry
+ * for the request that *returns bytes* is handed back still open: three of the
+ * four delivery failures are only detected by `finishAnswer`, one layer up, so
+ * closing it here would file a dead request as a successful attempt.
  */
-const RUNGS = [
-  {
-    name: 'stream_options',
-    matches: (error) => refusedField(error, /stream_options/i),
-    note: 'rejected stream_options; retrying without it (token counts will be unavailable)',
-    apply: ({ stream_options: _dropped, ...rest }) => rest,
-  },
-  {
-    name: 'stream',
-    // `streaming is not supported` is at least as likely a vendor phrasing as
-    // the bare parameter name, and matching only the latter would leave the
-    // fallback unreachable for it. Neither alternative matches `stream_options`:
-    // `_` is a word character, so there is no boundary after `stream`.
-    matches: (error) => refusedField(error, /\bstream(ing)?\b/i),
-    note: 'rejected streaming; retrying without it (no progress will be shown)',
-    apply: ({ stream_options: _dropped, ...rest }) => ({ ...rest, stream: false }),
-  },
-];
-
-export async function postWithDegrade(profile, body, budgets) {
-  const removed = new Set();
-  let payload = body;
-  // Counted and returned, because the timings above belong to the attempt that
-  // answered and nothing else would show that earlier ones existed. A server
-  // refusing `stream_options` but accepting `stream` sends two requests and
-  // still streams, so a measured prefill can sit beside a retry that no output
-  // mentions — which is exactly the situation the reader needs to know about.
-  let attempts = 0;
+export async function postWithDegrade(profile, budgets, negotiation) {
+  let dispatches = 0;
   for (;;) {
+    // Refused BEFORE anything is recorded. `capBudgets` throws when the cap has
+    // already fallen due, and an entry minted first would file a request that
+    // never went on the wire as a failed physical attempt — inventing server
+    // unreliability out of a deadline this plugin imposed.
+    capBudgets(profile, budgets.expiresAt, budgets.maxMs);
+    const handle = budgets.ledger?.begin({
+      body: negotiation.payload,
+      cause: { answerAttempt: budgets.answerAttempt ?? 1, degrade: negotiation.lastRung },
+      // Only the FIRST request of an answer attempt followed the retry sleep.
+      // The degrade rungs after it are immediate, and stamping them with the
+      // same wait would triple the recorded cost of pacing.
+      waitedMs: dispatches === 0 ? budgets.waitedMs ?? 0 : 0,
+    });
+    dispatches += 1;
     try {
-      attempts += 1;
-      return { ...(await postChat(profile, payload, budgets)), attempts };
+      const result = await postChat(profile, negotiation.payload, budgets);
+      return { ...result, handle };
     } catch (error) {
-      const rung = RUNGS.find((candidate) => !removed.has(candidate.name) && candidate.matches(error));
+      const rung = RUNGS.find((candidate) => !negotiation.removed.has(candidate.name) && candidate.matches(error));
+      // Closed as what it was: a refused SHAPE is negotiation, not unreliability.
+      if (rung) handle?.refuse(error);
+      else handle?.fail(error, error?.timings ?? {});
       if (!rung) throw error;
-      removed.add(rung.name);
+      negotiation.removed.add(rung.name);
+      negotiation.lastRung = rung.name;
       // Said out loud, like the response_format retry beside it: a silent
       // degrade hides a request this plugin got wrong as well as it hides a
       // server that cannot take one.
       process.stderr.write(`${profile.name} ${rung.note}.\n`);
-      payload = rung.apply(payload);
+      negotiation.payload = rung.apply(negotiation.payload);
     }
   }
 }

@@ -1,4 +1,5 @@
 import { UserError } from './errors.mjs';
+import { BLANK_COMPLETION, EMPTY_COMPLETION, STREAM_UNFINISHED } from './failure-shape.mjs';
 
 /**
  * Turning what a server sent into an answer — from streamed deltas or from a
@@ -87,17 +88,36 @@ export function applyCompletion(answer, payload) {
  * footer, and is missing its tail. A terminator or a `finish_reason` is the proof
  * it finished; text with neither is reported as cut short.
  */
-export function finishAnswer(answer, { profile, requestedModel, sawDone, streamed, prefillMs = null, generationMs = null, attempts = 1 }) {
+export function finishAnswer(answer, { profile, requestedModel, sawDone, streamed, prefillMs = null, generationMs = null, requestCount = 1 }) {
   if (!answer.sawContent && !answer.sawReasoning) {
     throw new UserError(
       `${profile.name} returned a completion with no message content (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
+      { reason: EMPTY_COMPLETION },
     );
   }
   if (streamed && !sawDone && !answer.finishReason) {
     const size = answer.content.length + answer.reasoning.length;
     throw new UserError(`${profile.name} ended the stream after ${size} characters without finishing the answer.`, {
       hint: 'The connection closed early — check the server log. The reply is incomplete, so it is not being shown as one.',
+      reason: STREAM_UNFINISHED,
     });
+  }
+  // Third, and only third. A reply that never had a channel is shape one and a
+  // truncated stream is shape two; this is the one that *finished*, presented a
+  // channel, and put nothing in it.
+  //
+  // `.length`, never `.trim()`. A model answering with whitespace has answered —
+  // the caller decides whether that is useful — and trimming here would delete a
+  // real reply and spend two more requests failing to get it back. The test for
+  // "the server delivered nothing" is that nothing is what it delivered.
+  if (answer.content.length === 0 && answer.reasoning.length === 0) {
+    throw new UserError(
+      `${profile.name} returned an entirely empty completion (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
+      {
+        hint: 'The channels were present but carried no characters — check the server log.',
+        reason: BLANK_COMPLETION,
+      },
+    );
   }
   return {
     content: answer.content,
@@ -120,8 +140,11 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
     // measurement nobody took.
     prefillMs,
     generationMs,
-    // How many requests this one answer cost. Defaults to 1 so a caller that
-    // never retried is not reported as unknown.
-    attempts,
+    // How many requests this one answer cost, as a COUNT. Deliberately not
+    // named `attempts`: the record carries an `attempts` *array* of one entry
+    // per physical request, and two different shapes under one name in one
+    // subsystem is a rename nobody performs until it has already misled someone.
+    // Defaults to 1 so a caller that never retried is not reported as unknown.
+    requestCount,
   };
 }

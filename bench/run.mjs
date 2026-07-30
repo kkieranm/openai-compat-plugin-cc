@@ -13,24 +13,25 @@
 // non-deterministic. See ADR 006.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
-import { parseNumber } from '../scripts/lib/delegate.mjs';
+import { MAX_ATTEMPTS_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
-import { outcomeFor, reasonFrom } from './lib/outcome.mjs';
+import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom } from './lib/outcome.mjs';
+import { persist, reportIdentity } from './lib/record.mjs';
 import { renderReport } from './lib/report.mjs';
 import { recall, scoreRun } from './lib/score.mjs';
+import { resolvePairs, warmUp } from './lib/warm-up.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds'],
-  booleanFlags: ['diff-only', 'cold'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts'],
+  booleanFlags: ['diff-only', 'cold', 'warm-up'],
   repeatableFlags: ['case'],
 };
 
@@ -72,6 +73,9 @@ function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex })
   // wait is a property of this invocation, not of the case. Command line only.
   if (options.timeout) flags.push('--timeout', options.timeout);
   if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
+  // The control arm: `--max-attempts 1` reproduces the pre-retry behaviour, so
+  // one corpus run can measure the failure rate with retry and another without.
+  if (options['max-attempts']) flags.push('--max-attempts', options['max-attempts']);
   return flags;
 }
 
@@ -114,24 +118,46 @@ function reviewOnce(caseDef, options, runIndex) {
     });
     return outcomeFor(stdout, diffOnly);
   } catch (error) {
-    // The whole of stderr, not one line of it. Taking the last line returned the
-    // UserError's *hint* — the companion writes the message and the hint as
-    // separate lines — so the record showed "Raise --max-tokens…" as the reason
-    // a run failed while "ran out of tokens" was discarded. Presenting the
-    // remedy as the diagnosis is this repo's signature class, in the very field
-    // whose comment calls itself the evidence the harness exists to keep.
-    const said = String(error.stderr ?? '').trim();
-    // The category alongside the prose, read from the command's own `--json`
-    // error envelope on stdout. The alternative was matching stderr for phrases
-    // like "timed out", which this repo has on file as a defect class twice over
-    // (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a server's prose
-    // asserts a cause it only guessed. `reason` is what the transport itself
-    // decided; `said` stays the record of what actually happened.
-    return { diffOnly, error: said || error.message, reason: reasonFrom(error.stdout) };
+    return failedRun(error, caseDef, options, diffOnly);
   } finally {
     // Only if it got far enough to exist; materialize may be what threw.
     if (dir) cleanup(dir);
   }
+}
+
+/**
+ * A run that produced nothing, as the record keeps it. Lifted out of
+ * `reviewOnce` at the function size budget.
+ *
+ * The whole of stderr, not one line of it. Taking the last line returned the
+ * UserError's *hint* — the companion writes the message and the hint as separate
+ * lines — so the record showed "Raise --max-tokens…" as the reason a run failed
+ * while "ran out of tokens" was discarded. Presenting the remedy as the
+ * diagnosis is this repo's signature class, in the very field whose comment
+ * calls itself the evidence the harness exists to keep.
+ *
+ * `reason` is the category beside the prose, read from the command's own
+ * `--json` envelope rather than matched out of stderr — a defect class this repo
+ * has on file twice over (OAI-13 items 1 and 2).
+ */
+function failedRun(error, caseDef, options, diffOnly) {
+  const said = String(error.stderr ?? '').trim();
+  return {
+    diffOnly,
+    error: said || error.message,
+    reason: reasonFrom(error.stdout),
+    // Carried here because the failure envelope cannot: a run whose every
+    // attempt died produced no report, so the reliability table would bucket its
+    // attempts under "unknown" — collapsing a two-model sweep whose runs all
+    // failed into one indistinguishable row, which is the sweep this record
+    // exists to describe.
+    // The command's own resolved id first: it knows what providers.json supplied,
+    // which the flags usually do not name at all.
+    requestedModel: requestedModelFrom(error.stdout) ?? options.model ?? caseDef.model ?? null,
+    // Kept even here — see attemptsFrom. Scoring reads logical runs; reliability
+    // reads every physical request, including all of the ones that failed.
+    attempts: attemptsFrom(error.stdout),
+  };
 }
 
 function runCase(caseDef, options, runsPerCase) {
@@ -198,6 +224,13 @@ function validateOptions(options) {
   const budget = { min: 1, max: MAX_BUDGET_SECONDS };
   if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
   if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
+  // Same domain as the command it forwards to, for the reason stated above: an
+  // out-of-range value here otherwise materializes every repo, spawns every
+  // child, records each validation refusal as a failed run, and renders a table
+  // of all-zero recall — in place of one refusal in milliseconds.
+  if (options['max-attempts'] !== undefined) {
+    parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING });
+  }
   return runsPerCase;
 }
 
@@ -206,57 +239,25 @@ async function main() {
   const runsPerCase = validateOptions(options);
 
   const cases = selectCases(loadCases(ROOT), options.case);
+  // Before any measured case, so the JIT model load is charged to nothing.
+  const warmed = options['warm-up']
+    ? warmUp(resolvePairs(cases, options), options, { companion: COMPANION, cwd: ROOT })
+    : null;
   const results = cases.map((caseDef) => runCase(caseDef, options, runsPerCase));
 
-  // The model that actually answered, taken from a run rather than from the
-  // request: a server may serve a different build than the id asked for, and
-  // the report belongs to the one that ran.
-  //
-  // `!run.error` as well, so a substituted run cannot name the whole sweep. The
-  // title has to describe what the table describes, and the table excludes
-  // those runs — taking the first report regardless would headline the report
-  // with a model whose every run was dropped from it. The substitutions get
-  // their own section, which is where a sweep spanning several
-  // requested-to-served pairs is stated in full rather than collapsed to one id.
-  //
-  // But `!run.error` alone loses the sweep's identity entirely when EVERY run was
-  // substituted — and that is the modal case, not a corner: substitution is a
-  // property of one requested id against one server, so a server that renames
-  // the model for the first run renames it for all of them. `options.model` is
-  // undefined on a normal invocation (the config supplies it), so the title
-  // became `# Benchmark — unknown / unknown` above a table of nothing but
-  // failures: the report losing the identity of the server it ran against at
-  // exactly the moment a reader needs it. Confirmed by the built-in review.
-  //
-  // So: `provider` from any report at all, since a substitution says nothing
-  // about which server answered. `model` from a COUNTED run, and where none
-  // exists, the requested id marked as unconfirmed rather than stated as fact.
-  const everyRun = results.flatMap(({ runs }) => runs);
-  const answered = everyRun.find((run) => run.report && !run.error)?.report;
-  const anyReport = everyRun.find((run) => run.report)?.report;
-  const requested = anyReport?.requestedModel ?? options.model;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const markdown = renderReport(results, {
     runsPerCase,
-    provider: answered?.provider ?? anyReport?.provider ?? options.provider ?? 'unknown',
-    model: answered?.model ?? (requested ? `${requested} (requested; no run was answered by it)` : 'unknown'),
+    ...reportIdentity(results, options),
     diffOnly: Boolean(options['diff-only']),
     cold: Boolean(options.cold),
     timeoutSeconds: options.timeout,
     maxSeconds: options['max-seconds'],
   });
-
-  // Raw records beside the summary: the summary is an argument, and an argument
-  // whose evidence was thrown away cannot be rechecked. This repo has already
-  // lost one experiment that way — two documents disagree on whether it was
-  // four runs or five, because only the conclusion was written down.
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const resultsDir = join(ROOT, 'bench/results');
-  mkdirSync(resultsDir, { recursive: true });
-  const recordPath = join(resultsDir, `${stamp}.json`);
-  writeFileSync(recordPath, `${JSON.stringify({ runsPerCase, options, results }, null, 2)}\n`);
+  const { recordPath, reportPath } = persist(ROOT, stamp, { runsPerCase, options, warmed, results }, markdown);
 
   process.stdout.write(`${markdown}\n`);
-  process.stderr.write(`\nPer-run records: ${recordPath}\n`);
+  process.stderr.write(`\nPer-run records: ${recordPath}\nRendered report: ${reportPath}\n`);
 }
 
 main().catch((error) => {

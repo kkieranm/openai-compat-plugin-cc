@@ -139,7 +139,11 @@ test('a reply with nothing in either channel is a failure, not an empty verbatim
   await server.close();
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /empty answer/);
+  // Refused by `finishAnswer` as `blank-completion` (OAI-20), not by the caller
+  // downstream. The refusal is the same refusal; what changed is that it now
+  // carries a machine-readable shape, so the retry layer and the benchmark can
+  // tell this apart from a model that answered badly.
+  assert.match(result.stderr, /entirely empty completion/);
   assert.doesNotMatch(result.stdout, /verbatim/, 'there was nothing to show verbatim');
 });
 

@@ -1,6 +1,5 @@
+import { answerWithRetry } from './answer-attempts.mjs';
 import { readJson } from './body.mjs';
-import { postWithDegrade } from './chat.mjs';
-import { finishAnswer } from './completion.mjs';
 import { UserError } from './errors.mjs';
 import { authHeaders, request } from './provider.mjs';
 
@@ -63,21 +62,22 @@ export async function chatCompletion(profile, options) {
   // it only so a cap that fires names the number the caller set rather than
   // whatever was left of it by then. Both are undefined unless --max-seconds
   // was passed; the run is then bounded exactly as it was before.
-  const result = await postWithDegrade(profile, body, {
+  // …and around all of that, the retry that survives a server dropping the
+  // request outright — a different failure from a server refusing a capability,
+  // and one the ladder above cannot see, because three of its four shapes are
+  // only detected after the bytes arrive. See answer-attempts.mjs.
+  return answerWithRetry(profile, body, {
     firstTokenMs,
     idleMs,
     onProgress,
     expiresAt: options.expiresAt,
     maxMs: options.maxMs,
-  });
-  return finishAnswer(result.answer, {
-    profile,
     requestedModel: model,
-    sawDone: result.sawDone,
-    streamed: result.streamed,
-    prefillMs: result.prefillMs,
-    generationMs: result.generationMs,
-    attempts: result.attempts,
+    maxAttempts: options.maxAttempts,
+    retryDelayMs: options.retryDelayMs,
+    // One ledger per command where the caller minted one, so a review's two
+    // completion calls share indexes instead of each starting from 1.
+    ledger: options.ledger,
   });
 }
 

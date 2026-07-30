@@ -8,6 +8,7 @@
 // obvious half-move, leaving the sampling helpers behind and importing them back,
 // is an import cycle waiting to happen.
 import { tokensPerSecond } from '../../scripts/lib/throughput.mjs';
+import { answeringAttempt } from './attempt-rows.mjs';
 import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 
 /**
@@ -57,9 +58,30 @@ function completedRuns(runs) {
  * `2/3 measured` rather than quietly ranging over the runs that happened to
  * carry a figure. See ADR 009.
  */
-function timingSamples(runs, field) {
-  const values = measurable(runs).map((run) => run.report[field]).filter((value) => Number.isFinite(value));
+function timingSamples(runs, field, cold) {
+  // A prefill served from cache is not a sample of prefill. Once a run can be
+  // answered by a RETRY, the answering request may be a byte-identical repeat of
+  // one the server already prefilled — so `--cold`'s promise that "every prefill
+  // figure is independent" stops being true, silently, in exactly the number
+  // OAI-19 reads off this report. Generation is unaffected: a prompt cache moves
+  // the first figure by ~37× and leaves the second alone, which is why the two
+  // were separated in the first place.
+  //
+  // Excluded rather than flagged, because a mean over contaminated samples is
+  // not a figure with a caveat — it is a different quantity.
+  //
+  // Only under `--cold`, though, where the report PROMISES independent prefills.
+  // Without it every prefill is already cache-affected and the caveats say so,
+  // and dropping just the retry-warmed ones would bias the sample they belong to.
+  const exclude = cold && field === 'prefillMs';
+  const eligible = exclude ? measurable(runs).filter((run) => !answeredWarm(run)) : measurable(runs);
+  const values = eligible.map((run) => run.report[field]).filter((value) => Number.isFinite(value));
   return { values, measured: values.length, completed: completedRuns(runs).length };
+}
+
+/** Was this run's headline timing supplied by an attempt that could have been served warm? */
+function answeredWarm(run) {
+  return Boolean(answeringAttempt(run)?.warmEligible);
 }
 
 /**
@@ -184,7 +206,7 @@ function buckets(runs) {
   return { truncated, scored, scoredSet, cut: analysisCutRuns(runs).filter((run) => scoredSet.has(run)) };
 }
 
-export function caseRows(results) {
+export function caseRows(results, { cold = false } = {}) {
   return results.map((result) => {
     const { caseDef, runs } = result;
     // `unresolved` is zero wherever nothing was cut, which is what keeps a row
@@ -196,8 +218,8 @@ export function caseRows(results) {
     const unmatched = scored.reduce((total, run) => total + run.score.unmatched.length, 0);
     const unresolved = cut.reduce((total, run) => total + (listed - (run.score?.recall.found ?? 0)), 0);
     const { failed, timedOut, capped, substituted } = failureStats(runs);
-    const prefill = timingSamples(runs, 'prefillMs');
-    const generation = timingSamples(runs, 'generationMs');
+    const prefill = timingSamples(runs, 'prefillMs', cold);
+    const generation = timingSamples(runs, 'generationMs', cold);
     const rate = rateSamples(runs);
     return {
       id: caseDef.id,

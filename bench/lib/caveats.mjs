@@ -118,6 +118,37 @@ function cacheNote(rows) {
 }
 
 /**
+ * The wall-clock cap, and what it does to every figure beside it.
+ *
+ * Its own function because it is the longest of these by far, and lifting it is
+ * what keeps `flagNotes` under the function size budget. Stated whenever set,
+ * for the same reason `--cold` is: a reader comparing two report files has to
+ * know that one of them ran under a cap, or a row with fewer completed runs
+ * reads as a worse model rather than a shorter leash.
+ */
+function capNote(rows, maxSeconds) {
+  const capped = rows.reduce((total, row) => total + row.capped, 0);
+  if (!maxSeconds && capped === 0) return [];
+  return [
+    (maxSeconds
+      ? `**\`--max-seconds ${maxSeconds}\` was on**`
+      : '**A wall-clock cap was in force, from the provider config rather than a flag** — this harness '
+        + 'was never told the number, and infers it only from the runs it killed')
+    + `, so any run still generating at that point was cut off and recorded as a failure with reason `
+    + '`deadline-timeout`. '
+    + `**${capped} run(s) here ended on the cap specifically** — the \`(N timed out)\` beside the `
+    + '`failed` column is a wider count, covering every budget including the first-token one, so the '
+    + 'two numbers differ legitimately and neither is the other. Those runs are a limit this harness '
+    + 'imposed, not a result about the reviewer, and a capped report must not be set beside an '
+    + 'uncapped one as if they were like for like. '
+    + '**And the timing columns describe the runs that survived it**, which under a cap are the fast '
+    + 'ones: `prefill s`, `generate s` and `gen tok/s` are computed over runs that reported, so a case '
+    + 'whose slow runs were all cut shows the speed of its quick ones with no sign of what is missing. '
+    + 'Read those cells against the `failed` count, never alone.',
+  ];
+}
+
+/**
  * What was switched on for this run, stated whenever it was.
  *
  * Split from `caveats` at the function size budget, and the seam holds: these
@@ -132,26 +163,7 @@ function flagNotes(rows, { diffOnly, cold, timeoutSeconds, maxSeconds }) {
   // report files has to know that one of them was run under a wall-clock cap,
   // or a row with fewer completed runs reads as a worse model rather than a
   // shorter leash.
-  const capped = rows.reduce((total, row) => total + row.capped, 0);
-  if (maxSeconds || capped > 0) {
-    notes.push(
-      (maxSeconds
-        ? `**\`--max-seconds ${maxSeconds}\` was on**`
-        : '**A wall-clock cap was in force, from the provider config rather than a flag** — this harness '
-          + 'was never told the number, and infers it only from the runs it killed')
-      + `, so any run still generating at that point was cut off and recorded as a failure with reason `
-      + '`deadline-timeout`. '
-      + `**${capped} run(s) here ended on the cap specifically** — the \`(N timed out)\` beside the `
-      + '`failed` column is a wider count, covering every budget including the first-token one, so the '
-      + 'two numbers differ legitimately and neither is the other. Those runs are a limit this harness '
-      + 'imposed, not a result about the reviewer, and a capped report must not be set beside an '
-      + 'uncapped one as if they were like for like. '
-      + '**And the timing columns describe the runs that survived it**, which under a cap are the fast '
-      + 'ones: `prefill s`, `generate s` and `gen tok/s` are computed over runs that reported, so a case '
-      + 'whose slow runs were all cut shows the speed of its quick ones with no sign of what is missing. '
-      + 'Read those cells against the `failed` count, never alone.',
-    );
-  }
+  notes.push(...capNote(rows, maxSeconds));
   if (timeoutSeconds) {
     notes.push(
       `**\`--timeout ${timeoutSeconds}\` was on**, which bounds the wait for each run's *first token* only — `
@@ -165,7 +177,14 @@ function flagNotes(rows, { diffOnly, cold, timeoutSeconds, maxSeconds }) {
     notes.push(
       '**`--cold` was on: every run carried a unique cache-buster**, so no run could be served from a '
       + 'server-side prompt cache and the prefill figures are independent. That also means each run '
-      + 'sent a slightly different prompt, so this is not a byte-identical repeat of the same request.',
+      + 'sent a slightly different prompt, so this is not a byte-identical repeat of the same request. '
+      // The cache-buster is minted per RUN, not per attempt, and a retry re-sends
+      // the prompt byte-for-byte on purpose — so the buster alone stopped being
+      // sufficient the moment retry existed. Said out loud rather than left as an
+      // exclusion a reader would have to infer from a changed denominator.
+      + '**A run answered by a retry is the exception**: the retry repeats the prompt exactly, so its '
+      + 'prefill could have been served warm and is excluded from the prefill figures above rather '
+      + 'than quoted as a cold measurement. The reliability section counts those attempts.',
     );
   }
   // Named, not assumed. --diff-only cannot apply to a `file` case, so asking for

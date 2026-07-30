@@ -11,6 +11,7 @@
 // one file is how the sentence quietly stops matching the number.
 import { formatRate } from '../../scripts/lib/throughput.mjs';
 import { caseRows } from './case-rows.mjs';
+import { reliabilitySection } from './reliability-report.mjs';
 import { caveats, pct } from './caveats.mjs';
 
 /**
@@ -117,7 +118,7 @@ function table(rows) {
 }
 
 export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, timeoutSeconds, maxSeconds }) {
-  const rows = caseRows(results);
+  const rows = caseRows(results, { cold });
   const lines = [
     `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`,
     '',
@@ -128,6 +129,17 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
   ];
   for (const note of caveats(rows, runsPerCase, { diffOnly, cold, timeoutSeconds, maxSeconds })) lines.push(note, '');
 
+  lines.push(...supplements(results));
+  return lines.join('\n');
+}
+
+/**
+ * The residue sections below the table, lifted out of `renderReport` at the
+ * function size budget — which it sat exactly on, so the reliability section
+ * could not have been added without this.
+ */
+function supplements(results) {
+  const lines = [];
   const unmatched = results.flatMap(({ caseDef, runs }) =>
     runs.flatMap((run) => (run.score?.unmatched ?? []).map((finding) => ({ caseId: caseDef.id, finding }))));
   if (unmatched.length > 0) {
@@ -141,21 +153,36 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
     }
     lines.push('');
   }
+  lines.push(...reliabilitySection(results));
+  lines.push(...failureSections(results));
+  return lines;
+}
 
-  // Substitutions are excluded here and given their own section below. They are
-  // recorded as failures, but this heading says "did not complete" and a
-  // substituted run completed perfectly — it answered, parsed and was timed.
-  // What failed was the attribution, and filing it under a heading that says
-  // otherwise is the kind of near-miss label this report exists to remove.
-  //
-  // Whole stderr, indented, rather than a one-line summary of it: reducing it
-  // was what let a hint be printed as the diagnosis.
+/**
+ * Runs that produced nothing, and runs the wrong model answered.
+ *
+ * **`## Logical runs that did not complete`**, named for the thing it counts.
+ * Physical attempts get their own section above, and the parallel wording is
+ * what makes the distinction self-evident to someone skimming headings: a run
+ * answered by its third attempt completed, and belongs in neither.
+ *
+ * Substitutions are excluded here for the same reason and given their own
+ * section. They are recorded as failures, but a substituted run completed
+ * perfectly — it answered, parsed and was timed. What failed was the
+ * attribution, and filing it under a heading that says otherwise is the kind of
+ * near-miss label this report exists to remove.
+ *
+ * Whole stderr, indented, rather than a one-line summary of it: reducing it was
+ * what let a hint be printed as the diagnosis.
+ */
+function failureSections(results) {
+  const lines = [];
   const failures = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.error && run.reason !== 'model-substituted').flatMap((run) => [
       `- \`${caseDef.id}\`:`,
       ...String(run.error).split('\n').map((line) => `      ${line}`),
     ]));
-  if (failures.length > 0) lines.push('## Runs that did not complete', '', ...failures, '');
+  if (failures.length > 0) lines.push('## Logical runs that did not complete', '', ...failures, '');
 
   const substituted = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.reason === 'model-substituted')
@@ -173,6 +200,5 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
       '',
     );
   }
-
-  return lines.join('\n');
+  return lines;
 }

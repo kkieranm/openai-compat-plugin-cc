@@ -3,8 +3,9 @@
 // What the request *is* — the reply budget, the whole-files-or-diff ladder, and
 // the retry when a server refuses the schema — lives in `review-request.mjs`.
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
+import { createLedger } from './attempt-ledger.mjs';
 import { loadConfig, resolveProfile } from './config.mjs';
-import { parseNumericOptions, resolveIdle, resolveMax, resolveTarget, resolveTimeout } from './delegate.mjs';
+import { parseNumericOptions, resolveIdle, resolveMax, resolveRetryDelay, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
 import { substitutionNotice } from './model-identity.mjs';
@@ -19,7 +20,7 @@ import { parseFindings } from './structured.mjs';
 export const REVIEW_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'cache-buster',
+    'cache-buster', 'max-attempts',
   ],
   booleanFlags: ['staged', 'diff-only', 'json'],
   repeatableFlags: ['file'],
@@ -72,9 +73,41 @@ function assertAskable(options, instructions, terminated) {
   }
 }
 
+/**
+ * Everything the request needs, assembled in one place.
+ *
+ * Lifted out of `reviewFlow` at the function size budget. The seam: this decides
+ * *what to ask for*, while the caller runs it and renders what comes back.
+ */
+function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, ledger }) {
+  const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
+  return {
+    model,
+    contextLength,
+    target,
+    instructions,
+    reserve: reserveFor(contextLength, maxTokens),
+    temperature,
+    cacheBuster: options['cache-buster'],
+    timeoutMs: resolveTimeout(profile, timeoutSeconds),
+    idleMs: resolveIdle(profile),
+    retryDelayMs: resolveRetryDelay(profile),
+    // Minted once, and shared by every attempt the answer costs — the
+    // capability ladder in chat.mjs and the response_format ladder in
+    // review-request.mjs both retry, and a per-attempt cap would let three
+    // tries run for three times the number the caller set.
+    maxMs: resolveMax(profile, maxSeconds),
+    maxAttempts,
+    // One ledger for the whole review, shared by the schema request and the
+    // degraded one after it: a ledger per call would restart its indexes half
+    // way through and drop the structured request out of the record.
+    ledger,
+  };
+}
+
 async function reviewFlow(options, instructions, terminated) {
   assertAskable(options, instructions, terminated);
-  const { maxTokens, temperature, timeoutSeconds, maxSeconds } = parseNumericOptions(options);
+  const numeric = parseNumericOptions(options);
 
   const { config } = loadConfig();
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
@@ -86,31 +119,21 @@ async function reviewFlow(options, instructions, terminated) {
 
   const target = await collectTarget(options);
   const { model, contextLength } = await resolveTarget(profile, options);
-  const reserve = reserveFor(contextLength, maxTokens);
-
-  const maxMs = resolveMax(profile, maxSeconds);
+  // Attached to anything thrown from here on. The model is usually resolved from
+  // providers.json rather than passed as a flag, so a caller reading the failure
+  // envelope — the benchmark's reliability table — could not otherwise say which
+  // model an all-failed run had asked for, and bucketed every one as "unknown".
+  const named = (error) => Object.assign(error, { requestedModel: error.requestedModel ?? model });
+  const ledger = createLedger();
+  const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, ledger });
   const startedAt = Date.now();
   process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
 
   // A review is the long silent run this exists for: whole-file passes measured
   // 38–245s before, and a cold prefill alone is minutes.
   const { result, structured, schema, budget, estimatedTokens, hunksOnly } = await withProgress((onProgress) =>
-    requestFindings(profile, {
-      model,
-      contextLength,
-      target,
-      instructions,
-      reserve,
-      temperature,
-      cacheBuster: options['cache-buster'],
-      timeoutMs: resolveTimeout(profile, timeoutSeconds),
-      idleMs: resolveIdle(profile),
-      // Minted here, once, and shared by every attempt the answer costs — the
-      // capability ladder in chat.mjs and the response_format ladder in
-      // review-request.mjs both retry, and a per-attempt cap would let three
-      // tries run for three times the number the caller set.
-      maxMs,
-      onProgress,
+    requestFindings(profile, { ...plan, onProgress }).catch((error) => {
+      throw named(error);
     }),
   );
 
@@ -130,5 +153,6 @@ async function reviewFlow(options, instructions, terminated) {
     estimatedTokens,
     durationMs: Date.now() - startedAt,
     json: Boolean(options.json),
+    ledger,
   });
 }

@@ -2,6 +2,41 @@
 
 Newest first.
 
+- **OAI-20** — Survive the server: classify LM Studio's delivery failures and retry the attempt.
+  Completed 2026-07-31. Four shapes now carry structured reason codes assigned where they are
+  detected — `empty-completion`, `stream-unfinished`, `transport`, and a **fourth the item did not
+  know about**: `applyText` sets `sawContent` for any string including `''`, so a reply of
+  `content: ""` passed every guard and reached the caller looking successful, was reported as "the
+  model did not return findings in the requested shape", and was filed by the bench as *unreadable*.
+  A dead request recorded as a bad answer, which is the censored-denominator trap one layer below
+  where this file already caught it. `answerWithRetry` retries only whitelisted shapes, spanning
+  `postWithDegrade` **and** `finishAnswer` because the transport raises one shape and `finishAnswer`
+  raises three. `--max-attempts` counts **answer attempts** (default 3) rather than physical
+  requests — capping requests at 1 would have disabled capability degradation instead of retry — so
+  `--max-attempts 1` reproduces the old behaviour exactly and is the control arm.
+  `scripts/lib/attempt-ledger.mjs` records one entry per physical request, and the bench renders
+  `## Physical-attempt reliability` beside the recall table with **both denominators stated
+  together**. Three things review found rather than the plan specifying: an entry must settle only
+  *after* `finishAnswer` judges it (`postChat` returns successfully for three of the four shapes, so
+  closing at the transport would file dead requests as answered); a third outcome `refused` is
+  needed or a server that refuses `stream_options` headlines a **50% failure rate while answering
+  100% of shaped requests** — and it must be recorded by the layer that sends the replacement, never
+  inferred from a status, because a context-limit rejection is also a 400; and `warmEligible` needs
+  evidence of *model execution*, not prompt identity, or every degraded run's prefill is silently
+  deleted from the benchmark's cold samples. **Not proven sufficient**: these are the shapes
+  observed, and whether retry recovers the 37.5% is a measurement OAI-19 reads off the new record.
+  Server state is not recorded — it is not observable from the client. See
+  [ADR 012](adr/012-surviving-the-server.md).
+- **OAI-21** — The bench keeps its own evidence and pays the model load itself. Completed
+  2026-07-31, alongside OAI-20 as the item directed. The rendered report is written to `<stamp>.md`
+  beside `<stamp>.json` under one stamp computed before rendering; `--warm-up` sends one unscored
+  request per **distinct resolved provider/model pair**, carrying the invocation's budgets, and the
+  record states that it ran. Two things only running it revealed: the first version built the argv
+  prompt-before-flags, which `/oai:task` refuses — and because warm-up records rather than throws,
+  an arm would have carried on having warmed nothing (84ms against the expected ~11s was the only
+  tell); and the outcome field is `answered`, not `ok`, because a reasoning model spends its budget
+  thinking and exits non-zero on a request that loaded the weights perfectly well. See
+  [ADR 012](adr/012-surviving-the-server.md).
 - **OAI-16** — Say when the served model is not the requested one, and select the loaded one.
   Completed 2026-07-29. The probe made the first half considerably worse than the item described.
   **The item said a stale pin got substituted; the truth is that *any* wrong id does.** Reproduced

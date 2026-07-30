@@ -10,8 +10,9 @@ two *different* defects, one per attempt — `credential-inherited-across-origin
 `url-origin-strips-credentials`; neither found twice — joining the four anchored matches recorded
 before it, one of which was the same case in commit mode by the old MoE quant on 2026-07-28) —
 catches from arms that failed their acceptance gates, so recall remains without a publishable
-number and the catches are existence proofs, not a rate. The binding constraint has moved: **server reliability (see OAI-20), then the `analysis`
-ceiling where it still cuts** (dense on the largest cases; details under OAI-19).
+number and the catches are existence proofs, not a rate. The binding constraint has moved: **server reliability — answered client-side by OAI-20
+(2026-07-31), though whether retry recovers the observed 37.5% is itself a measurement OAI-19 will
+read off the new attempt record — then the `analysis` ceiling where it still cuts** (dense on the largest cases; details under OAI-19).
 
 The reviewer is useful once checking its claims costs less than its catches are worth. **OAI-15
 (2026-07-28) changed how a censored run is treated, and raised the ceiling — it did not prove the
@@ -37,9 +38,11 @@ at N=1, 10.9 minutes**~~ — struck 2026-07-30: computed under the pre-OAI-15 ru
 runs from the denominator, so it is not directly comparable with anything measured since (OAI-15
 counts them, and reports the unresolved part as a band). **No comparable replacement exists yet** —
 the OAI-19 re-measure was attempted 2026-07-30 and blocked by server reliability (see OAI-20);
-until it completes, there is no baseline number for OAI-9 or OAI-11 to be scored against. 11 defects are catalogued, but 5 belong to the two cases whose
-runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule
-is OAI-19 — behind OAI-20, the top item, which unblocks it** — because everything below wants a
+until it completes, there is no baseline number for OAI-9 or OAI-11 to be scored against — though
+OAI-20/OAI-21 (2026-07-31) removed what blocked it and gave the re-run an attempt-level record, a
+warm-up and a control arm. 11 defects are catalogued, but 5 belong to the two cases whose
+runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule is OAI-19, now the top item —
+OAI-20 and OAI-21 landed on 2026-07-31 and unblocked it** — because everything below wants a
 number to beat and the methodology note below is exactly about this. One of its two headline results is now retracted
 and the other has grown:
 
@@ -80,35 +83,11 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-20** — Survive the server: recognise LM Studio's sustained-load failure classes at the
-  client layer and retry the attempt, because they now block measurement. Evidence, 2026-07-30
-  (the OAI-19 attempt: four full-corpus invocations, two per arm under a predeclared one-retry
-  rule): **27 of 72 runs died server-side (37.5%)** — every one either an **empty completion**
-  (`finish_reason: unknown`, no message content) or a **stream drop** (connection closed
-  mid-reasoning, ~50k chars in); zero deadline-timeouts, zero substitutions. Dense 27B failed 5/18
-  then 6/18; MoE 35B-A3B 10/18 then 6/18 — both models, so the locus is server-side, shared
-  across models rather than belonging to either. One
-  incident needed a manual `lms unload`: the model stuck `GENERATING`, trivial requests receiving
-  0 bytes in 90s. **The cause is unresolved within the LM Studio serving path** — "the server
-  under sustained load" is the observed correlate, not an established mechanism — so before
-  treating retry as sufficient, characterize the failures: by model, case, request size, attempt
-  number and server state, with a structured reason code per failure shape rather than prose. The
-  fix layer is the one OAI-13 already names — classify by response shape (empty
-  `choices[0].message` + `finish_reason: unknown`; premature stream end), never by matching error
-  text — and retry the *attempt* inside one companion invocation, because a bench-level re-run
-  re-pays a whole `--cold` prefill for every survivor, which is why arm-level retries were the
-  wrong layer twice. The retry contract, fixed before implementation: a **bounded attempt count
-  per logical run**; an **attempt-level record** preserving every physical attempt with outcome
-  and timing; **scoring reads logical runs** (the attempt that answered), **reliability reads all
-  physical attempts**, and **a failed attempt never enters a recall denominator** — it is missing
-  data, not an observed miss (the censored-denominator trap, already caught once in this file's
-  own prose). The OAI-19 gate then references those scopes by name. Check while in there: whether
-  the 10-minute JIT TTL can unload a model under a long prefill. Done when a full-corpus
-  `--runs 3` arm completes with every case `scored=3` against a healthy server, failures retried
-  and counted in the attempt-level record.
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
-  arm is read as an improvement. **This is a measurement, not a feature, and it runs as soon as
-  OAI-20 unblocks it, because every item below it wants a number to beat.** The recorded baseline — **1 of 6 scoreable defects,
+  arm is read as an improvement. **This is a measurement, not a feature, and OAI-20/OAI-21 have now
+  unblocked it (2026-07-31), so it is the top item — every item below it wants a number to beat.**
+  Run it with `--warm-up` and `--max-attempts 3`, and take a `--max-attempts 1` control arm on at
+  least one case so the record shows what retry was worth rather than only the retried rate. The recorded baseline — **1 of 6 scoreable defects,
   10.9 minutes, N=1** — was computed under the pre-OAI-15 rule that *excluded* cut runs from the
   denominator, and 17 of 41 runs recorded at the time were cut. OAI-15 now counts them and reports
   the unresolved part as a band, so that figure cannot be differenced against anything measured
@@ -159,18 +138,20 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   decision, to test whether the failures were model-specific; they are not). Raw records
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
-- **OAI-21** — The bench keeps its own evidence and pays the model load itself, because the
-  2026-07-30 attempt needed both done by hand and one of them nearly wasn't. (1) `run.mjs` writes
-  the JSON record to `bench/results/` but prints the rendered Markdown report — the human-readable
-  form of the caveats — to stdout only; this session it survived because each arm's nohup log was
-  manually copied beside the record, and Codex's plan challenge had already flagged that a reused
-  log path would have silently overwritten arm 1's report. Write the rendered report to
-  `<stamp>.md` beside `<stamp>.json`, same gitignore rationale. (2) Each arm's first measured case
-  carried the JIT model load until a manual warm-up request was scripted around the bench;
-  `--cold` busts the prompt cache but does not pre-load the model, and load cost differs by model,
-  so a `--warm-up` step (one tiny unscored request to the resolved model before case 1) belongs in
-  the harness, reported in the record as having run. Land with OAI-20, before the OAI-19 re-run,
-  so the re-run's evidence and timing are clean by construction.
+- **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
+  model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
+  (Codex, P2). Latent today — the corpus resolves to a single pair, so nothing is evicted — but
+  `--warm-up` exists precisely for the multi-model case, which is what OAI-19 runs, and there the
+  first case of the earlier model still pays the load the flag promises to remove. Fix by
+  interleaving: warm each pair immediately before the first case that uses it, or group execution by
+  pair. Two smaller items from the same review, both bounded and neither corrupting a measurement:
+  the `transport` reason code spans non-transient causes, so a hostname that will never resolve is
+  retried three times with delays before reporting the same error (narrow it by `error.code`); and
+  `capBudgets` is called twice per dispatch — once as the pre-check that keeps an expired cap from
+  minting a phantom ledger entry, once inside `postChat` — leaving a microsecond window where the
+  first passes and the second throws, recreating the phantom it prevents. Close it by computing the
+  remaining budget once and passing it down.
+
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

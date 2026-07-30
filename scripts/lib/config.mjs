@@ -69,10 +69,18 @@ function validateConfig(config, path) {
     }
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
-    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds', 'maxSeconds']) {
+    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds', 'maxSeconds', 'retrySeconds']) {
       const value = profile[key];
-      if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
-        throw new UserError(`Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a positive whole number.`);
+      // `retrySeconds` is the one budget where 0 is a *setting*, not a mistake:
+      // it means "retry immediately", which is a coherent choice for a server
+      // that does not need time to recover — and it is what the test suite uses
+      // so a retry path costs no wall clock. Every other key here is a duration
+      // or a size where 0 would disarm the thing it configures.
+      const floor = key === 'retrySeconds' ? 0 : 1;
+      if (value !== undefined && (!Number.isInteger(value) || value < floor)) {
+        throw new UserError(
+          `Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a ${floor === 0 ? 'whole number of seconds, zero or more' : 'positive whole number'}.`,
+        );
       }
       // A budget above what setTimeout can express is clamped by Node to 1ms —
       // so an enormous number here would arm an *immediate* timeout, which is
@@ -151,6 +159,7 @@ export function buildProfile(name, rawProfile) {
     // reads is the same defect as one it reports as armed.
     idleSeconds: rawProfile.idleSeconds,
     maxSeconds: rawProfile.maxSeconds,
+    retrySeconds: rawProfile.retrySeconds,
     apiKey: resolveApiKey(rawProfile, name),
   };
 }
