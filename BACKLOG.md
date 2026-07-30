@@ -4,10 +4,14 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 
 **Current theme: make `/oai:review` trustworthy before extending the plugin further.** Where it
 actually stands, stated plainly because it is easy to overrate: OAI-14 removed the largest
-false-positive class (3-of-3 → 0-of-3 on the one commit with a baseline), but **no run has yet
-produced a verified true positive on a real commit diff.** Precision improved; recall is unmeasured
-and unchanged — and it came at a cost: **the `analysis` cap now binds in 2 runs of 3 against ~1 in 5
-on diffs, and both capped runs reported nothing**, so the wasted-run rate roughly tripled.
+false-positive class (3-of-3 → 0-of-3 on the one commit with a baseline), and the 2026-07-30
+OAI-19 attempt added two anchored true positives on a real commit diff (dense 27B on `scaffold`:
+two *different* defects, one per attempt — `credential-inherited-across-origin`, then
+`url-origin-strips-credentials`; neither found twice — joining the four anchored matches recorded
+before it, one of which was the same case in commit mode by the old MoE quant on 2026-07-28) —
+catches from arms that failed their acceptance gates, so recall remains without a publishable
+number and the catches are existence proofs, not a rate. The binding constraint has moved: **server reliability (see OAI-20), then the `analysis`
+ceiling where it still cuts** (dense on the largest cases; details under OAI-19).
 
 The reviewer is useful once checking its claims costs less than its catches are worth. **OAI-15
 (2026-07-28) changed how a censored run is treated, and raised the ceiling — it did not prove the
@@ -18,23 +22,25 @@ being thrown away along with two of the four anchored matches ever produced. So 
 (OAI-9) can now be measured through a sample that includes them, with the unresolved part shown as a
 band rather than resolved by guesswork in either direction. **Whether the new ceiling is high enough
 to stop truncating is a measurement, not a claim** — it is a wall-clock number, not one derived from a
-distribution that was never observable. First evidence: `config-origin` on the dense 27B now runs
-**0 of 3 cut** (7,075 / 19,942 / 21,240 characters) where it cut 6 of 9 before, but `structured`
-(4 of 4 cut) and `scaffold` (4 of 11) are unmeasured, and all three of those runs found nothing — so
-this bought an uncensored measurement, not a better reviewer. See
-[ADR 008](adr/008-sizing-the-review-reply.md).
+distribution that was never observable. Measured 2026-07-30 (OAI-19 attempt, bounded — the arms
+failed their gates): `config-origin` and `structured` no longer cut for the dense model
+(`structured` on the diff-only rung there — see the confound note under OAI-19), but `scaffold`
+still cuts 2/3–3/3 and `model-info` 1/3, so **the ceiling still binds for the dense model on the
+largest cases**. See [ADR 008](adr/008-sizing-the-review-reply.md).
 
 **OAI-12 has landed, so tuning is no longer guesswork — and it has now refuted its own first
 headline, which is the instrument doing its job.** `npm run bench` scores the shipped command
 against 11 catalogued defects in six snapshots of this repo's history and writes a per-run record,
 ending the era where a conclusion was kept and its evidence thrown away (ADR 004 says "four runs",
-`890ee2e` says "five", same experiment, neither now checkable). Baseline: **1 of 6 scoreable defects
-at N=1, 10.9 minutes** — **computed under the pre-OAI-15 rule that excluded cut runs from the
-denominator, so it is not directly comparable with anything measured since** (OAI-15 counts them, and
-reports the unresolved part as a band). 11 defects are catalogued, but 5 belong to the two cases whose
+`890ee2e` says "five", same experiment, neither now checkable). Baseline: ~~**1 of 6 scoreable defects
+at N=1, 10.9 minutes**~~ — struck 2026-07-30: computed under the pre-OAI-15 rule that excluded cut
+runs from the denominator, so it is not directly comparable with anything measured since (OAI-15
+counts them, and reports the unresolved part as a band). **No comparable replacement exists yet** —
+the OAI-19 re-measure was attempted 2026-07-30 and blocked by server reliability (see OAI-20);
+until it completes, there is no baseline number for OAI-9 or OAI-11 to be scored against. 11 defects are catalogued, but 5 belong to the two cases whose
 runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule
-is OAI-19, the top item**, because everything below wants a number to beat and the methodology note
-below is exactly about this. One of its two headline results is now retracted
+is OAI-19 — behind OAI-20, the top item, which unblocks it** — because everything below wants a
+number to beat and the methodology note below is exactly about this. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -74,9 +80,35 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
+- **OAI-20** — Survive the server: recognise LM Studio's sustained-load failure classes at the
+  client layer and retry the attempt, because they now block measurement. Evidence, 2026-07-30
+  (the OAI-19 attempt: four full-corpus invocations, two per arm under a predeclared one-retry
+  rule): **27 of 72 runs died server-side (37.5%)** — every one either an **empty completion**
+  (`finish_reason: unknown`, no message content) or a **stream drop** (connection closed
+  mid-reasoning, ~50k chars in); zero deadline-timeouts, zero substitutions. Dense 27B failed 5/18
+  then 6/18; MoE 35B-A3B 10/18 then 6/18 — both models, so the locus is server-side, shared
+  across models rather than belonging to either. One
+  incident needed a manual `lms unload`: the model stuck `GENERATING`, trivial requests receiving
+  0 bytes in 90s. **The cause is unresolved within the LM Studio serving path** — "the server
+  under sustained load" is the observed correlate, not an established mechanism — so before
+  treating retry as sufficient, characterize the failures: by model, case, request size, attempt
+  number and server state, with a structured reason code per failure shape rather than prose. The
+  fix layer is the one OAI-13 already names — classify by response shape (empty
+  `choices[0].message` + `finish_reason: unknown`; premature stream end), never by matching error
+  text — and retry the *attempt* inside one companion invocation, because a bench-level re-run
+  re-pays a whole `--cold` prefill for every survivor, which is why arm-level retries were the
+  wrong layer twice. The retry contract, fixed before implementation: a **bounded attempt count
+  per logical run**; an **attempt-level record** preserving every physical attempt with outcome
+  and timing; **scoring reads logical runs** (the attempt that answered), **reliability reads all
+  physical attempts**, and **a failed attempt never enters a recall denominator** — it is missing
+  data, not an observed miss (the censored-denominator trap, already caught once in this file's
+  own prose). The OAI-19 gate then references those scopes by name. Check while in there: whether
+  the 10-minute JIT TTL can unload a model under a long prefill. Done when a full-corpus
+  `--runs 3` arm completes with every case `scored=3` against a healthy server, failures retried
+  and counted in the attempt-level record.
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
-  arm is read as an improvement. **This is a measurement, not a feature, and it is first because
-  every item below it wants a number to beat.** The recorded baseline — **1 of 6 scoreable defects,
+  arm is read as an improvement. **This is a measurement, not a feature, and it runs as soon as
+  OAI-20 unblocks it, because every item below it wants a number to beat.** The recorded baseline — **1 of 6 scoreable defects,
   10.9 minutes, N=1** — was computed under the pre-OAI-15 rule that *excluded* cut runs from the
   denominator, and 17 of 41 runs recorded at the time were cut. OAI-15 now counts them and reports
   the unresolved part as a band, so that figure cannot be differenced against anything measured
@@ -88,16 +120,45 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   leave every prior number unusable and attribute the OAI-15 rule change to the model swap. So:
   both models, full corpus, `--runs 3` — N=1 is a lottery ticket, established twice in this file at
   the cost of two retracted claims — and one arm per model with nothing else varying.
-  Read off the same run, because it is already paid for: **whether OAI-15's wall-clock ceiling still
-  binds** (per-case cut counts — `structured` was 4 of 4 cut and `scaffold` 4 of 11, both unmeasured
-  since), and OAI-18's `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a
-  warm pass honestly. Note the throughput caveat under OAI-11 does **not** apply: both arms are one
-  LM Studio, so `gen tok/s` is comparable here.
+  Read off the same run, because it is already paid for: **whether OAI-15's wall-clock ceiling
+  still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
+  `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a warm pass honestly.
+  The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
+  still only approximate — token counting need not be identical across models; wall-clock
+  generation time is the directly comparable figure.
   Expect a JIT model load between arms, so the first case of each arm carries a cold prefill that is
   not the model's — OAI-9's cache measurement (421.7s cold, 11.5s warm on one 56,805-token request)
   says how large that distortion is, and `--cold` exists to make it uniform rather than incidental.
   Done when both arms are recorded with their bands, the pre-OAI-15 figure is struck through in this
   file, and the comparable one replaces it as the number OAI-9 and OAI-11 are scored against.
+  **Attempted 2026-07-30 — blocked on OAI-20, and the attempt is the evidence behind it.** Both arms
+  ran twice (a predeclared one-retry-per-arm rule, every invocation reported); neither ever passed
+  its acceptance gate (every case `scored=3`, no failed/truncated/unreadable/substituted runs), so
+  under the plan's own terms **nothing here is published as the measurement** — the failure rates
+  moved to OAI-20 are the deliverable this attempt actually produced. What the scored runs showed,
+  stated as bounded observations, not the baseline: (a) the dense 27B anchored two `scaffold`
+  defects on a real commit diff — *different* ones, one per attempt
+  (`credential-inherited-across-origin`, then `url-origin-strips-credentials`), each hit in one
+  scored run of three and neither recurring in the other attempt — two independent catches, not
+  one catch replicated, and **not the benchmark's first**: four anchored matches predate them,
+  including the same defect on the same case in commit mode by the old MoE quant
+  (`bench/results/2026-07-28T07-57-15-522Z.json`);
+  (b) the OAI-15 ceiling **still binds for the dense model on the largest cases** — `scaffold` cut
+  2/3 then 3/3, `model-info` 1/3 in each — while `structured`, historically 4/4 cut, was never cut
+  in any dense scored run, **but that last observation is confounded**: the dense model's smaller
+  served window (61,696 vs the MoE's 71,936 — the MoE figure read live off `lms ps`, not present
+  in any bench record; provenance in ADR 008) sent `structured` down ADR 005's diff-only rung
+  (`hunksOnly: true`, ~28.6k prompt tokens) where the MoE received whole files (~59.7k), so "never
+  cut" there may only mean "much smaller input", and the two arms did not review the same
+  `structured` request; (c) the MoE generates ~4× faster (~50–78 vs 13–17 tok/s, prefill ~5×
+  faster, a full arm in ~25 min vs ~3 h) and produced one **range** match on `scaffold`
+  (`anchored=0` — a looser standard than the dense arm's anchored catches), finding nothing else;
+  (d) the MoE arm ran as `qwen/qwen3.6-35b-a3b` — the `-ud-mlx` quant
+  the old baseline used is no longer served, so even a clean future arm is a different quant, which
+  the record must footnote. The MoE arm was launched with arm 1 already incomplete (a deliberate
+  decision, to test whether the failures were model-specific; they are not). Raw records
+  `bench/results/2026-07-30T*.json` with rendered reports beside them as
+  `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1

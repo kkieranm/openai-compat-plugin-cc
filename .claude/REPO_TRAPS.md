@@ -488,6 +488,34 @@ itself — "the assumption holds only while run.mjs attaches a score to every pa
 nothing here would notice if it stopped" — and it came true the moment a run could carry a report, a
 scoreable reply and a failure at once. Enforce a sum's precondition where the sum is computed.
 
+## A figure quoted as measured that traces to nothing in the cited evidence
+
+Confirmed 2026-07-30 by the lean review, in documentation of the OAI-19 attempt — twice in one
+diff, both in prose whose stated job was to keep claims bounded:
+
+- The MoE's context window was written as `71,936` beside a citation of the bench records — which
+  contain no window field and explicitly log "context window unknown" for that model. The number
+  was real (read live off `lms ps` mid-session) but its provenance existed only in the session, so
+  in the record it was indistinguishable from an invention. **A true number with no traceable
+  source decays into "neither now checkable" the moment the session ends** — the same failure ADR
+  006 opens with. Fix: state the provenance beside the figure, or cut the figure.
+- The dense arm's two anchored true positives were summarised as one catch found "in both attempts
+  independently". The records show two *different* defect ids, one per attempt, neither found
+  twice — the claim asserted replication the evidence refutes, in the passage written to stop the
+  reviewer being overrated.
+
+A third instance then appeared **in the fix for the second**: the reworded passage claimed the two
+catches were "the first anchored true positives on a real commit diff", refuted by a record two
+days older (`2026-07-28T07-57-15-522Z.json`, same case, same mode, same defect id, the old MoE
+quant) — and by the same file's own "four anchored matches ever produced" line. The class
+regenerates at fix sites; check every superlative against the record set, not against memory.
+
+The rule: **every number, replication claim or superlative in a summary must be re-derivable from
+the artifact the summary cites** — a session observation goes in with its provenance named, or not
+at all.
+Prose entries in BACKLOG/ADRs have no test harness, which is why this class lands there: the lean
+review's trap finder is currently the only guard, so keep it primed with this entry.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

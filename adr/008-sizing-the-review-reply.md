@@ -181,3 +181,22 @@ by a test so it stays a decision.
   every-field-has-a-ceiling guard **across a swept range of reserves** rather than on one constant.
 - `structured.mjs`'s claim that the ceilings sit "above every successful run observed" is deleted. It
   was false when written and contradicted ADR 004 in the same repository.
+
+## Does the wall-clock ceiling still bind? Partial answer, 2026-07-30 (OAI-19 attempt)
+
+The full-corpus re-measure never produced a gate-passing arm (server reliability — see ADR 006 and
+OAI-20), so this is evidence, not the measurement. Across the dense 27B's scored runs the ceiling
+**still binds on the largest cases**: `scaffold` (47k prompt tokens) cut 2 of 3 scored runs in one
+attempt and 3 of 3 in the other, `model-info` (41k) cut 1 of 3 in each. `structured` — the case
+that was 4 of 4 cut under the old fixed ceiling — was **never cut in any dense scored run**, but
+that observation carries a confound the raw records expose: the dense model's smaller served
+window (61,696 vs the MoE's 71,936 — the dense figure is sourced earlier in this ADR; the MoE
+figure was read live off `lms ps` during the attempt and appears in no bench record, which log
+"context window unknown" for it) sent `structured` down ADR 005's diff-only rung
+(`hunksOnly: true`, ~28.6k prompt tokens) while the MoE reviewed whole files (~59.7k), so the
+dense "never cut" may only mean "much smaller input" — the two arms did not see the same request,
+and the case exercises a *different rung per model*, which any future cross-model reading of it
+must state. The MoE was cut once — in **20 scored runs**, not 36: the other 16 failed server-side
+and a failed run is missing data, not an observed non-cut. What still hits the ceiling is the dense model
+reasoning long on the biggest inputs; whether that residue is worth raising the ceiling for is a
+question for a corpus run that completes (OAI-19, after OAI-20).

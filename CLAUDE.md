@@ -72,9 +72,16 @@ the real CLI via `--json` and matched on a quoted anchor line — see
   204-second suite). `tests/helpers.mjs` `runCompanion` is async for this reason; `await` it.
 - `new URL('localhost:1234')` **parses** (scheme `localhost:`, null origin) — URL parsing alone does
   not validate a base URL, so `normalizeBaseUrl` also checks the protocol is http(s).
-- LM Studio is installed and usually serves `qwen3.6-35b-a3b-ud-mlx` on :1234, but it is only up
-  when started. Tests must stay network-free (fake server on an ephemeral port); use the stub for
-  manual runs when nothing is listening.
+- LM Studio is installed and usually serves models on :1234, but it is only up when started
+  (`-ud-mlx` quants are gone; current ids are `qwen/qwen3.6-27b` and `qwen/qwen3.6-35b-a3b`). Tests
+  must stay network-free (fake server on an ephemeral port); use the stub for manual runs when
+  nothing is listening.
+- **LM Studio dropped ~1/3 of long requests across four full-corpus bench invocations**
+  (27/72 runs, 2026-07-30, both models — so the locus is the shared serving path; the mechanism
+  and the role of sustained load are unresolved): empty completion (`finish_reason: unknown`) or a
+  stream drop ~50k chars into reasoning. It can also wedge with a model stuck `GENERATING`
+  (fix: `~/.lmstudio/bin/lms unload`). OAI-20 owns characterizing this before a client retry is
+  called sufficient; until it lands, expect long bench arms to lose runs.
 - A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
   for the same model here. `model-info.mjs` encodes this; never "simplify" it to the larger field.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.

@@ -309,3 +309,45 @@ was accidentally busting the cache for that mode alone. See
   arguable. The two experiments parked in OAI-12 — telling the model its reasoning budget, and
   whether a floor on `analysis` beats a bounded string — stay parked: running them here would use the
   instrument to justify itself.
+
+## The two-arm attempt, 2026-07-30 (OAI-19) — blocked, and what it measured anyway
+
+OAI-19 was designed to replace the struck pre-OAI-15 baseline with two comparable arms — dense
+`qwen/qwen3.6-27b` against MoE `qwen/qwen3.6-35b-a3b` (the `-ud-mlx` quant the old baseline ran is
+no longer served), full corpus, `--runs 3 --cold --max-seconds 1800`, one predeclared retry per
+arm with **every invocation reported**, and an acceptance gate of every case `scored=3` with no
+failed, truncated, unreadable or substituted runs. The gate and bounded-retry rule exist to avoid
+outcome-conditioned sampling: re-running until clean would bias reliability, timing and recall
+toward completions, so a failed attempt stays in the record beside its retry.
+
+**Neither arm ever passed the gate, so no arm is published as the measurement.** Four full-corpus
+invocations: dense failed 5/18 then 6/18 runs; MoE 10/18 then 6/18 — **27 of 72 (37.5%), all
+server-side**, every one either an empty completion (`finish_reason: unknown`, no message content)
+or a stream drop mid-reasoning (~50k chars in). Zero runs ended on the wall-clock cap; zero were
+answered by a substitute model. Between the dense attempts the server wedged outright — model stuck
+`GENERATING`, a trivial request receiving 0 bytes in 90 s — and needed a manual `lms unload`; that
+retry was aborted before any record landed and relaunched against a verified-healthy server, which
+is recorded in the arm log rather than silently discarded. Both models fail the same way, so the
+locus is server-side — though the mechanism inside the LM Studio serving path is unresolved, and
+"sustained load" is the observed correlate, not an established cause. The fix is filed as OAI-20
+(client-side classification of the two failure shapes and bounded per-attempt retries inside one
+invocation — arm-level re-runs re-pay every surviving `--cold` prefill, which this attempt proved
+twice).
+
+Bounded observations from the scored runs — quotable, but none of them the baseline: the dense
+model anchored two `scaffold` defects on the commit diff — *different* ones, one per attempt
+(`credential-inherited-across-origin` in attempt 1, `url-origin-strips-credentials` in attempt 2),
+each in one scored run of three, neither replicated in the other attempt. They are **not the
+benchmark's first anchored commit-diff matches**: `2026-07-28T07-57-15-522Z.json` records the same
+defect anchored on the same case in commit mode by the old MoE quant two days earlier, one of four
+anchored matches predating this attempt; the OAI-15 ceiling still binds for the
+dense model on the largest cases (`scaffold` cut 2/3 then 3/3) while `structured` — 4/4 cut under
+the old ceiling — was never cut in a dense scored run, though that comparison is confounded by the
+dense window sending `structured` down the diff-only rung (see ADR 008's 2026-07-30 section); and
+the MoE generates ~4× faster (~50–78 vs 13–17 tok/s, full arm ~25 min vs ~3 h) but produced only
+one range match (`anchored=0`) across its **20 scored runs** — the denominator is scored runs, not
+the 36 attempted: 16 failed server-side, and a failed run is missing data, not an observed miss.
+Raw records:
+`bench/results/2026-07-30T{10-37-25-889,13-41-30-372,14-06-27-605,14-42-10-361}Z.json`, rendered
+reports beside them as `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored — this section is the
+kept summary).
