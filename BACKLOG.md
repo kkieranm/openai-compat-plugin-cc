@@ -159,6 +159,18 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   decision, to test whether the failures were model-specific; they are not). Raw records
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
+- **OAI-21** — The bench keeps its own evidence and pays the model load itself, because the
+  2026-07-30 attempt needed both done by hand and one of them nearly wasn't. (1) `run.mjs` writes
+  the JSON record to `bench/results/` but prints the rendered Markdown report — the human-readable
+  form of the caveats — to stdout only; this session it survived because each arm's nohup log was
+  manually copied beside the record, and Codex's plan challenge had already flagged that a reused
+  log path would have silently overwritten arm 1's report. Write the rendered report to
+  `<stamp>.md` beside `<stamp>.json`, same gitignore rationale. (2) Each arm's first measured case
+  carried the JIT model load until a manual warm-up request was scripted around the bench;
+  `--cold` busts the prompt cache but does not pre-load the model, and load cost differs by model,
+  so a `--warm-up` step (one tiny unscored request to the resolved model before case 1) belongs in
+  the harness, reported in the record as having run. Land with OAI-20, before the OAI-19 re-run,
+  so the re-run's evidence and timing are clean by construction.
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
