@@ -100,7 +100,11 @@ Domain:
 
 - Prove changes with the repo `verify` skill (`.claude/skills/verify/SKILL.md`).
 - Review order: `advisor` → lean workflow (`.claude/workflows/review-lean.js`) per feature →
-  built-in `/code-review` (`medium` — both default and ceiling, 2026-07-29) once per milestone only.
+  the same lean workflow in **wide mode** (`--wide` args prefix: 5 finders, verifier cap 6) once per
+  milestone, or when a change introduces or alters a module carrying vendor/protocol assumptions —
+  which in this repo is most of them. Wide mode replaced the built-in `/code-review` here on
+  2026-07-30 after it died at its verifier fan-out on both OAI-16 and OAI-17 (dotfiles `adr/003`); the
+  built-in stays available at `medium` when typed by hand.
 - Every recurring defect class graduates from a reviewer's prompt to a structural test — size/growth
   is itself such a class and is guarded by `tests/structure.test.js` (ratchet allowlist; raising a
   ceiling is a deliberate commit that says why). `tests/plugin.test.js` guards the markdown command
