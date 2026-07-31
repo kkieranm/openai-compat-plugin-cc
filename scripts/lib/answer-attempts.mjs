@@ -48,6 +48,16 @@ export const RETRY_DELAY_MS = 2_000;
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The cap, as the error that names it — one shape, wherever expiry is noticed. */
+function capExpired(profile, maxMs) {
+  return budgetError('deadline', maxMs ?? 0, 0, profile.name, { serverResponded: false });
+}
+
+/** Is there another attempt to be had, and is this failure one worth spending it on? */
+function worthRetrying(error, attempt, maxAttempts) {
+  return attempt < maxAttempts && isRetryable(error);
+}
+
 /** Has the caller's wall-clock cap already passed? */
 function expired(expiresAt) {
   return Number.isFinite(expiresAt) && performance.now() >= expiresAt;
@@ -113,10 +123,12 @@ export async function answerWithRetry(profile, body, options) {
         }),
       );
     } catch (error) {
-      // Whether another attempt is even permitted, before asking whether it
-      // would be useful — a cap that has already passed makes the question moot.
-      const mayRetry = attempt < maxAttempts && isRetryable(error) && !expired(expiresAt);
-      if (!mayRetry) throw withLedger(error, ledger);
+      if (!worthRetrying(error, attempt, maxAttempts)) throw withLedger(error, ledger);
+      // The cap outranks the delivery error once it has fallen due, and says so.
+      // The post-wait check below does the same; rethrowing the delivery error
+      // here instead would file a wall-clock kill as a server drop depending
+      // only on which side of the sleep the deadline happened to land on.
+      if (expired(expiresAt)) throw withLedger(capExpired(profile, maxMs), ledger);
       process.stderr.write(
         `${profile.name} ${error.reason} on attempt ${attempt} of ${maxAttempts}; retrying in ${retryDelayMs / 1000}s.\n`,
       );
@@ -133,9 +145,7 @@ export async function answerWithRetry(profile, body, options) {
       // Rethrowing the delivery error here would file a wall-clock kill as a
       // server drop — inventing unreliability out of a limit we imposed, in the
       // record built to tell those two apart.
-      if (expired(expiresAt)) {
-        throw withLedger(budgetError('deadline', maxMs ?? 0, 0, profile.name, { serverResponded: false }), ledger);
-      }
+      if (expired(expiresAt)) throw withLedger(capExpired(profile, maxMs), ledger);
     }
   }
 }

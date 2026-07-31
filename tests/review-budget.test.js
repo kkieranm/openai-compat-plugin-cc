@@ -221,3 +221,28 @@ test('without the flag nothing is prepended, so ordinary runs stay cacheable', a
   assert.equal(result.status, 0, result.stderr);
   assert.ok(chatRequests(server)[0].body.messages[0].content.startsWith('You are a code reviewer.'));
 });
+
+test('a refusal whose replacement was never sent is recorded as a FAILURE, not negotiation', async () => {
+  // The same scenario as above, read off the attempt record rather than stderr.
+  // This is the regression guard that was missing: `degraded()` reclassifies the
+  // refused schema request as benign negotiation, and doing that *before*
+  // `degradedLadder` can refuse an oversized prompt reported a run that died as
+  // `0 failed, 1 refused` — a terminal failure dressed as capability
+  // negotiation, which is exactly what `refuseLast`'s contract forbids.
+  //
+  // It has to drive the real call sequence. A unit test over the ledger
+  // primitives passes whichever order `degraded()` uses, so it cannot see this.
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondJson(response, { error: 'response_format is not supported' }, 400),
+    { contextLength: 13_050, seed: `seed\n${'x'.repeat(29_000)}\n` },
+  );
+
+  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.error, true);
+  assert.equal(envelope.attempts.length, 1, 'only the schema request ever went on the wire');
+  assert.equal(envelope.attempts[0].outcome, 'failed', 'no replacement was sent, so this is not negotiation');
+});

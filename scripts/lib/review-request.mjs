@@ -217,13 +217,24 @@ function sharedRequest(profile, plan) {
  * refuse an oversized prompt without ever reaching `answerWithRetry`.
  */
 async function degraded({ profile, shared, ladder, send, ledger, error }) {
-  ledger?.refuseLast(error);
   try {
     // The instruction has to fit the window too, so the guard runs again —
     // *before* the retry is announced. Announcing first meant a guard refusal
     // arrived right after "Retrying without it", blaming the user's diff size
     // for a request that was never sent and a retry that never happened.
     const second = degradedLadder(shared, ladder);
+
+    // Only NOW is the refused attempt negotiation rather than a fault, and the
+    // ordering is the whole point. `degradedLadder` can refuse an oversized
+    // prompt — the degraded one is longer, since it carries the schema as prose
+    // — and then no replacement is ever sent. Reclassifying before it ran turned
+    // that terminal failure into `0 failed, 1 refused`: a run that died reported
+    // as benign capability negotiation, which is what `refuseLast`'s own
+    // contract forbids and what this record exists to prevent.
+    //
+    // `entries.at(-1)` is still the schema request here: `degradedLadder` calls
+    // `prepareRequest`, which builds messages and sends nothing.
+    ledger?.refuseLast(error);
 
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.

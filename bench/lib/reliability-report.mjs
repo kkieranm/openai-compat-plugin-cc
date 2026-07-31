@@ -54,9 +54,10 @@ export function reliabilitySection(results) {
   if (stats.refused > 0) {
     lines.push(
       `${stats.refused} attempt(s) were **refused for their shape**, not dropped — the server rejected a`
-      + ' capability (`stream_options` or streaming) and the next request, without it, was accepted. That is'
-      + ' permanent negotiation rather than unreliability, so those attempts are counted above but excluded'
-      + ' from the failure rate.',
+      + ' capability (`stream_options`, streaming, or a response schema) and the plugin sent a replacement'
+      + ' request without it. That is negotiation rather than unreliability, so those attempts are counted'
+      + ' above but excluded from the failure rate. **It says a replacement was sent, not that the'
+      + ' replacement succeeded** — if it failed in turn, that failure is counted on its own row.',
       '',
     );
   }

@@ -148,3 +148,18 @@ test('the request size is recorded, because the characterization asks for it', (
   ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } }).settle({});
   assert.ok(ledger.entries()[0].promptChars > 0);
 });
+
+test('a 400 that nobody reclassifies stays a failure', () => {
+  // The PRIMITIVE only. This deliberately does not claim to guard the ordering
+  // inside `degraded()` — a unit test over the ledger passes whichever order
+  // that function uses, which a reviewer proved by reverting the fix and
+  // watching this stay green. The ordering guard is the end-to-end test in
+  // `tests/review-budget.test.js`, which drives the real call sequence and
+  // asserts the recorded outcome.
+  const ledger = createLedger();
+  const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
+  ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
+    .fail(Object.assign(new Error('response_format unsupported'), { status: 400 }));
+
+  assert.equal(ledger.entries()[0].outcome, 'failed');
+});
