@@ -138,6 +138,18 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   decision, to test whether the failures were model-specific; they are not). Raw records
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
+- **OAI-23** — Tie a `refused` reclassification to the replacement request actually being
+  dispatched. Filed 2026-07-31, unresolved at the review cap (Codex adversarial, 0.99). `degraded()`
+  now calls `refuseLast()` only after `degradedLadder()` succeeds, which closes the oversize case —
+  but the replacement's own `capBudgets` pre-check can still refuse before dispatch, so a
+  deadline-bound run can leave a `refused` entry whose replacement was never sent. `postWithDegrade`'s
+  rung path has the same window: `handle.refuse()` closes the entry, then the next iteration's cap
+  check can throw. Narrower than the defect it replaced and the same class — a terminal failure
+  recorded as benign negotiation, which understates the reliability figure OAI-19 reads. Fix by
+  making the reclassification a consequence of the replacement entry being created, rather than a
+  statement made in advance of it, in both places. Add an end-to-end test where the deadline expires
+  between the refusal and the replacement dispatch.
+
 - **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
   model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
   (Codex, P2). Latent today — the corpus resolves to a single pair, so nothing is evicted — but
