@@ -162,7 +162,15 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `capBudgets` is called twice per dispatch — once as the pre-check that keeps an expired cap from
   minting a phantom ledger entry, once inside `postChat` — leaving a microsecond window where the
   first passes and the second throws, recreating the phantom it prevents. Close it by computing the
-  remaining budget once and passing it down.
+  remaining budget once and passing it down. **Added 2026-07-31 from the wide review** (which
+  completed on its third attempt, after dying twice on model unavailability): the capability
+  negotiation is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints
+  a fresh `createNegotiation` and re-offers a capability the schema request already had refused —
+  one wasted validation round trip and a duplicate `refused` entry. An asymmetry with the attempt
+  ledger, which *was* deliberately threaded across both calls. Filed rather than fixed because it
+  needs a server refusing BOTH `stream_options` and `response_format` to trigger, which nothing here
+  has: same "wait for a second server" bucket as OAI-13, and the harm is a request-validation 400
+  returned before any generation.
 
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
