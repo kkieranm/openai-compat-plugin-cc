@@ -99,8 +99,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   leave every prior number unusable and attribute the OAI-15 rule change to the model swap. So:
   both models, full corpus, `--runs 3` — N=1 is a lottery ticket, established twice in this file at
   the cost of two retracted claims — and one arm per model with nothing else varying.
-  Read off the same run, because it is already paid for: **whether OAI-15's wall-clock ceiling
-  still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
+  Read off the same run, because it is already paid for: **whether the JIT TTL can unload a model
+  under a long prefill** — OAI-20 asked this and deferred it here rather than assuming it. If a
+  10-minute idle TTL does not count a long prefill as activity, an unload mid-prefill produces
+  exactly an empty completion with `finish_reason: unknown`, which is the shape that dominated the
+  2026-07-30 failures. If that is the mechanism, `--warm-up` and pacing matter more than retry does,
+  and the attempt record now carries what would show it (`promptChars`, `waitedMs`, per-attempt
+  timings). **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
   `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a warm pass honestly.
   The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
   still only approximate — token counting need not be identical across models; wall-clock
@@ -149,6 +154,22 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   making the reclassification a consequence of the replacement entry being created, rather than a
   statement made in advance of it, in both places. Add an end-to-end test where the deadline expires
   between the refusal and the replacement dispatch.
+
+- **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
+  asked the characterization to break failures down "by model, case, request size, attempt number
+  and server state"; the first four landed (`promptChars` carries request size), and **server state
+  did not, because it is not observable from the client** — the plugin sees a socket, not a model
+  registry. That is the one axis that would settle the JIT-TTL hypothesis directly rather than by
+  inference: an attempt that failed against a server whose model had been *unloaded* is a different
+  event from one that failed under load, and today both land in the record as
+  `empty-completion`. The honest options, cheapest first: (a) accept the gap and infer from
+  `promptChars` + timings + failure clustering, which is what OAI-19 will do; (b) have the bench —
+  never the plugin, which must stay vendor-neutral per ADR 001 — sample `lms ps` around each case
+  and store it beside the record as harness metadata, clearly not part of the plugin's own
+  observation; (c) probe `/api/v0/models`, which reports `state` and `loaded_context_length` and is
+  already the LM Studio detection path in `model-info.mjs`, though reading it *per attempt* would
+  add a request to every failure. Decide before OAI-19's write-up quotes a mechanism, so the claim
+  is either measured or explicitly labelled an inference.
 
 - **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
   model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
