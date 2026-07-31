@@ -563,6 +563,25 @@ had warmed nothing and a first case still paying the model load. Invisible excep
 and a `durationMs` of 84ms against the expected ~11s was the only tell. Guarded now by
 `tests/bench-warm-up.test.js`.
 
+## A fix reported as landed that a stash cycle dropped, behind a test that could not see it
+
+Two failures compounding, 2026-07-31 (OAI-20). A `git stash push`/`pop` — run to test whether a slow
+suite was caused by the code or by machine load — silently dropped one file's edit. `git diff --stat`
+afterwards *listed that file as modified*, so the check that should have caught it read as fine. And
+the regression test written for the lost fix was **vacuous**: its subject was the ORDER of two calls
+inside `degraded()`, but it hand-built the ledger and exercised the primitives directly, so it passed
+identically with and without the fix. The suite was green, the commit message said the fix had
+landed, and neither was true. What caught it was a reviewer reverting the fix and observing the suite
+stay green.
+
+Two rules, and the second is the load-bearing one:
+
+- **After any stash, checkout or restore cycle, re-verify the specific edits by CONTENT** — grep for
+  the changed line — never by `--stat`, which reports a file as modified whatever survived in it.
+- **A test whose subject is call ordering must drive the call.** Testing the primitives it orders
+  proves nothing about the order, and reads as coverage. The general form: when a test's claim is
+  about *where* something happens, exercising *what* it does cannot establish it.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly
