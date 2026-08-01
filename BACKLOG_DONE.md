@@ -2,6 +2,43 @@
 
 Newest first.
 
+- **OAI-23** — Tie a `refused` reclassification to the replacement request actually being dispatched.
+  Completed 2026-08-01. `refused` is the ledger's third outcome, meaning the server rejected the
+  request's SHAPE and the plugin then sent a different one that worked — benign negotiation,
+  excluded from the failure count. Both call sites *stated* it before the replacement went out, and
+  the replacement could then never go out at all, so a run that died could read `0 failed,
+  1 refused`: a terminal failure dressed as negotiation, understating exactly the reliability figure
+  OAI-19 reads.
+  The fix makes it structural rather than ordered. `refuse()` and `refuseLast()` now close the entry
+  as the failure it is and *register* a pending reclassification; `attempt-ledger.mjs`'s `begin` is
+  the only place `refused` is ever written, and it writes it as the first act after the replacement
+  entry exists — no replacement, no reclassification. An abandoned refusal keeps a named terminal
+  reason, **`shape-rejected`**, because a 400 carries `.status` and never `.reason` and the bench
+  would otherwise tally it as `unclassified` beside genuinely unrecognised failures. A *flipped*
+  entry keeps `reason: null`, deliberately, so it stays byte-identical to the records OAI-19 is
+  differenced against. `attempt-ledger.mjs` crossed the file budget and split, with
+  `attempt-outcome.mjs` taking what one request's ending means. See
+  [ADR 012](adr/012-surviving-the-server.md).
+  **The end-to-end deadline test the original entry asked for was not written, and that is a
+  finding rather than an omission.** The transport arms the remaining wall-clock cap as its own
+  deadline, so a request cannot *complete* after expiry — which leaves the window between a refusal
+  and the next `capBudgets` only a few call frames wide. An e2e trying to land an expiry inside it
+  would be a coin flip, and a flaky test is worse than none. What shipped instead: unit coverage on
+  both call-site APIs with no following `begin()`, positive controls driving each call site's real
+  sequence end to end, the existing oversize e2e extended to assert the reason, and — after the wide
+  review proved by mutation that nothing pinned it — a **structural guard** that `capBudgets`
+  precedes `ledger.begin` in `postWithDegrade`. Moving that call had left all 370 tests green while
+  reopening the defect; the guard is now the only thing that catches it, and the class went into
+  `.claude/REPO_TRAPS.md` as *an ordering that carries an invariant, pinned by nothing*.
+  Two residues are recorded, not hidden. Ledger-entry creation is still not proof of *dispatch*,
+  because `postChat` checks `capBudgets` a second time before `request()` sends — imprecise rather
+  than false, since the run still reads as dead, and closed by **OAI-22**'s compute-the-budget-once
+  fix, which is the only fix for it. And whether the structural guard should be a behavioural test
+  behind an injected clock is **OAI-25**, raised in the terminal review pass.
+  Review: three ladder passes, no stage skipped. Pass 1 accepted two findings, pass 2 three, pass 3
+  terminal with two recorded. The wide stage died once at its scope agent and was resumed rather
+  than read as clean.
+
 - **OAI-20** — Survive the server: classify LM Studio's delivery failures and retry the attempt.
   Completed 2026-07-31. Four shapes now carry structured reason codes assigned where they are
   detected — `empty-completion`, `stream-unfinished`, `transport`, and a **fourth the item did not

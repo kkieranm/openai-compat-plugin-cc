@@ -41,9 +41,16 @@ the OAI-19 re-measure was attempted 2026-07-30 and blocked by server reliability
 until it completes, there is no baseline number for OAI-9 or OAI-11 to be scored against — though
 OAI-20/OAI-21 (2026-07-31) removed what blocked it and gave the re-run an attempt-level record, a
 warm-up and a control arm. 11 defects are catalogued, but 5 belong to the two cases whose
-runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule is OAI-19, now the top item —
-OAI-20 and OAI-21 landed on 2026-07-31 and unblocked it** — because everything below wants a
-number to beat and the methodology note below is exactly about this. One of its two headline results is now retracted
+runs were cut mid-reasoning and are unscored rather than missed. **Re-measuring it under today's rule is OAI-19 —
+OAI-20 and OAI-21 landed on 2026-07-31 and unblocked it** — because everything below it wants a
+number to beat and the methodology note below is exactly about this.
+**Reordered 2026-08-01: OAI-19 sits behind its prerequisites rather than ahead of them.** Two of
+them change what the run would measure — OAI-23 fixed an attempt record that could file a terminal
+failure as benign negotiation, which is the reliability figure OAI-19 reads, and OAI-22's
+`--warm-up` lets one warm-up evict the last on a single-resident provider, which is exactly the
+two-arm case OAI-19 runs — and OAI-24 must be decided before the write-up quotes a mechanism.
+Landing them afterwards would mean running the corpus twice. **OAI-23 is done (2026-08-01)**; OAI-22
+and OAI-24 remain, so the order is OAI-22 → OAI-24 → OAI-19. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -83,9 +90,69 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
+- **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
+  model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
+  (Codex, P2). Latent today — the corpus resolves to a single pair, so nothing is evicted — but
+  `--warm-up` exists precisely for the multi-model case, which is what OAI-19 runs, and there the
+  first case of the earlier model still pays the load the flag promises to remove. Fix by
+  interleaving: warm each pair immediately before the first case that uses it, or group execution by
+  pair. Two smaller items from the same review, both bounded and neither corrupting a measurement:
+  the `transport` reason code spans non-transient causes, so a hostname that will never resolve is
+  retried three times with delays before reporting the same error (narrow it by `error.code`); and
+  `capBudgets` is called twice per dispatch — once as the pre-check that keeps an expired cap from
+  minting a phantom ledger entry, once inside `postChat` — leaving a microsecond window where the
+  first passes and the second throws, recreating the phantom it prevents. Close it by computing the
+  remaining budget once and passing it down. **That sub-item grew a second consequence on
+  2026-08-01**, raised by both Codex stages of the OAI-23 review and deferred here rather than
+  fixed there: it is also the last gap between "a replacement ledger entry exists" and "the
+  replacement was dispatched", so until it lands a cap falling due inside it leaves a `refused`
+  entry beside a phantom `failed` one. Imprecise rather than false — the run still reads as dead,
+  which is the OAI-23 defect proper — but this fix is the only one that closes it, since
+  `capBudgets` is the sole thing standing between `ledger.begin` and `request()`. **Added 2026-07-31 from the wide review** (which
+  completed on its third attempt, after dying twice on model unavailability): the capability
+  negotiation is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints
+  a fresh `createNegotiation` and re-offers a capability the schema request already had refused —
+  one wasted validation round trip and a duplicate `refused` entry. An asymmetry with the attempt
+  ledger, which *was* deliberately threaded across both calls. Filed rather than fixed because it
+  needs a server refusing BOTH `stream_options` and `response_format` to trigger, which nothing here
+  has: same "wait for a second server" bucket as OAI-13, and the harm is a request-validation 400
+  returned before any generation.
+
+- **OAI-25** — Make the `postWithDegrade` ordering invariant reachable behaviourally, instead of only
+  structurally. Filed 2026-08-01 from the OAI-23 review (Codex adversarial, medium/0.98), raised in
+  the third and terminal pass, so recorded rather than fixed. OAI-23 ships a source-text guard in
+  `tests/structure.test.js` asserting `capBudgets` precedes `ledger.begin` — which does catch the
+  real regression (proved by mutation: moving the call left 370/370 green while reopening the defect
+  on the capability-rung path). The objection is that a structural guard cannot prove the *runtime*
+  order it stands for, and that the invariant is behaviourally testable after all: inject a `now`
+  seam into the budget calculation, drive `postWithDegrade` with a controlled clock and a fake 400,
+  and assert the second request is absent while the entry stays `failed`/`shape-rejected`. Not done
+  in OAI-23 for two reasons worth keeping: the pass was terminal, and it changes production code for
+  testability, which deserves its own grill rather than a batch fix. Sits beside OAI-22 because they
+  touch the same window; if OAI-22's compute-the-budget-once fix lands first, re-ask whether this is
+  still worth a seam — with only one `capBudgets` call left, the gap it would test narrows again.
+
+- **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
+  asked the characterization to break failures down "by model, case, request size, attempt number
+  and server state"; the first four landed (`promptChars` carries request size), and **server state
+  did not, because it is not observable from the client** — the plugin sees a socket, not a model
+  registry. That is the one axis that would settle the JIT-TTL hypothesis directly rather than by
+  inference: an attempt that failed against a server whose model had been *unloaded* is a different
+  event from one that failed under load, and today both land in the record as
+  `empty-completion`. The honest options, cheapest first: (a) accept the gap and infer from
+  `promptChars` + timings + failure clustering, which is what OAI-19 will do; (b) have the bench —
+  never the plugin, which must stay vendor-neutral per ADR 001 — sample `lms ps` around each case
+  and store it beside the record as harness metadata, clearly not part of the plugin's own
+  observation; (c) probe `/api/v0/models`, which reports `state` and `loaded_context_length` and is
+  already the LM Studio detection path in `model-info.mjs`, though reading it *per attempt* would
+  add a request to every failure. Decide before OAI-19's write-up quotes a mechanism, so the claim
+  is either measured or explicitly labelled an inference.
+
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
-  arm is read as an improvement. **This is a measurement, not a feature, and OAI-20/OAI-21 have now
-  unblocked it (2026-07-31), so it is the top item — every item below it wants a number to beat.**
+  arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
+  (2026-07-31); the three items above it are its prerequisites, not competitors, and every item
+  below it wants a number to beat.** It is also the one item here that is hours of wall clock on the
+  user's own LM Studio rather than an edit, so it is launched when they say so, never incidentally.
   Run it with `--warm-up` and `--max-attempts 3`, and take a `--max-attempts 1` control arm on at
   least one case so the record shows what retry was worth rather than only the retried rate. The recorded baseline — **1 of 6 scoreable defects,
   10.9 minutes, N=1** — was computed under the pre-OAI-15 rule that *excluded* cut runs from the
@@ -143,55 +210,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   decision, to test whether the failures were model-specific; they are not). Raw records
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
-- **OAI-23** — Tie a `refused` reclassification to the replacement request actually being
-  dispatched. Filed 2026-07-31, unresolved at the review cap (Codex adversarial, 0.99). `degraded()`
-  now calls `refuseLast()` only after `degradedLadder()` succeeds, which closes the oversize case —
-  but the replacement's own `capBudgets` pre-check can still refuse before dispatch, so a
-  deadline-bound run can leave a `refused` entry whose replacement was never sent. `postWithDegrade`'s
-  rung path has the same window: `handle.refuse()` closes the entry, then the next iteration's cap
-  check can throw. Narrower than the defect it replaced and the same class — a terminal failure
-  recorded as benign negotiation, which understates the reliability figure OAI-19 reads. Fix by
-  making the reclassification a consequence of the replacement entry being created, rather than a
-  statement made in advance of it, in both places. Add an end-to-end test where the deadline expires
-  between the refusal and the replacement dispatch.
-
-- **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
-  asked the characterization to break failures down "by model, case, request size, attempt number
-  and server state"; the first four landed (`promptChars` carries request size), and **server state
-  did not, because it is not observable from the client** — the plugin sees a socket, not a model
-  registry. That is the one axis that would settle the JIT-TTL hypothesis directly rather than by
-  inference: an attempt that failed against a server whose model had been *unloaded* is a different
-  event from one that failed under load, and today both land in the record as
-  `empty-completion`. The honest options, cheapest first: (a) accept the gap and infer from
-  `promptChars` + timings + failure clustering, which is what OAI-19 will do; (b) have the bench —
-  never the plugin, which must stay vendor-neutral per ADR 001 — sample `lms ps` around each case
-  and store it beside the record as harness metadata, clearly not part of the plugin's own
-  observation; (c) probe `/api/v0/models`, which reports `state` and `loaded_context_length` and is
-  already the LM Studio detection path in `model-info.mjs`, though reading it *per attempt* would
-  add a request to every failure. Decide before OAI-19's write-up quotes a mechanism, so the claim
-  is either measured or explicitly labelled an inference.
-
-- **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
-  model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
-  (Codex, P2). Latent today — the corpus resolves to a single pair, so nothing is evicted — but
-  `--warm-up` exists precisely for the multi-model case, which is what OAI-19 runs, and there the
-  first case of the earlier model still pays the load the flag promises to remove. Fix by
-  interleaving: warm each pair immediately before the first case that uses it, or group execution by
-  pair. Two smaller items from the same review, both bounded and neither corrupting a measurement:
-  the `transport` reason code spans non-transient causes, so a hostname that will never resolve is
-  retried three times with delays before reporting the same error (narrow it by `error.code`); and
-  `capBudgets` is called twice per dispatch — once as the pre-check that keeps an expired cap from
-  minting a phantom ledger entry, once inside `postChat` — leaving a microsecond window where the
-  first passes and the second throws, recreating the phantom it prevents. Close it by computing the
-  remaining budget once and passing it down. **Added 2026-07-31 from the wide review** (which
-  completed on its third attempt, after dying twice on model unavailability): the capability
-  negotiation is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints
-  a fresh `createNegotiation` and re-offers a capability the schema request already had refused —
-  one wasted validation round trip and a duplicate `refused` entry. An asymmetry with the attempt
-  ledger, which *was* deliberately threaded across both calls. Filed rather than fixed because it
-  needs a server refusing BOTH `stream_options` and `response_format` to trigger, which nothing here
-  has: same "wait for a second server" bucket as OAI-13, and the harm is a request-validation 400
-  returned before any generation.
 
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
@@ -211,6 +229,7 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   a per-pass average meaningless, and any timing quoted for "a review" must say whether it is the
   cold one. OAI-18 landed `prefillMs`/`generationMs`, so this is now visible per pass rather than
   hidden inside a total; use them when costing this.
+
 - **OAI-11** — Diverse passes: different models, and different lenses.
   **Check the rate metric before comparing across *servers*.** OAI-17's `gen tok/s` divides
   provider-reported `completion_tokens` by a window running from the first text frame to the end of
@@ -235,13 +254,17 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   target — then this is a config change, not a rewrite. Open question worth an experiment before
   committing: whether three lenses on one model beats three plain passes, since that would deliver
   most of the value with no second model to install.
+
 - **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.
   Port the reference plugin's generic job model (per-workspace state dir, light index + per-job
   record, detached self re-exec worker); replace its RPC interrupt with an `AbortController`.
+
 - **OAI-5** — A delegation subagent (`/oai:rescue` + a thin forwarding agent) so a long local-model
   run does not consume the main session's context.
+
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
+
 - **OAI-13** — Vendor-dependent findings that need a second server to settle. **Now six.** Added
   2026-07-28 from the OAI-6 built-in review: `refusedField` accepts 400/422 and pattern-matches the
   quoted error body, so a validation error that *echoes the request JSON* contains `stream` and

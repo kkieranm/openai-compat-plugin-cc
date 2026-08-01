@@ -210,31 +210,31 @@ function sharedRequest(profile, plan) {
  * The request that follows a refused schema, and the ledger discipline around it.
  *
  * Lifted out of `requestFindings` at the function size budget. Two things happen
- * here that cannot happen anywhere else: the refused attempt is recorded as
+ * here that cannot happen anywhere else: the refused attempt is offered up as
  * NEGOTIATION rather than a fault — this is the only layer that knows a fallback
- * actually follows, which a status code alone never establishes — and every error
- * leaving the branch carries the shared ledger, because `degradedLadder` can
- * refuse an oversized prompt without ever reaching `answerWithRetry`.
+ * is meant to follow, which a status code alone never establishes — and every
+ * error leaving the branch carries the shared ledger, because `degradedLadder`
+ * can refuse an oversized prompt without ever reaching `answerWithRetry`.
  */
 async function degraded({ profile, shared, ladder, send, ledger, error }) {
   try {
+    // The refused attempt is *predicted* to be negotiation, and settled as such
+    // only when the replacement is actually created — `refuseLast` registers,
+    // `ledger.begin` decides (OAI-23). That is what lets it run first: two
+    // things after it can stop the replacement ever being sent — `degradedLadder`
+    // refusing an oversized prompt (the degraded prompt is longer, carrying the
+    // schema as prose) and the replacement's own wall-clock cap check — and in
+    // both the entry is left saying what it is, a failure named `shape-rejected`
+    // rather than `0 failed, 1 refused`, a run that died dressed as benign
+    // negotiation. Ordering used to be the whole guard, and covered only the
+    // first of those.
+    ledger?.refuseLast(error);
+
     // The instruction has to fit the window too, so the guard runs again —
     // *before* the retry is announced. Announcing first meant a guard refusal
     // arrived right after "Retrying without it", blaming the user's diff size
     // for a request that was never sent and a retry that never happened.
     const second = degradedLadder(shared, ladder);
-
-    // Only NOW is the refused attempt negotiation rather than a fault, and the
-    // ordering is the whole point. `degradedLadder` can refuse an oversized
-    // prompt — the degraded one is longer, since it carries the schema as prose
-    // — and then no replacement is ever sent. Reclassifying before it ran turned
-    // that terminal failure into `0 failed, 1 refused`: a run that died reported
-    // as benign capability negotiation, which is what `refuseLast`'s own
-    // contract forbids and what this record exists to prevent.
-    //
-    // `entries.at(-1)` is still the schema request here: `degradedLadder` calls
-    // `prepareRequest`, which builds messages and sends nothing.
-    ledger?.refuseLast(error);
 
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.

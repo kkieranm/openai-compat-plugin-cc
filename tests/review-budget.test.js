@@ -245,4 +245,9 @@ test('a refusal whose replacement was never sent is recorded as a FAILURE, not n
   assert.equal(envelope.error, true);
   assert.equal(envelope.attempts.length, 1, 'only the schema request ever went on the wire');
   assert.equal(envelope.attempts[0].outcome, 'failed', 'no replacement was sent, so this is not negotiation');
+  // Named, not null. A 400 from `provider.mjs` carries `.status` and never
+  // `.reason`, so an abandoned refusal left unclassified would be tallied by the
+  // bench beside genuinely unrecognised failures — a hole in the record OAI-19
+  // reads reliability off (OAI-23).
+  assert.equal(envelope.attempts[0].reason, 'shape-rejected');
 });

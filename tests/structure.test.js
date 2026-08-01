@@ -182,3 +182,41 @@ test('allowlist entries all carry a reason', () => {
     assert.ok(entry.reason?.length > 10, `${path} allowlisted without a real reason`);
   }
 });
+
+/**
+ * Confirmed by the OAI-23 wide review, which proved it by mutation: moving
+ * `capBudgets` below `ledger.begin` in `postWithDegrade` left all 370 tests
+ * green while reopening the exact defect OAI-23 closed on the capability-rung
+ * path — a refusal reclassified as benign negotiation for a replacement that was
+ * never dispatched, plus a phantom entry for it.
+ *
+ * The class, which is what earns a guard rather than a test: **an ordering that
+ * carries an invariant, pinned by nothing**. Two statements swap, the suite stays
+ * green, and the invariant is gone. It cannot be reached behaviourally here — the
+ * window between them is a few call frames, and the transport arms the remaining
+ * cap as its own deadline, so a request cannot complete after expiry — which is
+ * precisely why it needs a structural guard instead.
+ *
+ * Comments are stripped first: both tokens now appear in the prose that explains
+ * this very ordering, and a guard matching those would pass vacuously. Absence of
+ * either token FAILS rather than silently passing, so a rename breaks the test
+ * instead of disabling it.
+ */
+test('the wall-clock cap is checked before a ledger entry is minted, not after', () => {
+  const source = withoutComments(readFileSync(join(ROOT, 'scripts/lib/chat.mjs'), 'utf8')).split('\n');
+  const start = source.findIndex((line) => /^export async function postWithDegrade\b/.test(line));
+  assert.ok(start >= 0, 'postWithDegrade not found — was it renamed? Update this guard, do not delete it.');
+  const end = source.indexOf('}', start);
+  assert.ok(end > start, 'could not find the end of postWithDegrade');
+  const body = source.slice(start, end).join('\n');
+
+  const cap = body.indexOf('capBudgets(');
+  const begin = body.indexOf('.begin(');
+  assert.ok(cap >= 0, 'postWithDegrade no longer calls capBudgets — was it renamed? Update this guard.');
+  assert.ok(begin >= 0, 'postWithDegrade no longer calls ledger.begin — was it renamed? Update this guard.');
+  assert.ok(
+    cap < begin,
+    'capBudgets must run BEFORE ledger.begin: an entry minted first files a request that never went ' +
+      'on the wire as a physical attempt, and settles a pending refusal that nothing replaced (OAI-23).',
+  );
+});

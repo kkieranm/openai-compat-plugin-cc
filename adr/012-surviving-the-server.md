@@ -88,6 +88,17 @@ Three details are load-bearing, and each was found by a reviewer rather than des
   100% of shaped requests**. Crucially, `refused` is recorded by the layer that actually *sends* the
   replacement, never inferred from a status: a context-limit rejection is also a 400, no fallback
   follows it, and calling it refused would hide a terminal failure.
+  **Amended 2026-08-01 (OAI-23), tightening that provenance rather than changing it.** "The layer
+  that sends" originally *wrote* the outcome, which made it a claim staked before the sending
+  happened — and several things can stop a replacement between the refusal and the wire, chiefly the
+  wall-clock cap. So a refusal is now **registered** by that layer and **settled by
+  `attempt-ledger.mjs`'s `begin`**, as a consequence of the replacement entry existing: no
+  replacement, no reclassification. A refusal nothing replaced therefore stays `failed`, carrying
+  the terminal reason **`shape-rejected`** — the server rejected the request's shape and nothing was
+  accepted in its place. A *flipped* entry keeps `reason: null`, so it stays byte-identical to the
+  records made before this change. `shape-rejected` is deliberately not in `failure-shape.mjs`:
+  that file is a taxonomy of delivery failures with the retry whitelist built on it, and this is an
+  HTTP validation rejection, which must never be retried.
 - **The ledger is attached to the error on every terminal rethrow.** A run whose every attempt died
   carries the most reliability evidence and is the easiest to lose, because nobody looks for a
   record on the failure path.

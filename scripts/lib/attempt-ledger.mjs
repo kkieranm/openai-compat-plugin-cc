@@ -1,4 +1,4 @@
-import { COMPLETION_SHAPES } from './failure-shape.mjs';
+import { closeHandle, pendUntilReplaced, reclassifiable } from './attempt-outcome.mjs';
 
 /**
  * Every request that actually went on the wire, and how each one ended.
@@ -17,96 +17,64 @@ import { COMPLETION_SHAPES } from './failure-shape.mjs';
  * and drop the structured request out of the record entirely — which is the same
  * shape as the counter reset that `retried` has been papering over with
  * `|| !structured`.
- */
-
-/**
- * Did this failed request plausibly reach the model's prefill?
  *
- * `error.status` is the discriminator: an HTTP error status is a validation
- * refusal, returned before any generation — the reading `review-report.mjs`
- * already states as this repo's observed behaviour. It matters because a
- * capability degrade is exactly that shape and changes only
- * `stream`/`stream_options`, leaving the messages byte-identical. Counting one
- * as a dispatch marked every degraded run's *answering* attempt warm-eligible,
- * and so silently emptied the benchmark's cold prefill column on any server that
- * refuses `stream_options`.
+ * What an individual entry's ending means lives in `attempt-outcome.mjs`.
+ */
+
+/**
+ * The one refusal that may be awaiting its replacement, and the act of settling
+ * it. Lifted out of `createLedger` at the function size budget.
  *
- * The conservatism runs deliberately in this direction. Over-marking DELETES
- * real measurements with no trace; under-marking quotes a possibly warm figure
- * beside a caveat that says so. Only the second failure is one a reader can see.
+ * One slot, because a refusal is registered immediately before its replacement
+ * is dispatched and nothing dispatches concurrently against one ledger: the rung
+ * path loops straight from `refuse()` into the next `begin`, and `degraded()`'s
+ * next model operation is the replacement. It holds the ENTRY, not "the last
+ * one", so the flip can only land on the request it was registered for.
  */
-function reachedTheModel(error, timings) {
-  // A status is an HTTP-level refusal: the server rejected the request shape
-  // and never read the prompt as a prompt.
-  if (error?.status !== undefined) return false;
-  // A completion-level refusal means bytes DID arrive — the server produced a
-  // reply document and `finishAnswer` judged it unusable — so the prompt was
-  // processed and a repeat of it could be served warm.
-  if (COMPLETION_SHAPES.has(error?.reason)) return true;
-  // Otherwise the evidence has to be MODEL output, not bytes. `received` counts
-  // every byte off the socket including SSE keepalive comments and role-only
-  // frames, none of which prove the prompt was prefilled — and a connection that
-  // died carrying only those never delivered a prompt worth caching. A measured
-  // `prefillMs` is the honest signal: it is stamped at the first frame that
-  // carried actual text, so it exists only once the model has begun answering.
-  return timings?.prefillMs !== null && timings?.prefillMs !== undefined;
-}
-
-/**
- * The entry, with a hook letting a layer that never held its handle reclassify
- * it. Non-enumerable: entries are serialized straight into the benchmark record,
- * and a function there would be dropped by `JSON.stringify` anyway — this keeps
- * it out of the recorded shape entirely.
- */
-function reclassifiable(entry) {
-  return Object.defineProperty(entry, 'markRefused', {
-    value: (error) => {
-      entry.outcome = 'refused';
-      entry.reason = error?.reason ?? null;
-    },
-  });
-}
-
-/**
- * The three ways an entry can close, lifted out of `begin` at the function size
- * budget. `dispatched` is threaded in because warm-eligibility is decided by
- * what a request turned out to be, not by what it was when it left.
- */
-function closeHandle(entry, key, dispatched) {
+function refusalSlot() {
+  let awaiting = null;
   return {
-    settle({ prefillMs = null, generationMs = null } = {}) {
-      entry.outcome = 'answered';
-      entry.prefillMs = prefillMs;
-      entry.generationMs = generationMs;
-      dispatched.add(key);
+    pend(pending) {
+      awaiting = pending;
     },
-    /**
-     * The server rejected the request SHAPE, and the plugin then sent a
-     * different one that worked. A third outcome rather than a failure,
-     * because capability negotiation is routine and permanent — a server
-     * that refuses `stream_options` refuses it every time — and counting it
-     * as unreliability would report a server answering 100% of shaped
-     * requests as failing half of them. That is the inversion this whole
-     * record exists to prevent, running the other way.
-     */
-    refuse(error) {
-      entry.outcome = 'refused';
-      entry.reason = error?.reason ?? null;
+    settle() {
+      if (!awaiting) return;
+      awaiting.entry.markRefused(awaiting.error);
+      awaiting = null;
     },
-    /**
-     * Timings are kept for a failure too, when there are any. A stream that
-     * died after 50,000 characters of reasoning measured a real prefill and
-     * a real partial generation, and discarding them leaves the record
-     * unable to say whether failures cluster before or after the first
-     * token — which is the first question anyone asks of this data.
-     */
-    fail(error, timings = {}) {
-      const { prefillMs = null, generationMs = null } = timings;
-      entry.outcome = 'failed';
-      entry.reason = error?.reason ?? null;
-      entry.prefillMs = prefillMs;
-      entry.generationMs = generationMs;
-      if (reachedTheModel(error, { prefillMs })) dispatched.add(key);
+  };
+}
+
+/**
+ * The open entry for a request about to go out, and the cache key it is filed
+ * under. Lifted out of `begin` at the function size budget.
+ *
+ * The key pairs the requested model with the serialized messages, because
+ * warm-eligibility is a question about the prompt a server could have cached —
+ * not about which attempt number this is.
+ */
+function newEntry(index, { body, cause, waitedMs }, dispatched) {
+  const serialized = JSON.stringify(body?.messages ?? null);
+  const key = `${body?.model ?? ''} ${serialized}`;
+  return {
+    key,
+    entry: {
+      index,
+      cause,
+      // Request size, which OAI-20 asks the characterization to record — the
+      // axis that says whether failures cluster on large prompts. Characters
+      // rather than tokens: this layer has no tokenizer, so a character count
+      // is a measurement where a token figure would be an estimate.
+      promptChars: serialized === 'null' ? null : serialized.length,
+      warmEligible: dispatched.has(key),
+      // Time spent deliberately waiting before this request, so the cost of
+      // pacing is visible in the record rather than hidden inside the run's
+      // total duration.
+      waitedMs,
+      outcome: null,
+      reason: null,
+      prefillMs: null,
+      generationMs: null,
     },
   };
 }
@@ -131,6 +99,7 @@ function closeHandle(entry, key, dispatched) {
 export function createLedger() {
   const entries = [];
   const dispatched = new Set();
+  const refusal = refusalSlot();
 
   return {
     /**
@@ -145,41 +114,35 @@ export function createLedger() {
      * prevent.
      */
     begin({ body, cause, waitedMs = 0 }) {
-      const serialized = JSON.stringify(body?.messages ?? null);
-      const key = `${body?.model ?? ''} ${serialized}`;
-      const entry = {
-        index: entries.length + 1,
-        cause,
-        // Request size, which OAI-20 asks the characterization to record — the
-        // axis that says whether failures cluster on large prompts. Characters
-        // rather than tokens: this layer has no tokenizer, so a character count
-        // is a measurement where a token figure would be an estimate.
-        promptChars: serialized === 'null' ? null : serialized.length,
-        warmEligible: dispatched.has(key),
-        // Time spent deliberately waiting before this request, so the cost of
-        // pacing is visible in the record rather than hidden inside the run's
-        // total duration.
-        waitedMs,
-        outcome: null,
-        reason: null,
-        prefillMs: null,
-        generationMs: null,
-      };
+      const { entry, key } = newEntry(entries.length + 1, { body, cause, waitedMs }, dispatched);
       entries.push(reclassifiable(entry));
-      return closeHandle(entry, key, dispatched);
+      // Settled only once the replacement entry EXISTS, so after the push, not
+      // before: `newEntry` serializes the body and `JSON.stringify` can throw,
+      // and settling first would reclassify the refusal with no replacement to
+      // show for it — this same defect in miniature. The only place `refused` is
+      // ever written.
+      refusal.settle();
+      return closeHandle(entry, key, dispatched, refusal.pend);
     },
 
     /**
-     * Re-close the most recent entry as negotiation rather than failure.
+     * The most recent entry is a refusal whose replacement is about to be sent.
      *
-     * Called by the layer that actually SENT a different shape — never inferred
-     * from a status code. A 400 alone does not mean negotiation happened: a
-     * context-limit rejection and an invalid request are also 400s, no fallback
-     * follows them, and marking those `refused` would hide a terminal failure
-     * from the reliability count while claiming a different shape was accepted.
+     * Called by the layer that actually sends the different shape — never
+     * inferred from a status code. A 400 alone does not mean negotiation
+     * happened: a context-limit rejection and an invalid request are also 400s,
+     * no fallback follows them, and marking those `refused` would hide a
+     * terminal failure from the reliability count while claiming a different
+     * shape was accepted.
+     *
+     * And "about to be sent" is not "was sent" — the narrower version of the
+     * same defect, since the replacement's own cap check can refuse it before it
+     * reaches the wire. So this registers the reclassification and leaves the
+     * entry closed as the failure it is; `begin` settles it.
      */
     refuseLast(error) {
-      entries.at(-1)?.markRefused?.(error);
+      const entry = entries.at(-1);
+      if (entry) pendUntilReplaced(entry, error, refusal.pend);
     },
 
     entries: () => entries,

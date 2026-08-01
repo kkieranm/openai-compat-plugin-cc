@@ -582,6 +582,31 @@ Two rules, and the second is the load-bearing one:
   proves nothing about the order, and reads as coverage. The general form: when a test's claim is
   about *where* something happens, exercising *what* it does cannot establish it.
 
+## An ordering that carries an invariant, pinned by nothing
+
+**Confirmed 2026-08-01** by the OAI-23 wide review, which proved it by mutation rather than by
+argument: moving `capBudgets` below `ledger.begin` in `postWithDegrade` left all 370 tests green
+while reopening the exact defect OAI-23 had just closed on the capability-rung path — a refusal
+reclassified as benign negotiation for a replacement that was never dispatched, plus a phantom
+ledger entry for a request that never went on the wire.
+
+This is the sibling of the vacuous-ordering-test trap above, and the harder one. There the test
+existed and proved nothing. Here **no test existed at all**, because the two statements sit a few
+call frames apart and the window between them cannot be reached behaviourally: the transport arms
+the remaining cap as its own deadline, so a request can never *complete* after expiry, and any
+end-to-end test trying to land an expiry in that gap is a coin flip.
+
+- **When an invariant is carried by the ORDER of two adjacent statements, and the gap between them
+  is too small to reach behaviourally, write a structural guard** — a source-text assertion that one
+  precedes the other, in `tests/structure.test.js`. Timing cannot pin it and a behavioural test that
+  tries will be flaky, which is worse than none.
+- **Strip comments first** (`withoutComments`), or the guard matches the prose explaining the
+  ordering and passes vacuously.
+- **Absence of either token must FAIL**, not silently pass. A rename has to break the guard, not
+  disable it.
+- The tell that you need one: you have just written a code comment explaining why two lines are in
+  the order they are in. That comment is an invariant with no test.
+
 ## Reviewer notes that are not yet defect classes
 
 - Watch for silent truncation creeping into the context guard. The whole design says refuse loudly

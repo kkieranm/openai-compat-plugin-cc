@@ -173,7 +173,18 @@ export async function postWithDegrade(profile, budgets, negotiation) {
       return { ...result, handle };
     } catch (error) {
       const rung = RUNGS.find((candidate) => !negotiation.removed.has(candidate.name) && candidate.matches(error));
-      // Closed as what it was: a refused SHAPE is negotiation, not unreliability.
+      // A refused SHAPE is negotiation, not unreliability — but only once the
+      // different shape has actually been dispatched. `refuse` closes the entry
+      // as the failure it is and reclassifies it when the next iteration reaches
+      // `ledger.begin`, which is *after* the `capBudgets` above: a cap that falls
+      // due in between ends the run with nothing replaced (OAI-23).
+      //
+      // Creating that entry is proof of *intent to dispatch*, not of dispatch:
+      // `postChat` checks `capBudgets` a second time before `request()` sends
+      // anything, so a cap falling due in THAT gap leaves a `refused` entry
+      // beside a phantom `failed` one. Imprecise rather than false — the run
+      // still reads as dead — and the gap closes with OAI-22's fix, which
+      // computes the budget once and passes it down.
       if (rung) handle?.refuse(error);
       else handle?.fail(error, error?.timings ?? {});
       if (!rung) throw error;

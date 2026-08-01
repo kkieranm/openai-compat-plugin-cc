@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
+import { SHAPE_REJECTED } from '../scripts/lib/attempt-outcome.mjs';
 import { emptyAnswer, finishAnswer } from '../scripts/lib/completion.mjs';
 
 // OAI-20, the rules in isolation. `retry.test.js` drives these through the real
@@ -66,17 +67,54 @@ test('a reply with nothing at all in either channel IS a dropped request', () =>
   );
 });
 
-test('a capability refusal closes as `refused`, not as a failure', () => {
+test('a capability refusal closes as `refused` once the replacement is dispatched', () => {
   // A server that rejects `stream_options` rejects it every time, and the very
   // next request succeeds. Counting that as unreliability would report a server
   // answering 100% of shaped requests as failing half of them — the inversion
   // this record exists to prevent, running the other way.
+  //
+  // The `begin` below is the dispatch, and it is what settles the refusal — not
+  // the `refuse` call. See the abandoned-refusal tests further down.
+  const ledger = createLedger();
+  const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
+  ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
+    .refuse(Object.assign(new Error('stream_options'), { status: 400 }));
+  ledger.begin({ body: { ...body, stream: false }, cause: { answerAttempt: 1, degrade: 'stream_options' } });
+
+  assert.equal(ledger.entries()[0].outcome, 'refused');
+});
+
+test('a capability refusal whose replacement is never dispatched stays a FAILURE', () => {
+  // OAI-23. `postWithDegrade` re-checks the wall-clock cap at the top of every
+  // iteration, BEFORE `ledger.begin` — so a cap falling due between the refusal
+  // and the next dispatch ends the run with nothing replaced. Recorded as
+  // negotiation, that terminal failure reads as `0 failed, 1 refused` and
+  // understates the reliability figure the benchmark exists to produce.
   const ledger = createLedger();
   const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
   ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
     .refuse(Object.assign(new Error('stream_options'), { status: 400 }));
 
+  assert.equal(ledger.entries()[0].outcome, 'failed');
+  // And it is named, not left null: a 400 carries `.status` and never `.reason`,
+  // so without this the bench tallies it as `unclassified` beside genuinely
+  // unrecognised failures.
+  assert.equal(ledger.entries()[0].reason, SHAPE_REJECTED);
+});
+
+test('the pending reclassification lands on ITS entry, not on whichever is last', () => {
+  // It holds the entry object rather than an index, so a ledger that recorded
+  // something else in between could not misfile the flip.
+  const ledger = createLedger();
+  const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
+  ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
+    .refuse(Object.assign(new Error('stream_options'), { status: 400 }));
+  ledger.begin({ body, cause: { answerAttempt: 1, degrade: 'stream_options' } }).settle({ prefillMs: 5 });
+
   assert.equal(ledger.entries()[0].outcome, 'refused');
+  assert.equal(ledger.entries()[1].outcome, 'answered');
+  // One refusal, settled once — the replacement did not inherit it.
+  assert.equal(ledger.entries().filter((entry) => entry.outcome === 'refused').length, 1);
 });
 
 test('a connection that died before the model spoke does not make the retry warm-eligible', () => {
@@ -125,13 +163,30 @@ test('a 400 is a FAILURE until the layer that negotiates says otherwise', () => 
 test('the layer that actually sends a different shape marks it as negotiation', () => {
   // `review-request.mjs` calls this after `isFormatRejection` matches, on the
   // branch that does send a degraded request — so the record reflects what
-  // happened rather than what a status code hinted at.
+  // happened rather than what a status code hinted at. "Actually sends" is the
+  // second `begin`, which is what settles it.
   const ledger = createLedger();
   const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
   ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
     .fail(Object.assign(new Error('response_format unsupported'), { status: 400 }));
   ledger.refuseLast();
+  ledger.begin({ body: { ...body, messages: [] }, cause: { answerAttempt: 1, degrade: null } });
   assert.equal(ledger.entries()[0].outcome, 'refused');
+});
+
+test('a response_format refusal whose fallback is never dispatched stays a FAILURE', () => {
+  // The other half of OAI-23, on the other call site. `degraded()` announces the
+  // refusal and then calls `chatCompletion`, whose first act is the same
+  // wall-clock cap check that precedes `ledger.begin` — so the fallback can be
+  // refused before it is ever sent.
+  const ledger = createLedger();
+  const body = { model: 'm', messages: [{ role: 'user', content: 'hello' }] };
+  ledger.begin({ body, cause: { answerAttempt: 1, degrade: null } })
+    .fail(Object.assign(new Error('response_format unsupported'), { status: 400 }));
+  ledger.refuseLast();
+
+  assert.equal(ledger.entries()[0].outcome, 'failed');
+  assert.equal(ledger.entries()[0].reason, SHAPE_REJECTED);
 });
 
 test('a reclassified entry is still plain data in the record', () => {

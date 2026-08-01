@@ -52,7 +52,9 @@ measured over — see [ADR 010](adr/010-bounding-and-rating-a-run.md).
 answering badly, and `scripts/lib/answer-attempts.mjs` `answerWithRetry` retries only those, spanning
 `postWithDegrade` and `finishAnswer` so it can see all four; `scripts/lib/attempt-ledger.mjs` records
 one entry per physical request so scoring reads the attempt that answered while reliability reads
-every attempt — see [ADR 012](adr/012-surviving-the-server.md).
+every attempt, and `scripts/lib/attempt-outcome.mjs` owns what one request's ending means — a refusal
+becomes `refused` only when `begin` creates the replacement entry, and stays a `shape-rejected`
+failure when nothing replaced it — see [ADR 012](adr/012-surviving-the-server.md).
 
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through

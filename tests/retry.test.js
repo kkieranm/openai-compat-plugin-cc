@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   chatRequests,
+  scriptOf,
   reasoningFrames,
   reviewScenario,
   completionFrames,
@@ -73,23 +74,6 @@ const FINDINGS = JSON.stringify({
   findings: [{ file: 'seed.txt', line: 2, severity: 'high', summary: 'a defect', evidence: 'edited' }],
   summary: 'One defect found.',
 });
-
-/**
- * The same script discipline as `scriptedServer`, as a bare handler so it can be
- * handed to `reviewScenario` — which builds the git repo a review needs.
- */
-function scriptOf(scripts) {
-  let call = 0;
-  return (request, response) => {
-    if (request.url.includes('/chat/completions')) {
-      const script = scripts[Math.min(call, scripts.length - 1)];
-      call += 1;
-      return script(response, request);
-    }
-    if (request.url.endsWith('/models')) return respondJson(response, modelList('test-model'));
-    return respondJson(response, { error: 'not found' }, 404);
-  };
-}
 
 test('a dropped request is sent again, and the retry answers', async () => {
   const { server, configPath } = await scriptedServer([blank, answers]);

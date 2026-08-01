@@ -270,3 +270,28 @@ export function sentAnalysisCap(record) {
 export function chatRequests(server) {
   return server.requests.filter((request) => request.url.includes('/chat/completions'));
 }
+
+/**
+ * A fake-server handler that plays `scripts` in order, one per **chat** request.
+ *
+ * Only `/chat/completions` advances the script. `model-info.mjs` probes `/props`,
+ * `/info` and `/v1/models/status` by response shape before any chat happens, and
+ * feeding those to the script means the first real request already receives the
+ * third entry — every assertion then measuring the probe sequence instead.
+ *
+ * Lives here rather than in one suite because two now need it: the retry tests
+ * and the negotiation-record tests, which were split apart at the file size
+ * budget and would otherwise each carry their own copy of this rule.
+ */
+export function scriptOf(scripts) {
+  let call = 0;
+  return (request, response) => {
+    if (request.url.includes('/chat/completions')) {
+      const script = scripts[Math.min(call, scripts.length - 1)];
+      call += 1;
+      return script(response, request);
+    }
+    if (request.url.endsWith('/models')) return respondJson(response, modelList('test-model'));
+    return respondJson(response, { error: 'not found' }, 404);
+  };
+}
