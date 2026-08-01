@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
 import { SHAPE_REJECTED } from '../scripts/lib/attempt-outcome.mjs';
+import { createNegotiation, postWithDegrade } from '../scripts/lib/chat.mjs';
 import { emptyAnswer, finishAnswer } from '../scripts/lib/completion.mjs';
+import { isRetryable } from '../scripts/lib/failure-shape.mjs';
 
 // OAI-20, the rules in isolation. `retry.test.js` drives these through the real
 // CLI; these pin the two decisions that a request-count assertion cannot see —
@@ -217,4 +219,29 @@ test('a 400 that nobody reclassifies stays a failure', () => {
     .fail(Object.assign(new Error('response_format unsupported'), { status: 400 }));
 
   assert.equal(ledger.entries()[0].outcome, 'failed');
+});
+
+test('a cap that has ALREADY expired mints no ledger entry at all', () => {
+  // OAI-22's behavioural half, and the direction that matters: the record must
+  // never contain a physical attempt that never went on the wire. A deadline the
+  // caller imposed is not evidence about the server, and an entry for it inflates
+  // the failure rate OAI-19 reads with the plugin's own limit.
+  //
+  // No clock seam needed for this one — an expiry in the past is the expired
+  // state. The narrower mid-window case, where the cap falls due *between* the
+  // check and the dispatch, is what BACKLOG.md OAI-25 is about; after OAI-22
+  // there is no such window left to drive, which is why a structural guard
+  // stands for it instead.
+  const ledger = createLedger();
+  const profile = { name: 'p', baseUrl: 'http://127.0.0.1:1/v1' };
+  const budgets = { expiresAt: performance.now() - 1_000, maxMs: 30_000, ledger, firstTokenMs: 5_000, idleMs: 1_000 };
+
+  return postWithDegrade(profile, budgets, createNegotiation({ model: 'm', messages: [] })).then(
+    () => assert.fail('an expired cap must refuse, not dispatch'),
+    (error) => {
+      assert.equal(error.reason, 'deadline-timeout');
+      assert.equal(isRetryable(error), false, 'a cap we imposed is not a server failure to retry into');
+      assert.deepEqual(ledger.entries(), [], 'no request was sent, so no attempt may be recorded');
+    },
+  );
 });

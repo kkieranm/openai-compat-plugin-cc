@@ -3,6 +3,9 @@
 ## Status
 
 Accepted, 2026-07-31. Implements OAI-20 and OAI-21.
+Amended 2026-08-01 by **OAI-22**: the `transport` code is split by retryability, classification moves
+to the call site, rewording is forbidden from reclassifying, the wall-clock cap is evaluated once per
+dispatch, and `--warm-up` interleaves.
 
 ## Context
 
@@ -38,7 +41,12 @@ this repo has on file twice over (OAI-13 items 1 and 2).
 | Connection closed mid-body | `http.mjs` | `transport` |
 | Every channel present and exactly empty | `completion.mjs`, **new** | `blank-completion` |
 
-The fourth needed finding rather than remembering. `applyText` sets `sawContent` for **any** string
+These four are the shapes **observed** on LM Studio. OAI-22 later split the `transport` row by
+whether a retry could survive it, adding a fifth *code* — `non-retryable-transport` — that is not a
+fifth delivery shape: it names the pre-response failures that never delivered anything at all. See
+the subsection below.
+
+The fourth shape needed finding rather than remembering. `applyText` sets `sawContent` for **any** string
 including `''`, so a reply of `content: ""` passed both existing guards and reached the caller
 looking successful; `/oai:review` reported "the model did not return findings in the requested
 shape" and the benchmark filed it as *unreadable*. A dead request recorded as a bad answer.
@@ -46,6 +54,64 @@ shape" and the benchmark filed it as *unreadable*. A dead request recorded as a 
 It tests `.length`, never `.trim()`. A model answering with whitespace **has** answered — whether
 that is useful is the caller's decision — and trimming here would spend two more requests failing to
 retrieve a real reply.
+
+### The transport split, and why it is decided at the call site (OAI-22, 2026-08-01)
+
+`transport` began as one bucket holding everything the request layer could raise, and `isRetryable`
+said yes to all of it — so a permanent failure this client could recognise, such as a TLS certificate
+rejection, cost three requests and two 2-second sleeps to establish what the first already proved.
+
+- **`transport`** — a transport failure a second attempt could plausibly survive: the post-headers
+  delivery cut, plus pre-response failures whose code is in a transient whitelist (`ECONNRESET`,
+  `EPIPE`, `ETIMEDOUT`, `ECONNABORTED`, `EAI_AGAIN`).
+- **`non-retryable-transport`** — a pre-response transport failure not recognised as transient:
+  `ENOTFOUND`, `ECONNREFUSED`, and every unrecognised or absent pre-response code. Same whitelist
+  direction as `RETRYABLE` itself, and for the same reason.
+
+**Rejected name: `unreachable`.** The pre-response path also carries TLS certificate rejections,
+protocol and parser errors and code-less failures — all cases where a peer *was* reached — so the
+name would have asserted a fact the classification never established, which is the defect class this
+document opens by naming. The name states the decision made; `.code` carries the rest.
+
+**Decided at the CALL SITE, not by inspecting `error.code`.** `transportError` has two callers with
+opposite meanings: `bodyStream`'s catch runs only past headers, while the request `'error'` handler
+usually runs before them. Measured on Node 26.3, a socket cut mid-body arrives as `Error: aborted`
+carrying `ECONNRESET` — but whether Node attaches a code there is version-dependent, and classifying
+by code alone would file the most retryable shape in the codebase as terminal on a version that does
+not. So the code that knows the phase says so (`delivered`). The request handler classifies on
+`state.settled` rather than assuming the connect phase, because it assigns `state.aborted` *before*
+`fail` consults `settled` and `bodyStream` gives a stored `state.aborted` priority over what the
+iterator threw — so an after-headers request error surfaces through the body path.
+
+**The axis is retryability, never blame.** `EAI_AGAIN` and a pre-response `ECONNRESET` are
+`transport` yet carried no response, so a `transport` tally is not a count of server misbehaviour,
+and no reader of the reliability table may treat it as one.
+
+**Rewording a failure must never reclassify it.** `provider.mjs` `describeFailure` improves the
+message for `ECONNREFUSED`, `ENOTFOUND` and `EAI_AGAIN` — it is the only layer that knows the
+provider's name and its start hint — and it used to do so by building *fresh* `UserError`s, silently
+dropping `reason`, `code` and `cause`. The consequence was invisible until the retry set was split:
+a real `EAI_AGAIN` was classified retryable and then reached `answerWithRetry` with no reason at all,
+so it was never retried, and terminal DNS and refusal attempts entered the ledger as `unclassified`
+beside genuinely unrecognised failures — in the very table this record exists to make readable. Found
+by the OAI-22 adversarial review, after tests that called `transportError` directly all passed. The
+message belongs to the layer that knows the provider; the reason to the layer that saw what happened.
+
+`serverResponded` follows the same evidence: `delivered` means headers arrived, which is exactly what
+`cmd-setup.mjs` reads to decide whether to tell someone to start a server.
+
+### One cap evaluation per dispatch (OAI-22)
+
+`capBudgets` is evaluated once in `postWithDegrade`, before `ledger.begin`, and carried into
+`postChat`, which no longer re-evaluates it. Two evaluations straddling `ledger.begin` can disagree,
+and a cap falling due between them minted an entry for a request refused before the socket — filing
+this plugin's own deadline as a failed physical attempt. This closes the residual gap recorded below
+under OAI-23: a `refused` entry can no longer sit beside a phantom `failed` one.
+
+Revalidating at transport-arming time was considered and rejected: a transport that can *refuse* at
+arming reopens exactly the window this closes. The price is that the carried `totalMs` is slightly
+generous — bounded by the synchronous work in the gap, which is body serialization, so milliseconds
+on a 60k-token prompt against a cap measured in seconds.
 
 ### A bounded retry, spanning the transport *and* the judgement
 
@@ -127,9 +193,13 @@ The rule is evidence-based in both directions, which took two corrections to get
 - The rendered report is written to `<stamp>.md` beside `<stamp>.json`, under **one** stamp computed
   before rendering. Both 2026-07-30 arms kept their reports only because each nohup log was copied
   by hand; a reused log path would have silently overwritten the first.
-- `--warm-up` sends one tiny unscored request per **distinct resolved provider/model pair** before
-  the first case using it, carrying the invocation's budgets. The record states it ran — "the flag
-  was passed" and "the request happened" are different facts.
+- `--warm-up` sends one tiny unscored request whenever the resolved provider/model pair **changes
+  from the previous case**, carrying the invocation's budgets — so a pair used again after a switch
+  is warmed again. Corrected by OAI-22 (2026-08-01): warming every pair up front, the original
+  shape, let the last warm-up evict the first on a provider that keeps one model resident, and
+  warming only at *first* use has the same defect one step later. Each entry names the case it
+  preceded, since interleaved warm-ups are otherwise indistinguishable from pre-run ones. The record
+  states it ran — "the flag was passed" and "the request happened" are different facts.
   Its field is `answered`, not `ok`: a reasoning model spends its budget thinking and exits
   non-zero on a request that loaded the weights perfectly well. `durationMs` is what separates
   "loaded" (seconds to tens of seconds) from "never reached the server" (milliseconds).

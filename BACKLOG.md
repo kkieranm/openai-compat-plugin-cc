@@ -46,12 +46,16 @@ OAI-20 and OAI-21 landed on 2026-07-31 and unblocked it** — because everything
 number to beat and the methodology note below is exactly about this.
 **Reordered 2026-08-01: OAI-19 sits behind its prerequisites rather than ahead of them.** Two of
 them change what the run would measure — OAI-23 fixed an attempt record that could file a terminal
-failure as benign negotiation, which is the reliability figure OAI-19 reads, and OAI-22's
-`--warm-up` lets one warm-up evict the last on a single-resident provider, which is exactly the
-two-arm case OAI-19 runs — and OAI-24 must be decided before the write-up quotes a mechanism.
-Landing them afterwards would mean running the corpus twice. **OAI-23 is done (2026-08-01)**, and
-its review filed two more that belong ahead of the run: OAI-25 and OAI-26. The order is
-**OAI-22 → OAI-25 → OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
+failure as benign negotiation, which is the reliability figure OAI-19 reads, and OAI-22 fixed a
+retry classification that filed terminal DNS and refusal attempts as `unclassified` in the very
+`Failures by reason` table the write-up quotes — and OAI-24 must be decided before that write-up
+names a mechanism. Landing them afterwards would mean running the corpus twice. **OAI-23 and OAI-22
+are done (2026-08-01)**; OAI-23's review filed OAI-25 and OAI-26, which remain ahead of the run.
+*(OAI-22's `--warm-up` half was originally ordered here as "exactly the two-arm case OAI-19 runs".
+That was wrong: OAI-19 runs one arm per model as separate invocations, each passing `--model`, which
+overrides every case — so each arm resolves to a single pair and nothing evicts anything. The
+warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.)* The order is
+**OAI-25 → OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -91,34 +95,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-22** — `--warm-up` warms every resolved pair up front, which on a provider that keeps one
-  model resident lets the last warm-up evict the first. Filed 2026-07-31 from the OAI-20/21 review
-  (Codex, P2). Latent today — the corpus resolves to a single pair, so nothing is evicted — but
-  `--warm-up` exists precisely for the multi-model case, which is what OAI-19 runs, and there the
-  first case of the earlier model still pays the load the flag promises to remove. Fix by
-  interleaving: warm each pair immediately before the first case that uses it, or group execution by
-  pair. Two smaller items from the same review, both bounded and neither corrupting a measurement:
-  the `transport` reason code spans non-transient causes, so a hostname that will never resolve is
-  retried three times with delays before reporting the same error (narrow it by `error.code`); and
-  `capBudgets` is called twice per dispatch — once as the pre-check that keeps an expired cap from
-  minting a phantom ledger entry, once inside `postChat` — leaving a microsecond window where the
-  first passes and the second throws, recreating the phantom it prevents. Close it by computing the
-  remaining budget once and passing it down. **That sub-item grew a second consequence on
-  2026-08-01**, raised by both Codex stages of the OAI-23 review and deferred here rather than
-  fixed there: it is also the last gap between "a replacement ledger entry exists" and "the
-  replacement was dispatched", so until it lands a cap falling due inside it leaves a `refused`
-  entry beside a phantom `failed` one. Imprecise rather than false — the run still reads as dead,
-  which is the OAI-23 defect proper — but this fix is the only one that closes it, since
-  `capBudgets` is the sole thing standing between `ledger.begin` and `request()`. **Added 2026-07-31 from the wide review** (which
-  completed on its third attempt, after dying twice on model unavailability): the capability
-  negotiation is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints
-  a fresh `createNegotiation` and re-offers a capability the schema request already had refused —
-  one wasted validation round trip and a duplicate `refused` entry. An asymmetry with the attempt
-  ledger, which *was* deliberately threaded across both calls. Filed rather than fixed because it
-  needs a server refusing BOTH `stream_options` and `response_format` to trigger, which nothing here
-  has: same "wait for a second server" bucket as OAI-13, and the harm is a request-validation 400
-  returned before any generation.
-
 - **OAI-25** — Make the `postWithDegrade` ordering invariant reachable behaviourally, instead of only
   structurally. Filed 2026-08-01 from the OAI-23 review (Codex adversarial, medium/0.98), raised in
   the third and terminal pass, so recorded rather than fixed. OAI-23 ships a source-text guard in
@@ -130,8 +106,10 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   and assert the second request is absent while the entry stays `failed`/`shape-rejected`. Not done
   in OAI-23 for two reasons worth keeping: the pass was terminal, and it changes production code for
   testability, which deserves its own grill rather than a batch fix. Sits beside OAI-22 because they
-  touch the same window; if OAI-22's compute-the-budget-once fix lands first, re-ask whether this is
-  still worth a seam — with only one `capBudgets` call left, the gap it would test narrows again.
+  touch the same window. **OAI-22 landed 2026-08-01, so re-ask now:** with `capBudgets` evaluated once
+  and carried into `postChat`, there is no longer a window between the check and the dispatch for a
+  seam to drive — the already-expired case is behaviourally tested (it mints zero ledger entries),
+  and what remains is guarded structurally instead. Decide whether anything is left to buy.
 
 - **OAI-26** — Explain `shape-rejected` in the reliability report, where it now appears bare. Filed
   2026-08-01, noticed after OAI-23 landed rather than during its review. `reliability-report.mjs`
@@ -147,6 +125,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   plugin sent a replacement request without it" — after OAI-23 that is guaranteed rather than
   merely intended, and saying so is what makes the two codes readable side by side. Do it before
   OAI-19's write-up quotes the table.
+  **Grown by OAI-22 (2026-08-01): `non-retryable-transport` needs a paragraph too**, and for the same
+  reason — it sits among the delivery failures and is not one. Say that those attempts failed before
+  any response, in a way this client does not recognise as transient, so were not retried, and point
+  the reader at `.code`. It must **not** be called a reachability finding (TLS, protocol and parser
+  errors reach a peer), and the paragraph must not imply the `transport` rows beside it are all the
+  server's doing — `EAI_AGAIN` and a pre-response `ECONNRESET` are `transport` and carried no
+  response at all.
 
 - **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
   asked the characterization to break failures down "by model, case, request size, attempt number
@@ -193,9 +178,11 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
   still only approximate — token counting need not be identical across models; wall-clock
   generation time is the directly comparable figure.
-  Expect a JIT model load between arms, so the first case of each arm carries a cold prefill that is
-  not the model's — OAI-9's cache measurement (421.7s cold, 11.5s warm on one 56,805-token request)
-  says how large that distortion is, and `--cold` exists to make it uniform rather than incidental.
+  Expect a JIT model load between arms. **With `--warm-up`, which this item mandates, the first case
+  no longer carries it** — the warm-up absorbs the weights load, and `--cold` handles the separate
+  question of prompt-cache uniformity. (Before OAI-21 that load landed on case 1 as a cold prefill
+  that was not the model's; OAI-9's 421.7s-cold against 11.5s-warm on one 56,805-token request says
+  how large the distortion would be if the flag were omitted.)
   Done when both arms are recorded with their bands, the pre-OAI-15 figure is struck through in this
   file, and the comparable one replaces it as the number OAI-9 and OAI-11 are scored against.
   **Attempted 2026-07-30 — blocked on OAI-20, and the attempt is the evidence behind it.** Both arms
@@ -281,7 +268,7 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
 
-- **OAI-13** — Vendor-dependent findings that need a second server to settle. **Now six.** Added
+- **OAI-13** — Vendor-dependent findings that need a second server to settle. **Now seven.** Added
   2026-07-28 from the OAI-6 built-in review: `refusedField` accepts 400/422 and pattern-matches the
   quoted error body, so a validation error that *echoes the request JSON* contains `stream` and
   `stream_options` and matches both capability rungs — two spurious retries with stderr claiming a
@@ -289,6 +276,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
   the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
   one — read the server's status or error `type`/`code` field instead of its prose.
+  **(7) Added 2026-08-01, moved here from OAI-22 when that item closed.** The capability negotiation
+  is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints a fresh
+  `createNegotiation` and re-offers a capability the schema request already had refused — an
+  asymmetry with the attempt ledger, which *was* deliberately threaded across both calls. Needs a
+  server refusing BOTH `stream_options` and `response_format`, which nothing here has. **The OAI-22
+  review added a consequence beyond the wasted round trip and the duplicate `refused` entry**: that
+  needless refusal can consume what is left of `--max-seconds`, turning an answerable review into a
+  client-imposed deadline failure. When it is fixed, only the capability state (`removed`) may be
+  shared across the two calls — never the whole `{payload, removed, lastRung}`, whose payload is
+  call-specific.
   The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
   wait for one rather than being fixed blind. (1) `isFormatRejection` reads `error.message`, which

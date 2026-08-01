@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { closedPort } from './helpers.mjs';
+import { isRetryable } from '../scripts/lib/failure-shape.mjs';
 import { mediaType, send } from '../scripts/lib/http.mjs';
 import { readJson, readText } from '../scripts/lib/body.mjs';
 import { readSse } from '../scripts/lib/sse.mjs';
@@ -140,7 +141,21 @@ test('a refused connection surfaces its transport code, not a timeout', async ()
   const error = await caught(send(`http://127.0.0.1:${port}/`, { firstByteMs: 5_000 }));
 
   assert.equal(error?.code, 'ECONNREFUSED');
-  assert.equal(error.reason, 'transport', 'calling a refusal a timeout sends the user to the wrong fix');
+  // Not `transport`, and the change is the feature (OAI-22). A refusal will be
+  // refused again — retrying it three times buys nothing, delays the
+  // start-your-server hint hanging off the code above by ~4s of retry sleeps,
+  // and files three phantom server failures in the attempt record against a
+  // server that was never running. Still not a timeout, which is what this test
+  // was written to pin.
+  assert.equal(
+    error.reason,
+    'non-retryable-transport',
+    'calling a refusal a timeout sends the user to the wrong fix; calling it retryable sends three requests to a closed port',
+  );
+  // The end-to-end proof that `requestErrorHandler` is still wired into `send`.
+  // Its two branches are asserted directly in failure-shape.test.js, which can
+  // reach a state the real socket race cannot be made to produce on demand.
+  assert.equal(isRetryable(error), false);
 });
 
 test('a non-2xx reply keeps its status and body for the caller to discriminate', async () => {

@@ -2,6 +2,39 @@
 
 Newest first.
 
+- **OAI-22** — Retry only what a retry can fix; check the cap once; warm the model that is about to
+  run. Completed 2026-08-01. Three bounded fixes, and **the review refuted the premise of the first
+  one**, which is the part worth keeping.
+  **The transport split.** `transport` was one bucket and `isRetryable` said yes to all of it, so a
+  TLS certificate rejection cost three requests and two 2-second sleeps to establish what the first
+  proved. It is now `transport` (retryable: the post-headers cut, plus pre-response codes on a
+  transient whitelist) and `non-retryable-transport` (everything else pre-response, including
+  unknown and absent codes — the same whitelist direction `RETRYABLE` already took). Decided at the
+  **call site** via a `delivered` flag, not by reading `error.code`: measured on Node 26.3 a
+  mid-body cut arrives as a code-less-in-principle `Error: aborted`, so code-only classification
+  would file the most retryable shape here as terminal on a version that omits it. The name
+  `unreachable` was rejected — the pre-response path carries TLS, protocol and parser errors, all of
+  which *reached* a peer. **The axis is retryability, never blame.**
+  **What the review found, and what it cost the premise.** The backlog claimed an unresolvable
+  hostname was retried three times. It was not: `provider.mjs` `describeFailure` rewrote
+  `ECONNREFUSED`/`ENOTFOUND`/`EAI_AGAIN` into *fresh* errors carrying no `reason`, `code` or
+  `cause`, so they arrived unclassified and unretried — verified end to end. The real defects were
+  worse for OAI-19 than the claimed one: those attempts tallied as `unclassified` in the very
+  `Failures by reason` table it reads, and `EAI_AGAIN`, which genuinely should retry, never did.
+  Fixed by `reword()`, which carries the classification through the better message. Every earlier
+  test passed because they called `transportError` directly, one layer below where the verdict was
+  being discarded. **Methodology: a probe claim about what a value *reaches* must name the
+  consumer, not the producer.**
+  **One cap evaluation per dispatch**, carried into `postChat` instead of recomputed there — closing
+  the last gap OAI-23 left, where a cap falling due between the two checks left a `refused` entry
+  beside a phantom `failed` one. **Warm-ups interleave** on each change of resolved pair; grouping
+  the corpus by pair was rejected because it reorders cases, and residency, prompt cache and thermal
+  state are shared mutable state. That third fix is **latent for OAI-19**, which runs one arm per
+  invocation with `--model` and so resolves to a single pair — the backlog paragraph claiming
+  otherwise was wrong and is corrected. Also here: `chat.mjs` crossed its size budget a third time,
+  so stream reading moved to `scripts/lib/stream-collect.mjs`. See
+  [ADR 012](adr/012-surviving-the-server.md) and [ADR 006](adr/006-benchmarking-the-reviewer.md).
+
 - **OAI-23** — Tie a `refused` reclassification to the replacement request actually being dispatched.
   Completed 2026-08-01. `refused` is the ledger's third outcome, meaning the server rejected the
   request's SHAPE and the plugin then sent a different one that worked — benign negotiation,
@@ -68,7 +101,9 @@ Newest first.
   2026-07-31, alongside OAI-20 as the item directed. The rendered report is written to `<stamp>.md`
   beside `<stamp>.json` under one stamp computed before rendering; `--warm-up` sends one unscored
   request per **distinct resolved provider/model pair**, carrying the invocation's budgets, and the
-  record states that it ran. Two things only running it revealed: the first version built the argv
+  record states that it ran. *(Those mechanics were superseded 2026-08-01 by **OAI-22**: warm-ups
+  now fire on each **change** of resolved pair rather than once per distinct pair up front, because
+  warming them all in advance let the last evict the first on a single-resident provider.)* Two things only running it revealed: the first version built the argv
   prompt-before-flags, which `/oai:task` refuses — and because warm-up records rather than throws,
   an arm would have carried on having warmed nothing (84ms against the expected ~11s was the only
   tell); and the outcome field is `answered`, not `ok`, because a reasoning model spends its budget

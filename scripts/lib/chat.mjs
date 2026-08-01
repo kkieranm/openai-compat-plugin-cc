@@ -1,12 +1,12 @@
 import { readJson } from './body.mjs';
-import { applyCompletion, applyFrame, emptyAnswer } from './completion.mjs';
+import { applyCompletion, emptyAnswer } from './completion.mjs';
 import { budgetError } from './http-errors.mjs';
 
 /** A completion far larger than any context window could produce. */
 const MAX_COMPLETION_CHARS = 8_000_000;
 import { request } from './provider.mjs';
 import { RUNGS } from './capability-ladder.mjs';
-import { readSse } from './sse.mjs';
+import { collectStream } from './stream-collect.mjs';
 
 /**
  * Obtaining one chat completion: the budgets that mean "the model is working",
@@ -17,115 +17,6 @@ import { readSse } from './sse.mjs';
  * which is also the seam between budgets a transport can measure (bytes) and
  * budgets only this layer can (tokens).
  */
-
-/**
- * The budget that actually means "the model is working".
- *
- * Reset only by a delta carrying text — never by bytes. A keepalive comment, a
- * role-only frame or a half-delivered frame are all socket activity that prove
- * nothing about generation, so a byte-driven timer would let a server emitting
- * `:\n\n` every 30 seconds run forever while the plugin reported it bounded.
- */
-function createDeadline({ firstTokenMs, idleMs, reportMs, onExpire }) {
-  let started = false;
-  let timer = null;
-  const set = (budget, ms, reported = ms) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => onExpire(budget, reported), ms);
-    timer.unref?.();
-  };
-  // The timer runs for what is *left* of the budget; the message names the
-  // budget the user actually configured. Reporting the remainder produced
-  // "sent no output within 5s" — and at the floor, "within 0.0s" — for a value
-  // nobody set, which sends someone to change a number that was never the cause.
-  set('first-token', firstTokenMs, reportMs ?? firstTokenMs);
-  return {
-    progress() {
-      started = true;
-      set('idle', idleMs);
-    },
-    get started() {
-      return started;
-    },
-    clear() {
-      clearTimeout(timer);
-    },
-  };
-}
-
-/**
- * How long the model spent before its first token, and how long it spent after.
- *
- * Two numbers rather than one, because a server-side prompt cache moves one of
- * them by ~37× and leaves the other alone: the same 56,805-token prompt reached
- * its first token in 421.7s cold and 11.5s warm on this machine, generating for
- * ~3s in both. A single total welds the two together, and the benchmark then
- * ranged `13–425` across three runs of one case and called it a result. See
- * ADR 009.
- *
- * `performance.now()`, not `Date.now()`. A 400-second prefill is long enough for
- * a wall-clock adjustment to land inside it, and a duration measured across one
- * would be a reported figure that is not the figure.
- *
- * Both are null when no text ever arrived — there is no boundary to measure, and
- * `finishAnswer` refuses that reply anyway.
- */
-function timings(startedAt, firstTextAt, endedAt) {
-  if (firstTextAt === null) return { prefillMs: null, generationMs: null };
-  // Rounded, because `performance.now()` returns sub-millisecond floats and
-  // these sit in `--json` beside an integer `durationMs`. Sub-millisecond
-  // precision on a figure whose interesting range is 10s to 400s is noise that
-  // reads as significance.
-  return { prefillMs: Math.round(firstTextAt - startedAt), generationMs: Math.round(endedAt - firstTextAt) };
-}
-
-async function collectStream(response, profile, { startedAt, firstTokenMs, reportMs, idleMs, onProgress }) {
-  const answer = emptyAnswer();
-  const outcome = {};
-  let expired = null;
-  let firstTextAt = null;
-  const deadline = createDeadline({
-    firstTokenMs,
-    reportMs,
-    idleMs,
-    onExpire: (budget, ms) => {
-      expired = budgetError(budget, ms, answer.content.length + answer.reasoning.length, profile.name);
-      response.dispose();
-    },
-  });
-
-  try {
-    for await (const frame of readSse(response, profile.name, outcome)) {
-      // The same condition the idle budget uses, and deliberately so: a frame
-      // that carried text is the only evidence that generation has begun. A
-      // role-only frame or a keepalive would put the boundary before the model
-      // had produced anything, which is the figure this measurement exists to
-      // separate out.
-      if (applyFrame(answer, frame)) {
-        firstTextAt ??= performance.now();
-        deadline.progress();
-      }
-      onProgress?.(answer);
-    }
-  } catch (error) {
-    // Ours outranks the socket's: disposing produces a generic transport error a
-    // tick later, and that would replace "stalled after 4,210 characters" with
-    // nothing useful.
-    const failure = expired ?? error;
-    // Measured, then carried out on the error rather than discarded. A stream
-    // that died 50,000 characters into reasoning observed a real prefill and a
-    // real partial generation; throwing them away leaves the attempt record
-    // unable to say whether failures cluster before or after the first token,
-    // which is the first question this data gets asked.
-    if (failure && failure.timings === undefined) {
-      failure.timings = timings(startedAt, firstTextAt, performance.now());
-    }
-    throw failure;
-  } finally {
-    deadline.clear();
-  }
-  return { answer, sawDone: outcome.sawDone, ...timings(startedAt, firstTextAt, performance.now()) };
-}
 
 /**
  * The negotiated request, owned by the caller so it survives an answer retry.
@@ -154,11 +45,12 @@ export function createNegotiation(body) {
 export async function postWithDegrade(profile, budgets, negotiation) {
   let dispatches = 0;
   for (;;) {
-    // Refused BEFORE anything is recorded. `capBudgets` throws when the cap has
-    // already fallen due, and an entry minted first would file a request that
-    // never went on the wire as a failed physical attempt — inventing server
-    // unreliability out of a deadline this plugin imposed.
-    capBudgets(profile, budgets.expiresAt, budgets.maxMs);
+    // Refused BEFORE anything is recorded, and evaluated ONCE. An entry minted
+    // ahead of the check files a request that never went on the wire as a failed
+    // physical attempt, inventing server unreliability out of a deadline this
+    // plugin imposed — and a *second* evaluation downstream reopens the same gap
+    // one call frame later. See `capBudgets` (OAI-22, OAI-23).
+    const budget = capBudgets(profile, budgets.expiresAt, budgets.maxMs);
     const handle = budgets.ledger?.begin({
       body: negotiation.payload,
       cause: { answerAttempt: budgets.answerAttempt ?? 1, degrade: negotiation.lastRung },
@@ -169,7 +61,7 @@ export async function postWithDegrade(profile, budgets, negotiation) {
     });
     dispatches += 1;
     try {
-      const result = await postChat(profile, negotiation.payload, budgets);
+      const result = await postChat(profile, negotiation.payload, budgets, budget);
       return { ...result, handle };
     } catch (error) {
       const rung = RUNGS.find((candidate) => !negotiation.removed.has(candidate.name) && candidate.matches(error));
@@ -179,12 +71,9 @@ export async function postWithDegrade(profile, budgets, negotiation) {
       // `ledger.begin`, which is *after* the `capBudgets` above: a cap that falls
       // due in between ends the run with nothing replaced (OAI-23).
       //
-      // Creating that entry is proof of *intent to dispatch*, not of dispatch:
-      // `postChat` checks `capBudgets` a second time before `request()` sends
-      // anything, so a cap falling due in THAT gap leaves a `refused` entry
-      // beside a phantom `failed` one. Imprecise rather than false — the run
-      // still reads as dead — and the gap closes with OAI-22's fix, which
-      // computes the budget once and passes it down.
+      // That entry is now proof of dispatch, not merely of intent to dispatch:
+      // OAI-22 removed `postChat`'s second cap check, so nothing between
+      // `ledger.begin` and the socket can refuse the request any more.
       if (rung) handle?.refuse(error);
       else handle?.fail(error, error?.timings ?? {});
       if (!rung) throw error;
@@ -214,6 +103,21 @@ export async function postWithDegrade(profile, budgets, negotiation) {
  *
  * So one expiry is minted per command and every attempt subtracts from it.
  * `performance.now()` because a wall-clock step must not lengthen a cap.
+ *
+ * Called ONCE per dispatch and the result carried into `postChat`, never
+ * re-evaluated there: two evaluations straddling `ledger.begin` can disagree,
+ * and the one that falls due in between mints an entry for a request refused
+ * before the socket.
+ *
+ * The carried `totalMs` is slightly generous in exchange, and the honest bound
+ * is *the synchronous work between here and the socket* — not "sub-millisecond",
+ * which was this comment's first claim and overstated it. No `await` sits in the
+ * gap, but `ledger.begin` serializes the messages for `promptChars` and
+ * `request` serializes the body again, so on a 60k-token prompt it is
+ * milliseconds, against a cap measured in seconds. A request dispatched a hair
+ * after expiry is then granted the duration that remained at the check. Bounded
+ * and immaterial at these scales — and the price of never recording a request
+ * that was not sent. OAI-22; ADR 012.
  */
 function capBudgets(profile, expiresAt, maxMs) {
   if (!Number.isFinite(expiresAt)) return {};
@@ -232,7 +136,13 @@ function capBudgets(profile, expiresAt, maxMs) {
   return { totalMs, totalBudget: 'deadline', totalReportMs: maxMs };
 }
 
-async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, expiresAt, maxMs }) {
+/**
+ * `budget` is REQUIRED, and is the caller's already-evaluated cap — never
+ * recomputed here, which would reopen the window OAI-22 closed (see
+ * `capBudgets`). Required rather than defaulted so a future caller cannot omit
+ * the contract and run a request the cap should have refused.
+ */
+async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }, budget) {
   // One absolute deadline for the whole attempt. Arming the semantic budget with
   // a *fresh* firstTokenMs after the transport has already waited would grant up
   // to twice the number the config advertises — the same double-count as
@@ -250,7 +160,7 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, expir
     method: 'POST',
     body,
     firstByteMs: firstTokenMs,
-    ...capBudgets(profile, expiresAt, maxMs),
+    ...budget,
   });
   const answer = emptyAnswer();
   // Chosen by response shape, not by config: a server that ignores `stream`

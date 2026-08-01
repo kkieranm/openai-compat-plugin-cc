@@ -202,13 +202,23 @@ test('allowlist entries all carry a reason', () => {
  * either token FAILS rather than silently passing, so a rename breaks the test
  * instead of disabling it.
  */
-test('the wall-clock cap is checked before a ledger entry is minted, not after', () => {
-  const source = withoutComments(readFileSync(join(ROOT, 'scripts/lib/chat.mjs'), 'utf8')).split('\n');
-  const start = source.findIndex((line) => /^export async function postWithDegrade\b/.test(line));
-  assert.ok(start >= 0, 'postWithDegrade not found — was it renamed? Update this guard, do not delete it.');
+/** The comment-stripped body of a top-level function, for the guards below. */
+function functionBody(relativePath, declaration) {
+  const source = withoutComments(readFileSync(join(ROOT, relativePath), 'utf8')).split('\n');
+  const start = source.findIndex((line) => declaration.test(line));
+  assert.ok(start >= 0, `${declaration} not found in ${relativePath} — was it renamed? Update this guard, do not delete it.`);
   const end = source.indexOf('}', start);
-  assert.ok(end > start, 'could not find the end of postWithDegrade');
-  const body = source.slice(start, end).join('\n');
+  assert.ok(end > start, `could not find the end of ${declaration} in ${relativePath}`);
+  return source.slice(start, end).join('\n');
+}
+
+/** Every occurrence, because "exactly one" is the assertion OAI-22 needs. */
+function occurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+
+test('the wall-clock cap is checked before a ledger entry is minted, not after', () => {
+  const body = functionBody('scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
 
   const cap = body.indexOf('capBudgets(');
   const begin = body.indexOf('.begin(');
@@ -218,5 +228,72 @@ test('the wall-clock cap is checked before a ledger entry is minted, not after',
     cap < begin,
     'capBudgets must run BEFORE ledger.begin: an entry minted first files a request that never went ' +
       'on the wire as a physical attempt, and settles a pending refusal that nothing replaced (OAI-23).',
+  );
+});
+
+/**
+ * OAI-22, and the reason the ordering guard above is no longer sufficient on its
+ * own: it proves *a* cap check precedes the ledger entry, not that the checked
+ * budget is the one the transport actually gets. While `postChat` re-evaluated
+ * the cap on its own side, both statements could be true and a cap falling due
+ * between them still minted an entry for a request that was never sent.
+ *
+ * Same class as the guard above — an arrangement carrying an invariant, pinned
+ * by nothing — and unreachable behaviourally for the same reason: the window is
+ * a few call frames wide with no `await` in it.
+ */
+test('the cap is evaluated exactly once per dispatch, and that evaluation is what the transport gets', () => {
+  const degrade = functionBody('scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
+  const post = functionBody('scripts/lib/chat.mjs', /^async function postChat\b/);
+
+  assert.equal(
+    occurrences(degrade, 'capBudgets('),
+    1,
+    'postWithDegrade must evaluate the cap ONCE: two evaluations can disagree, and the gap between ' +
+      'them is where a phantom ledger entry is minted (OAI-22).',
+  );
+  const bound = /const (\w+) = capBudgets\(/.exec(degrade);
+  assert.ok(bound, 'the cap evaluation must be BOUND to a name — an unbound call cannot be passed to postChat.');
+  assert.ok(
+    degrade.indexOf(`const ${bound[1]} = capBudgets(`) < degrade.indexOf('.begin('),
+    'the binding must precede ledger.begin, or the entry is minted against an unchecked cap.',
+  );
+  assert.match(
+    degrade,
+    new RegExp(`postChat\\([^)]*\\b${bound[1]}\\b`),
+    `postChat must receive ${bound[1]}: computing the budget and then not using it is the defect wearing a disguise.`,
+  );
+  assert.equal(
+    occurrences(post, 'capBudgets('),
+    0,
+    'postChat must NOT re-evaluate the cap — that second call IS the OAI-22 defect.',
+  );
+  // Proves the absence assertion above is not vacuous: an assert-absence over a
+  // wrongly-bounded body would pass on an empty string. `postChat` genuinely
+  // contains the request it is being checked around.
+  assert.match(post, /request\(profile, '\/chat\/completions'/, 'postChat body not bounded correctly — fix this guard.');
+});
+
+/**
+ * The one call-site argument in the transport that decides retryability, and
+ * nothing behavioural can pin it.
+ *
+ * `bodyStream`'s catch only ever runs past headers, so its failures are dropped
+ * *deliveries* and must stay retryable whether or not Node attached a `code`.
+ * Measured on Node 26.3: a socket cut mid-body arrives as `Error: aborted`
+ * carrying `ECONNRESET`, which the transient whitelist happens to accept — so
+ * deleting `{ delivered: true }` changes nothing today and everything on a Node
+ * that hands over the same error bare, which the comment at that catch records
+ * having already seen once. A test cannot make Node drop the code on demand;
+ * this can.
+ */
+test('the body-stream catch classifies its failures as delivered, whatever code Node attached', () => {
+  const body = functionBody('scripts/lib/http.mjs', /^async function\* bodyStream\b/);
+
+  assert.match(
+    body,
+    /transportError\(error, url, \{ delivered: true \}\)/,
+    'bodyStream must pass `delivered: true`: past headers a failure is a dropped delivery and is ' +
+      'retryable regardless of `error.code`, which Node does not promise to attach (OAI-22).',
   );
 });

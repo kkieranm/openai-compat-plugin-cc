@@ -38,8 +38,56 @@ export const STREAM_UNFINISHED = 'stream-unfinished';
  */
 export const BLANK_COMPLETION = 'blank-completion';
 
-/** The connection closed mid-body. Tagged by the transport (`http.mjs`). */
+/**
+ * A transport failure a second attempt could plausibly survive. Tagged by the
+ * transport (`http.mjs`).
+ *
+ * **Not** "the server dropped it", and the difference is load-bearing for the
+ * reliability figure this vocabulary feeds. It covers the connection closing
+ * mid-body — the shape it was named for — but also the *pre-response* failures
+ * below whose code says "try again": a DNS server answering `EAI_AGAIN` carried
+ * no response at all, and neither party is at fault. The axis is retryability,
+ * never blame, so nothing downstream may read a `transport` tally as a count of
+ * server misbehaviour.
+ */
 export const TRANSPORT = 'transport';
+
+/**
+ * A pre-response transport failure this client does not recognise as transient.
+ *
+ * Named for the decision it records, after a first draft called it `unreachable`
+ * and was refuted: `request.on('error')` before headers carries TLS certificate
+ * rejections, protocol and parser errors, and failures with no `code` at all —
+ * every one of them a case where a peer *was* reached. "Unreachable" would have
+ * asserted a fact the classification never established, which is the exact
+ * defect class the module note above exists to keep out. So the name says what
+ * was decided and the reader takes `.code` for the rest.
+ */
+export const NON_RETRYABLE_TRANSPORT = 'non-retryable-transport';
+
+/**
+ * The pre-response failure codes worth another attempt.
+ *
+ * A whitelist, in the same direction and for the same reason as `RETRYABLE`
+ * below: an unrecognised code costs one honest request rather than three
+ * misleading ones, and a future Node version that stops populating `code` on a
+ * permanent failure degrades to "not retried" rather than to a doomed loop.
+ *
+ * `ENOTFOUND` and `ECONNREFUSED` are the deliberate exclusions. Both will fail
+ * identically on every attempt, and `http-errors.mjs` already hangs the
+ * provider-specific *start your server* hint off the code — so retrying only
+ * delays the message that helps by ~4 seconds, while filing three phantom
+ * failures against a server that was never running.
+ */
+export const TRANSIENT_CONNECT_CODES = new Set([
+  'ECONNRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  // DNS's own "temporary failure, ask again" — the one resolver answer that
+  // says a retry is the correct response.
+  'EAI_AGAIN',
+]);
 
 /**
  * The shapes a second attempt could plausibly fix.

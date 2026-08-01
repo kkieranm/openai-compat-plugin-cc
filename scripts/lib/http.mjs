@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { UserError } from './errors.mjs';
+import { TRANSPORT } from './failure-shape.mjs';
 import { arm, armBudgets } from './http-budgets.mjs';
 import { assertDecodable, budgetError, transportError } from './http-errors.mjs';
 
@@ -97,7 +98,12 @@ async function* bodyStream(request, response, state, { url }) {
       const error = new UserError(
         `${url.host} closed the connection before the response finished (${state.received} characters received).`,
       );
-      error.reason = 'transport';
+      // The constant, not the literal it was. This is the one branch reaching
+      // `reason` without passing through `transportError`, and it carries the
+      // most retryable shape here — so a bare string is exactly the divergence
+      // `failure-shape.mjs` argues against: rename the code and this silently
+      // stops being retried.
+      error.reason = TRANSPORT;
       error.serverResponded = true;
       throw error;
     }
@@ -115,7 +121,11 @@ async function* bodyStream(request, response, state, { url }) {
     // `!response.complete` branch below cannot catch it either: the iterator
     // throws before the loop can exit normally.
     if (state.aborted) throw state.aborted;
-    throw error instanceof UserError ? error : transportError(error, url);
+    // `delivered`, unconditionally: this generator only runs once headers have
+    // resolved, so whatever broke here broke a response that was already being
+    // carried. That is retryable regardless of whether the error arrived with a
+    // `code` — see `transportError`.
+    throw error instanceof UserError ? error : transportError(error, url, { delivered: true });
   } finally {
     // Both, and on every exit path — completion, `break`, or a throw. The total
     // deadline deliberately keeps running across the body, so only the end of
@@ -205,6 +215,30 @@ function onResponse({ request, response, state, target, resolve, fail, release }
   });
 }
 
+/**
+ * The request-level `'error'` handler, lifted out so its one decision is testable.
+ *
+ * Usually this fires before any response — a refused connection, a name that
+ * does not resolve — but **not always**, and the difference is not cosmetic. It
+ * assigns `state.aborted` *before* `fail` consults `state.settled`, and
+ * `bodyStream`'s catch gives a stored `state.aborted` priority over whatever the
+ * iterator threw. So a request error arriving after headers is stashed here and
+ * surfaces through the body path, where classifying it blind would file a live
+ * delivery failure as one not worth retrying. `state.settled` is the answer: set
+ * when headers resolve, it means "a response was obtained" (OAI-22, ADR 012).
+ *
+ * Exported for the test, not for a caller — `TRANSPORTS` is module-private and
+ * `send` takes no transport seam, so the post-header race cannot be driven end
+ * to end. That the handler is still wired in is covered by the
+ * refused-connection test.
+ */
+export function requestErrorHandler(state, target, fail) {
+  return (error) => {
+    state.aborted ??= transportError(error, target, { delivered: state.settled });
+    fail(state.aborted);
+  };
+}
+
 export function send(url, options = {}) {
   const { method = 'GET', headers = {}, body, firstByteMs, totalMs, totalBudget = 'total', totalReportMs } = options;
   const target = new URL(url);
@@ -244,10 +278,7 @@ export function send(url, options = {}) {
 
     // Attached before the body is written: a refused connection otherwise
     // throws unhandled instead of reaching describeFailure.
-    request.on('error', (error) => {
-      state.aborted ??= transportError(error, target);
-      fail(state.aborted);
-    });
+    request.on('error', requestErrorHandler(state, target, fail));
 
     if (body !== undefined) {
       const payload = Buffer.from(body, 'utf8');

@@ -135,6 +135,22 @@ rather than a rewrite. LM Studio now serves three chat models; it served one whe
 Raw per-run records are written to `bench/results/` (gitignored) beside the summary, because **the
 summary is an argument, and this repo has already lost one experiment to keeping only conclusions.**
 
+### Warm-ups interleave; cases never reorder (OAI-22, 2026-08-01)
+
+Because a case may pin its own pair, a corpus can alternate targets — and on a provider that keeps
+one model resident, every alternation is a reload. `--warm-up` therefore fires on each *change* of
+resolved pair rather than once per distinct pair up front (mechanics in ADR 012).
+
+**Grouping the cases by pair would also remove that cost, and was rejected.** Cases are scored
+independently but they do not *run* independently: model residency, prompt cache, thermal state and
+the correlated failure conditions ADR 012 exists to survive are all shared mutable state, so
+reordering an arm changes which cases meet which conditions — and this corpus exists to be compared
+across arms. Only the warm-ups move.
+
+On a single-pair invocation this collapses to exactly one warm-up before the first case. That is
+every arm OAI-19 runs, since it passes `--model` on the command line and that overrides every case —
+so the fix is latent there, and the backlog paragraph claiming it removed an OAI-19 cost was wrong.
+
 ## The first reading
 
 `qwen3.6-35b-a3b-ud-mlx` on LM Studio, 58.1k window, six cases at `--runs 1`, 10.9 minutes of model

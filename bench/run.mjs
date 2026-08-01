@@ -24,7 +24,7 @@ import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom } from './lib/
 import { persist, reportIdentity } from './lib/record.mjs';
 import { renderReport } from './lib/report.mjs';
 import { recall, scoreRun } from './lib/score.mjs';
-import { resolvePairs, warmUp } from './lib/warm-up.mjs';
+import { runWithWarmUp, warmUpPair } from './lib/warm-up.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
@@ -239,11 +239,13 @@ async function main() {
   const runsPerCase = validateOptions(options);
 
   const cases = selectCases(loadCases(ROOT), options.case);
-  // Before any measured case, so the JIT model load is charged to nothing.
-  const warmed = options['warm-up']
-    ? warmUp(resolvePairs(cases, options), options, { companion: COMPANION, cwd: ROOT })
-    : null;
-  const results = cases.map((caseDef) => runCase(caseDef, options, runsPerCase));
+  // Warmed before the first case that needs each target, and again whenever the
+  // target changes — so the JIT model load is charged to nothing, and a later
+  // pair cannot evict an earlier one behind a case's back. See warm-up.mjs.
+  const { results, warmed } = runWithWarmUp(cases, options, {
+    warm: (pair, caseDef) => warmUpPair(pair, options, { companion: COMPANION, cwd: ROOT, beforeCase: caseDef.id }),
+    run: (caseDef) => runCase(caseDef, options, runsPerCase),
+  });
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const markdown = renderReport(results, {

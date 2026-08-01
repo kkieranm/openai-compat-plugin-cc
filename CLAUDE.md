@@ -31,14 +31,15 @@ see [ADR 004](adr/004-bounding-the-review-reply.md).
 
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
-SSE, while the first-token and idle budgets that mean "the model is working" live in `chat.mjs` —
+SSE, while the first-token and idle budgets that mean "the model is working" live in
+`scripts/lib/stream-collect.mjs`, which `chat.mjs` calls to read one streamed reply —
 see [ADR 007](adr/007-owning-the-transport.md).
 
 `scripts/lib/review-schema.mjs` sizes the reply from the budget each run is granted —
 `reviewSchemaFor(reserve)` — and a run its `analysis` ceiling truncates has its findings scored while
 its silence widens the benchmark's recall into a band — see [ADR 008](adr/008-sizing-the-review-reply.md).
 
-`scripts/lib/chat.mjs` times each attempt on both sides of its first token — `prefillMs` and
+`scripts/lib/stream-collect.mjs` times each attempt on both sides of its first token — `prefillMs` and
 `generationMs` — because a server-side prompt cache moves the first by tens of times and leaves the
 second alone; `/oai:review --cache-buster <token>` defeats that cache for a measurement, and the
 benchmark's `--cold` uses it — see [ADR 009](adr/009-measuring-prefill-and-generation.md).
@@ -48,9 +49,12 @@ arms it as the transport's `deadline` budget from one expiry `requestFindings` m
 `scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
 measured over — see [ADR 010](adr/010-bounding-and-rating-a-run.md).
 
-`scripts/lib/failure-shape.mjs` names the four shapes in which a server drops a request rather than
-answering badly, and `scripts/lib/answer-attempts.mjs` `answerWithRetry` retries only those, spanning
-`postWithDegrade` and `finishAnswer` so it can see all four; `scripts/lib/attempt-ledger.mjs` records
+`scripts/lib/failure-shape.mjs` names the shapes in which a request dies without the model saying no
+and splits them by whether a retry could survive it — `transport` retries, `non-retryable-transport`
+is a pre-response failure it does not recognise as transient — while `scripts/lib/provider.mjs`
+`reword` improves such a failure's message without ever changing that verdict; and
+`scripts/lib/answer-attempts.mjs` `answerWithRetry` retries only the retryable ones, spanning
+`postWithDegrade` and `finishAnswer` so it can see every shape; `scripts/lib/attempt-ledger.mjs` records
 one entry per physical request so scoring reads the attempt that answered while reliability reads
 every attempt, and `scripts/lib/attempt-outcome.mjs` owns what one request's ending means — a refusal
 becomes `refused` only when `begin` creates the replacement entry, and stays a `shape-rejected`

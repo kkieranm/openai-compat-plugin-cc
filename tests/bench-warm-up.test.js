@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { persist } from '../bench/lib/record.mjs';
-import { resolvePairs, warmUpFlags } from '../bench/lib/warm-up.mjs';
+import { pairFor, pairKey, runWithWarmUp, warmUpFlags } from '../bench/lib/warm-up.mjs';
 
 // OAI-21. Two things the 2026-07-30 arms had to do by hand: pay the JIT model
 // load before the first measured case, and keep the rendered report beside the
@@ -17,28 +17,110 @@ const CASES = [
   { id: 'c', provider: 'other', model: 'pinned-model' },
 ];
 
-test('one warm-up per distinct pair, not one per case', () => {
-  const pairs = resolvePairs(CASES, {});
-  assert.equal(pairs.length, 2);
-  assert.deepEqual(pairs[0], { provider: null, model: null });
-  assert.deepEqual(pairs[1], { provider: 'other', model: 'pinned-model' });
+/**
+ * Drives the real pair-change loop with fakes, recording the interleaving.
+ *
+ * The loop lives behind an injection seam precisely so this is possible:
+ * `bench/run.mjs` calls `main()` at import, so asserting only on `pairFor` and
+ * `pairKey` would stay green with the comparison in the loop deleted — a
+ * mutation check that proves nothing.
+ */
+function drive(cases, options, { warmUp = true } = {}) {
+  const order = [];
+  const { results, warmed } = runWithWarmUp(
+    cases,
+    { ...options, 'warm-up': warmUp },
+    {
+      warm: (pair, caseDef) => {
+        order.push(`warm:${caseDef.id}`);
+        return { ...pair, beforeCase: caseDef.id };
+      },
+      run: (caseDef) => {
+        order.push(`run:${caseDef.id}`);
+        return caseDef.id;
+      },
+    },
+  );
+  return { results, warmed, order };
+}
+
+test('the command line outranks a case pin, exactly as reviewFlags resolves it', () => {
+  // The rule the loop compares on. Warming a model no case will actually
+  // request is a wasted load, and leaves the case that does run carrying the
+  // one that matters.
+  assert.deepEqual(pairFor(CASES[2], {}), { provider: 'other', model: 'pinned-model' });
+  assert.deepEqual(pairFor(CASES[2], { model: 'cli' }), { provider: 'other', model: 'cli' });
+  // Nulls are part of the identity, not absent from it: "whatever the config
+  // supplies" must not collide with a pinned provider that has no model.
+  assert.notEqual(pairKey({ provider: null, model: 'm' }), pairKey({ provider: 'm', model: null }));
+  // And no separator can be smuggled across the field boundary. A joined string
+  // made these two the same key, which would silently suppress the warm-up
+  // between two genuinely different targets — the one thing this key decides.
+  assert.notEqual(pairKey({ provider: 'a', model: 'b | c' }), pairKey({ provider: 'a | b', model: 'c' }));
 });
 
-test('a command-line model collapses a mixed corpus to one pair, as it does for the runs themselves', () => {
+test('one warm-up per distinct pair when the pairs do not alternate', () => {
+  const { warmed } = drive(CASES, {});
+
+  // `a` and `b` resolve alike, so `b` reuses `a`'s warm-up; `c` pins its own.
+  assert.deepEqual(warmed.map((entry) => entry.beforeCase), ['a', 'c']);
+  assert.deepEqual(warmed[0], { provider: null, model: null, beforeCase: 'a' });
+  assert.deepEqual(warmed[1], { provider: 'other', model: 'pinned-model', beforeCase: 'c' });
+});
+
+test('an ALTERNATING corpus warms on every switch — the defect OAI-22 closed', () => {
+  // The whole point of interleaving. Warming each pair once at first use leaves
+  // cases 3 and 4 paying a JIT load on a server that keeps one model resident,
+  // because the second warm-up evicted the first — which is the cost `--warm-up`
+  // exists to remove, moved rather than removed.
+  const alternating = [CASES[0], CASES[2], CASES[0], CASES[2]];
+  const { warmed, order } = drive(alternating, {});
+
+  assert.equal(warmed.length, 4, 'every switch of resident model needs its own load paid');
+  assert.deepEqual(warmed.map((entry) => entry.model), [null, 'pinned-model', null, 'pinned-model']);
+  // And each warm-up precedes the case it is for, rather than being batched.
+  assert.deepEqual(order, [
+    'warm:a', 'run:a', 'warm:c', 'run:c', 'warm:a', 'run:a', 'warm:c', 'run:c',
+  ]);
+});
+
+test('case ORDER is untouched — the reason grouping by pair was rejected', () => {
+  // Cases are scored independently but do not run independently: residency,
+  // prompt cache, thermal state and correlated failure conditions are shared
+  // mutable state, so reordering an arm weakens the cross-arm comparison.
+  const alternating = [CASES[0], CASES[2], CASES[0], CASES[2]];
+  const { results, order } = drive(alternating, {});
+
+  assert.deepEqual(results, ['a', 'c', 'a', 'c']);
+  assert.deepEqual(order.filter((step) => step.startsWith('run:')), ['run:a', 'run:c', 'run:a', 'run:c']);
+});
+
+test('a command-line pair collapses a mixed corpus to ONE warm-up — every OAI-19 arm', () => {
   // `reviewFlags` resolves provider/model the same way, so warm-up must agree
   // with it: warming a model no case will actually request is a wasted load and
   // leaves the case that *does* run carrying the one that matters.
-  const pairs = resolvePairs(CASES, { model: 'cli-model', provider: 'cli-provider' });
-  assert.deepEqual(pairs, [{ provider: 'cli-provider', model: 'cli-model' }]);
+  //
+  // Both flags, not just `--model`: a model override alone does not override a
+  // case-level `provider`, so a mixed-provider corpus would not collapse and
+  // this test would be asserting the wrong thing.
+  const { warmed } = drive(CASES, { model: 'cli-model', provider: 'cli-provider' });
+
+  assert.equal(warmed.length, 1, 'one resolved pair is one load, however many cases there are');
+  assert.deepEqual(warmed[0], { provider: 'cli-provider', model: 'cli-model', beforeCase: 'a' });
 });
 
-test('pairs come in order of first use, so the load is paid before the case that would carry it', () => {
-  const pairs = resolvePairs([CASES[2], CASES[0]], {});
-  assert.deepEqual(pairs.map((pair) => pair.model), ['pinned-model', null]);
+test('without the flag nothing is warmed, and the record says null rather than empty', () => {
+  // `[]` would read as "warm-up ran and warmed nothing", which is a different
+  // fact from "warm-up was not requested".
+  const { warmed, order } = drive(CASES, {}, { warmUp: false });
+
+  assert.equal(warmed, null);
+  assert.deepEqual(order, ['run:a', 'run:b', 'run:c']);
 });
 
 test('a pair naming nothing is still a pair — "whatever the config supplies" is a real model to load', () => {
-  assert.deepEqual(resolvePairs([{ id: 'a', provider: null, model: null }], {}), [{ provider: null, model: null }]);
+  const { warmed } = drive([{ id: 'a', provider: null, model: null }], {});
+  assert.deepEqual(warmed, [{ provider: null, model: null, beforeCase: 'a' }]);
 });
 
 test('the rendered report is written beside the record, under the same stamp', () => {
@@ -64,7 +146,7 @@ test('the record states that warm-up ran, rather than only that the flag was pas
     // exits non-zero on a request that loaded the weights perfectly well, so a
     // success flag here would read false on every model this repo runs.
     // `durationMs` is what separates "loaded" from "never reached the server".
-    const warmed = [{ provider: null, model: 'm', answered: false, durationMs: 1200 }];
+    const warmed = [{ provider: null, model: 'm', beforeCase: 'config-origin', answered: false, durationMs: 1200 }];
     const { recordPath } = persist(root, 'stamp', { options: { 'warm-up': true }, warmed }, '');
     // "The flag was passed" and "the request happened" are different facts, and
     // only the second one is why the first case's prefill can be trusted.

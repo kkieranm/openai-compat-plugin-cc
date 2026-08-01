@@ -24,6 +24,34 @@ function buildHeaders(profile) {
   return headers;
 }
 
+/**
+ * A better message for the same failure — carrying every classification the
+ * transport already made.
+ *
+ * This function used to build bare `UserError`s, and that silently discarded
+ * `reason`, `code` and `cause` for exactly the three codes it names below. The
+ * consequence was invisible until the retry set was split (OAI-22): a real
+ * `EAI_AGAIN` is classified retryable by `transportError` and then arrived at
+ * `answerWithRetry` with **no reason at all**, so it was never retried; and a
+ * terminal `ENOTFOUND` or `ECONNREFUSED` was recorded in the attempt ledger as
+ * `unclassified`, beside genuinely unrecognised failures, in the very table the
+ * benchmark exists to read.
+ *
+ * Rewording a failure must never reclassify it. The message is this layer's to
+ * improve — it is the only one that knows the provider's name and its start
+ * hint — while the reason belongs to the layer that saw what happened.
+ */
+function reword(error, message, options) {
+  const worded = new UserError(message, options);
+  worded.reason = error?.reason;
+  worded.code = error?.cause?.code ?? error?.code;
+  worded.cause = error?.cause ?? error;
+  // Only ever set, never cleared: `budgetError` and `transportError` leave it
+  // absent rather than false, and cmd-setup reads truthiness.
+  if (error?.serverResponded) worded.serverResponded = true;
+  return worded;
+}
+
 function describeFailure(error, profile) {
   // The transport already names which budget elapsed and what had arrived, so
   // re-describing it here would replace a diagnosis with a guess — which is what
@@ -33,15 +61,16 @@ function describeFailure(error, profile) {
   }
   const code = error?.cause?.code ?? error?.code;
   if (code === 'ECONNREFUSED') {
-    return new UserError(`Cannot reach ${profile.name} at ${profile.baseUrl} — connection refused.`, {
+    return reword(error, `Cannot reach ${profile.name} at ${profile.baseUrl} — connection refused.`, {
       hint: START_HINTS[profile.name] ?? 'Check the server is running and the baseUrl in the config is right.',
     });
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
-    return new UserError(`Cannot resolve the host in ${profile.baseUrl} (provider "${profile.name}").`);
+    return reword(error, `Cannot resolve the host in ${profile.baseUrl} (provider "${profile.name}").`);
   }
   if (error instanceof UserError) return error;
-  return new UserError(
+  return reword(
+    error,
     `Request to ${profile.name} at ${profile.baseUrl} failed: ${error?.message ?? error}${code ? ` (${code})` : ''}`,
   );
 }

@@ -1,4 +1,5 @@
 import { UserError } from './errors.mjs';
+import { NON_RETRYABLE_TRANSPORT, TRANSIENT_CONNECT_CODES, TRANSPORT } from './failure-shape.mjs';
 
 /**
  * The refusal vocabulary of the transport.
@@ -113,7 +114,7 @@ export function budgetError(budget, budgetMs, received, host, { serverResponded 
  * else, so a plain Error turns one unreachable provider into an exit-2 crash of
  * the whole report and makes an optional probe fatal.
  */
-export function transportError(error, url) {
+export function transportError(error, url, { delivered = false } = {}) {
   // Node 18.18 turned on address-family autoselection, so a host resolving to
   // both A and AAAA fails as an AggregateError whose useful code sits in
   // `errors[]` — and `error.code` on the outer object is undefined. Reading only
@@ -121,7 +122,24 @@ export function transportError(error, url) {
   // into a bare "Request failed".
   const cause = error.code ? error : (error.errors?.find((inner) => inner?.code) ?? error);
   const wrapped = new UserError(`Request to ${url.host} failed: ${cause.message ?? error.message}`);
-  wrapped.reason = 'transport';
+  // `delivered` comes from the CALL SITE, not from the code, and that is the
+  // whole design. This function has two callers with opposite meanings: the
+  // body-stream catch in `http.mjs`, which only ever runs past headers, and the
+  // request `'error'` handler, which usually does not. Classifying by `code`
+  // alone would file the first as non-retryable whenever Node hands over a
+  // code-less `Error: aborted` — a genuinely retryable delivery failure marked
+  // not worth retrying, which is this whole change inverted. Whether Node
+  // populates `code` there is version-dependent and unverifiable from here, so
+  // the code that KNOWS which phase it is in says so, exactly as
+  // `failure-shape.mjs` requires of every tag.
+  wrapped.reason = delivered || TRANSIENT_CONNECT_CODES.has(cause.code) ? TRANSPORT : NON_RETRYABLE_TRANSPORT;
+  // Headers are a response, so `delivered` settles the other question this error
+  // is asked: `cmd-setup.mjs` reads `serverResponded` to decide whether to tell
+  // someone to start a server. Without it a body reset mid-`/v1/models` reported
+  // a running server as unreachable — and the sibling branch in `http.mjs` that
+  // detects the same cut a different way has always set it, so the two paths
+  // disagreed about a server they had both heard from.
+  if (delivered) wrapped.serverResponded = true;
   // describeFailure already reads `error?.cause?.code ?? error?.code`, and the
   // provider-specific start hints hang off this.
   wrapped.code = cause.code;

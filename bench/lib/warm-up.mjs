@@ -34,30 +34,35 @@ const WARM_UP_PROMPT = 'hi';
 const WARM_UP_MAX_TOKENS = '16';
 
 /**
- * The distinct provider/model pairs the selected cases will actually resolve to,
- * in order of first use.
+ * The provider/model pair one case will actually resolve to.
  *
- * Per-pair rather than one for the whole invocation, because a case may pin its
+ * Per-case rather than one for the whole invocation, because a case may pin its
  * own provider/model (overridden by the command line, exactly as `reviewFlags`
- * resolves it) — so "the resolved model" is not a single value in general. On a
- * corpus where every case resolves alike this yields one pair and costs one
- * request; it stops being wrong the moment a case pins a model.
+ * resolves it) — so "the resolved model" is not a single value in general.
  *
  * A pair with neither field is still a pair: it means "whatever providers.json
  * supplies", which is a real target that still has to be loaded.
  */
-export function resolvePairs(cases, options) {
-  const pairs = [];
-  const seen = new Set();
-  for (const caseDef of cases) {
-    const provider = options.provider ?? caseDef.provider ?? null;
-    const model = options.model ?? caseDef.model ?? null;
-    const key = `${provider ?? ''} | ${model ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    pairs.push({ provider, model });
-  }
-  return pairs;
+export function pairFor(caseDef, options) {
+  return {
+    provider: options.provider ?? caseDef.provider ?? null,
+    model: options.model ?? caseDef.model ?? null,
+  };
+}
+
+/**
+ * Identity for "is this the same target as the last case?" — nulls included.
+ *
+ * `JSON.stringify` of a tuple rather than a joined string, because a separator
+ * is only unambiguous while no field can contain it. Concatenating with `" | "`
+ * made `{provider: 'a', model: 'b | c'}` and `{provider: 'a | b', model: 'c'}`
+ * the same key — and nothing constrains a provider name or a model id against
+ * the delimiter. Two distinct targets reading as one suppresses the warm-up
+ * between them, which is silently the bug this function exists to prevent.
+ * Null is preserved distinctly from the empty string for the same reason.
+ */
+export function pairKey({ provider, model }) {
+  return JSON.stringify([provider ?? null, model ?? null]);
 }
 
 /**
@@ -85,31 +90,77 @@ export function warmUpFlags({ provider, model }, options) {
 }
 
 /**
- * One warm-up per pair, recorded.
+ * One warm-up request, recorded.
  *
  * Returns what was warmed and how it went, so the record *states* that warm-up
  * ran instead of leaving the raw options object as the only evidence — "the flag
  * was passed" and "the request happened" are different facts, and only the
- * second one is the reason the first case's prefill can be trusted.
+ * second one is the reason a case's prefill can be trusted.
+ *
+ * `beforeCase` names the case this warm-up preceded. Warm-ups are interleaved
+ * now rather than all run up front, so without it a reader of the record cannot
+ * tell a mid-run warm-up from a pre-run one — and telling them apart is the
+ * whole reason this function returns anything at all.
  */
-export function warmUp(pairs, options, { companion, cwd }) {
-  return pairs.map((pair) => {
-    const startedAt = Date.now();
-    process.stderr.write(`warm-up — ${pair.model ?? 'configured model'}...\n`);
-    try {
-      execFileSync(process.execPath, [companion, ...warmUpFlags(pair, options)], {
-        cwd,
-        encoding: 'utf8',
-        maxBuffer: 64e6,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      return { ...pair, answered: true, durationMs: Date.now() - startedAt };
-    } catch (error) {
-      // Recorded, never thrown. See the module note: the corpus run is where a
-      // sick server gets reported, with the machinery that reports it properly —
-      // and `answered: false` here is routine, not a warning.
-      const said = String(error.stderr ?? error.message).trim();
-      return { ...pair, answered: false, durationMs: Date.now() - startedAt, error: said };
+export function warmUpPair(pair, options, { companion, cwd, beforeCase }) {
+  const startedAt = Date.now();
+  process.stderr.write(`warm-up — ${pair.model ?? 'configured model'}...\n`);
+  try {
+    execFileSync(process.execPath, [companion, ...warmUpFlags(pair, options)], {
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: 64e6,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { ...pair, beforeCase, answered: true, durationMs: Date.now() - startedAt };
+  } catch (error) {
+    // Recorded, never thrown. See the module note: the corpus run is where a
+    // sick server gets reported, with the machinery that reports it properly —
+    // and `answered: false` here is routine, not a warning.
+    const said = String(error.stderr ?? error.message).trim();
+    return { ...pair, beforeCase, answered: false, durationMs: Date.now() - startedAt, error: said };
+  }
+}
+
+/**
+ * The corpus, warmed on every change of target.
+ *
+ * **Interleaved, never grouped, and never once up front.** Warming every pair
+ * before the first case — the original shape — lets the last warm-up evict the
+ * first on a provider that keeps one model resident, so the earlier model's
+ * first case still pays the JIT load the flag exists to remove. Warming only at
+ * *first* use has the same defect one step later: an alternating corpus reloads
+ * on every switch and only the first two cases are covered.
+ *
+ * The alternative that also fixes it — grouping the cases by pair — was rejected
+ * because it reorders them. Cases are scored independently, but they do not run
+ * independently: model residency, prompt cache, thermal state and the correlated
+ * failure conditions OAI-20 exists to survive are all shared mutable state, so
+ * reordering one arm changes which cases meet which conditions and weakens any
+ * cross-arm comparison the corpus is used for. Order is preserved; only the
+ * warm-ups move.
+ *
+ * On a single-pair invocation — which is every arm OAI-19 runs, since a
+ * command-line `--model` overrides every case — this collapses to exactly one
+ * warm-up before the first case, identical to the behaviour it replaces.
+ *
+ * `warm` and `run` are injected because `bench/run.mjs` calls `main()` at
+ * import, so the loop is otherwise unreachable from a test — and a pair-change
+ * rule that no test can drive is a rule the next edit deletes silently.
+ */
+export function runWithWarmUp(cases, options, { warm, run }) {
+  const warmed = options['warm-up'] ? [] : null;
+  let lastKey = null;
+  const results = cases.map((caseDef) => {
+    if (warmed) {
+      const pair = pairFor(caseDef, options);
+      const key = pairKey(pair);
+      if (key !== lastKey) {
+        warmed.push(warm(pair, caseDef));
+        lastKey = key;
+      }
     }
+    return run(caseDef);
   });
+  return { results, warmed };
 }
