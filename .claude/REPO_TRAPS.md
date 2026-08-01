@@ -613,3 +613,50 @@ end-to-end test trying to land an expiry in that gap is a coin flip.
   with measured sizes; a "just trim it to fit" change would produce confident answers drawn from
   half the input.
 - Watch for `apiKey` reaching any output path. `setup --json` deliberately emits only `hasApiKey`.
+
+## Rewording an error discards its classification
+
+`provider.mjs` `describeFailure` improves a transport failure's message — it is the only layer that
+knows the provider's name and its start hint — and it did so by constructing **fresh** `UserError`s
+for `ECONNREFUSED`, `ENOTFOUND` and `EAI_AGAIN`, silently dropping `reason`, `code` and `cause`.
+
+Invisible for months, because losing a reason only matters once something reads it. OAI-22 split the
+retry set and the cost surfaced at once: `EAI_AGAIN` was classified retryable and then reached
+`answerWithRetry` with no reason at all, so it was never retried; and terminal DNS and refusal
+attempts entered the attempt ledger as `unclassified`, beside genuinely unrecognised failures, in
+the very `Failures by reason` table the benchmark exists to make readable.
+
+The rule: **the message belongs to the layer that knows the provider; the verdict belongs to the
+layer that saw what happened.** Any code that rebuilds an error to improve its wording must carry
+`reason`, `code`, `cause` and `serverResponded` across — that is what `reword()` exists for.
+**Guarded by** `tests/transport-classification.test.js` — "a classified failure keeps its reason
+through the provider rewording" and "an unresolvable host keeps a NAMED reason", both of which drive
+the real `request()` boundary.
+
+## A claim verified at the producer can be false at the consumer
+
+The sibling of the trap above, and the reason it survived a probe designed to catch exactly this.
+OAI-22's step-1 probe claimed "an unresolvable hostname is retried three times", citing
+`http-errors.mjs` and `failure-shape.mjs`. Both were checked and both were **true as cited** — the
+defect was one layer up, in a wrapper the claim never named. It then survived the grill, seven
+plan-gate rounds and all of phase 1's tests, because every test constructed the error at the
+producer and asserted on it in place.
+
+The rule: when a claim is about what a value **reaches** — a retry predicate, a ledger, a report —
+state it as an assertion about the endpoint and cite the path, not one file. At least one test must
+cross the real boundary rather than build the value and assert on it where it was built. A ten-line
+script driving the production entry point settles it in seconds; here it printed
+`reason=undefined ... retryable=false` and ended the argument.
+
+## Untracked files are invisible to the review workflow
+
+`review-lean`'s scope agent pins the diff with `git diff`, which does not show untracked files — its
+own output said so ("need `git add -N <file>` first"). During OAI-22 that meant a newly extracted
+109-line production module, `scripts/lib/stream-collect.mjs`, was very likely never read by any of
+the five finders, while the review still reported clean. Worse, `git commit -am` would have shipped
+`chat.mjs` with those lines *removed* and the module they moved into absent — a tree broken on any
+fresh clone, with the local suite green because the file existed in the working tree.
+
+**`git add` new files before launching a review pass, and check `git status` before the commit
+gate.** A review that cannot see a file has not reviewed it, and "no findings" from a run that never
+read the code is the incomplete-run trap wearing a different hat.

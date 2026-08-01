@@ -214,6 +214,48 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
 
+- **OAI-27** — Run `/security-review` over the transport-classification path. Filed 2026-08-01 from
+  the OAI-22 ladder, where it was **evaluated and not triggered, and that call is disputed**. The
+  skill's trigger list is auth/sessions, personal data, money movement, secrets and credentials, or
+  anything irreversible — OAI-22 touches none of them, so it was skipped and the specific concern
+  raised (`transportError` now branches on a `cause.code` that arrives from a remote peer, and a TLS
+  rejection such as `CERT_HAS_EXPIRED` becomes `non-retryable-transport` with `cause.message`
+  interpolated into a `UserError`) was closed by an explicit assertion instead: the code is preserved
+  and the message still names the certificate. The `advisor` argued that is a security lens being
+  recorded as "not triggered" when it does trigger. Cheap to settle, so settle it rather than leave
+  the disagreement in a commit message: one fan-out over `http-errors.mjs`, `http.mjs`,
+  `provider.mjs`. If it finds nothing, the trigger list stands as written and this closes as a
+  recorded judgement rather than an open question.
+
+- **OAI-28** — Give `http.mjs`'s `!response.complete` branch behavioural coverage, or record why it
+  cannot have any. Filed 2026-08-01. That branch — a socket cut mid-body ending the iteration with
+  **no** `'error'` event — is the most retryable shape in the codebase, had **no test at all** before
+  OAI-22, and OAI-22 *modified* it (the bare `'transport'` literal became the `TRANSPORT` constant).
+  It is still untested behaviourally, and not for want of trying: measured on Node 26.3, both ways of
+  cutting a body (a short `content-length`, and chunked with no terminator) raise on the stream
+  instead, so the catch one line below handles them and this branch is never entered. The test added
+  in OAI-22 asserts the *verdict* both paths must share, which is honest but does not reach here —
+  proved by mutation: flipping this branch's constant left the suite green. Options: find a cut that
+  Node reports as a clean end (an HTTP/1.0 connection-close body with a truncated payload is the
+  likeliest candidate), drive `bodyStream` directly, or conclude the branch is unreachable on current
+  Node and say so in a comment rather than leaving a silent hole. The constant swap already removes
+  the divergence risk that motivated touching it, so this is coverage, not correctness.
+
+- **OAI-29** — Let the transport ARM from a recomputed remaining budget, without letting it refuse.
+  Filed 2026-08-01 from the OAI-22 adversarial review (Codex, medium/0.96), where the finding was
+  accepted as a *claim* correction and its recommendation deliberately not taken. The claim: OAI-22
+  carries one `capBudgets` result from `postWithDegrade` into `postChat`, so the `totalMs` the
+  transport arms is computed a few call frames before the socket is written. There is no `await` in
+  that gap, but `ledger.begin` serializes the messages for `promptChars` and `request` serializes the
+  body again — milliseconds on a 60k-token prompt — so a request dispatched a hair after expiry is
+  granted the duration that remained at the check. Codex recommended carrying the absolute expiry
+  into the transport and validating it at arming time; that half was **rejected and stays rejected**,
+  because a transport that can *refuse* at arming reopens exactly the phantom-ledger-entry window
+  OAI-22 closed. The safe half was never done: recompute the remaining time at arming and use it for
+  the timer *only*, never to reject. Strictly tighter than today, no new refusal path, and it makes
+  the generosity exactly zero instead of merely small. Small, and immaterial at present scales — the
+  cap is seconds, the slip is milliseconds — so it is filed rather than urgent.
+
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
