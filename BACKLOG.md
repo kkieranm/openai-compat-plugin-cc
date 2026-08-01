@@ -49,8 +49,9 @@ them change what the run would measure — OAI-23 fixed an attempt record that c
 failure as benign negotiation, which is the reliability figure OAI-19 reads, and OAI-22's
 `--warm-up` lets one warm-up evict the last on a single-resident provider, which is exactly the
 two-arm case OAI-19 runs — and OAI-24 must be decided before the write-up quotes a mechanism.
-Landing them afterwards would mean running the corpus twice. **OAI-23 is done (2026-08-01)**; OAI-22
-and OAI-24 remain, so the order is OAI-22 → OAI-24 → OAI-19. One of its two headline results is now retracted
+Landing them afterwards would mean running the corpus twice. **OAI-23 is done (2026-08-01)**, and
+its review filed two more that belong ahead of the run: OAI-25 and OAI-26. The order is
+**OAI-22 → OAI-25 → OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -131,6 +132,21 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   testability, which deserves its own grill rather than a batch fix. Sits beside OAI-22 because they
   touch the same window; if OAI-22's compute-the-budget-once fix lands first, re-ask whether this is
   still worth a seam — with only one `capBudgets` call left, the gap it would test narrows again.
+
+- **OAI-26** — Explain `shape-rejected` in the reliability report, where it now appears bare. Filed
+  2026-08-01, noticed after OAI-23 landed rather than during its review. `reliability-report.mjs`
+  writes a paragraph for each outcome a reader could misread — `refused`, `unresolved`,
+  `warmEligible` — and then prints `Failures by reason` as a raw count table. OAI-23 added
+  `shape-rejected` to that table, and it is precisely the code that needs the paragraph: it sits
+  among the delivery failures but is not one, and it is the *terminal* twin of the benign `refused`
+  outcome the report explains two paragraphs earlier. A reader of OAI-19's write-up seeing
+  `shape-rejected: 3` has nothing telling them those three runs died on a refusal whose replacement
+  was never dispatched, as opposed to a server dropping requests — which is the exact conflation the
+  attempt record exists to prevent. Prose only, no schema change: `byReason` already tallies it
+  because it tallies every `failed` entry. While there, tighten the `refused` paragraph's "the
+  plugin sent a replacement request without it" — after OAI-23 that is guaranteed rather than
+  merely intended, and saying so is what makes the two codes readable side by side. Do it before
+  OAI-19's write-up quotes the table.
 
 - **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
   asked the characterization to break failures down "by model, case, request size, attempt number
