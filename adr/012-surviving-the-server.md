@@ -113,6 +113,17 @@ arming reopens exactly the window this closes. The price is that the carried `to
 generous — bounded by the synchronous work in the gap, which is body serialization, so milliseconds
 on a 60k-token prompt against a cap measured in seconds.
 
+**Behavioural cover, added by OAI-25 (2026-08-01).** Both orderings above were pinned only by
+source-text guards in `tests/structure.test.js`, each justifying itself with a claim that they could
+not be reached behaviourally. That claim was false, and the guards were the thing asserting it:
+`tests/cap-ordering.test.js` drives the real `postWithDegrade` loop with `globalThis.performance`
+replaced, advancing the clock at named semantic boundaries — after `ledger.begin` for the
+carried-budget rule, and inside the handle's `refuse` for the OAI-23 refusal window that this
+document's prose named but nothing drove. The `now` seam OAI-25 proposed threading through
+`capBudgets` turned out to be unnecessary: it reads the bare global, so a test-only stub reaches it
+and **no production byte changed**. The guards stay — they localize the contract to the two
+statements carrying it — but they no longer stand *in place of* behavioural cover.
+
 ### A bounded retry, spanning the transport *and* the judgement
 
 `answerWithRetry` wraps `postWithDegrade → finishAnswer`, inside `chatCompletion`. That pair is the

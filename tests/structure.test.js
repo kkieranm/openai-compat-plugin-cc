@@ -190,12 +190,12 @@ test('allowlist entries all carry a reason', () => {
  * path — a refusal reclassified as benign negotiation for a replacement that was
  * never dispatched, plus a phantom entry for it.
  *
- * The class, which is what earns a guard rather than a test: **an ordering that
- * carries an invariant, pinned by nothing**. Two statements swap, the suite stays
- * green, and the invariant is gone. It cannot be reached behaviourally here — the
- * window between them is a few call frames, and the transport arms the remaining
- * cap as its own deadline, so a request cannot complete after expiry — which is
- * precisely why it needs a structural guard instead.
+ * The class, which is what earns a guard: **an ordering that carries an
+ * invariant, pinned by nothing**. Two statements swap and the invariant is gone.
+ * The suite no longer stays green when they do — `failure-shape.test.js` and
+ * `cap-ordering.test.js` both go red — so this guard does not stand IN PLACE of
+ * behavioural cover, as it once claimed to; OAI-25 refuted that. It localizes the
+ * contract to the two statements carrying it, naming the rule where it lives.
  *
  * Comments are stripped first: both tokens now appear in the prose that explains
  * this very ordering, and a guard matching those would pass vacuously. Absence of
@@ -238,9 +238,9 @@ test('the wall-clock cap is checked before a ledger entry is minted, not after',
  * the cap on its own side, both statements could be true and a cap falling due
  * between them still minted an entry for a request that was never sent.
  *
- * Same class as the guard above — an arrangement carrying an invariant, pinned
- * by nothing — and unreachable behaviourally for the same reason: the window is
- * a few call frames wide with no `await` in it.
+ * Same class as the guard above, and behaviourally covered too since OAI-25:
+ * `cap-ordering.test.js` drives an expiry into that window with a controlled
+ * clock, and fails if `postChat` recomputes. This pins where the rule lives.
  */
 test('the cap is evaluated exactly once per dispatch, and that evaluation is what the transport gets', () => {
   const degrade = functionBody('scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);

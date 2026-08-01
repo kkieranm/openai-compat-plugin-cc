@@ -660,3 +660,30 @@ fresh clone, with the local suite green because the file existed in the working 
 **`git add` new files before launching a review pass, and check `git status` before the commit
 gate.** A review that cannot see a file has not reviewed it, and "no findings" from a run that never
 read the code is the incomplete-run trap wearing a different hat.
+
+## A guard justified by "this cannot be tested" carries an untested claim
+
+**Three confirmed instances, and the first two were found only when the third was being fixed.**
+`tests/structure.test.js`'s two cap-ordering guards each justified their own existence with "it
+cannot be reached behaviourally" and "unreachable behaviourally for the same reason". Both were
+false: moving `capBudgets` below `ledger.begin` turns `tests/failure-shape.test.js` red, and the
+narrow mid-window case is reachable by replacing `globalThis.performance`, which `capBudgets` reads
+bare. OAI-25 then reproduced the class **in its own fix**, shipping a comment that read "No mutation
+distinguishes the two placements" — a claim about all possible mutations derived from one experiment,
+caught in review. A third instance survives at `tests/structure.test.js:279,287` ("nothing
+behavioural can pin it", "A test cannot make Node drop the code on demand"), filed as OAI-30.
+
+The class is not "the guard is wrong" — all three guards are correct and earn their place. It is
+that **the justification is a load-bearing claim nobody tested**, and it is self-protecting: a
+reviewer who reads "this cannot be tested" stops looking for the test. The damage is that a
+structural guard gets treated as a substitute for behavioural cover rather than as a localisation of
+where a rule lives.
+
+**The rule: never justify a guard by asserting untestability. State what was TRIED and what it
+cost.** "A controlled clock reaches this; the guard localizes the contract" is checkable. "This
+cannot be reached" is a claim about every possible test, and this repo has now been wrong about it
+three times.
+
+**Checked by hand**, since it is prose rather than code: grep the changed test files for
+`cannot|impossible|unreachable|never reach|no (mutation|test)` and confirm each hit states a
+mechanism or an experiment, not an impossibility.

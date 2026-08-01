@@ -229,9 +229,9 @@ test('a cap that has ALREADY expired mints no ledger entry at all', () => {
   //
   // No clock seam needed for this one — an expiry in the past is the expired
   // state. The narrower mid-window case, where the cap falls due *between* the
-  // check and the dispatch, is what BACKLOG.md OAI-25 is about; after OAI-22
-  // there is no such window left to drive, which is why a structural guard
-  // stands for it instead.
+  // check and the dispatch, does need one and gets it in `cap-ordering.test.js`
+  // (OAI-25): a controlled clock reaches it after all, retiring this file's
+  // earlier claim that only a structural guard could stand for it.
   const ledger = createLedger();
   const profile = { name: 'p', baseUrl: 'http://127.0.0.1:1/v1' };
   const budgets = { expiresAt: performance.now() - 1_000, maxMs: 30_000, ledger, firstTokenMs: 5_000, idleMs: 1_000 };

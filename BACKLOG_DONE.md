@@ -2,6 +2,32 @@
 
 Newest first.
 
+- **OAI-25** — Make the `postWithDegrade` cap-ordering invariants reachable behaviourally, instead of
+  only structurally. Completed 2026-08-01. **The item's own premise was half-refuted by the probe,
+  which is the part worth keeping.** OAI-25 asked whether anything was left to buy and suggested not:
+  "the already-expired case is behaviourally tested, and what remains is guarded structurally
+  instead". The second clause was false. `tests/structure.test.js`'s two guards each justified
+  themselves with a claim that the ordering *could not* be reached behaviourally — and moving
+  `capBudgets` below `ledger.begin` turns `tests/failure-shape.test.js:224` red, which was already
+  true before this change. The guards were asserting something the suite disproved.
+  **The seam was also unnecessary.** OAI-25 proposed injecting a `now` parameter into the budget
+  calculation and flagged that changing production code for testability deserved its own grill. It
+  does not need one: `capBudgets` reads the bare global `performance.now()`, so replacing
+  `globalThis.performance` in a test reaches it and **zero production bytes changed**.
+  **What landed.** `tests/cap-ordering.test.js` drives the real `postWithDegrade` loop under a
+  controlled clock, advancing it at named semantic boundaries rather than by counting clock reads:
+  after `ledger.begin` for OAI-22's carried-budget rule (red if `postChat` recomputes the cap), and
+  inside the handle's `refuse` for the OAI-23 window this repo's prose named but nothing drove — a
+  capability refusal whose replacement the cap refuses, which must stay `failed`/`shape-rejected`
+  with no phantom second entry. Both proved by mutation. Both guards kept, with their rationale
+  rewritten to say what they actually do: localize the contract, not substitute for cover.
+  **The class it produced, and its third instance.** A guard justified by "this cannot be tested"
+  carries an untested claim, and it is self-protecting — a reviewer who reads it stops looking for
+  the test. The feature reproduced the class *in its own fix* (a comment claiming "No mutation
+  distinguishes the two placements", from one experiment) and review caught it; a third instance
+  survives at `tests/structure.test.js:279,287` and is filed as **OAI-30**. Recorded in
+  `.claude/REPO_TRAPS.md`. See [ADR 012](adr/012-surviving-the-server.md).
+
 - **OAI-22** — Retry only what a retry can fix; check the cap once; warm the model that is about to
   run. Completed 2026-08-01. Three bounded fixes, and **the review refuted the premise of the first
   one**, which is the part worth keeping.

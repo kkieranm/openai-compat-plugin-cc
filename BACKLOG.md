@@ -55,7 +55,8 @@ are done (2026-08-01)**; OAI-23's review filed OAI-25 and OAI-26, which remain a
 That was wrong: OAI-19 runs one arm per model as separate invocations, each passing `--model`, which
 overrides every case — so each arm resolves to a single pair and nothing evicts anything. The
 warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.)* The order is
-**OAI-25 → OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
+**OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01**, so the remaining order is
+**OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
@@ -95,21 +96,19 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-25** — Make the `postWithDegrade` ordering invariant reachable behaviourally, instead of only
-  structurally. Filed 2026-08-01 from the OAI-23 review (Codex adversarial, medium/0.98), raised in
-  the third and terminal pass, so recorded rather than fixed. OAI-23 ships a source-text guard in
-  `tests/structure.test.js` asserting `capBudgets` precedes `ledger.begin` — which does catch the
-  real regression (proved by mutation: moving the call left 370/370 green while reopening the defect
-  on the capability-rung path). The objection is that a structural guard cannot prove the *runtime*
-  order it stands for, and that the invariant is behaviourally testable after all: inject a `now`
-  seam into the budget calculation, drive `postWithDegrade` with a controlled clock and a fake 400,
-  and assert the second request is absent while the entry stays `failed`/`shape-rejected`. Not done
-  in OAI-23 for two reasons worth keeping: the pass was terminal, and it changes production code for
-  testability, which deserves its own grill rather than a batch fix. Sits beside OAI-22 because they
-  touch the same window. **OAI-22 landed 2026-08-01, so re-ask now:** with `capBudgets` evaluated once
-  and carried into `postChat`, there is no longer a window between the check and the dispatch for a
-  seam to drive — the already-expired case is behaviourally tested (it mints zero ledger entries),
-  and what remains is guarded structurally instead. Decide whether anything is left to buy.
+- **OAI-30** — Retire the last "cannot be tested" justification, at `tests/structure.test.js:279,287`.
+  Filed 2026-08-01 from the OAI-25 ladder (Codex adversarial, low/0.97, pass 3 — the no-mutation
+  pass, so recorded rather than fixed; a fix there would have shipped unreviewed). The guard is
+  OAI-22's, it is correct, and nothing about `delivered: true` is in doubt. What overclaims is its
+  doc comment: "nothing behavioural can pin it" and "A test cannot make Node drop the code on
+  demand". The evidence behind those sentences is narrower than they are — it establishes that on
+  Node 26.3 a real mid-body cut *happened* to carry `ECONNRESET`, not that no test can exercise the
+  code-less path. **The fix is known and cheap**: drive `bodyStream` directly with a stub async
+  iterable that throws a code-less error, and assert the verdict stays retryable — which is
+  OAI-28's "drive `bodyStream` directly" option applied one line lower. Adjacent to OAI-28 but
+  distinct: that item is the `!response.complete` branch, this is the catch below it. Third confirmed
+  instance of the class now recorded in `.claude/REPO_TRAPS.md`; the other two were OAI-25's subject
+  and OAI-25's own first draft.
 
 - **OAI-26** — Explain `shape-rejected` in the reliability report, where it now appears bare. Filed
   2026-08-01, noticed after OAI-23 landed rather than during its review. `reliability-report.mjs`
