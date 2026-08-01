@@ -109,6 +109,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   distinct: that item is the `!response.complete` branch, this is the catch below it. Third confirmed
   instance of the class now recorded in `.claude/REPO_TRAPS.md`; the other two were OAI-25's subject
   and OAI-25's own first draft.
+  **Budget note, because it will bite whoever picks this up:** `tests/structure.test.js` sits at
+  **299 of the 300-line ratchet**. OAI-25's comment rewrites there were net-neutral by construction
+  for exactly this reason. This item rewrites a comment in that same file *and* the honest replacement
+  is longer than what it replaces, so room has to be made first — tighten neighbouring prose, or move
+  the new behavioural test into `tests/cap-ordering.test.js` (204 lines) where the clock/stub fixtures
+  already live. Raising the ceiling is the one option that needs a stated reason, per the ratchet's
+  own rule.
 
 - **OAI-26** — Explain `shape-rejected` in the reliability report, where it now appears bare. Filed
   2026-08-01, noticed after OAI-23 landed rather than during its review. `reliability-report.mjs`
@@ -254,6 +261,14 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   the timer *only*, never to reject. Strictly tighter than today, no new refusal path, and it makes
   the generosity exactly zero instead of merely small. Small, and immaterial at present scales — the
   cap is seconds, the slip is milliseconds — so it is filed rather than urgent.
+  **Independently rediscovered 2026-08-01 during the OAI-25 ladder**, by a `review-lean` verifier that
+  had run the mutation itself, which is worth recording because it also states the coverage boundary
+  precisely: a `postChat` that re-armed *from the carried `budget.totalMs` duration* rather than
+  re-deriving from `expiresAt` would pass both new `cap-ordering.test.js` tests **and** the
+  `occurrences(post, 'capBudgets(') === 0` structural guard. That is not a hole in those guards —
+  re-arming from the already-checked value does not reopen the OAI-22 window, and none of them ever
+  claimed to cover it — but it means **this item's window is guarded by nothing at all**, so if it is
+  ever done, it needs its own test rather than an assumption that the OAI-25 pair reaches it.
 
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
