@@ -140,6 +140,37 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   defect OAI-26 was reviewed three times to remove, reachable by a one-token edit. The existing
   negative test only checks the reverse containment, which is vacuous. One test fixes it: a
   `non-retryable-transport`-only sweep asserting the `transport` paragraph is **absent**.
+  **(6) Minor, while in the file:** the transport test's
+  `assert.match(para, /not\*\* a count of server misbehaviour|not a count of server misbehaviour/)`
+  is an alternation that passes whether or not the emphasis is there, so it does not pin what its
+  two branches disagree about. Pick one. Noticed while writing this item rather than by a reviewer,
+  which is why it is filed with the four they found rather than as its own thing.
+
+- **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. Filed 2026-08-02 from
+  OAI-26's pass 3, where it was observed rather than triggered — and the observation is the whole
+  point, because nothing in the commit gate would have caught it. Verifiers prove findings by
+  editing the tree and running the suite (which is exactly why their findings are trustworthy: two
+  of OAI-26's best were mutation-proved). They restore afterwards by hand. In pass 3 one verifier
+  reported watching **another verifier's** edit appear and revert underneath it, and rebuilt a
+  pristine baseline elsewhere to get a trustworthy result; a second reported the same interference.
+  Nothing went wrong this time — the files were read in full before the commit and were byte-correct
+  — but **the failure mode is silent and undetectable by the usual checks**: the very finding those
+  verifiers filed is that `key === code` → `key.includes(code)` leaves all 399 tests green, so a
+  green suite proves nothing about an unrestored mutation, and neither does a grep. A wide run
+  leaves a window in which the tree may not be what the author thinks it is.
+  **The fix is not in this repo**: `.claude/workflows/review-lean.js` is a symlink into
+  `~/Code/dotfiles`, and the `Workflow` tool already supports `isolation: 'worktree'` per agent,
+  which exists for precisely this ("agents mutate files in parallel and would otherwise conflict").
+  It costs ~200–500ms and disk per agent, which is nothing against a 500k-token verifier stage. Two
+  parts: give mutating verifiers their own worktree, and — since a verifier that cannot mutate
+  cannot prove — keep the mutation capability rather than forbidding it. Filed here rather than only
+  in the dotfiles repo because this is where it bit and where a session picks up work; the edit
+  itself belongs there and must be committed there.
+  **While in that file, one reporting fix too.** A wide run whose verifiers die returns
+  `findings: []` with `unadjudicated: N` and a `failures` block — a died run that reads as a clean
+  one, which happened in OAI-26 pass 1 and hid a real defect until it was resumed. The standing rule
+  says never read "no findings" off a run that died; the workflow should make that impossible to get
+  wrong by refusing to report `findings` as authoritative while `unadjudicated > 0`.
 
 - **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
   asked the characterization to break failures down "by model, case, request size, attempt number
@@ -343,6 +374,17 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 
 - **OAI-5** — A delegation subagent (`/oai:rescue` + a thin forwarding agent) so a long local-model
   run does not consume the main session's context.
+
+- **OAI-33** — Write `plans/README.md`, which the `/feature` skill already points at and this repo
+  does not have. Filed 2026-08-02, noticed while filing OAI-26's plan. The skill says naming,
+  collisions, the `draft`/`final` distinction and provenance "live in `plans/README.md`" — so the
+  one place those rules are supposed to be written down is missing here, and six plans have been
+  written without them. In practice a convention has emerged and should just be recorded rather than
+  invented: `oai-NN-slug.md`, one per item, occasionally spanning two IDs where the work was
+  (`oai-20-21-survive-the-server.md`). Worth stating explicitly: a plan is **not** rewritten when
+  review refutes it — OAI-26's carries a dated correction block at the top and leaves the refuted
+  text in place, because the plan is the record of what was believed at the time, and that is the
+  convention the next one should follow. Housekeeping, so it sits down here; it costs one short file.
 
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
