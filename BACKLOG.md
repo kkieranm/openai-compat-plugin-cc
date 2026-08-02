@@ -55,9 +55,18 @@ are done (2026-08-01)**; OAI-23's review filed OAI-25 and OAI-26, which remain a
 That was wrong: OAI-19 runs one arm per model as separate invocations, each passing `--model`, which
 overrides every case — so each arm resolves to a single pair and nothing evicts anything. The
 warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.)* The order is
-**OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01**, so the remaining order is
-**OAI-26 → OAI-24 → OAI-19**. One of its two headline results is now retracted
+**OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01 and OAI-26 on 2026-08-02**, so the
+remaining order is **OAI-24 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
+
+**Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
+the top on filing date rather than on impact — it is a doc-comment correction, and everything above
+it either unblocks the OAI-19 measurement or settles a disputed security call. The pairing is the
+stronger half of the reason: **OAI-28 and OAI-30 are the same edit twice** — "drive `bodyStream`
+directly with a stub", one for the `!response.complete` branch and one for the catch below it — and
+both collide with the same 299-of-300 ratchet in `tests/structure.test.js`, which OAI-30 already
+proposes escaping by putting the fixture in `tests/cap-ordering.test.js`. Adjacent means that
+placement decision is made once, against both tests, instead of twice against one.
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
   "found at 1,575 tokens, missed at 47,072" pair varied token count, git mode, prompt shape and
@@ -96,48 +105,41 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-30** — Retire the last "cannot be tested" justification, at `tests/structure.test.js:279,287`.
-  Filed 2026-08-01 from the OAI-25 ladder (Codex adversarial, low/0.97, pass 3 — the no-mutation
-  pass, so recorded rather than fixed; a fix there would have shipped unreviewed). The guard is
-  OAI-22's, it is correct, and nothing about `delivered: true` is in doubt. What overclaims is its
-  doc comment: "nothing behavioural can pin it" and "A test cannot make Node drop the code on
-  demand". The evidence behind those sentences is narrower than they are — it establishes that on
-  Node 26.3 a real mid-body cut *happened* to carry `ECONNRESET`, not that no test can exercise the
-  code-less path. **The fix is known and cheap**: drive `bodyStream` directly with a stub async
-  iterable that throws a code-less error, and assert the verdict stays retryable — which is
-  OAI-28's "drive `bodyStream` directly" option applied one line lower. Adjacent to OAI-28 but
-  distinct: that item is the `!response.complete` branch, this is the catch below it. Third confirmed
-  instance of the class now recorded in `.claude/REPO_TRAPS.md`; the other two were OAI-25's subject
-  and OAI-25's own first draft.
-  **Budget note, because it will bite whoever picks this up:** `tests/structure.test.js` sits at
-  **299 of the 300-line ratchet**. OAI-25's comment rewrites there were net-neutral by construction
-  for exactly this reason. This item rewrites a comment in that same file *and* the honest replacement
-  is longer than what it replaces, so room has to be made first — tighten neighbouring prose, or move
-  the new behavioural test into `tests/cap-ordering.test.js` (204 lines) where the clock/stub fixtures
-  already live. Raising the ceiling is the one option that needs a stated reason, per the ratchet's
-  own rule.
-
-- **OAI-26** — Explain `shape-rejected` in the reliability report, where it now appears bare. Filed
-  2026-08-01, noticed after OAI-23 landed rather than during its review. `reliability-report.mjs`
-  writes a paragraph for each outcome a reader could misread — `refused`, `unresolved`,
-  `warmEligible` — and then prints `Failures by reason` as a raw count table. OAI-23 added
-  `shape-rejected` to that table, and it is precisely the code that needs the paragraph: it sits
-  among the delivery failures but is not one, and it is the *terminal* twin of the benign `refused`
-  outcome the report explains two paragraphs earlier. A reader of OAI-19's write-up seeing
-  `shape-rejected: 3` has nothing telling them those three runs died on a refusal whose replacement
-  was never dispatched, as opposed to a server dropping requests — which is the exact conflation the
-  attempt record exists to prevent. Prose only, no schema change: `byReason` already tallies it
-  because it tallies every `failed` entry. While there, tighten the `refused` paragraph's "the
-  plugin sent a replacement request without it" — after OAI-23 that is guaranteed rather than
-  merely intended, and saying so is what makes the two codes readable side by side. Do it before
-  OAI-19's write-up quotes the table.
-  **Grown by OAI-22 (2026-08-01): `non-retryable-transport` needs a paragraph too**, and for the same
-  reason — it sits among the delivery failures and is not one. Say that those attempts failed before
-  any response, in a way this client does not recognise as transient, so were not retried, and point
-  the reader at `.code`. It must **not** be called a reachability finding (TLS, protocol and parser
-  errors reach a peer), and the paragraph must not imply the `transport` rows beside it are all the
-  server's doing — `EAI_AGAIN` and a pre-response `ECONNRESET` are `transport` and carried no
-  response at all.
+- **OAI-31** — Five findings OAI-26's pass 3 raised and its own rules would not let it fix. Filed
+  2026-08-02. Pass 3 is the no-mutation pass, so these were recorded rather than patched; a fix there
+  would have shipped prose and tests no lens had read, which is the failure the cap exists to
+  prevent. Two are false sentences in **rendered output**, so do this before OAI-19's write-up quotes
+  the table. Ordered by whether a reader is misled:
+  **(1) "the reason code is all an attempt record carries" is false.** Raised at confidence 1.0 by
+  the adversarial pass and independently by the plain one — two lenses, the only finding in the
+  feature to be caught twice in a single pass. `newEntry` also records `index`, `cause`,
+  `promptChars`, `warmEligible`, `waitedMs`, `outcome` and both timings. The intended claim is much
+  narrower and is true: the record retains **nothing further about the transport error**. Delete or
+  narrow the `because…` clause in `reasonNotes`. The same overclaim is repeated in that function's
+  doc comment ("carries a reason code and nothing more"), so fix both.
+  **(2) "a replacement request without it was dispatched" equates entry creation with the wire
+  write** (0.94). `ledger.begin` mints the replacement's entry before `request` serializes and sends,
+  so what is guaranteed is that the replacement *received its own attempt entry* — which is exactly
+  what the following sentence already says, and is the precise, checkable version. Note this is the
+  sentence OAI-26 was asked to tighten, so it was rewritten once already; the second draft traded one
+  imprecision for another.
+  **(3) The two-fixture test at `tests/bench-reliability.test.js:190` is vacuous.** Proved by
+  mutation: the paragraph is static prose gated only on a reason code and never reads `run.error`, so
+  replacing the fixture with junk leaves the suite green. Its comment claims the pair "proves the
+  difference" and it discriminates nothing — the trap class reproduced one level up, at the test.
+  Either delete the parametrisation or make the assertion actually read the failure listing.
+  **(4) `assert.match(markdown, /`shape-rejected`/)` passes on the count-table row**, not the prose it
+  was written to pin. Proved by mutation: replacing the whole paragraph body with a placeholder
+  leaves that assertion green (its two siblings catch it, so this is an assertion that passes for the
+  wrong reason rather than a coverage hole).
+  **(5) `sawReason`'s exact match is unguarded, and this one has teeth.** `key === code` survives
+  mutation to `key.includes(code)` with all 399 tests green — and `transport` is a **substring** of
+  `non-retryable-transport`, so under the loosened gate a sweep whose only failures are
+  `non-retryable-transport` also prints the `transport` paragraph, asserting "a further attempt could
+  plausibly survive" about a code that by definition was never retried. That is the exact wrong-gate
+  defect OAI-26 was reviewed three times to remove, reachable by a one-token edit. The existing
+  negative test only checks the reverse containment, which is vacuous. One test fixes it: a
+  `non-retryable-transport`-only sweep asserting the `transport` paragraph is **absent**.
 
 - **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
   asked the characterization to break failures down "by model, case, request size, attempt number
@@ -246,6 +248,27 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   likeliest candidate), drive `bodyStream` directly, or conclude the branch is unreachable on current
   Node and say so in a comment rather than leaving a silent hole. The constant swap already removes
   the divergence risk that motivated touching it, so this is coverage, not correctness.
+
+- **OAI-30** — Retire the last "cannot be tested" justification, at `tests/structure.test.js:279,287`.
+  Filed 2026-08-01 from the OAI-25 ladder (Codex adversarial, low/0.97, pass 3 — the no-mutation
+  pass, so recorded rather than fixed; a fix there would have shipped unreviewed). The guard is
+  OAI-22's, it is correct, and nothing about `delivered: true` is in doubt. What overclaims is its
+  doc comment: "nothing behavioural can pin it" and "A test cannot make Node drop the code on
+  demand". The evidence behind those sentences is narrower than they are — it establishes that on
+  Node 26.3 a real mid-body cut *happened* to carry `ECONNRESET`, not that no test can exercise the
+  code-less path. **The fix is known and cheap**: drive `bodyStream` directly with a stub async
+  iterable that throws a code-less error, and assert the verdict stays retryable — which is
+  OAI-28's "drive `bodyStream` directly" option applied one line lower. Adjacent to OAI-28 but
+  distinct: that item is the `!response.complete` branch, this is the catch below it. Third confirmed
+  instance of the class now recorded in `.claude/REPO_TRAPS.md`; the other two were OAI-25's subject
+  and OAI-25's own first draft.
+  **Budget note, because it will bite whoever picks this up:** `tests/structure.test.js` sits at
+  **299 of the 300-line ratchet**. OAI-25's comment rewrites there were net-neutral by construction
+  for exactly this reason. This item rewrites a comment in that same file *and* the honest replacement
+  is longer than what it replaces, so room has to be made first — tighten neighbouring prose, or move
+  the new behavioural test into `tests/cap-ordering.test.js` (204 lines) where the clock/stub fixtures
+  already live. Raising the ceiling is the one option that needs a stated reason, per the ratchet's
+  own rule.
 
 - **OAI-29** — Let the transport ARM from a recomputed remaining budget, without letting it refuse.
   Filed 2026-08-01 from the OAI-22 adversarial review (Codex, medium/0.96), where the finding was

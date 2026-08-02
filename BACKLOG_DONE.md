@@ -2,6 +2,33 @@
 
 Newest first.
 
+- **OAI-26** — Explain `shape-rejected` and `non-retryable-transport` in the reliability report,
+  where they appeared bare. Completed 2026-08-02. Prose only, as filed: no schema change and no
+  change to counting — `byReason` already tallies every failed attempt's reason, so both codes were
+  in the table and only the explanation was missing. What shipped is three gated paragraphs in
+  `bench/lib/reliability-report.mjs`, each on its OWN code, plus the tightened `refused` paragraph
+  the item asked for.
+  **~~"Point the reader at `.code`"~~ — struck, refuted three times over.** The item instructed the
+  paragraph to send the reader to `.code`; the plan gate refuted it (the attempt record has no such
+  field), the replacement "the code is not carried in this report" was refuted by the pass-1 wide
+  review (`report.mjs` prints a dead run's whole stderr, and a Node syscall message embeds the code),
+  and the third try, "the listing usually names the underlying code", was refuted decisively in
+  pass 2 — a TLS rejection's message is the words "certificate has expired" and contains no
+  `CERT_HAS_EXPIRED`, so it was false for exactly the examples the paragraph itself cites. The
+  shipped paragraph therefore says nothing about where a cause can be found.
+  **~~"It must not be called a reachability finding"~~ — also struck, and this one came from the
+  item itself.** `ENOTFOUND` and `ECONNREFUSED` are deliberate exclusions from
+  `TRANSIENT_CONNECT_CODES`, so they carry `non-retryable-transport` and reached no peer at all. The
+  instruction was true of the three examples it named and false of the class. The shipped text says
+  the code records a retry decision and does not establish whether a peer was reached, naming both
+  directions.
+  **The review cost more than the change and earned it.** Three passes; the two defects nothing else
+  caught both came from wide mode, which is why the trigger was pulled on a prose-only change. The
+  recurring defect — prose asserting a property of a whole class from examples covering one
+  sub-population — is now a `.claude/REPO_TRAPS.md` class with **six** confirmed instances, three of
+  which landed *after* the entry documenting it was written. Pass 3's five open findings are carried
+  by **OAI-31**, which is the honest cost of the no-mutation rule rather than a clean finish.
+
 - **OAI-25** — Make the `postWithDegrade` cap-ordering invariants reachable behaviourally, instead of
   only structurally. Completed 2026-08-01. **The item's own premise was half-refuted by the probe,
   which is the part worth keeping.** OAI-25 asked whether anything was left to buy and suggested not:

@@ -687,3 +687,57 @@ three times.
 **Checked by hand**, since it is prose rather than code: grep the changed test files for
 `cannot|impossible|unreachable|never reach|no (mutation|test)` and confirm each hit states a
 mechanism or an experiment, not an impossibility.
+
+## Reader-facing prose asserts a property of a whole class from one sub-population
+
+**Six confirmed instances in a single feature (OAI-26, 2026-08-01/02), each found by a different
+reviewer, each in the text written to fix the one before it — and three of them landed AFTER this
+entry was written, by the author who had just written it.** That is the entry's most useful fact:
+documenting the class did not stop the class. The subject was two paragraphs
+explaining reason codes in the benchmark's reliability report — prose, no logic, and every draft was
+wrong about the code it described:
+
+1. "`non-retryable-transport` is **not a reachability finding**: TLS certificate rejections, protocol
+   errors and parser errors all reached a peer." True of those three examples; false of the class.
+   `ENOTFOUND` and `ECONNREFUSED` are deliberate exclusions from `TRANSIENT_CONNECT_CODES`, so they
+   carry that reason and reached nothing. **The instruction came from the tracker item itself** —
+   inherited, not invented, and shipped unexamined until a wide finder read the whitelist.
+2. "The code that prompted it is not carried in this report." False: `report.mjs` prints a dead run's
+   whole stderr, and a Node syscall message embeds the code verbatim. The plan file had *already
+   recorded* this — the prose contradicted its own author's note.
+3. "The message under 'Logical runs that did not complete' **usually** names the underlying code."
+   False for precisely the examples the same paragraph cites: a TLS rejection's message is the words
+   "certificate has expired" and contains no `CERT_HAS_EXPIRED`. The claim held only for the OS
+   syscall sub-population — and the test written for it hand-picked `EHOSTUNREACH`, a message chosen
+   because it embeds the code, so the assertion passed by demonstrating the pattern only where it was
+   true.
+
+The class is **not** "prose is unreliable". It is that a sentence naming two or three examples reads
+as illustration while functioning as a universal quantifier over a set the author never enumerated —
+and unlike a wrong branch, nothing goes red. Instance 3 is the sharpest warning: it was written *as
+the correction* to instance 2, by someone who had just been shown the class.
+
+**The rule: prose about a code may claim only what the record holds.** Do not characterise a
+population you have not enumerated, and do not tell a reader where else in the output a fact can be
+found — that is a claim about every path that produces the output. When a draft names examples, ask
+what the set is and go read it; when it says "usually", "all", or "not", it is quantifying.
+
+**A fixture chosen to make a claim true is not evidence.** If a test supplies the input that
+demonstrates the pattern, add the case the fixture avoided — the TLS wording sits in
+`tests/transport-classification.test.js` and refuted the claim in one line.
+
+**The class reproduces at the TEST level, which is instances 4–6 and the reason this entry grew.**
+The fix for instance 3 added a two-fixture test whose comment claimed the pair "proves the
+difference" — but the paragraph is static prose gated only on a reason code and never reads
+`run.error`, so both fixtures assert identical facts and a verifier turned one to junk with the suite
+still green. Alongside it, `assert.match(markdown, /`shape-rejected`/)` was matching the *count
+table* row rather than the prose it was written to pin, and the `sawReason` discriminator survived
+`key === code` → `key.includes(code)` untouched, though `transport` is a substring of
+`non-retryable-transport` and the loosened gate prints the wrong paragraph. **A test written to guard
+a claim is itself a claim.** Prove it the way those three were proved: mutate the thing the assertion
+names and watch it go red — a green suite after the mutation means the assertion was never about
+that thing.
+
+**Checked by hand**, since it is prose: for each factual sentence in reader-facing output, name the
+set it quantifies over and the file that defines that set. If the sentence cites examples, confirm
+the examples are representative rather than the only members that work.
