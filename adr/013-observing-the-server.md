@@ -20,9 +20,11 @@ text*, which is precisely the event this experiment exists to detect, is recorde
 reached a peer. Any dispatch predicate built on today's record is therefore blind to the target
 event, and no amount of care in the bench fixes it.
 
-**So OAI-34 carries a prerequisite:** carry `serverResponded` onto the attempt entry. That is
-production plugin code, which OAI-24's plan forbade, so it is new work with its own plan gate rather
-than something to be smuggled in here.
+**So OAI-34 is blocked on OAI-35:** carry `serverResponded` onto the attempt entry. That is
+production plugin code, which OAI-24's plan forbade, so it is its own item with its own plan gate
+rather than something smuggled in here — and it is worth doing on its own merits, since ADR 012
+currently documents "does not establish whether a peer was reached" as a limitation this would
+remove.
 
 ## The problem
 
@@ -76,9 +78,13 @@ That is what makes the cheap design possible.
 `scaffold`'s 335s — which is the most favourable condition the mechanism could be given. If in-flight
 prefill really is treated as idle, the model **must** unload and the request **must** fail. A
 survival past expiry is a counterexample. One calibration run plus three challenge episodes, ~45
-minutes, in `bench/ttl-challenge.mjs`, with the decision rule in `bench/lib/ttl-verdict.mjs` — pure
-and unit-tested, so the reading of the result is fixed before the numbers arrive rather than chosen
-after.
+minutes.
+
+**When built** (OAI-34) it belongs in `bench/`, and the rule that says what an episode MEANS must be
+a separate, pure, unit-tested module from the I/O that drives it — so the reading of the result is
+fixed before the numbers arrive rather than chosen after. Nothing of the sort is in the repo today;
+the withdrawn draft split them as `bench/ttl-challenge.mjs` and `bench/lib/ttl-verdict.mjs`, and that
+split is the one thing about it worth keeping.
 
 This answers what OAI-19 needs — *may the write-up name JIT-TTL?* — not the corpus-wide reliability
 estimate it does not need.
@@ -97,7 +103,10 @@ assumptions this design was drafted on:
 - **`contextLength`** — the cross-arm identity check, so TTL is never confounded with load
   configuration.
 
-## Limits, enforced in code rather than left to the reader
+## Limits the instrument MUST enforce in code, not leave to the reader
+
+Each was learned from the withdrawn draft, most of them the hard way. They are requirements on
+OAI-34's build, not a description of code in the repo.
 
 - **0/3 refutes only the DETERMINISTIC form.** It does not show the failure rate is low: the
   one-sided 95% bound on zero events in three is still ~63%. Showing <10% would need ~29 episodes.
@@ -108,15 +117,14 @@ assumptions this design was drafted on:
 - **An episode that never reached the SERVER voids the sweep.** Not hypothetical: an accidental
   import of the driver ran it against a server that was down, and an earlier draft rendered
   `inconclusive-failure` — a verdict about the mechanism — from a run in which no request existed.
-  `summarize` returns `instrument-failed` and refuses to say anything about the server. Note the
+  The sweep must report an instrument failure and refuse to say anything about the server. Note the
   test for this cannot be "an attempt entry exists": `ledger.begin` mints one before the socket is
   opened, and ADR 012's corrected text names `ENOTFOUND`/`ECONNREFUSED` as failures that reached no
-  peer. `reachedServer` asks instead whether the *server* produced something — an answer, a reply
-  document (`COMPLETION_SHAPES`, where the empty completion this experiment is about lives), an HTTP
-  status, or model text.
-- **A calibration that did not clear the bar voids the sweep**, machine-readably. The first draft
-  printed `ABORT` and then ran the full sweep anyway, exiting 0 with a normal-looking record — the
-  word naming an action the code never took.
+  peer. Nor can it be inferred from reason codes alone — that is exactly what OAI-35 exists to fix.
+- **A calibration that did not clear the bar must void the sweep**, machine-readably — in the record,
+  not only on stderr, which the reader of a JSON artifact never saw. The first draft printed `ABORT`
+  and then ran the full sweep anyway, exiting 0 with a normal-looking record: the word named an
+  action the code never took.
 - **Two thresholds, never one.** Whether an episode was an *exposure* is a design question and
   carries the safety margin (`ttlMs × EXPOSURE_MARGIN`); when the server's timer *expired* is a fact
   and carries none (`ttlMs`). Only the second may be compared against an unload's timestamp. The
@@ -128,7 +136,7 @@ assumptions this design was drafted on:
   must be read over the prefill window rather than the whole episode — otherwise generation, the one
   activity nobody disputes counts, would set it `true` every time.
 - **A success alongside an observed unload is a contradiction, not a survival.** The two instruments
-  disagree; `contradictory-evidence` reports that rather than banking the episode.
+  disagree, and that must be reported rather than the episode banked.
 
 ## What OAI-19 may say, by outcome
 
@@ -156,7 +164,7 @@ recurring class appearing in the document written to prevent it.
   conditions and observes residency; it never touches the plugin's request path, so
   [ADR 001](001-generic-openai-compatible-plugin.md)'s providers-as-data rule holds — no production
   code changed for OAI-24. The `serverResponded` prerequisite above *is* production code, and is
-  OAI-34's to justify.
+  **OAI-35**'s to justify.
 - **A companion reader shipped for evidence already recorded.** `bench/lib/attempt-rows.mjs` splits
   failed attempts on whether a `prefillMs` was measured, which `attempt-outcome.mjs` had been
   retaining for exactly this and nothing read. A measured prefill proves the attempt crossed the

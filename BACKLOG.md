@@ -57,8 +57,9 @@ overrides every case — so each arm resolves to a single pair and nothing evict
 warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.)* The order is
 **OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01, OAI-26 on 2026-08-02 and OAI-24
 on 2026-08-03**. OAI-24 did not answer the JIT-TTL question so much as establish that a sweep cannot
-— it decided the design and shipped the instrument, and the *run* is **OAI-34**, so the remaining
-order is **OAI-34 → OAI-19**. One of its two headline results is now retracted
+— it decided the design and shipped **that decision only**. Its draft instrument was **withdrawn**
+after two review passes and is not in the repo, so **OAI-34 is build-then-run**, and the remaining
+order is **OAI-35 → OAI-34 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
 
 **Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
@@ -177,17 +178,31 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   says never read "no findings" off a run that died; the workflow should make that impossible to get
   wrong by refusing to report `findings` as authoritative while `unadjudicated > 0`.
 
-- **OAI-34** — **Build** the TTL challenge instrument, then run it. Filed 2026-08-03 by OAI-24, which
-  decided the design ([ADR 013](adr/013-observing-the-server.md)) and **withdrew the driver from its
-  own commit** after two review passes. This is build-then-run, not just run.
-  **The prerequisite is production code, and it is why the withdrawal happened.** The attempt record
-  cannot say whether the server responded: `scripts/lib/http.mjs` sets `error.serverResponded = true`
-  on a mid-body socket cut and `cmd-setup.mjs` already reads it for this exact question, but
-  `attempt-outcome.mjs` never copies it onto the entry. So a model evicted mid-prefill **before any
-  text** — the event the experiment exists to detect — is recorded as `reason: 'transport'` with a
-  null `prefillMs`, indistinguishable from an `ECONNREFUSED` that reached no peer. Carry
-  `serverResponded` onto the entry first; it touches the module OAI-20/22/23/25 hardened, so it gets
-  its own plan gate.
+- **OAI-35** — Carry `serverResponded` onto the attempt entry. Filed 2026-08-03 by OAI-24, whose
+  driver was withdrawn because of this gap. **`scripts/lib/http.mjs` already sets
+  `error.serverResponded = true`** on a mid-body socket cut — `cmd-setup.mjs:32` reads it for exactly
+  the question "did a server answer at all" — but `attempt-outcome.mjs`'s `fail()` copies only
+  `outcome`, `reason`, `prefillMs` and `generationMs`, so the flag dies before the ledger. The
+  consequence is that **`transport` with a null `prefillMs` is indistinguishable from an
+  `ECONNREFUSED` that reached no peer**, which is precisely a model evicted mid-prefill before first
+  token.
+  Worth doing on its own merits, not only as OAI-34's prerequisite: [ADR 012](adr/012-surviving-the-server.md)
+  documents "does not establish whether a peer was reached" as a *limitation* of the reason code, and
+  `bench/lib/reliability-report.mjs`'s `non-retryable-transport` paragraph spends four lines saying
+  the table cannot tell you which — three drafts were refuted trying to word around it (OAI-26). This
+  removes the limitation rather than describing it, and would let the reliability report split
+  failures on whether a peer was reached, the same way OAI-24 split them on whether first text
+  arrived.
+  It touches the module OAI-20/22/23/25 hardened, so it gets its own plan gate. Watch the
+  `warmEligible` interaction: `fail()` also consults `reachedTheModel`, whose question is
+  cache-warmth, **not** server-reached — do not conflate them, and do not let a new field change what
+  `dispatched` marks. Prove it end to end with the fake server: a mid-body cut must record
+  `serverResponded: true`, a refused connection `false`.
+
+- **OAI-34** — **Build** the TTL challenge instrument, then run it. **Blocked on OAI-35.** Filed
+  2026-08-03 by OAI-24, which decided the design ([ADR 013](adr/013-observing-the-server.md)) and
+  **withdrew the driver from its own commit** after two review passes. This is build-then-run, not
+  just run — without OAI-35 the instrument is blind to the event it exists to detect.
   **A reviewed draft exists in the working tree, UNCOMMITTED and not launchable** —
   `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs`, `tests/ttl-challenge.test.js`. It is worth
   starting from rather than rewriting: its decision rule is pure and unit-tested, and the eight pass-1

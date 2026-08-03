@@ -24,9 +24,9 @@ Newest first.
   possible.** Measured dense prefills — `scaffold` 335s, `model-info` 286s, `structured` 191s — all
   sit *below* the ~600s the hypothesis assumed, and the "~10 minute idle TTL" had **no provenance
   anywhere in the repo** (LM Studio documents a resetting timer, 60-minute JIT default). So:
-  falsify rather than estimate. `bench/ttl-challenge.mjs` shortens the TTL to 120s against a 335s
-  prefill — the most favourable condition the mechanism could get — and three survivals refute its
-  deterministic form in ~45 minutes. The run is **OAI-34**.
+  falsify rather than estimate: shorten the TTL to 120s against a 335s prefill — the most favourable
+  condition the mechanism could get — where three survivals refute its deterministic form in ~45
+  minutes. Specified in ADR 013; **building and running it is OAI-34**.
   **Reading a real `lms ps --json` corrected the design twice.** It reports `ttlMs`, so the applied
   treatment is confirmed from the server rather than assumed from an exit code — a draft comment had
   asserted the opposite. And it reports `lastUsedTime`, the idle timer's own anchor, which is a far
