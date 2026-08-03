@@ -154,6 +154,21 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   cache-warmth, **not** server-reached — do not conflate them, and do not let a new field change what
   `dispatched` marks. Prove it end to end with the fake server: a mid-body cut must record
   `serverResponded: true`, a refused connection `false`.
+  **Two things OAI-31 (2026-08-03) left waiting specifically for this item.**
+  **(a) A test will go red on purpose, and that is the design.**
+  `tests/bench-reason-notes.test.js` pins `RECORD_FIELDS`' membership against a closed ledger entry,
+  so the moment `fail()` copies a tenth field this fails with the message *"the ledger gained or lost
+  a field — give it a reader label in `RECORD_FIELDS`, then re-read the paragraph"*. Do exactly that:
+  add `['serverResponded', '<reader label>']`, then **re-read the rendered sentence**, which
+  enumerates the record to justify saying the table cannot always split failures on whether a peer
+  was reached. That sentence is the limitation this item removes, so it should shrink or go — the
+  point of generating it from a list was that the prose could not quietly outlive the schema.
+  **(b) `bench/lib/reliability-report.mjs` is at 295 of the 300-line ratchet**, and this item adds
+  prose to it. Split at the seam the file already draws — `reasonNotes` describes a `reason`,
+  `outcomeNotes` an `outcome` — rather than raising the ceiling; there is a comment at
+  `RECORD_FIELDS` saying so. ADR 012's "does not establish whether a peer was reached" limitation and
+  the `non-retryable-transport` paragraph both need editing when this lands, and neither is optional:
+  they are the two places that currently *describe* the gap this item closes.
 
 - **OAI-34** — **Build** the TTL challenge instrument, then run it. **Blocked on OAI-35.** Filed
   2026-08-03 by OAI-24, which decided the design ([ADR 013](adr/013-observing-the-server.md)) and
@@ -193,6 +208,14 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `bench/results/ttl-challenge-*.json` exists and its `outcome.verdict` is recorded here with the
   wording ADR 013's table permits — and **`instrument-failed` is not a result**, it means the
   instrument did not run.
+  **A file matching that glob ALREADY EXISTS on the development machine and does not count.**
+  Noticed 2026-08-03 during OAI-31: `bench/results/ttl-challenge-2026-08-03T16-30-54-480Z.json`,
+  `outcome.verdict: "inconclusive-failure"`, left behind by the withdrawn draft. It satisfies the
+  done-condition as that condition was originally written, which is the defect —
+  **existence of an output file is not evidence that the instrument ran**, and `bench/results/` is
+  gitignored so no repo file can warn anyone. Delete it before the real run, or key completion to a
+  stamp later than the commit that lands the instrument. `inconclusive-failure` is not a result
+  either, for the same reason `instrument-failed` is not.
 
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
@@ -395,6 +418,28 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   review refutes it — OAI-26's carries a dated correction block at the top and leaves the refuted
   text in place, because the plan is the record of what was believed at the time, and that is the
   convention the next one should follow. Housekeeping, so it sits down here; it costs one short file.
+
+- **OAI-37** — `ECONNREFUSED` is cited as an example of never reaching a peer, and a refused
+  connection is a peer answering. Filed 2026-08-03 from the OAI-31 verdict ladder, where it was
+  **raised, then explicitly ruled out of scope by the same reviewer that raised it** — recorded here
+  because "we decided not to" is worth a line and a transcript is not a record. The sentence is in
+  `bench/lib/reliability-report.mjs`'s `non-retryable-transport` paragraph: "some of these did reach
+  one — a TLS certificate rejection, a protocol or a parser error — and some never did, `ENOTFOUND`
+  and `ECONNREFUSED` among them." `ENOTFOUND` is sound: DNS failed and nothing was contacted. **But
+  `ECONNREFUSED` is a TCP RST from the host** — the machine was reached and its network stack
+  replied; what was absent was a process listening on the port.
+  The ruling that parked it, which is also the reason this is low priority: "peer" can defensibly
+  mean the listening server process rather than the responding host, and under that reading the
+  sentence is true. Two reasons to fix it anyway: the paragraph's whole subject is what can and
+  cannot be inferred about reachability, so it is the one place a loose "peer" costs the most; and
+  the sentence is **inherited from OAI-26**, so it is the eighth instance of the class
+  `.claude/REPO_TRAPS.md` records — a claim about a set (`ENOTFOUND` and `ECONNREFUSED` behave alike)
+  that is true of one member and not the other.
+  The fix is one clause, and the trap file says how to check it: name the set, then read it. Either
+  define "peer" where the paragraph first uses it, or move `ECONNREFUSED` to the other side of the
+  sentence with a note that a refused connection reached a host but no server. Do NOT rewrite the
+  surrounding inherited prose while in there — silently rewording inherited text during a fix for
+  something else is exactly how this paragraph accumulated the refuted drafts it now documents.
 
 - **OAI-36** — If a re-render command is ever added, the reliability prose becomes schema-dependent.
   Filed 2026-08-03 from the OAI-31 review, where it was raised at high confidence (0.99) and
