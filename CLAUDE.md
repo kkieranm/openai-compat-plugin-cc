@@ -67,7 +67,9 @@ blocked on the attempt record not carrying `serverResponded`, in
 
 `bench/lib/reliability-report.mjs` `reasonNotes` explains each reason code a reader could misread —
 `shape-rejected`, `non-retryable-transport`, `transport` — gated on that code appearing in the
-sweep, and claims only what the attempt record holds rather than where else a cause might be found.
+sweep, and enumerates what the attempt record holds rather than asserting what it lacks, rendering
+that list from `RECORD_FIELDS`, whose membership `tests/bench-reason-notes.test.js` pins against a
+closed ledger entry.
 
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through

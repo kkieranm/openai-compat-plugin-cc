@@ -3,17 +3,16 @@ import { test } from 'node:test';
 import { answeringAttempt, attemptRows } from '../bench/lib/attempt-rows.mjs';
 import { caseRows } from '../bench/lib/case-rows.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
-import { CASE } from './bench-report-fixtures.mjs';
+import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 
 // OAI-20. Scoring reads LOGICAL runs — the attempt that answered — while
 // reliability reads every PHYSICAL request. A run whose first two attempts died
 // and whose third answered is one scored run and three requests, and a report
 // that shows only the first number says a sick server is healthy.
-
-const failedAttempt = (reason, extra = {}) => ({
-  index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
-  outcome: 'failed', reason, prefillMs: null, generationMs: null, ...extra,
-});
+//
+// This suite is the ACCOUNTING half: is every physical request counted, in the
+// right bucket, against the right denominator. The prose explaining what each
+// reason code MEANS is `bench-reason-notes.test.js`, split out in OAI-31.
 
 const answered = (extra = {}) => ({
   index: 2, cause: { answerAttempt: 2, degrade: null }, warmEligible: true, waitedMs: 2000,
@@ -119,124 +118,6 @@ test('refused attempts are counted, but never as failures', () => {
   assert.equal(stats.refused, 1);
   assert.equal(stats.failed, 0, 'negotiation is not unreliability');
   assert.deepEqual(stats.byReason, []);
-});
-
-// OAI-26. `Failures by reason` is a bare count table, and three of its codes are
-// ones a reader will misread in exactly the direction the attempt record exists
-// to prevent: `shape-rejected` sits among the delivery failures and is a client
-// stop; `transport` is a retryability verdict rather than a count of server
-// misbehaviour; and `non-retryable-transport` says only that a retry was not
-// attempted — NOT, as an earlier draft of both the tracker item and this comment
-// asserted, that the peer was reached. `ENOTFOUND` and `ECONNREFUSED` carry that
-// reason and reached nothing, which is why the claim had to be withdrawn.
-/** One outright-failed run whose single attempt died with `reason`. */
-const deadRunWith = (reason) => ({
-  diffOnly: false, error: 'boom', reason, requestedModel: 'm', attempts: [failedAttempt(reason)],
-});
-
-const renderWith = (reason) => renderReport([{ caseDef: CASE, runs: [deadRunWith(reason)] }], {
-  runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
-});
-
-test('shape-rejected is explained as the terminal twin of refused, not as a dropped request', () => {
-  const markdown = renderWith('shape-rejected');
-  assert.match(markdown, /`shape-rejected`/);
-  assert.match(markdown, /nothing replaced it/, 'the whole point: no replacement was ever dispatched');
-  assert.match(markdown, /not a server dropping requests/);
-});
-
-/** One paragraph out of the report, so a negative assertion names the prose it judges. */
-function paragraphAbout(markdown, code) {
-  const found = markdown.split('\n').find((line) => line.startsWith(`\`${code}\` below`));
-  assert.ok(found, `no paragraph rendered for \`${code}\``);
-  return found;
-}
-
-test('non-retryable-transport claims a retry decision, never that a peer was or was not reached', () => {
-  // Scoped to the paragraph, not the whole report. The sibling `shape-rejected`
-  // paragraph legitimately says "never reached the wire" about the CLIENT's own
-  // outbound request, so a report-wide negative here fails on innocent prose and
-  // names this paragraph for it.
-  const para = paragraphAbout(renderWith('non-retryable-transport'), 'non-retryable-transport');
-  assert.match(para, /before any response was obtained/);
-  // The claim that was WRONG and had to be withdrawn: `ENOTFOUND` and
-  // `ECONNREFUSED` are outside the transient whitelist, so they carry this
-  // reason — and they reached no peer at all. Saying "not a reachability
-  // finding" of the whole code asserted a fact that is false of part of it.
-  assert.doesNotMatch(para, /not a reachability finding/);
-  assert.match(para, /ENOTFOUND/, 'the exceptions must be named, not generalised away');
-  assert.match(para, /ECONNREFUSED/);
-  assert.doesNotMatch(para, /was unreachable|unreachable host|server was down|could not reach/);
-});
-
-test('the transport disclaimer prints for a transport-only sweep, which is when it is needed', () => {
-  // The defect this locks out: the disclaimer used to live inside the
-  // `non-retryable-transport` block, so a sweep of pre-response EAI_AGAIN or
-  // ECONNRESET — every one of them tagged `transport` — printed a bare row with
-  // nothing anywhere forbidding the server-blame reading.
-  const para = paragraphAbout(renderWith('transport'), 'transport');
-  assert.match(para, /not\*\* a count of server misbehaviour|not a count of server misbehaviour/);
-  assert.match(para, /EAI_AGAIN/);
-  assert.doesNotMatch(para, /non-retryable-transport/, 'it must stand on its own code, not a neighbour\'s');
-});
-
-// Three drafts of this paragraph tried to tell the reader where the underlying
-// error code could be found, and review refuted all three. The last is why the
-// promise is gone rather than reworded: whether a dead run's message names the
-// code depends entirely on the error, and the paragraph's own examples are the
-// ones where it does not. So the paragraph may claim only what the attempt
-// record holds, and these two fixtures are the pair that proves the difference —
-// the second is the shape the first was, in effect, chosen to avoid.
-for (const [shape, error] of [
-  ['a syscall error, whose Node message embeds the code', 'Request to localhost:1234 failed: connect EHOSTUNREACH 10.0.0.1:1234'],
-  // The real TLS wording, per tests/transport-classification.test.js — code
-  // CERT_HAS_EXPIRED, message "certificate has expired", which names no code.
-  ['a TLS rejection, whose message names no code at all', 'Request to localhost:1234 failed: certificate has expired'],
-]) {
-  test(`the non-retryable-transport paragraph promises nothing about the cause — ${shape}`, () => {
-    const run = deadRunWith('non-retryable-transport');
-    run.error = error;
-    const markdown = renderReport([{ caseDef: CASE, runs: [run] }], {
-      runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
-    });
-
-    const para = paragraphAbout(markdown, 'non-retryable-transport');
-    assert.doesNotMatch(para, /not carried in this report/, 'refuted draft 2');
-    assert.doesNotMatch(para, /names the underlying code|read `?\.code/, 'refuted drafts 1 and 3');
-    // It may say what the record holds, and that is all.
-    assert.match(para, /the reason code is all an attempt record carries/);
-    // The listing is a real section of the same document — asserted against the
-    // document, not against the paragraph the phrase came from.
-    assert.match(markdown, /^## Logical runs that did not complete$/m);
-  });
-}
-
-test('the shape-rejected paragraph follows the refused one it calls itself the twin of', () => {
-  // The combination OAI-26 was written for, and the one the gates make easy to
-  // get wrong: the paragraph names `refused` because both are gated, so ORDER is
-  // what makes the pair readable rather than a forward reference to prose that
-  // may not print at all.
-  const refused = {
-    index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
-    outcome: 'refused', reason: null, prefillMs: null, generationMs: null,
-  };
-  const run = deadRunWith('shape-rejected');
-  run.attempts = [refused, failedAttempt('shape-rejected')];
-  const markdown = renderReport([{ caseDef: CASE, runs: [run] }], {
-    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
-  });
-
-  const refusedAt = markdown.indexOf('refused for their shape');
-  const twinAt = markdown.indexOf('terminal twin of the `refused` outcome');
-  assert.ok(refusedAt > -1 && twinAt > -1, 'both paragraphs print');
-  assert.ok(refusedAt < twinAt, 'the twin reference must point BACKWARDS at printed prose');
-});
-
-test('a sweep explains only the codes it actually saw — a results section, not a glossary', () => {
-  const markdown = renderWith('transport');
-  assert.match(markdown, /\| `transport` \| 1 \|/, 'the failure itself is still counted');
-  assert.doesNotMatch(markdown, /shape-rejected/);
-  assert.doesNotMatch(markdown, /`non-retryable-transport` below/);
 });
 
 test('a substituted run completed, so it is not counted as a run that did not', () => {

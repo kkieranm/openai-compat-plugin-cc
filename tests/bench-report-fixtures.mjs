@@ -1,4 +1,4 @@
-// Shared fixtures for the two benchmark-report suites.
+// Shared fixtures for the benchmark-report suites.
 //
 // Split out when `bench-report.test.js` crossed the size ratchet, and the seam
 // it forced is a real one: one suite asks whether every run is accounted for in
@@ -6,6 +6,13 @@
 // what their headers say. Both need the same minimal case and the same
 // column-by-name reader, and a second hand-maintained copy of either would drift
 // exactly as silently as the numbers these tests exist to guard.
+//
+// `bench-reliability.test.js` split the same way in OAI-31, at the same kind of
+// seam: attempt ACCOUNTING (one logical run, N physical attempts) against the
+// reason-code PROSE in `bench-reason-notes.test.js`. Only `failedAttempt`
+// crosses that seam, so only it moved here — `answered` and `retriedRun` are
+// used by the accounting suite alone and stay there rather than widening this
+// module's surface for one caller.
 import assert from 'node:assert/strict';
 
 const CASE = {
@@ -43,4 +50,10 @@ function goodRun() {
   };
 }
 
-export { CASE, cell, goodRun };
+/** One physical attempt that died with `reason`, carrying no timings. */
+const failedAttempt = (reason, extra = {}) => ({
+  index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
+  outcome: 'failed', reason, prefillMs: null, generationMs: null, ...extra,
+});
+
+export { CASE, cell, failedAttempt, goodRun };

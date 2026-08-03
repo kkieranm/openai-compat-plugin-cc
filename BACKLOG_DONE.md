@@ -2,6 +2,42 @@
 
 Newest first.
 
+- **OAI-31** — Five findings OAI-26's pass 3 raised and its own rules would not let it fix, plus a
+  sixth noticed while filing. Completed 2026-08-03. **All six were verified before any code was
+  written** — three by Codex reading the cited code, three by mutation against the live tree — and
+  the mutations are the interesting half, because each proved a guard hollow rather than merely
+  suspicious: replacing **both** fixtures of the two-fixture pair with identical junk left the suite
+  green; gutting the `shape-rejected` paragraph left its assertion green, matching the count-table
+  row; and `key === code` → `key.includes(code)` left **all 404 tests green** while making a
+  `non-retryable-transport`-only sweep print "a further attempt could plausibly survive" about a
+  code that by definition was never retried.
+  **The two false rendered sentences are fixed, and the second one twice.** "The reason code is all
+  an attempt record carries" was false — the entry also holds `index`, `cause`, `promptChars`,
+  `warmEligible`, `waitedMs`, `outcome` and both timings. Its first replacement, "the attempt record
+  has no peer-reachability field", *read* as the narrow specific form and was not: it quantifies
+  over the meaning of every field that might ever be added, so it can go false via a field named
+  anything at all. A **blind** re-ask of the plan gate caught that; the thread-carrying round before
+  it did not. **The rule that came out of it — do not assert what a record LACKS, enumerate what it
+  HOLDS** — is now the governing comment in `reasonNotes`, recorded as instance 7 in
+  `.claude/REPO_TRAPS.md`, and pinned: the paragraph names its nine fields and the test pins the
+  whole key set, coupling it to every ledger addition **on purpose**. Proved by simulating OAI-35's
+  `serverResponded` copy inside `fail()` and watching it go red.
+  Separately, "a replacement request … **was dispatched**" and its closing "a replacement was
+  **sent**" both claimed a wire write that is not established — `refused` is written at
+  `ledger.begin`, several frames before a socket, with body serialization and URL validation still
+  able to throw. Both now claim an *initiated* replacement, and the ordering sentence was folded
+  rather than deleted because it carries a distinct invariant.
+  **`tests/bench-reliability.test.js` was split rather than the ratchet raised.** The repairs took
+  it from 270 to 320 against a 300 ceiling; it is now the attempt-**accounting** suite plus a new
+  `tests/bench-reason-notes.test.js` carrying the reason-code **prose**, both comfortably under that
+  ceiling — line counts deliberately not quoted here, because the first draft of this entry quoted
+  one that was stale within the hour. With the one shared fixture
+  moved into `tests/bench-report-fixtures.mjs` — which exists because another suite was split the
+  same way for the same reason. **Plan-gate history worth keeping:** round 1 approved and its
+  prediction that the edits would fit under the ratchet was wrong; round 2 caught a stale
+  cross-reference the split created; the blind round 3 caught the prose/test mismatch above. Plan in
+  `plans/oai-31-guards-that-bite.md`.
+
 - **OAI-24** — Record what the SERVER was doing. Completed 2026-08-03 **as a decision, not an
   instrument** — the driver it produced was withdrawn from its own commit and is now OAI-34's to
   finish. **The item asked which of three options to take and the answer was none of them** — and

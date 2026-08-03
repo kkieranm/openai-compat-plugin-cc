@@ -19,8 +19,12 @@ import {
 // that predates the field as a measurement, and printing the paragraph on a
 // sweep that observed no failure at all.
 //
-// Its own file rather than `bench-reliability.test.js`, which sits at 271 of
-// the 300-line ratchet.
+// Its own file rather than `bench-reliability.test.js`, which was close to the
+// 300-line ratchet when this was written. OAI-31 later split that file — the
+// reason-code prose guards are now in `bench-reason-notes.test.js` — so the
+// pressure is gone, but the seam still holds: this asks what a `prefillMs`
+// establishes, which is neither attempt accounting nor reason-code prose. A
+// line count is deliberately not quoted here; the one that was went stale.
 
 const failed = (reason, extra = {}) => ({
   index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,

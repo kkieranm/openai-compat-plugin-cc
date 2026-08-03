@@ -108,50 +108,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-31** — Five findings OAI-26's pass 3 raised and its own rules would not let it fix. Filed
-  2026-08-02. Pass 3 is the no-mutation pass, so these were recorded rather than patched; a fix there
-  would have shipped prose and tests no lens had read, which is the failure the cap exists to
-  prevent. Two are false sentences in **rendered output**, so do this before OAI-19's write-up quotes
-  the table. Ordered by whether a reader is misled:
-  **(1) "the reason code is all an attempt record carries" is false.** Raised at confidence 1.0 by
-  the adversarial pass and independently by the plain one — two lenses, the only finding in the
-  feature to be caught twice in a single pass. `newEntry` also records `index`, `cause`,
-  `promptChars`, `warmEligible`, `waitedMs`, `outcome` and both timings. The intended claim is much
-  narrower and is true: the record retains **nothing further about the transport error**. Delete or
-  narrow the `because…` clause in `reasonNotes`. **The doc-comment half is DONE (2026-08-03, OAI-24)**
-  — that sentence also scoped its claim to the whole file, which stopped being true when a paragraph
-  claiming from an attempt's *timings* landed beside it, and editing it to rescope while leaving a
-  clause known to be false was not an option. The **rendered** string is untouched and still open:
-  `reasonNotes` line ~69 still says "because the reason code is all an attempt record carries".
-  **(2) "a replacement request without it was dispatched" equates entry creation with the wire
-  write** (0.94). `ledger.begin` mints the replacement's entry before `request` serializes and sends,
-  so what is guaranteed is that the replacement *received its own attempt entry* — which is exactly
-  what the following sentence already says, and is the precise, checkable version. Note this is the
-  sentence OAI-26 was asked to tighten, so it was rewritten once already; the second draft traded one
-  imprecision for another.
-  **(3) The two-fixture test at `tests/bench-reliability.test.js:190` is vacuous.** Proved by
-  mutation: the paragraph is static prose gated only on a reason code and never reads `run.error`, so
-  replacing the fixture with junk leaves the suite green. Its comment claims the pair "proves the
-  difference" and it discriminates nothing — the trap class reproduced one level up, at the test.
-  Either delete the parametrisation or make the assertion actually read the failure listing.
-  **(4) `assert.match(markdown, /`shape-rejected`/)` passes on the count-table row**, not the prose it
-  was written to pin. Proved by mutation: replacing the whole paragraph body with a placeholder
-  leaves that assertion green (its two siblings catch it, so this is an assertion that passes for the
-  wrong reason rather than a coverage hole).
-  **(5) `sawReason`'s exact match is unguarded, and this one has teeth.** `key === code` survives
-  mutation to `key.includes(code)` with all 399 tests green — and `transport` is a **substring** of
-  `non-retryable-transport`, so under the loosened gate a sweep whose only failures are
-  `non-retryable-transport` also prints the `transport` paragraph, asserting "a further attempt could
-  plausibly survive" about a code that by definition was never retried. That is the exact wrong-gate
-  defect OAI-26 was reviewed three times to remove, reachable by a one-token edit. The existing
-  negative test only checks the reverse containment, which is vacuous. One test fixes it: a
-  `non-retryable-transport`-only sweep asserting the `transport` paragraph is **absent**.
-  **(6) Minor, while in the file:** the transport test's
-  `assert.match(para, /not\*\* a count of server misbehaviour|not a count of server misbehaviour/)`
-  is an alternation that passes whether or not the emphasis is there, so it does not pin what its
-  two branches disagree about. Pick one. Noticed while writing this item rather than by a reviewer,
-  which is why it is filed with the four they found rather than as its own thing.
-
 - **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. Filed 2026-08-02 from
   OAI-26's pass 3, where it was observed rather than triggered — and the observation is the whole
   point, because nothing in the commit gate would have caught it. Verifiers prove findings by
@@ -439,6 +395,20 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   review refutes it — OAI-26's carries a dated correction block at the top and leaves the refuted
   text in place, because the plan is the record of what was believed at the time, and that is the
   convention the next one should follow. Housekeeping, so it sits down here; it costs one short file.
+
+- **OAI-36** — If a re-render command is ever added, the reliability prose becomes schema-dependent.
+  Filed 2026-08-03 from the OAI-31 review, where it was raised at high confidence (0.99) and
+  **dismissed with evidence rather than fixed** — recorded here because the evidence is exactly what
+  a future change would invalidate. `reliabilitySection` renders "an attempt record carries `<nine
+  fields>`" from `RECORD_FIELDS`, pinned against a live ledger entry. That sentence is true of
+  entries the *current* ledger produced, and today it can only ever describe those: `renderReport` is
+  called from exactly one place, `bench/run.mjs:251`, on live results, and nothing reads
+  `bench/results/*.json` back in. Add a `--render <file>` or any replay path and the report can
+  describe a record written before `promptChars` or `waitedMs` existed, while the prose asserts nine
+  fields it never had. The fix then is to version the serialized attempt schema at the report
+  boundary and condition the enumeration on the schema actually present — not to weaken the sentence,
+  which is the one thing that made it checkable. Cheap now, invisible later: whoever adds replay will
+  not think to look at a paragraph in the reliability section.
 
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.

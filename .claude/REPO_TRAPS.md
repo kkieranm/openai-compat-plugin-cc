@@ -738,9 +738,38 @@ a claim is itself a claim.** Prove it the way those three were proved: mutate th
 names and watch it go red — a green suite after the mutation means the assertion was never about
 that thing.
 
-**Checked by hand**, since it is prose: for each factual sentence in reader-facing output, name the
-set it quantifies over and the file that defines that set. If the sentence cites examples, confirm
-the examples are representative rather than the only members that work.
+**Instance 7 is the fix for instance 1, and it is the subtlest of the set.** OAI-31 replaced the
+false "the reason code is all an attempt record carries" with "the attempt record has no
+peer-reachability field" — which *reads* as the narrow, specific form this entry asks for and is
+not. It quantifies over the **meaning** of every field that might ever exist, so it goes false via
+a field named anything at all, and the test written to pin it (`Object.hasOwn(entry,
+'serverResponded') === false`) could drift from it in **both** directions: a future `peerReached`
+falsifies the prose while that assertion stays green, and `serverResponded` is not peer-reachability
+anyway — a TLS rejection reaches a peer and obtains no response. A blind re-ask caught it; the
+thread-carrying round before it did not.
+
+**The rule that came out of it: do not assert what a record LACKS — enumerate what it HOLDS.** An
+absence is a claim about an open set and cannot be pinned; a closed list is checkable in one place.
+The paragraph now names the nine fields, and the test pins the whole key set rather than one name,
+which couples it to every ledger addition **on purpose** — a new field is exactly when a human must
+re-read the sentence.
+
+**And the enumeration is only half-guarded, which the entry must say rather than imply.** A key-set
+test pins the list the prose must describe; it cannot read English. The first enumeration named
+**eight** of the nine — `outcome` was missing — with that test green, and a reviewer found it. Note
+also that a field's *name* is not its meaning to a reader: `cause` is `{answerAttempt, degrade}`,
+why the attempt was initiated, and rendering it as the bare word "cause" inside a paragraph about an
+unknown failure cause reads as the opposite of what it holds.
+
+**Guarded by** `tests/bench-reason-notes.test.js` — the enumeration against a closed ledger entry
+(proved: simulating OAI-35's `serverResponded` copy in `fail()` turns it red); the `transport`
+paragraph's absence from a `non-retryable-transport`-only sweep, which is the gate `key === code`
+holds and `key.includes(code)` breaks; the `shape-rejected` assertion scoped through
+`paragraphAbout` rather than matching the count-table row; and the two-message fixture whose halves
+assert different things. **The prose sentences themselves are still checked by hand**, since no test
+can read English: for each factual sentence in reader-facing output, name the set it quantifies over
+and the file that defines that set. If the sentence cites examples, confirm the examples are
+representative rather than the only members that work.
 
 ## A validity guard that narrates instead of refusing
 
