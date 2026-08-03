@@ -68,6 +68,22 @@ export function attemptRows(results) {
     byReason: tally(failed, ({ attempt }) => attempt.reason ?? 'unclassified'),
     byCase: tally(failed, ({ caseId }) => caseId),
     byModel: tally(failed, ({ requested }) => requested ?? 'unknown'),
+    // Reads the timings the ledger already keeps on a FAILED attempt, which
+    // `attempt-outcome.mjs` retains for exactly this — "whether failures cluster
+    // before or after the first token" is the sentence in its own comment. The
+    // record was being kept and never read.
+    //
+    // The split is evidential, not causal, and the paragraph beside it is worded
+    // to match: a measured prefill means the attempt reached first model text,
+    // so whatever ended it happened after that boundary. Null is the absence of
+    // that evidence — a request that died before first token, or one whose
+    // failure carried no timings at all — and never evidence of a cause.
+    // `== null` deliberately, not `=== null`: an attempt recorded before this
+    // field existed carries `undefined`, and a strict check would file it as
+    // text-observed — asserting a measurement that record never held.
+    byFirstText: tally(failed, ({ attempt }) => (
+      attempt.prefillMs == null ? 'no first model text observed' : 'first model text observed'
+    )),
   };
 }
 

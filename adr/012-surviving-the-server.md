@@ -227,9 +227,17 @@ The rule is evidence-based in both directions, which took two corrections to get
   of the error OAI-15 had to undo on the `analysis` cap.
 - `retried` is now derived from the ledger, which fixes the counter reset that `|| !structured` was
   papering over.
-- **Server state is not recorded**, though OAI-20 asks for it. It is not observable from the client;
-  `lms ps` is external. Request size landed as `promptChars`.
+- **Server state is not recorded**, though OAI-20 asks for it. Model residency *is* observable from
+  the client — LM Studio's `/api/v0/models` reports each model's `state`, and `loaded_context_length`
+  while it is loaded, and `model-info.mjs` already reads both before the first request. What is true
+  is narrower: the **attempt record does not sample it**, and nothing re-reads it inside the retry
+  loop, so an attempt cannot say what the server was doing when it died. `lms ps` is external.
+  Request size landed as `promptChars`. *(Corrected 2026-08-03 by OAI-24, which found the original
+  "it is not observable from the client" false against `model-info.mjs:82`. See
+  [ADR 013](013-observing-the-server.md).)*
 - **Retrying is not proven sufficient.** These are the four shapes *observed*, and whether retry
   actually recovers the 37.5% is a measurement OAI-19 will read off the attempt record — not a claim
-  made here. The JIT-TTL hypothesis (can a 10-minute idle TTL unload a model under a long prefill?)
+  made here. The JIT-TTL hypothesis (can an idle TTL unload a model under a long prefill? — the
+  "10-minute" figure this line first quoted has no provenance here, and LM Studio documents a
+  resetting idle timer with a 60-minute JIT default; see [ADR 013](013-observing-the-server.md))
   is likewise left to be characterized from that record rather than assumed.

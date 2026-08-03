@@ -741,3 +741,46 @@ that thing.
 **Checked by hand**, since it is prose: for each factual sentence in reader-facing output, name the
 set it quantifies over and the file that defines that set. If the sentence cites examples, confirm
 the examples are representative rather than the only members that work.
+
+## A validity guard that narrates instead of refusing
+
+Confirmed 2026-08-03 by the OAI-24 review, where **three independent lenses converged on eight
+instances in one new file** — `advisor`, both Codex stages, and a wide `review-lean`. The shape: code
+detects that its own preconditions failed, says so, and then carries on as though they held.
+
+The canonical instance printed `ABORT: ... The challenge would test nothing.` to stderr and then
+fell through to `return`, so the caller ran the full ~45-minute experiment and wrote a record with a
+real verdict and a zero exit code. The word named an action the code never took.
+
+The variants all follow from the same reflex — *report the problem* rather than *refuse the result*:
+
+- **A fallback that launders a failure into a measurement.** `firstTokenMs ?? durationMs` let a
+  request that timed out at 1,800s satisfy a "prefill must exceed 180s" gate, because the wall clock
+  stood in for a measurement that was never taken.
+- **A read-back that nothing consumes.** The applied TTL was read from the server specifically to
+  detect a mismatch, then the verdict was computed against the *requested* constant — making the
+  check decorative.
+- **A disqualifier that only warns.** A mismatched treatment printed a WARNING and the episode was
+  classified anyway.
+- **A contradiction resolved silently in favour of the happy path.** A request that succeeded while
+  residency showed the model unloaded was recorded as a clean survival.
+
+**The tell**: a branch whose body is only `process.stderr.write(...)` or a `WARNING` string, sitting
+in a function whose caller acts on the return value. Ask what the *caller* does differently — if the
+answer is "nothing", the guard does not guard.
+
+**The rule**: a precondition failure must be visible in the **return value or an exception**, never
+only in output a reader has to have been watching for. Where a run produces a record, the
+disqualification must be *in the record* — the reader of a JSON artifact never saw the stderr.
+
+**Guarded by** nothing committed yet, and that is deliberate: the driver these were found in was
+**withdrawn** from OAI-24's commit (see OAI-34). Its tests — calibration-not-cleared,
+unconfirmed-TTL, survived-despite-unload, mixed-sweep — each assert the refusal rather than the
+message, and land when it does.
+
+**The meta-lesson, which is the reason this entry exists at all.** Pass 1 of the review found eight
+instances in one new file; pass 2 found ten more, **one introduced by pass 1's own fix**. Every one
+was in decision logic that had never executed against a real server. Review caught them all and
+review was not converging. When a new module's job is to *decide* something, get it running against
+a stub before reviewing it harder — reading cannot substitute for the one thing that exercises the
+branches.

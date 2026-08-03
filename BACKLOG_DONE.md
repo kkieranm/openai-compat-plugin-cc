@@ -2,6 +2,81 @@
 
 Newest first.
 
+- **OAI-24** — Record what the SERVER was doing. Completed 2026-08-03 **as a decision, not an
+  instrument** — the driver it produced was withdrawn from its own commit and is now OAI-34's to
+  finish. **The item asked which of three options to take and the answer was none of them** — and
+  then none of the design that replaced them either, which is the part worth keeping.
+  **What shipped:** the decision and its rationale (ADR 013), ADR 012's false "not observable from
+  the client" corrected, the unprovenanced "~10 minute TTL" corrected wherever it appeared, a reader
+  for evidence already recorded (`byFirstText`), and a new `.claude/REPO_TRAPS.md` class. **What did
+  not:** `bench/ttl-challenge.mjs` and `bench/lib/ttl-verdict.mjs`, which stay uncommitted in the
+  working tree with ten open findings and a production-code prerequisite.
+  **All three filed options were refuted, not merely declined.** Sampling residency around a run
+  (options b and d) suffers temporal aliasing: a bracket spanning several attempts and many minutes
+  cannot tell "loaded throughout" from "unloaded then silently JIT-reloaded". A per-attempt plugin
+  probe (option c) has the resolution but may reset the very timer it measures, costs 2s on a path
+  where `--max-seconds` already binds, and leaks a vendor dialect out of `model-info.mjs`. Their
+  replacement — a matched TTL crossover over the corpus — died too: TTL is assigned per *block*, so
+  the independent n is blocks not requests, and at 3 per arm the best two-sided p is 0.25. Reaching
+  9–12 pairs costs 3–4h on the MoE, which is the **wrong model** (prefill ~5× faster, never
+  approaches the TTL), and 9–12h on the dense.
+  **The premise turned out weaker than the file claimed, which is what made the cheap design
+  possible.** Measured dense prefills — `scaffold` 335s, `model-info` 286s, `structured` 191s — all
+  sit *below* the ~600s the hypothesis assumed, and the "~10 minute idle TTL" had **no provenance
+  anywhere in the repo** (LM Studio documents a resetting timer, 60-minute JIT default). So:
+  falsify rather than estimate. `bench/ttl-challenge.mjs` shortens the TTL to 120s against a 335s
+  prefill — the most favourable condition the mechanism could get — and three survivals refute its
+  deterministic form in ~45 minutes. The run is **OAI-34**.
+  **Reading a real `lms ps --json` corrected the design twice.** It reports `ttlMs`, so the applied
+  treatment is confirmed from the server rather than assumed from an exit code — a draft comment had
+  asserted the opposite. And it reports `lastUsedTime`, the idle timer's own anchor, which is a far
+  more direct instrument than waiting for an unload: whether it advances during a long prefill is the
+  hypothesis in the server's own terms. Recorded, deliberately not acted on.
+  **The driver's worst defect was demonstrated by accident.** `main()` sat at module scope, so
+  importing it for its unit tests *ran the experiment* — against a server that was down, adding 44s
+  to the suite and writing a junk record. An earlier draft then rendered `inconclusive-failure`, a
+  verdict about the mechanism, from a run in which no request ever reached the wire. `summarize` now
+  returns `instrument-failed` and refuses to describe the server at all, and a test pins the
+  entry-point guard because the symptom is slow and quiet rather than red.
+  **Review pass 1 found eight more of the same shape, and that is the finding.** Three lenses —
+  `advisor`, both Codex stages, and a wide `review-lean` — converged on one class: **a guard that
+  narrates instead of refusing.** `calibrate` printed `ABORT` and continued; a *failed* calibration's
+  1,800s timeout read as a 1,800s prefill; the verdict used the TTL that was *requested* rather than
+  the one `lms ps` confirmed; a survival stood even when residency showed an unload; the post-exit
+  sample counted as evidence of a mid-request unload; `activityObserved` measured across generation
+  while claiming to measure prefill; and `summarize`'s fallback said "No episode stayed in flight
+  past expiry" for sweeps in which one did. Every one would have let the experiment answer
+  confidently from a run that tested nothing — the exact failure OAI-24 exists to prevent, inside
+  OAI-24's own instrument. All fixed, each with a test that fails without the fix.
+  **Scope, stated precisely because the batch is about overclaiming.** The wide verifiers corrected
+  one of these downward: a short calibration could *not* fabricate `deterministic-form-refuted`,
+  because `episodeVerdict` applies the same margin per episode, so an under-exposed sweep lands on
+  the honest `no-exposure` branch. The confirmed harm was the false `ABORT` string, a zero exit code,
+  no machine-readable disqualification in the record, and ~45 minutes spent on a run the gate had
+  already rejected.
+  **Then pass 2 found ten more — one of them introduced by pass 1's own batch — and the driver was
+  withdrawn.** Two let it issue `mechanism-reproduced` from evidence that did not support it (an
+  unload during *generation*; an unload past `ttlMs` in an episode that was never an exposure), and
+  one disabled two of pass 1's fixes on the failure path, because `runEpisode` read a top-level
+  `prefillMs` the failure envelope does not carry. The decisive one was not in the driver at all:
+  **the attempt record drops `serverResponded`**, so a mid-prefill eviction before first token is
+  indistinguishable from a connection that reached no peer — the instrument is blind to its own
+  target event, and fixing that is production code OAI-24's plan forbade. Carried to **OAI-34** with
+  every finding written down; the criterion for withdrawal was fixed *before* pass 3 ran, so it was
+  not chosen against the defect that turned up.
+  **The lesson worth keeping**: eight defects in pass 1, ten in pass 2, in logic that had never
+  executed against a real server. Review found every one of them and review was not converging —
+  which is an argument for running the thing against a stub early, not for reviewing harder.
+  **Also shipped: the reader for evidence already recorded.** `attempt-outcome.mjs` had been keeping
+  timings on *failed* attempts so the record could say "whether failures cluster before or after the
+  first token" — its own words — and nothing read them. `bench/lib/attempt-rows.mjs` now splits
+  failures on whether a prefill was measured, with the claim bounded to what that proves: the attempt
+  crossed the first-text boundary, not why a later stream died, and absence is not evidence of a
+  cause. Near-empty until OAI-19 runs; the whole corpus holds one failed attempt.
+  **No production plugin code changed.** Corrected `adr/012:230`'s false "not observable from the
+  client". Partially discharged OAI-31 item (1). See
+  [ADR 013](adr/013-observing-the-server.md).
+
 - **OAI-26** — Explain `shape-rejected` and `non-retryable-transport` in the reliability report,
   where they appeared bare. Completed 2026-08-02. Prose only, as filed: no schema change and no
   change to counting — `byReason` already tallies every failed attempt's reason, so both codes were

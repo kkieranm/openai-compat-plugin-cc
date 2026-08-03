@@ -55,8 +55,10 @@ are done (2026-08-01)**; OAI-23's review filed OAI-25 and OAI-26, which remain a
 That was wrong: OAI-19 runs one arm per model as separate invocations, each passing `--model`, which
 overrides every case — so each arm resolves to a single pair and nothing evicts anything. The
 warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.)* The order is
-**OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01 and OAI-26 on 2026-08-02**, so the
-remaining order is **OAI-24 → OAI-19**. One of its two headline results is now retracted
+**OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01, OAI-26 on 2026-08-02 and OAI-24
+on 2026-08-03**. OAI-24 did not answer the JIT-TTL question so much as establish that a sweep cannot
+— it decided the design and shipped the instrument, and the *run* is **OAI-34**, so the remaining
+order is **OAI-34 → OAI-19**. One of its two headline results is now retracted
 and the other has grown:
 
 **Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
@@ -115,8 +117,11 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   feature to be caught twice in a single pass. `newEntry` also records `index`, `cause`,
   `promptChars`, `warmEligible`, `waitedMs`, `outcome` and both timings. The intended claim is much
   narrower and is true: the record retains **nothing further about the transport error**. Delete or
-  narrow the `because…` clause in `reasonNotes`. The same overclaim is repeated in that function's
-  doc comment ("carries a reason code and nothing more"), so fix both.
+  narrow the `because…` clause in `reasonNotes`. **The doc-comment half is DONE (2026-08-03, OAI-24)**
+  — that sentence also scoped its claim to the whole file, which stopped being true when a paragraph
+  claiming from an attempt's *timings* landed beside it, and editing it to rescope while leaving a
+  clause known to be false was not an option. The **rendered** string is untouched and still open:
+  `reasonNotes` line ~69 still says "because the reason code is all an attempt record carries".
   **(2) "a replacement request without it was dispatched" equates entry creation with the wire
   write** (0.94). `ledger.begin` mints the replacement's entry before `request` serializes and sends,
   so what is guaranteed is that the replacement *received its own attempt entry* — which is exactly
@@ -172,21 +177,48 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   says never read "no findings" off a run that died; the workflow should make that impossible to get
   wrong by refusing to report `findings` as authoritative while `unadjudicated > 0`.
 
-- **OAI-24** — Record what the SERVER was doing, which the attempt record still cannot say. OAI-20
-  asked the characterization to break failures down "by model, case, request size, attempt number
-  and server state"; the first four landed (`promptChars` carries request size), and **server state
-  did not, because it is not observable from the client** — the plugin sees a socket, not a model
-  registry. That is the one axis that would settle the JIT-TTL hypothesis directly rather than by
-  inference: an attempt that failed against a server whose model had been *unloaded* is a different
-  event from one that failed under load, and today both land in the record as
-  `empty-completion`. The honest options, cheapest first: (a) accept the gap and infer from
-  `promptChars` + timings + failure clustering, which is what OAI-19 will do; (b) have the bench —
-  never the plugin, which must stay vendor-neutral per ADR 001 — sample `lms ps` around each case
-  and store it beside the record as harness metadata, clearly not part of the plugin's own
-  observation; (c) probe `/api/v0/models`, which reports `state` and `loaded_context_length` and is
-  already the LM Studio detection path in `model-info.mjs`, though reading it *per attempt* would
-  add a request to every failure. Decide before OAI-19's write-up quotes a mechanism, so the claim
-  is either measured or explicitly labelled an inference.
+- **OAI-34** — **Build** the TTL challenge instrument, then run it. Filed 2026-08-03 by OAI-24, which
+  decided the design ([ADR 013](adr/013-observing-the-server.md)) and **withdrew the driver from its
+  own commit** after two review passes. This is build-then-run, not just run.
+  **The prerequisite is production code, and it is why the withdrawal happened.** The attempt record
+  cannot say whether the server responded: `scripts/lib/http.mjs` sets `error.serverResponded = true`
+  on a mid-body socket cut and `cmd-setup.mjs` already reads it for this exact question, but
+  `attempt-outcome.mjs` never copies it onto the entry. So a model evicted mid-prefill **before any
+  text** — the event the experiment exists to detect — is recorded as `reason: 'transport'` with a
+  null `prefillMs`, indistinguishable from an `ECONNREFUSED` that reached no peer. Carry
+  `serverResponded` onto the entry first; it touches the module OAI-20/22/23/25 hardened, so it gets
+  its own plan gate.
+  **A reviewed draft exists in the working tree, UNCOMMITTED and not launchable** —
+  `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs`, `tests/ttl-challenge.test.js`. It is worth
+  starting from rather than rewriting: its decision rule is pure and unit-tested, and the eight pass-1
+  defects are already fixed in it. **It is untracked, so `git clean` would destroy it.** Ten pass-2
+  findings remain open against it, and the first three each let it issue a verdict the evidence does
+  not support:
+  **(1)** `runEpisode` reads a top-level `report.prefillMs`, which the **failure** envelope does not
+  carry (`review-report.mjs:104` is the success path only) — so `firstTokenMs` is null on every
+  failed episode, `exposed` silently falls back to wall clock, and `activityObserved`'s window
+  restriction goes inert on exactly the episodes that matter. Read it from `attempts`, as
+  `attempt-rows.mjs` does.
+  **(2)** The confirming branch never requires `unloadAt < firstTokenMs`, so an unload during
+  **generation** renders `mechanism-reproduced` while the summary string asserts it happened "during
+  an active prefill".
+  **(3)** The two thresholds leave a gap — 130s in flight (not an exposure) with an unload at 125s
+  (past `ttlMs`) classifies as confirming. Gate it on `exposed` too, and give the leftover state its
+  **own** label: reusing `failed-early-with-unload` would print a false string.
+  **(4)** The mismatched-TTL warning says "this episode cannot be classified" and then classifies it.
+  **(5)** `calibrate` throws, discarding the calibration record — write an aborted manifest carrying
+  `summarize(..., { calibrationCleared: false })` and exit nonzero.
+  **(6)** `reachedServer` has **zero** unit tests, and its doc comment claims HTTP status is evidence
+  when the attempt schema never retains `status`.
+  **(7)** The calibration rule (`dispatched && !failed && firstTokenMs`, no `durationMs` fallback)
+  lives in the untested I/O half — extract it as a pure `calibrationCleared(...)`.
+  Then run it: **~45 minutes on the user's own LM Studio, launched when they say so, never
+  incidentally** — same rule as OAI-19, which it sits ahead of because OAI-19's write-up may not name
+  a mechanism until this has run. Nothing else may be connected: another resident model can trigger
+  Auto-Evict and produce the shape the experiment reads. Done when
+  `bench/results/ttl-challenge-*.json` exists and its `outcome.verdict` is recorded here with the
+  wording ADR 013's table permits — and **`instrument-failed` is not a result**, it means the
+  instrument did not run.
 
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
@@ -206,13 +238,17 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   leave every prior number unusable and attribute the OAI-15 rule change to the model swap. So:
   both models, full corpus, `--runs 3` — N=1 is a lottery ticket, established twice in this file at
   the cost of two retracted claims — and one arm per model with nothing else varying.
-  Read off the same run, because it is already paid for: **whether the JIT TTL can unload a model
-  under a long prefill** — OAI-20 asked this and deferred it here rather than assuming it. If a
-  10-minute idle TTL does not count a long prefill as activity, an unload mid-prefill produces
-  exactly an empty completion with `finish_reason: unknown`, which is the shape that dominated the
-  2026-07-30 failures. If that is the mechanism, `--warm-up` and pacing matter more than retry does,
-  and the attempt record now carries what would show it (`promptChars`, `waitedMs`, per-attempt
-  timings). **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
+  **The JIT-TTL question moved OUT of this run, 2026-08-03.** OAI-20 deferred it here and OAI-24
+  found it could not be answered by a sweep at all: sampling residency around a run cannot tell
+  "loaded throughout" from "unloaded then silently reloaded". It is now **OAI-34**, a 45-minute
+  intervention run *before* this one, and this run may quote only what
+  [ADR 013](adr/013-observing-the-server.md)'s outcome table permits. Two corrections that item
+  produced and this one must not repeat: the **"10-minute idle TTL" has no provenance** here (LM
+  Studio documents a resetting timer with a 60-minute JIT default), and every measured dense prefill
+  — `scaffold` 335s, `model-info` 286s, `structured` 191s — sits *below* even the 600s the
+  hypothesis assumed. If the mechanism is confirmed, `--warm-up` and pacing matter more than retry
+  does; the attempt record carries what would show it (`promptChars`, `waitedMs`, per-attempt
+  timings), and OAI-24 shipped the reader that splits failures on whether a prefill was measured. **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
   `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a warm pass honestly.
   The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
   still only approximate — token counting need not be identical across models; wall-clock

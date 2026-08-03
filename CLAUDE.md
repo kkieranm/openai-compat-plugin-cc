@@ -60,6 +60,11 @@ every attempt, and `scripts/lib/attempt-outcome.mjs` owns what one request's end
 becomes `refused` only when `begin` creates the replacement entry, and stays a `shape-rejected`
 failure when nothing replaced it — see [ADR 012](adr/012-surviving-the-server.md).
 
+Server-state questions are answered by shortening the TTL below a known prefill and trying to falsify
+the JIT-TTL mechanism, never by sampling residency around a run — the instrument is specified, and
+blocked on the attempt record not carrying `serverResponded`, in
+[ADR 013](adr/013-observing-the-server.md).
+
 `bench/lib/reliability-report.mjs` `reasonNotes` explains each reason code a reader could misread —
 `shape-rejected`, `non-retryable-transport`, `transport` — gated on that code appearing in the
 sweep, and claims only what the attempt record holds rather than where else a cause might be found.

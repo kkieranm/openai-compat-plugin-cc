@@ -41,8 +41,11 @@ function countTable(title, pairs) {
  * names it" — and review refuted all three, the last one decisively: a TLS
  * rejection's message is the words "certificate has expired" and contains no
  * `CERT_HAS_EXPIRED` anywhere, so the sentence was false for exactly the
- * examples the paragraph itself cites. The attempt record carries a reason code
- * and nothing more, and that is the whole of what these paragraphs may claim.
+ * examples the paragraph itself cites. The attempt record retains nothing
+ * further about the transport error, and that is the whole of what the three
+ * paragraphs *in this function* may claim. Scope stated, because it is no
+ * longer the whole file: `firstTextNote` below claims from an attempt's
+ * timings, which the record does also carry.
  */
 function reasonNotes(sawReason) {
   const lines = [];
@@ -130,6 +133,38 @@ function outcomeNotes(stats) {
   return lines;
 }
 
+/**
+ * What a failed attempt's `prefillMs` does and does not establish.
+ *
+ * Gated on a failure having occurred — a **count**, never a name test. The
+ * paragraphs above are gated by `sawReason`, whose `key === code` is one
+ * loosened operator away from printing the `transport` note for a sweep whose
+ * only failures were `non-retryable-transport`; nothing here reintroduces that
+ * shape.
+ *
+ * The claim is deliberately narrow, because the tempting one is false. A
+ * measured prefill says the attempt crossed the first-model-text boundary, so
+ * whatever ended it happened after that point — that is all. It does not say
+ * why a later stream died, and a null is the absence of the measurement rather
+ * than evidence of any particular cause. Stated this way because the failure
+ * class this repo keeps producing is prose that asserts a property of a whole
+ * population from examples covering one part of it.
+ */
+function firstTextNote(stats) {
+  if (stats.failed === 0) return [];
+  return [
+    `The table below splits those ${stats.failed} failed attempt(s) on **whether the model had produced any`
+    + ' text yet**, which is'
+    + ' what a recorded `prefillMs` means. An attempt with one measured its own prefill, so it reached'
+    + ' first model text and whatever ended it happened *after* that boundary — ruling out, for that'
+    + ' attempt, any account in which it never got that far. It does **not** say what killed the stream'
+    + ' afterwards. An attempt without one is the absence of that measurement — it died before first'
+    + ' token, or its failure carried no timings — and absence of the measurement is not evidence of a'
+    + ' cause.',
+    '',
+  ];
+}
+
 /** Logical runs, counted the way the recall table counts them. */
 function runTotals(results) {
   const runs = results.flatMap(({ runs: caseRuns }) => caseRuns);
@@ -165,6 +200,8 @@ export function reliabilitySection(results) {
     ...countTable('Failures by reason', stats.byReason),
     ...countTable('Failures by case', stats.byCase),
     ...countTable('Failures by requested model', stats.byModel),
+    ...firstTextNote(stats),
+    ...countTable('Failures by whether first model text arrived', stats.byFirstText),
   );
   return lines;
 }
