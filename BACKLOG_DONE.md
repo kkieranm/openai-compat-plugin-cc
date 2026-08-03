@@ -9,8 +9,8 @@ Newest first.
   **What shipped:** the decision and its rationale (ADR 013), ADR 012's false "not observable from
   the client" corrected, the unprovenanced "~10 minute TTL" corrected wherever it appeared, a reader
   for evidence already recorded (`byFirstText`), and a new `.claude/REPO_TRAPS.md` class. **What did
-  not:** `bench/ttl-challenge.mjs` and `bench/lib/ttl-verdict.mjs`, which stay uncommitted in the
-  working tree with ten open findings and a production-code prerequisite.
+  not:** `bench/ttl-challenge.mjs` and `bench/lib/ttl-verdict.mjs`, stashed rather than committed
+  (`git stash pop`, or `873dc05`) with ten open findings and a production-code prerequisite, OAI-35.
   **All three filed options were refuted, not merely declined.** Sampling residency around a run
   (options b and d) suffers temporal aliasing: a bracket spanning several attempts and many minutes
   cannot tell "loaded throughout" from "unloaded then silently JIT-reloaded". A per-attempt plugin
@@ -35,9 +35,9 @@ Newest first.
   **The driver's worst defect was demonstrated by accident.** `main()` sat at module scope, so
   importing it for its unit tests *ran the experiment* — against a server that was down, adding 44s
   to the suite and writing a junk record. An earlier draft then rendered `inconclusive-failure`, a
-  verdict about the mechanism, from a run in which no request ever reached the wire. `summarize` now
-  returns `instrument-failed` and refuses to describe the server at all, and a test pins the
-  entry-point guard because the symptom is slow and quiet rather than red.
+  verdict about the mechanism, from a run in which no request ever reached the wire. In the draft this
+  became an `instrument-failed` outcome that refuses to describe the server at all, plus a test
+  pinning the entry-point guard — the symptom is slow and quiet rather than red.
   **Review pass 1 found eight more of the same shape, and that is the finding.** Three lenses —
   `advisor`, both Codex stages, and a wide `review-lean` — converged on one class: **a guard that
   narrates instead of refusing.** `calibrate` printed `ABORT` and continued; a *failed* calibration's
@@ -47,7 +47,8 @@ Newest first.
   while claiming to measure prefill; and `summarize`'s fallback said "No episode stayed in flight
   past expiry" for sweeps in which one did. Every one would have let the experiment answer
   confidently from a run that tested nothing — the exact failure OAI-24 exists to prevent, inside
-  OAI-24's own instrument. All fixed, each with a test that fails without the fix.
+  OAI-24's own instrument. All fixed **in the stashed draft**, each with a test that fails without
+  the fix; none of it is committed.
   **Scope, stated precisely because the batch is about overclaiming.** The wide verifiers corrected
   one of these downward: a short calibration could *not* fabricate `deterministic-form-refuted`,
   because `episodeVerdict` applies the same margin per episode, so an under-exposed sweep lands on
@@ -61,9 +62,9 @@ Newest first.
   `prefillMs` the failure envelope does not carry. The decisive one was not in the driver at all:
   **the attempt record drops `serverResponded`**, so a mid-prefill eviction before first token is
   indistinguishable from a connection that reached no peer — the instrument is blind to its own
-  target event, and fixing that is production code OAI-24's plan forbade. Carried to **OAI-34** with
-  every finding written down; the criterion for withdrawal was fixed *before* pass 3 ran, so it was
-  not chosen against the defect that turned up.
+  target event, and fixing that is production code OAI-24's plan forbade — filed as **OAI-35**, which
+  **OAI-34** is blocked on. Every finding is written down there; the criterion for withdrawal was
+  fixed *before* the last pass ran, so it was not chosen against the defect that turned up.
   **The lesson worth keeping**: eight defects in pass 1, ten in pass 2, in logic that had never
   executed against a real server. Review found every one of them and review was not converging —
   which is an argument for running the thing against a stub early, not for reviewing harder.

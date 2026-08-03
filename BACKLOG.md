@@ -203,12 +203,15 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   2026-08-03 by OAI-24, which decided the design ([ADR 013](adr/013-observing-the-server.md)) and
   **withdrew the driver from its own commit** after two review passes. This is build-then-run, not
   just run — without OAI-35 the instrument is blind to the event it exists to detect.
-  **A reviewed draft exists in the working tree, UNCOMMITTED and not launchable** —
-  `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs`, `tests/ttl-challenge.test.js`. It is worth
-  starting from rather than rewriting: its decision rule is pure and unit-tested, and the eight pass-1
-  defects are already fixed in it. **It is untracked, so `git clean` would destroy it.** Ten pass-2
-  findings remain open against it, and the first three each let it issue a verdict the evidence does
-  not support:
+  **A reviewed draft is STASHED, not committed and not launchable.** Recover it with
+  `git stash pop` (or inspect without applying: `git show stash@{0}^3`) — it holds
+  `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs` and `tests/ttl-challenge.test.js`, 876
+  lines, stashed 2026-08-03 as *"OAI-34 draft: TTL challenge instrument, withdrawn from OAI-24 with
+  10 open findings"*. **If the stash list has been cleared, the commit is `873dc05`** — reachable via
+  `git show 873dc05^3` while it survives gc, which is the whole reason the SHA is written down here.
+  It is worth starting from rather than rewriting: the decision rule is pure and unit-tested, and the
+  eight pass-1 defects are already fixed in it. Ten pass-2 findings remain open, and the first three
+  each let it issue a verdict the evidence does not support:
   **(1)** `runEpisode` reads a top-level `report.prefillMs`, which the **failure** envelope does not
   carry (`review-report.mjs:104` is the success path only) — so `firstTokenMs` is null on every
   failed episode, `exposed` silently falls back to wall clock, and `activityObserved`'s window
