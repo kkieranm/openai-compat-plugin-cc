@@ -92,3 +92,47 @@ review confirmed that reverting the constant left all 118 other tests passing.
   same place as one that returns nothing: a loud refusal, never a wrong answer.
 - oMLX and Unsloth Studio remain unprobed for structured output. The degrade path is what makes
   shipping without them honest; it has a test, but not a live confirmation.
+
+## Amendment, 2026-08-04 — the schema is off by default, and the fallback is now the road
+
+**Status: the decision above still holds for what a schema *buys*. What it costs was unknown when
+this was written, and the cost is a crashed model process.**
+
+Asking for `response_format` makes LM Studio's MLX backend build a grammar with LLGuidance. That
+grammar's lexer carries a 250,000-state budget, and long-form generation exhausts it — measured at
+13,956–14,744 generated tokens across five instances, 43–50KB, independent of the schema's own
+`maxLength`. The engine then raises `ValueError: LLGuidance matcher error … Stop: LexerTooComplex`
+inside the generation thread, which is fatal: `Fatal Python error: Segmentation fault`, and LM Studio
+reloads the model about twelve seconds later.
+
+The consequences are worth stating plainly, because this ADR's reasoning was sound and its conclusion
+still shipped a defect:
+
+- It cost roughly **38% of long requests**, which this repo attributed to an unreliable server for
+  four days and built three separate instruments to characterise (OAI-20's attempt ledger, OAI-24's
+  residency sampler, OAI-34's TTL challenge). All three measured a real thing. None of them measured
+  the cause.
+- The reload is why a retry ever succeeded — it meets a freshly loaded model, not a recovered one.
+- `empty-completion` and `stream-unfinished`, filed as two failure shapes, are **one event observed
+  either side of first token**.
+- The evidence was in `~/.lmstudio/server-logs/` the whole time, and this repo's own error hint says
+  "check the server log".
+
+**So the degrade path described above is no longer a fallback for servers that refuse a schema; it is
+the ordinary path.** `--structured-output` opts back in. That flag is not deprecation theatre: the
+fault is in one backend's grammar engine, and ADR 001 commits this plugin to treating providers as
+configuration rather than special cases, so deleting the capability would over-fit to the machine in
+front of us. The default protects that machine; the flag keeps the capability for servers that
+enforce a schema some other way.
+
+**One thing this amendment REMOVES rather than adds.** `atCap`, `analysisCut` and `analysisCap` are
+diagnostics about a grammar, and without one they are not computed. That reads like a loss of
+safety and is close to the opposite: bounding `analysis` under a schema is precisely what made a
+guillotined reply *valid* — complete JSON, `finish_reason: stop`, an empty findings list — and so
+indistinguishable from a clean pass. That was ADR 004's trap instance 14. Unconstrained, a reply cut
+off mid-object is **malformed**, `extractJson` fails, and the raw text is shown. The schema created
+the hazard the diagnostic then detected.
+
+The residual case is narrower and is handled separately: a reply that parses *and* was cut
+(`finish_reason: length`) — complete JSON followed by a truncated tail. See the caveat added in
+`review.mjs`.

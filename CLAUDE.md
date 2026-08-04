@@ -23,9 +23,12 @@ revision the diff describes; `collectTarget` splits pinned `files` (untracked, `
 no diff) from droppable `changed`, and the reply falls back to the diff alone when the window is too
 small — see [ADR 005](adr/005-whole-files-for-review.md).
 
-`scripts/lib/structured.mjs` asks for JSON with a strict `response_format` schema, reads the payload
-from whichever channel carries it, and degrades to prompt-and-parse when a server refuses the schema
-— see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
+`scripts/lib/structured.mjs` can ask for JSON with a strict `response_format` schema, but **since
+2026-08-04 it does not by default**: a schema builds a grammar in LM Studio whose lexer dies at ~14k
+generated tokens and segfaults the model process, which cost ~38% of long requests and was
+misdiagnosed as server flakiness for four days (OAI-51). The ordinary path now asks for the shape in
+prose and parses leniently; `--structured-output` opts back in for a server known not to have that
+grammar engine — see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
 see [ADR 004](adr/004-bounding-the-review-reply.md).
 

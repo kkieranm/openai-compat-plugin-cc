@@ -1,14 +1,19 @@
 // /oai:review end to end: the reasoning-channel payload, the degrade-on-
 // rejection path, and the refusals that must stay loud.
+//
+// `--structured-output` appears on the tests whose subject IS the grammar — the
+// schema on the wire, conformance rejection, the caps it enforces, the refusal
+// fallback. Everything else runs the default, which sends no `response_format`
+// at all (OAI-51) and therefore answers in the content channel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   chatRequests,
+  completion,
   completionFrames,
   deltaFrame,
-  reasoningCompletion,
   reasoningFrames,
   respondJson,
   respondStream,
@@ -29,7 +34,7 @@ test('findings arriving in the reasoning channel are reported as findings', asyn
     respondStream(response, reasoningFrames(FINDINGS)),
   );
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -47,7 +52,7 @@ test('findings arriving in the reasoning channel are reported as findings', asyn
 // answers with a whole JSON completion, and the findings must survive it.
 test('a review from a server that ignores stream: true is read as a whole completion', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondJson(response, reasoningCompletion(FINDINGS)),
+    respondJson(response, completion(FINDINGS)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -66,7 +71,7 @@ test('a server that rejects response_format is retried without it', async () => 
     return respondStream(response, completionFrames(`Here are the findings:\n\`\`\`json\n${FINDINGS}\n\`\`\``));
   });
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -77,6 +82,27 @@ test('a server that rejects response_format is retried without it', async () => 
   assert.equal(sent.length, 2);
   assert.equal(sent[1].body.response_format, undefined);
   assert.match(sent[1].body.messages[1].content, /JSON Schema/, 'the fallback must ask for the shape in words');
+});
+
+// OAI-51, and the reason this is a guard rather than a preference. A
+// `response_format` schema makes LM Studio's LLGuidance build a grammar whose
+// lexer exhausts a 250,000-state budget at ~14k generated tokens, raising a fatal
+// exception in the MLX generation thread and SEGFAULTING the model process — a
+// ~38% loss of long requests. So an edit that puts the grammar back on the
+// default path does not change how the reply is formatted; it reintroduces a
+// crash. The shape still has to be asked for, in prose, or nothing parses.
+test('by default no grammar is sent, because a schema crashes the backend', async () => {
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondStream(response, completionFrames(FINDINGS)),
+  );
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const sent = chatRequests(server)[0].body;
+  assert.equal(sent.response_format, undefined, 'a grammar here segfaults the MLX backend');
+  assert.match(sent.messages[1].content, /JSON Schema/, 'so the shape is named in words instead');
 });
 
 test('a 400 that is not about the format is not retried', async () => {
@@ -94,7 +120,7 @@ test('a 400 that is not about the format is not retried', async () => {
 
 test('a reply that is not findings is shown verbatim, not interpreted', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames('I had a look and it seems fine to me.')),
+    respondStream(response, completionFrames('I had a look and it seems fine to me.')),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -173,7 +199,7 @@ test('a schema-shaped reply that does not match the schema is not findings', asy
     ),
   );
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -199,7 +225,7 @@ test('a findings list at the schema cap says so, rather than binning the rest qu
     respondStream(response, reasoningFrames(capped)),
   );
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -239,7 +265,7 @@ test('a clean tree refuses rather than reviewing something else', async () => {
 
 test('trailing text is forwarded to the reviewer verbatim', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(FINDINGS)),
+    respondStream(response, completionFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review', "focus on the guard's edge cases"], { configPath, cwd: dir });
@@ -254,7 +280,7 @@ test('the reserve never takes more than half a small window', async () => {
   // A flat 16k reserve would refuse every review on a small-window model,
   // blaming an input that would comfortably have fit.
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondStream(response, reasoningFrames(FINDINGS)),
+    (request, response) => respondStream(response, completionFrames(FINDINGS)),
     { contextLength: 8192 },
   );
 
@@ -267,7 +293,7 @@ test('the reserve never takes more than half a small window', async () => {
 
 test('a large window gets the full reasoning budget', async () => {
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondStream(response, reasoningFrames(FINDINGS)),
+    (request, response) => respondStream(response, completionFrames(FINDINGS)),
     { contextLength: 131_072 },
   );
 
@@ -280,7 +306,7 @@ test('a large window gets the full reasoning budget', async () => {
 
 test('the review reserves more headroom than a task does', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(FINDINGS)),
+    respondStream(response, completionFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });

@@ -2,7 +2,24 @@
 
 Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 
-**Current theme: make `/oai:review` trustworthy before extending the plugin further.** Where it
+> ## Direction change, 2026-08-04 — the theme below is PARKED
+>
+> The goal is now **"use local LLMs like I use Codex"**: Codex-shaped delegation ergonomics around a
+> local batch worker, with **Claude acquiring context and the local model transforming or judging
+> it**. The plan is [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with
+> Codex; the ordering is its stages, not this file's.
+>
+> **What is parked, and why it is parked rather than dropped.** Everything below was sized to answer
+> "is the reviewer trustworthy" before extending the plugin. Two things happened on 2026-08-04.
+> OAI-51 found the reviewer was crashing the model backend with its own request, so the thing being
+> measured was broken throughout — and Stage 0 changes how replies are produced, which invalidates
+> any baseline taken before it. So **OAI-19 (suspended), OAI-9 and OAI-11 wait on Stage 0**, and the
+> benchmark stays: its value was never the number it produced, it was catching that the reviewer was
+> broken, which it did by a route nobody planned.
+>
+> **OAI-51 IS Stage 0** and is the one item here that is live.
+
+**Parked theme: make `/oai:review` trustworthy before extending the plugin further.** Where it
 actually stands, stated plainly because it is easy to overrate: OAI-14 removed the largest
 false-positive class (3-of-3 → 0-of-3 on the one commit with a baseline), and the 2026-07-30
 OAI-19 attempt added two anchored true positives on a real commit diff (dense 27B on `scaffold`:
@@ -845,6 +862,25 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   sizing argument moot; **(c)** drop the schema for large targets and use ADR 003's prompt-and-parse
   fallback, which touches no grammar at all. **(a) and (c) are the ones that address the mechanism**;
   (b) trades one known defect for another.
+  **Stage 0 landed 2026-08-04, and running it produced two results — one banking the gate, one new.**
+
+  **Gate 1 PASSED, measured not argued.** An unconstrained review generated **59,918 characters of
+  reasoning over 340s** — past the 43,389-50,497 byte band in which every grammar-constrained run
+  segfaulted — and the backend did not crash. The server log is the proof: it stood at 43
+  `LexerTooComplex` events and 5 crashes before that run and at **exactly 43 and 5 after it**. The
+  claim "unconstrained is safe" was untested when Stage 0 was planned, and this is the test.
+
+  **New result: removing the grammar removed a second thing nobody had accounted for.** That run
+  produced NO findings — it spent its whole token budget reasoning and died at `finish_reason:
+  length`. The schema's `maxLength` on `analysis` was doing **double duty**: bounding the reply, and
+  forcing the model to stop reasoning and move on to `findings`. The system prompt still says *'Use
+  the "analysis" field first ... Only then fill in findings'*, and the schema ordered
+  `analysis -> findings -> summary`, so with nothing enforcing the bound the model reasons until the
+  budget dies and never reaches the answer. Under a grammar that ordering was safe by construction;
+  unconstrained it is a guarantee of silence on any target big enough to think about.
+  The fix is to invert it — findings first, analysis after — so a budget-exhausted reply still
+  carries what it found. Cheap, and only discoverable by running the thing.
+
   **Note against OAI-15 and ADR 008:** raising the reply ceiling *permits* longer constrained
   generation, so it moves runs toward this threshold rather than away from it. Whether OAI-15 caused
   the crashes is NOT established here — the derived cap landed 2026-07-28 (`b66a3d5`) and 07-28/07-29

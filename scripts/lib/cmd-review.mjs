@@ -22,7 +22,7 @@ export const REVIEW_SPEC = {
     'provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
     'cache-buster', 'max-attempts',
   ],
-  booleanFlags: ['staged', 'diff-only', 'json'],
+  booleanFlags: ['staged', 'diff-only', 'json', 'structured-output'],
   repeatableFlags: ['file'],
 };
 
@@ -98,9 +98,20 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
     // tries run for three times the number the caller set.
     maxMs: resolveMax(profile, maxSeconds),
     maxAttempts,
-    // One ledger for the whole review, shared by the schema request and the
-    // degraded one after it: a ledger per call would restart its indexes half
-    // way through and drop the structured request out of the record.
+    // OFF by default since 2026-08-04, and the default is the whole point.
+    // Sending `response_format` makes LM Studio's LLGuidance build a grammar
+    // whose lexer exhausts a 250,000-state budget at ~14k generated tokens,
+    // which raises a fatal exception in the MLX generation thread and SEGFAULTS
+    // the model process — a ~38% request failure rate this repo spent four days
+    // attributing to an unreliable server. See OAI-51.
+    //
+    // A flag rather than a deletion, because the fault is in one backend's
+    // grammar engine and this plugin is generic by construction (ADR 001): a
+    // server that enforces a schema without that engine is still better served
+    // by one. The default protects the machine in front of us; the flag keeps
+    // the capability honest for the ones that are not.
+    structuredOutput: Boolean(options['structured-output']),
+    // One ledger for the whole review, shared by every request the answer costs.
     ledger,
   };
 }

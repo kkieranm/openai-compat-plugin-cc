@@ -164,7 +164,7 @@ function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' 
  * never pay for is the same defect as a cap that over-commits, told to the model
  * instead of to the code.
  */
-function degradedLadder(shared, ladder) {
+function unconstrainedLadder(shared, ladder) {
   const sized = prepareLadder(shared, { ...ladder, suffix: schemaInstruction(REVIEW_SCHEMA) });
   const schema = reviewSchemaFor(sized.reserve);
   return { ...prepareLadder(shared, { ...ladder, suffix: schemaInstruction(schema) }), schema };
@@ -207,54 +207,63 @@ function sharedRequest(profile, plan) {
 }
 
 /**
- * The request that follows a refused schema, and the ledger discipline around it.
+ * The request with no grammar behind it — the shape asked for in prose.
  *
- * Lifted out of `requestFindings` at the function size budget. Two things happen
- * here that cannot happen anywhere else: the refused attempt is offered up as
- * NEGOTIATION rather than a fault — this is the only layer that knows a fallback
- * is meant to follow, which a status code alone never establishes — and every
- * error leaving the branch carries the shared ledger, because `degradedLadder`
- * can refuse an oversized prompt without ever reaching `answerWithRetry`.
+ * **The default path since 2026-08-04, and the fallback after a refused schema.**
+ * One function rather than two copies, because it is the same request either way;
+ * what differs is only what has to be said and recorded first, which is why the
+ * two hooks exist. See OAI-51 for why this became the default: a grammar built
+ * from `response_format` exhausts LLGuidance's lexer state budget at ~14k
+ * generated tokens and segfaults the MLX backend.
+ *
+ * Both hooks run INSIDE the try, and every error leaving here carries the shared
+ * ledger, because `unconstrainedLadder` can refuse an oversized prompt — the
+ * prose instruction makes the prompt longer than the schema request's — without
+ * ever reaching `answerWithRetry`.
  */
-async function degraded({ profile, shared, ladder, send, ledger, error }) {
+async function unconstrained({ profile, shared, ladder, send, ledger, refuse, announce }) {
   try {
     // The refused attempt is *predicted* to be negotiation, and settled as such
     // only when the replacement is actually created — `refuseLast` registers,
     // `ledger.begin` decides (OAI-23). That is what lets it run first: two
-    // things after it can stop the replacement ever being sent — `degradedLadder`
-    // refusing an oversized prompt (the degraded prompt is longer, carrying the
-    // schema as prose) and the replacement's own wall-clock cap check — and in
-    // both the entry is left saying what it is, a failure named `shape-rejected`
-    // rather than `0 failed, 1 refused`, a run that died dressed as benign
-    // negotiation. Ordering used to be the whole guard, and covered only the
-    // first of those.
-    ledger?.refuseLast(error);
+    // things after it can stop the replacement ever being sent — the ladder
+    // refusing an oversized prompt and the replacement's own wall-clock cap
+    // check — and in both the entry is left saying what it is, a failure named
+    // `shape-rejected` rather than `0 failed, 1 refused`, a run that died
+    // dressed as benign negotiation. Ordering used to be the whole guard, and
+    // covered only the first of those.
+    refuse?.();
 
     // The instruction has to fit the window too, so the guard runs again —
     // *before* the retry is announced. Announcing first meant a guard refusal
     // arrived right after "Retrying without it", blaming the user's diff size
     // for a request that was never sent and a retry that never happened.
-    const second = degradedLadder(shared, ladder);
+    const built = unconstrainedLadder(shared, ladder);
 
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.
-    process.stderr.write(`${profile.name} rejected response_format (${error.message}). Retrying without it.\n`);
-    const result = await chatCompletion(profile, { ...send, maxTokens: second.reserve, messages: second.messages });
-    return { result, structured: false, ...second };
+    announce?.();
+    const result = await chatCompletion(profile, { ...send, maxTokens: built.reserve, messages: built.messages });
+    return { result, structured: false, ...built };
   } catch (fallbackError) {
     throw withLedger(fallbackError, ledger);
   }
 }
 
 /**
- * Ask for findings, degrading if the server will not take a schema.
+ * Ask for findings — unconstrained by default, with a grammar only on request.
  *
- * The retry is near-free: an unsupported `response_format` is a request
- * validation error, returned before any generation happens.
+ * **The default flipped on 2026-08-04 (OAI-51).** Asking for `response_format`
+ * builds a grammar in the server whose lexer dies at ~14k generated tokens and
+ * takes the model process with it, so the schema is now opt-in via
+ * `--structured-output` and the prose instruction is the ordinary path. When it
+ * IS asked for, the old fallback still stands: the retry after a refusal is
+ * near-free, an unsupported `response_format` being a request validation error
+ * returned before any generation happens.
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
-  const { maxAttempts, ledger, retryDelayMs } = plan;
+  const { maxAttempts, ledger, retryDelayMs, structuredOutput } = plan;
   const shared = sharedRequest(profile, plan);
   // Minted once, here, because this function is the outermost layer that can
   // retry a model call: the `response_format` catch below sends a *second*
@@ -273,6 +282,10 @@ export async function requestFindings(profile, plan) {
   const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, maxAttempts, retryDelayMs, ledger, onProgress };
   const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
+  // No grammar unless one was asked for. Not a fallback here and not an error
+  // path: it is what an ordinary review does now.
+  if (!structuredOutput) return unconstrained({ profile, shared, ladder, send, ledger });
+
   const first = prepareLadder(shared, ladder);
   // Sized from the reserve this rung actually got, which is the number about to
   // go out as `max_tokens` — not from the ceiling it was capped against. The two
@@ -290,6 +303,16 @@ export async function requestFindings(profile, plan) {
     if (!isFormatRejection(error)) throw error;
     // The whole ladder is climbed again, not just the guard: the instruction
     // makes the prompt longer, so the rung that fit a moment ago may not now.
-    return degraded({ profile, shared, ladder, send, ledger, error });
+    return unconstrained({
+      profile,
+      shared,
+      ladder,
+      send,
+      ledger,
+      refuse: () => ledger?.refuseLast(error),
+      announce: () => process.stderr.write(
+        `${profile.name} rejected response_format (${error.message}). Retrying without it.\n`,
+      ),
+    });
   }
 }

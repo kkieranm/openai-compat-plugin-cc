@@ -1,6 +1,6 @@
 ---
 description: Get a second-opinion code review from a local model, then verify each finding and fix the ones that are real
-argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [--diff-only] [--json] [extra instructions]'
+argument-hint: '[--staged] [--base <ref>] [--commit <ref>] [--file <path>]... [--diff-only] [--structured-output] [--json] [extra instructions]'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read, Grep, Glob, Edit
 ---
@@ -23,6 +23,8 @@ The script decides what to review — do not build a diff yourself or paste one 
 Each changed file is sent whole alongside the diff, so the model can resolve anything defined outside the changed hunks. `--diff-only` sends just the diff — faster on a slow local model, at the cost of the "X is not defined" false positives that whole files exist to prevent. It cannot be combined with `--file`, which has no diff.
 
 `--cache-buster <token>` puts the token at the head of the system prompt, which changes the request's leading text and so defeats a server-side prompt cache. It exists for measurement: repeating a review against the same target is otherwise served from cache, and a cached repeat reaches its first token tens of times faster than the first run did, so a timing taken from it is not the cost a first review pays. Pass a value that has not been used before — the point is that the server has never seen this prefix. It changes nothing about what is reviewed, but it does change what the model reads, so use it when timing a run rather than by default.
+
+`--structured-output` asks the server to enforce the reply's shape with an OpenAI `response_format` JSON schema, instead of describing that shape in the prompt and parsing what comes back. **It is off by default, and the default is deliberate: on LM Studio's MLX backend a schema is not a formatting preference but a crash.** The grammar built from it exhausts its lexer's state budget after roughly 14,000 generated tokens and takes the model process down with it, which cost this plugin about 38% of its long requests before anyone read the server log. Without the flag the reply is generated unconstrained and parsed leniently, which is slightly less reliable to parse and vastly more reliable to obtain. Suggest it only for a server known to enforce schemas without that grammar engine, and never as a fix for a reply that failed to parse.
 
 `--json` prints the whole run as one JSON object on stdout — findings, summary, every caveat the text report carries, plus token usage and timing — instead of the report below. It exists for scripts and for the benchmark harness (`npm run bench`). Pass it only if the user asks for it: the verification duty below still applies to whatever it returns, and `"parsed": false` means the model's reply could not be read, which is not the same as finding nothing.
 
