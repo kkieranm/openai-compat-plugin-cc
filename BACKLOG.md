@@ -576,6 +576,47 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   — if LM Studio ever exposes an unload *reason* or a lifecycle event, the whole problem collapses to
   reading it. Check that first; it is a five-minute question and it decides whether (a) is worth
   hours.
+  **A second thing any confirming design must fix, recorded here so it is not rediscovered:** the
+  sampler's `in-flight` phase means *the child process is alive*, not *the HTTP request is open*. An
+  absence seen after the request already failed but before the companion exits falls inside that
+  window. That is ADR 013's own "an unload after the request had already failed" disqualifier, and it
+  is harmless today only because nothing is attributed. It becomes load-bearing the moment anything is.
   **Do not start this before OAI-34 has actually run.** If three episodes survive a 120s TTL against a
   335s prefill, the deterministic form is refuted and the appetite for confirming a mechanism that
   just failed to appear should be re-examined rather than assumed.
+
+- **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
+  matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
+  scenario crossing the real entry point", with one *stated* exemption (G8, structurally impossible to
+  produce from a fake server). Measured after it shipped, there are two unstated ones:
+  **(1)** `no-exposure` is the only episode verdict of the seven with no e2e scenario — every harness
+  scenario uses a 500ms reply against a 300ms bar, so nothing ever produces a request that fails to
+  clear the margin. It is the verdict that catches a wasted episode, so a break in it would show up
+  as the sweep silently banking runs that tested nothing. A scenario needs only a reply delay below
+  the bar.
+  **(2)** `tests/ttl-stub-lms.mjs` documents five scenario knobs; **three are used by no test** —
+  `unreadableFromMs`, `lastUsedAdvances`, `failLoad`. Unused affordances in a fixture are worse than
+  absent ones: they read as coverage. Either exercise them (the first two map to real recorded
+  fields — polling continuity and the `lastUsedTime` evidence ADR 013 requires be recorded and never
+  branched on) or delete them and the doc lines that advertise them.
+  Note the mechanical check that found both is worth keeping as a guard rather than a one-off: the
+  set of episode verdicts reachable through the e2e matrix should be compared against
+  `EPISODE_VERDICTS` minus the stated exemption, so the next hole fails the suite instead of waiting
+  for a review.
+
+- **OAI-46** — The tracker-consistency guard pins one line, and its prose now says so — decide whether
+  that is enough. **Filed from OAI-34's terminal review round, which demonstrated the gap rather than
+  argued it.** `tests/ttl-vocabulary.test.js` reads BACKLOG's `Accepted verdicts:` line and compares
+  it set-wise against `CONCLUSIVE`, which the driver's exit code imports. That pins **that line**.
+  The reviewer added a contradictory acceptance clause elsewhere in the OAI-34 entry and the suite
+  stayed green.
+  The claim was corrected rather than the guard — an overclaim about a guard is worse than a narrow
+  guard honestly described, and OAI-34 was already four review rounds deep. But the honest description
+  is not the same as adequate: a future edit can still mark a non-conclusive run complete under a
+  green suite, which is exactly the drift the guard was added to stop.
+  Options, cheapest first: **(a)** accept it, since the canonical line is where a reader looks and the
+  prose no longer claims more; **(b)** assert the entry contains no *other* verdict-acceptance
+  phrasing, which needs a rule for what that looks like and risks false failures on ordinary prose;
+  **(c)** move the done-condition out of prose entirely into a small machine-readable block the tracker
+  renders from. **(c) is the only one that actually closes it**, and it is a change to how this repo
+  writes backlog items, not to one item — which is why this is a decision and not a fix.
