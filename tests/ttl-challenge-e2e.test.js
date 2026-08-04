@@ -114,7 +114,8 @@ test('a calibration that never cleared the bar writes its record and exits non-z
   assert.equal(result.status, 1, 'a disqualified sweep must not exit 0');
   assert.ok(manifest, 'the record survives the abort');
   assert.equal(manifest.outcome.verdict, 'instrument-failed');
-  assert.match(manifest.outcome.says, /Calibration did not establish/);
+  assert.match(manifest.outcome.says, /calibration cannot license this sweep/i);
+  assert.match(manifest.outcome.says, /prefill did not clear/);
   assert.deepEqual(manifest.episodes, [], 'no challenge episode ran');
   // The ordering that makes this reachable: an empty episode list must not be
   // read before the calibration failure that produced it.

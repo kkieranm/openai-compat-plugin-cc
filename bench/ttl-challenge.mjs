@@ -118,12 +118,15 @@ async function calibrate(config, caseDef) {
     competingModels: calibration.competingModels,
     contradiction: calibration.contradiction,
   });
-  calibration.cleared = calibration.validityFailures.length === 0 && calibrationCleared({
+  // Kept SEPARATE, then combined. Collapsing them into one boolean is what made
+  // the failure message name only one of two simultaneous causes.
+  calibration.barCleared = calibrationCleared({
     obtainedResponse: calibration.obtainedResponse,
     failed: calibration.failed,
     prefillMs: calibration.prefillMs,
     challengeTtlMs: config.challengeTtlSeconds * 1000,
   });
+  calibration.cleared = calibration.validityFailures.length === 0 && calibration.barCleared;
   process.stderr.write(calibration.prefillMs === null
     ? '  no first token measured — calibration did not answer\n'
     : `  first token at ${Math.round(calibration.prefillMs / 1000)}s\n`);
@@ -206,6 +209,7 @@ async function main(argv) {
       // prefill fell short even when it cleared the bar and a precondition was
       // what actually failed.
       calibrationFailures: calibration.validityFailures,
+      barCleared: calibration.barCleared,
     }));
   }
 

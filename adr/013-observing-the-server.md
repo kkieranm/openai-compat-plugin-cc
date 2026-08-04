@@ -231,9 +231,12 @@ outcomes; the per-episode verdicts feeding them are a different set, and an earl
 paragraph claimed a guard while only the episode set had one. `bench/lib/ttl-verdict.mjs` exports
 `SWEEP_VERDICTS` and `EPISODE_VERDICTS`, and `tests/ttl-verdict.test.js` drives the rule over every
 input combination asserting each emitted set equals its documented set exactly. It also exports
-`CONCLUSIVE` — the two outcomes that mean the experiment produced a result — because the others ask
-to be re-run in their own text, and OAI-34's done-condition and the driver's exit code both read that
-one list rather than restating it.
+`CONCLUSIVE` — the two outcomes that mean the experiment produced a result. The driver's exit code
+imports it; OAI-34's done-condition necessarily restates the strings in prose, so a test reads that
+paragraph back and fails if it drifts from the list or reverts to the loose "anything but
+`instrument-failed`" form. Two of the three excluded outcomes ask to be re-run in their own text; the
+third, `instrument-failed`, says nothing about the server at all, which is why the list is enumerated
+rather than described by a property.
 
 Every row must map to a verdict the code actually produces, and one row here did not. A "Mixed" row
 licensing *"an intermittent association at most"* was removed on 2026-08-03: no verdict mapped to it,

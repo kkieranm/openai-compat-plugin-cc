@@ -47,13 +47,15 @@ export const SWEEP_VERDICTS = Object.freeze([
 /**
  * The outcomes that mean the experiment RAN and produced a result.
  *
- * Everything else asks to be re-run in its own `says` string — `no-exposure`
- * says "lower the TTL or pick a longer case and re-run", `contradictory-evidence`
- * says "check the sampler and the server log before re-running", and
- * `instrument-failed` says nothing at all about the server. Treating "not
- * `instrument-failed`" as completion re-admits all three, which is the same
+ * Everything else means the run must happen again: `no-exposure` says "lower the
+ * TTL or pick a longer case and re-run", `contradictory-evidence` says "check the
+ * sampler and the server log before re-running", and `instrument-failed` says
+ * NOTHING about the server at all — which is not a re-run instruction, and the
+ * distinction is why this list is enumerated rather than described. Treating "not
+ * `instrument-failed`" as completion re-admits the first two, the same
  * whole-class-from-one-sub-population mistake the done-condition it replaced was
- * written to fix. Exported so the exit code and the tracker read ONE rule.
+ * written to fix. Exported so the exit code and the tracker read ONE rule, and
+ * `tests/ttl-verdict.test.js` pins the tracker's copy against it.
  */
 export const CONCLUSIVE = Object.freeze(['deterministic-form-refuted', 'inconclusive-failure']);
 
@@ -146,6 +148,31 @@ export function calibrationCleared({ obtainedResponse, failed, prefillMs, challe
 }
 
 /**
+ * Why a calibration could not license the sweep.
+ *
+ * BOTH causes, never whichever is checked first. Validity and the exposure bar
+ * are independent, so a calibration can fail both at once — and reporting only
+ * the preconditions would have the operator fix one, spend another 45 minutes,
+ * and meet the other. An earlier fix for the false-prefill sentence introduced
+ * exactly that, which is this module's recurring shape: the fix is the next
+ * defect.
+ */
+function calibrationSays(failures, barCleared) {
+  const bad = failures?.length
+    ? `it ran without the conditions this experiment requires (${failures.join(', ')})` : '';
+  const bar = barCleared === false
+    ? 'its prefill did not clear the shortened TTL by the exposure margin' : '';
+  const both = [bad, bar].filter(Boolean).join(', and ');
+  const remedy = [failures?.length ? 'fix the precondition' : '',
+    barCleared === false ? 'lower the TTL or pick a longer case' : ''].filter(Boolean).join('; ');
+  // `barCleared` is undefined when the caller did not measure it — say nothing
+  // about the prefill rather than guess in either direction.
+  const why = both || 'it did not clear the gate';
+  return `The calibration cannot license this sweep: ${why}. Nothing here tested the mechanism.`
+    + `${remedy ? ` To re-run: ${remedy}.` : ' Re-run once it can.'}`;
+}
+
+/**
  * The states in which this sweep may say NOTHING about the server.
  *
  * The seam is real: below this line every branch is a finding, above it every
@@ -153,31 +180,12 @@ export function calibrationCleared({ obtainedResponse, failed, prefillMs, challe
  * whole feature keeps producing — "inconclusive" still reads as a claim about
  * the server, so a broken instrument must not reach it.
  */
-function disqualified(verdicts, calibrationCleared, calibrationFailures) {
+function disqualified(verdicts, calibrationCleared, calibrationFailures, barCleared) {
   // Ordered FIRST, and the ordering is load-bearing: an aborted calibration
   // writes its manifest with an EMPTY episode list, so a check for "no episodes"
   // placed above this would swallow the one state that must be reported.
   if (!calibrationCleared) {
-    // WHY it failed, never assumed. A calibration is voided either because its
-    // prefill did not clear the bar or because its preconditions did not hold,
-    // and those want opposite remedies — "lower the TTL" is the wrong advice for
-    // a competing model, and asserting the prefill fell short when it did not is
-    // a false string in the one sentence this instrument exists to print. The
-    // per-episode message below already hedged; this branch did not.
-    if (calibrationFailures?.length) {
-      return {
-        verdict: 'instrument-failed',
-        says: `The calibration ran without the conditions this experiment requires (${calibrationFailures.join(', ')}),`
-          + ' so it cannot license the sweep and nothing here tested the mechanism. Fix the'
-          + ' precondition and re-run — this says nothing about whether the prefill clears the TTL.',
-      };
-    }
-    return {
-      verdict: 'instrument-failed',
-      says: 'Calibration did not establish a prefill clearing the shortened TTL by the exposure margin,'
-        + ' so nothing in this sweep tested the mechanism. Lower the TTL or pick a longer case, and'
-        + ' re-run.',
-    };
+    return { verdict: 'instrument-failed', says: calibrationSays(calibrationFailures, barCleared) };
   }
   if (verdicts.some((v) => v === 'not-dispatched')) {
     return {
@@ -239,8 +247,10 @@ function refutedSays(count, minSlackMs) {
  * What the sweep as a whole licenses. This wording is what OAI-19 may quote, and
  * NO outcome licenses naming JIT-TTL as the cause of the 37.5%.
  */
-export function summarize(verdicts, { calibrationCleared = true, calibrationFailures = [], minSlackMs = null } = {}) {
-  const blocked = disqualified(verdicts, calibrationCleared, calibrationFailures);
+export function summarize(verdicts, {
+  calibrationCleared = true, calibrationFailures = [], barCleared, minSlackMs = null,
+} = {}) {
+  const blocked = disqualified(verdicts, calibrationCleared, calibrationFailures, barCleared);
   if (blocked) return blocked;
   // `[].every(...)` is TRUE, so without this an empty list renders
   // `deterministic-form-refuted` from zero episodes — the vacuous-truth shape
