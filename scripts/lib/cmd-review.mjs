@@ -160,6 +160,11 @@ async function reviewFlow(options, instructions, terminated) {
     model,
     target,
     hunksOnly,
+    // What was ASKED for, beside `structured` which is what was obtained. Only
+    // the pair distinguishes "fell back after a refusal" from "never wanted a
+    // schema" — since 2026-08-04 the second is the ordinary case, and the two
+    // were indistinguishable for exactly as long as the first was the only one.
+    structuredOutput: Boolean(options['structured-output']),
     budget,
     estimatedTokens,
     durationMs: Date.now() - startedAt,

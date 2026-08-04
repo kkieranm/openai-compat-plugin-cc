@@ -10,11 +10,11 @@
 // number, and this repo has already paid for the second.
 import { withLedger } from './attempt-ledger.mjs';
 import { chatCompletion } from './client.mjs';
-import { prepareRequest } from './delegate.mjs';
 import { UserError } from './errors.mjs';
-import { buildReviewPrompt, REVIEW_SYSTEM_PROMPT } from './review.mjs';
-import { MIN_REVIEW_RESERVE_TOKENS, REVIEW_SCHEMA, reviewSchemaFor } from './review-schema.mjs';
-import { isFormatRejection, responseFormatFor, schemaInstruction } from './structured.mjs';
+import { reviewSystemPrompt } from './review.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS, reviewSchemaFor } from './review-schema.mjs';
+import { prepareLadder, unconstrainedLadder } from './review-ladder.mjs';
+import { isFormatRejection, responseFormatFor } from './structured.mjs';
 
 /**
  * The ceiling on a reply budget where the window is known.
@@ -99,93 +99,21 @@ export function reserveFor(contextLength, requested) {
 }
 
 /**
- * Whole changed files if they fit the window, the diff alone if they do not.
- *
- * Two rungs rather than a per-file shed. The second rung is exactly the
- * behaviour that shipped before whole files existed, so it needs no manifest of
- * what was left out in order to be honest, and there is no drop order to get
- * wrong — largest-first would have shed `model-info.mjs`, the very file whose
- * absent definition produced the false positive this feature removes.
- *
- * Only `target.changed` is droppable. `target.files` is code no diff covers —
- * untracked files, or `--file` where there is no diff at all — so dropping one
- * would review nothing and report a clean pass. See ADR 005.
- */
-function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' }) {
-  const hasDiff = Boolean(target.diff.trim());
-  // Every condition the claim "you hold the complete content of every changed
-  // file" depends on. `unreadable` is the one that is easy to forget: a path git
-  // listed whose body would not load is absent from `changed` and leaves no
-  // other trace, so without this the prompt would vouch for a file that never
-  // arrived — this feature's own defect, asserted rather than merely risked.
-  const build = (whole) => {
-    const prompt = buildReviewPrompt({
-      label: target.label,
-      diff: target.diff,
-      instructions,
-      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0,
-    });
-    return {
-      prompt: suffix ? `${prompt}\n\n${suffix}` : prompt,
-      files: whole ? [...target.files, ...target.changed] : target.files,
-    };
-  };
-
-  if (target.changed.length > 0) {
-    try {
-      return { ...prepareRequest({ ...shared, ...build(true) }), hunksOnly: false };
-    } catch (error) {
-      // Only the oversize refusal is retryable by sending less; anything else
-      // is a different failure and must not be laundered into "too big".
-      if (error.reason !== 'oversize') throw error;
-    }
-  }
-  // The reader's caveat is about what the model saw, not about why: no changed
-  // file went whole, whether they did not fit, were not asked for, or were
-  // never listed. Pinned files are unaffected — the note only ever qualifies
-  // findings the diff alone had to carry.
-  return { ...prepareRequest({ ...shared, ...build(false) }), hunksOnly: hasDiff };
-}
-
-/**
- * The degraded rung's messages, reserve, and the schema its instruction names.
- *
- * Circular by construction: the suffix carries the schema text, whose length
- * feeds the token estimate, which sets the reserve, which sizes the cap the
- * text states. Broken without an iteration — whose convergence nothing would
- * check — by sizing once with `REVIEW_SCHEMA`, the widest this module builds.
- * That instruction is the longest possible, so the reserve it leaves is a lower
- * bound on what the real one leaves, and a cap derived from it can only
- * under-state the room available. Wrong in the safe direction, by a bounded
- * amount, rather than merely usually right.
- *
- * Sizing it at all is the point: nothing enforces `maxLength` on this rung, so
- * the schema is advice — but advice naming a ceiling the reply budget could
- * never pay for is the same defect as a cap that over-commits, told to the model
- * instead of to the code.
- */
-function unconstrainedLadder(shared, ladder) {
-  const sized = prepareLadder(shared, { ...ladder, suffix: schemaInstruction(REVIEW_SCHEMA) });
-  const schema = reviewSchemaFor(sized.reserve);
-  return { ...prepareLadder(shared, { ...ladder, suffix: schemaInstruction(schema) }), schema };
-}
-
-/**
  * The system prompt, with an opaque marker ahead of it when one was asked for.
  *
- * At the head of the *system* content, which is the earliest text the request
- * carries — not "at token 0", since the chat template's own role and preamble
- * tokens still precede it and may stay cached. What this diverges is everything
- * from here on, which is the bulk of the prompt.
+ * At the head of the *system* content — the earliest text the request carries,
+ * though not "token 0", since the chat template's own preamble precedes it and
+ * may stay cached. A suffix would not work at all: a prefix cache reuses the
+ * longest shared *prefix*, so a marker at the end leaves everything before it
+ * cached. Measured: the same 56,805-token prompt reached first token in 421.7s
+ * cold and 11.5s warm, and a head marker restored the cold cost. See ADR 009.
  *
- * A suffix would not work at all: a prefix cache reuses the longest shared
- * *prefix*, so a marker at the end leaves the entire prompt before it cached.
- * Measured on LM Studio: the same 56,805-token prompt reached its first token in
- * 421.7s cold and 11.5s warm, and a marker at the head restored the cold cost.
- * See ADR 009.
+ * The prompt itself depends on whether a grammar will hold the model to it —
+ * see `reviewSystemPrompt`.
  */
-function systemPromptFor(cacheBuster) {
-  return cacheBuster ? `cache-buster ${cacheBuster}\n\n${REVIEW_SYSTEM_PROMPT}` : REVIEW_SYSTEM_PROMPT;
+function systemPromptFor(cacheBuster, structuredOutput) {
+  const prompt = reviewSystemPrompt({ structuredOutput });
+  return cacheBuster ? `cache-buster ${cacheBuster}\n\n${prompt}` : prompt;
 }
 
 /**
@@ -199,7 +127,7 @@ function sharedRequest(profile, plan) {
     contextLength: plan.contextLength,
     maxTokens: plan.reserve,
     minReserve: REVIEW_MIN_TOKENS,
-    system: systemPromptFor(plan.cacheBuster),
+    system: systemPromptFor(plan.cacheBuster, plan.structuredOutput),
     oversizeHint:
       'Review a smaller target — a single commit with --commit, a narrower range with --base, or ' +
       'specific files with --file — or raise the model context length in the server and config.',
@@ -209,29 +137,22 @@ function sharedRequest(profile, plan) {
 /**
  * The request with no grammar behind it — the shape asked for in prose.
  *
- * **The default path since 2026-08-04, and the fallback after a refused schema.**
- * One function rather than two copies, because it is the same request either way;
- * what differs is only what has to be said and recorded first, which is why the
- * two hooks exist. See OAI-51 for why this became the default: a grammar built
- * from `response_format` exhausts LLGuidance's lexer state budget at ~14k
- * generated tokens and segfaults the MLX backend.
+ * **The default since 2026-08-04 (OAI-51, ADR 003), and still the fallback after
+ * a refused schema.** One function rather than two copies: the request is the
+ * same either way, and only what must be said and recorded first differs, which
+ * is what the hooks are for.
  *
  * Both hooks run INSIDE the try, and every error leaving here carries the shared
- * ledger, because `unconstrainedLadder` can refuse an oversized prompt — the
- * prose instruction makes the prompt longer than the schema request's — without
+ * ledger, because `unconstrainedLadder` can refuse an oversized prompt without
  * ever reaching `answerWithRetry`.
  */
 async function unconstrained({ profile, shared, ladder, send, ledger, refuse, announce }) {
   try {
-    // The refused attempt is *predicted* to be negotiation, and settled as such
-    // only when the replacement is actually created — `refuseLast` registers,
-    // `ledger.begin` decides (OAI-23). That is what lets it run first: two
-    // things after it can stop the replacement ever being sent — the ladder
-    // refusing an oversized prompt and the replacement's own wall-clock cap
-    // check — and in both the entry is left saying what it is, a failure named
-    // `shape-rejected` rather than `0 failed, 1 refused`, a run that died
-    // dressed as benign negotiation. Ordering used to be the whole guard, and
-    // covered only the first of those.
+    // Predicted to be negotiation, settled as such only once the replacement
+    // exists — `refuseLast` registers, `ledger.begin` decides (OAI-23). Two
+    // things after it can stop the replacement being sent (an oversized prompt,
+    // the wall-clock cap), and in both the entry must stay a `shape-rejected`
+    // failure rather than a run that died dressed as benign negotiation.
     refuse?.();
 
     // The instruction has to fit the window too, so the guard runs again —
@@ -253,13 +174,11 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
 /**
  * Ask for findings — unconstrained by default, with a grammar only on request.
  *
- * **The default flipped on 2026-08-04 (OAI-51).** Asking for `response_format`
- * builds a grammar in the server whose lexer dies at ~14k generated tokens and
- * takes the model process with it, so the schema is now opt-in via
- * `--structured-output` and the prose instruction is the ordinary path. When it
- * IS asked for, the old fallback still stands: the retry after a refusal is
- * near-free, an unsupported `response_format` being a request validation error
- * returned before any generation happens.
+ * **The default flipped on 2026-08-04 (OAI-51):** `response_format` builds a
+ * grammar whose lexer dies at ~14k generated tokens and takes the model process
+ * with it, so the schema is opt-in via `--structured-output`. When it IS asked
+ * for, the old fallback still stands — the retry is near-free, an unsupported
+ * `response_format` being a validation error returned before any generation.
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;

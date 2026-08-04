@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { completionFrames, reasoningFrames, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
+import { completionFrames, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
 
 // OAI-23. The attempt ledger reclassifies a refused request as benign
 // capability negotiation only as a consequence of the replacement request
@@ -37,7 +37,7 @@ test('a response_format refusal whose fallback IS sent is recorded as negotiatio
     ]),
     { contextLength: 131_072 },
   );
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -58,7 +58,7 @@ test('a stream_options refusal whose degraded request IS sent is recorded as neg
   const { dir, server, configPath } = await reviewScenario(
     scriptOf([
       (response) => respondJson(response, { error: { message: 'stream_options is not supported' } }, 400),
-      (response) => respondStream(response, reasoningFrames(FINDINGS)),
+      (response) => respondStream(response, completionFrames(FINDINGS)),
     ]),
     { contextLength: 131_072 },
   );

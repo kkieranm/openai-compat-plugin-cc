@@ -1,10 +1,10 @@
-// /oai:review end to end: the reasoning-channel payload, the degrade-on-
-// rejection path, and the refusals that must stay loud.
+// /oai:review end to end on the ORDINARY path: what an unconstrained reply is
+// read as, and the refusals that must stay loud.
 //
-// `--structured-output` appears on the tests whose subject IS the grammar — the
-// schema on the wire, conformance rejection, the caps it enforces, the refusal
-// fallback. Everything else runs the default, which sends no `response_format`
-// at all (OAI-51) and therefore answers in the content channel.
+// A review sends no `response_format` (OAI-51), so the reply arrives in the
+// content channel and is parsed leniently. The opt-in grammar and everything it
+// makes possible live in review-structured.test.js; a test needing
+// `--structured-output` belongs there, not here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -20,32 +20,12 @@ import {
   reviewScenario as scenario,
   runCompanion,
 } from './helpers.mjs';
-import { MAX_FINDINGS } from '../scripts/lib/review-schema.mjs';
 import { REVIEW_MAX_TOKENS } from '../scripts/lib/review-request.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',
   findings: [{ file: 'seed.txt', line: 3, severity: 'high', summary: 'the seed is wrong', evidence: 'edited' }],
   summary: 'one real defect',
-});
-
-test('findings arriving in the reasoning channel are reported as findings', async () => {
-  const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(FINDINGS)),
-  );
-
-  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
-  await server.close();
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /1 finding\(s\)/);
-  assert.match(result.stdout, /high\s+seed\.txt:3/);
-  assert.match(result.stdout, /the seed is wrong/);
-  assert.match(result.stdout, /unverified claims from a local model/);
-
-  const sent = chatRequests(server)[0].body;
-  assert.equal(sent.response_format.json_schema.strict, true);
-  assert.match(sent.messages[1].content, /--- DIFF ---/);
 });
 
 // The degrade path, kept covered on purpose: a server that ignores `stream: true`
@@ -61,27 +41,6 @@ test('a review from a server that ignores stream: true is read as a whole comple
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /the seed is wrong/);
   assert.equal(chatRequests(server)[0].body.stream, true, 'the request asked for a stream regardless');
-});
-
-test('a server that rejects response_format is retried without it', async () => {
-  const { dir, server, configPath } = await scenario((request, response) => {
-    if (request.body?.response_format) {
-      return respondJson(response, { error: "'response_format.type' must be 'json_schema' or 'text'" }, 400);
-    }
-    return respondStream(response, completionFrames(`Here are the findings:\n\`\`\`json\n${FINDINGS}\n\`\`\``));
-  });
-
-  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
-  await server.close();
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /the seed is wrong/, 'fenced JSON in a plain reply is still findings');
-  assert.match(result.stderr, /Retrying without it/, 'a silent retry would hide a schema this plugin got wrong');
-
-  const sent = chatRequests(server);
-  assert.equal(sent.length, 2);
-  assert.equal(sent[1].body.response_format, undefined);
-  assert.match(sent[1].body.messages[1].content, /JSON Schema/, 'the fallback must ask for the shape in words');
 });
 
 // OAI-51, and the reason this is a guard rather than a preference. A
@@ -133,13 +92,10 @@ test('a reply that is not findings is shown verbatim, not interpreted', async ()
 });
 
 test('without a schema, reasoning is never passed off as the review', async () => {
-  // The fallback path has no grammar constraint, so this text is scratchpad.
-  const { dir, server, configPath } = await scenario((request, response) => {
-    if (request.body?.response_format) {
-      return respondJson(response, { error: 'response_format unsupported' }, 400);
-    }
-    return respondStream(response, reasoningFrames('Let me think about what the diff does...'));
-  });
+  // The default path has no grammar constraint, so this text is scratchpad.
+  const { dir, server, configPath } = await scenario((request, response) =>
+    respondStream(response, reasoningFrames('Let me think about what the diff does...')),
+  );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
   await server.close();
@@ -187,50 +143,6 @@ test('a reply cut off mid-JSON blames the token budget, not the model', async ()
   assert.match(result.stderr, /ran out of tokens/);
   assert.match(result.stderr, /--max-tokens/);
   assert.doesNotMatch(result.stdout, /verbatim/, 'a fragment we truncated is not a reply worth showing');
-});
-
-test('a schema-shaped reply that does not match the schema is not findings', async () => {
-  // A server that accepts response_format without enforcing it would otherwise
-  // let the first {...} in the scratchpad ship as findings.
-  const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(
-      response,
-      reasoningFrames('Draft: {"findings": [{"file": "a.js"}]} — no wait, let me reconsider that.'),
-    ),
-  );
-
-  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
-  await server.close();
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /did not return findings in the requested shape/);
-  assert.doesNotMatch(result.stdout, /1 finding\(s\)/, 'a draft that misses required keys is not a finding');
-});
-
-test('a findings list at the schema cap says so, rather than binning the rest quietly', async () => {
-  // The schema caps the list, so a reply arriving full may have been cut. That
-  // has to be visible: an unreported cut is a real defect silently discarded.
-  const capped = JSON.stringify({
-    analysis: 'lots to say',
-    findings: Array.from({ length: MAX_FINDINGS }, (unused, index) => ({
-      file: 'seed.txt',
-      line: index + 1,
-      severity: 'low',
-      summary: `defect ${index}`,
-      evidence: 'edited',
-    })),
-    summary: 'a great many',
-  });
-  const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(capped)),
-  );
-
-  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
-  await server.close();
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, new RegExp(`hit its limit of ${MAX_FINDINGS}`));
-  assert.match(result.stdout, /there may be more/);
 });
 
 test('a diff too large for the window is refused with both numbers', async () => {

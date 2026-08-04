@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import {
   chatRequests,
   scriptOf,
-  reasoningFrames,
   reviewScenario,
   completionFrames,
   deltaFrame,
@@ -183,7 +182,7 @@ test('a capability already negotiated away is not offered again on a retry', asy
  */
 test('--json carries one entry per physical request, with the failure classified', async () => {
   const { dir, server, configPath } = await reviewScenario(
-    scriptOf([blank, (response) => respondStream(response, reasoningFrames(FINDINGS))]),
+    scriptOf([blank, (response) => respondStream(response, completionFrames(FINDINGS))]),
     { contextLength: 131_072 },
   );
   const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });

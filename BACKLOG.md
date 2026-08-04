@@ -881,6 +881,33 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   The fix is to invert it — findings first, analysis after — so a budget-exhausted reply still
   carries what it found. Cheap, and only discoverable by running the thing.
 
+  **The ordering fix landed and was measured, 2026-08-04.** Same file, same model, same flags:
+  before it, `scripts/lib/throughput.mjs` drew 38,956 characters of `analysis` and was still climbing
+  when killed at 160s; after, the run finished in 135s with `finish_reason: stop` and a finding.
+  Reasoning volume barely moved (33,217 chars, 10,221 reasoning tokens) — the model still thinks just
+  as hard, it now **stops and answers**. The instruction is conditional, not global: `analysis` stays
+  first under a grammar, where the measured evidence for that ordering was gathered and still holds,
+  and `findingsFirst()` reorders the schema the prose instruction is rendered from so the two cannot
+  drift. **Attribution caveat, stated rather than glossed:** the small-file baseline was *killed*, not
+  run to failure, so it alone does not establish the fix — the case that definitively failed was the
+  whole-tree target (`finish_reason: length`, no findings, 59,918 chars), and that is the comparison
+  worth quoting.
+
+  **A defect the flip introduced, caught in review and worth recording as a class.** `runTimings`
+  derived both `retried` and `degraded` from `!structured`, which meant "we fell back" only while a
+  schema was *always* requested. With the default flipped, every ordinary run would have reported
+  `retried: true` for a single-request run and `degraded: true` for a schema nobody asked for — into
+  the very record OAI-19 reads reliability from. `degraded` now needs both facts (asked for, not
+  obtained) and `retried` needs neither, deriving from the request count alone. This is CLAUDE.md's
+  "when a field's *meaning* changes, grep the aggregates and derived variables" rule, and the field
+  that broke is the one whose own docstring warns about this exact inversion.
+
+  **First real finding off the new path was a false positive, and that is the system working.** It
+  claimed an explicit `null` `completion_tokens` bypasses validation at `throughput.mjs:37`.
+  `Number.isFinite(null)` is `false`, so it does not; the model confused it with the global
+  `isFinite`, which coerces. Refuting it cost under a minute against the code, which is the whole
+  premise of `commands/review.md` — leads, not conclusions.
+
   **Note against OAI-15 and ADR 008:** raising the reply ceiling *permits* longer constrained
   generation, so it moves runs toward this threshold rather than away from it. Whether OAI-15 caused
   the crashes is NOT established here — the derived cap landed 2026-07-28 (`b66a3d5`) and 07-28/07-29

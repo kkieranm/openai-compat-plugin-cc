@@ -16,7 +16,6 @@ import {
   completion,
   completionFrames,
   modelList,
-  reasoningFrames,
   respondJson,
   respondStream,
   reviewScenario as scenario,
@@ -66,7 +65,7 @@ test('prefill is measured from the first token, not from when the request was se
   // role-only frame that a real server sends is dropped here on purpose, so a
   // stamp taken on "any frame" rather than "a frame with text" is not what this
   // measures. That distinction has its own test below.
-  const frames = reasoningFrames(reply).slice(1);
+  const frames = completionFrames(reply).slice(1);
   const { dir, server, configPath } = await scenario(stalledStream(frames), { contextLength: 131_072 });
 
   const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
@@ -96,7 +95,7 @@ test('a role-only frame is not the first token — it carries no text', async ()
   // A real server opens with `{ role: 'assistant', content: null }`. Counting it
   // as the boundary would put the start of generation before the model had
   // produced anything, which is the whole quantity being separated out here.
-  const [role, ...text] = reasoningFrames(reply);
+  const [role, ...text] = completionFrames(reply);
   const handler = (request, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
     response.write(`data: ${JSON.stringify(role)}\n\n`);
@@ -176,7 +175,7 @@ test('a run that took two requests says so, so an odd prefill can be explained',
   };
   const { dir, server, configPath } = await scenario(handler, { contextLength: 131_072 });
 
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   await server.close();
 
   const report = JSON.parse(result.stdout);
@@ -186,16 +185,25 @@ test('a run that took two requests says so, so an odd prefill can be explained',
   assert.ok(report.prefillMs < report.durationMs);
 });
 
+// `degraded` names one fact: a schema was asked for, refused, and the reply
+// parsed from prose instead. The default asks for none (OAI-51), so there is
+// nothing to refuse and nothing to degrade from — and deriving the flag from
+// "was the reply parsed from a grammar" reported `true` for every ordinary run,
+// which is what this pins. A run that sent one unconstrained request and got an
+// answer is not a fallback from anything.
 test('an ordinary run is not marked degraded', async () => {
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondStream(response, reasoningFrames(reply)),
+    (request, response) => respondStream(response, completionFrames(reply)),
     { contextLength: 131_072 },
   );
 
   const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
   await server.close();
 
-  assert.equal(JSON.parse(result.stdout).degraded, false);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.degraded, false, 'no schema was asked for, so none was refused');
+  // The other half of the same defect: one request is not a retry.
+  assert.equal(report.retried, false, 'exactly one request went on the wire');
 });
 
 test('a retry in the transport ladder counts too, not just the schema one', async () => {
@@ -216,7 +224,7 @@ test('a retry in the transport ladder counts too, not just the schema one', asyn
       response.end(JSON.stringify({ error: { message: 'stream_options is not supported' } }));
       return;
     }
-    respondStream(response, reasoningFrames(reply));
+    respondStream(response, completionFrames(reply));
   };
   const { dir, server, configPath } = await scenario(handler, { contextLength: 131_072 });
 
@@ -226,8 +234,10 @@ test('a retry in the transport ladder counts too, not just the schema one', asyn
   const report = JSON.parse(result.stdout);
   assert.equal(seen, 2, 'the transport ladder is what this test is about');
   assert.equal(report.retried, true, 'two requests were sent, so the run retried');
-  // And `degraded` stays false: the schema was never refused, so the reply was
-  // parsed from the grammar as usual. Two facts, two fields — conflating them is
-  // what produced the gap this test closes.
+  // And `degraded` stays false: no schema was asked for, so none was refused.
+  // Two facts, two fields — conflating them is what produced the gap this test
+  // closes, in both directions. It is also what makes this the pair that matters:
+  // `retried` must come from the request count alone, or a run like this one is
+  // indistinguishable from an ordinary unconstrained one.
   assert.equal(report.degraded, false);
 });

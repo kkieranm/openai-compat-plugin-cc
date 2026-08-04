@@ -4,8 +4,8 @@ import { attemptRows } from '../bench/lib/attempt-rows.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE } from './bench-report-fixtures.mjs';
 import {
+  completionFrames,
   deltaFrame,
-  reasoningFrames,
   respondStream,
   reviewScenario,
   runCompanion,
@@ -102,7 +102,7 @@ test('a real dropped request records no prefill, and the reader files it as such
     summary: 'One defect found.',
   });
   const { dir, server, configPath } = await reviewScenario(
-    scriptOf([blank, (response) => respondStream(response, reasoningFrames(findings))]),
+    scriptOf([blank, (response) => respondStream(response, completionFrames(findings))]),
     { contextLength: 131_072 },
   );
   // Async, never spawnSync: a sync spawn blocks the event loop, the in-process

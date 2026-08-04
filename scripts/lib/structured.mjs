@@ -21,6 +21,36 @@ export function isFormatRejection(error) {
   return /response_format|json_schema|response format/i.test(error.message ?? '');
 }
 
+/**
+ * The same schema with `findings` ahead of `analysis`, for the path with no
+ * grammar behind it.
+ *
+ * The ordering in `reviewSchemaFor` is deliberate and measured, and it is
+ * measured *under a grammar*: generation is constrained from the first token
+ * there, so the model has no scratchpad and `analysis` has to be one — opening
+ * with `findings` made it commit to defects before reading anything, and the
+ * reviewer got worse (ADR 003).
+ *
+ * None of that holds without a grammar. The model reasons in its own channel
+ * first — `reasoning_content`, measured at 38,956 characters on a 100-line file
+ * — so asking it to reason again in `analysis` is asking twice, and the second
+ * ask has nothing bounding it. Measured 2026-08-04: it spends the entire token
+ * budget on `analysis` and never reaches the findings at all. So on this path
+ * the answer goes first, and a reply that runs out of room still carries it.
+ *
+ * Derived from the schema rather than written out, for the same reason
+ * `schemaInstruction` is: an instruction that can drift from the shape the
+ * parser expects is a shape nobody is checking.
+ */
+export function findingsFirst(schema) {
+  const { analysis, findings, ...rest } = schema.properties;
+  return {
+    ...schema,
+    required: ['findings', 'analysis', 'summary'],
+    properties: { findings, analysis, ...rest },
+  };
+}
+
 /** The fallback instruction, rendered from the schema so it cannot drift from it. */
 export function schemaInstruction(schema) {
   return (

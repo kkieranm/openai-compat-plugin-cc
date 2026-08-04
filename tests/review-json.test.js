@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { MAX_FINDINGS, analysisCapFor } from '../scripts/lib/review-schema.mjs';
 import {
   chatRequests,
+  completionFrames,
   createRepo,
   reasoningFrames,
   respondStream,
@@ -25,7 +26,9 @@ const clean = JSON.stringify({
   summary: 'One defect found.',
 });
 
-const replies = (body, options) => (request, response) => respondStream(response, reasoningFrames(body, options));
+// The content channel: with no grammar the reasoning channel is scratchpad and
+// `requireAnswer` refuses it, and no grammar is what an ordinary review sends now.
+const replies = (body, options) => (request, response) => respondStream(response, completionFrames(body, options));
 
 /** The single JSON object `--json` promises on stdout. */
 function parseReport(result) {
@@ -103,7 +106,7 @@ test('a cut analysis reaches the JSON, so a guillotined run cannot score as clea
     { contextLength: 131_072 },
   );
 
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   const cap = sentAnalysisCap(chatRequests(server)[0]);
   await server.close();
 
@@ -125,7 +128,7 @@ test('an uncut analysis reports how far short of the cap it stopped', async () =
   const roomy = JSON.stringify({ analysis: 'y'.repeat(1234), findings: [], summary: '' });
   const { dir, server, configPath } = await scenario(replies(roomy), { contextLength: 131_072 });
 
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   await server.close();
 
   const report = parseReport(result);
@@ -148,7 +151,7 @@ test('a findings list at the cap is flagged in the JSON too', async () => {
   });
   const { dir, server, configPath } = await scenario(replies(full), { contextLength: 131_072 });
 
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   await server.close();
 
   const report = parseReport(result);

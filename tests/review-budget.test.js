@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   chatRequests,
+  completion,
   completionFrames,
   reasoningCompletion,
   reasoningFrames,
@@ -30,7 +31,7 @@ test('a big diff shrinks the reply budget instead of being refused', async () =>
   // review, refusing diffs that fit comfortably with a shorter answer — for the
   // sake of a reply that arrives at that size roughly one run in five.
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    (request, response) => respondJson(response, completion(FINDINGS)),
     { contextLength: 30_000, seed: `seed\n${'const x = 1;\n'.repeat(5_000)}` },
   );
 
@@ -91,7 +92,7 @@ test('a guard refusal on the retry never claims the retry happened', async () =>
     { contextLength: 13_050, seed: `seed\n${'x'.repeat(29_000)}\n` },
   );
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 1);
@@ -125,7 +126,7 @@ test('a small window still gets a review, though the explicit-budget floor would
   // deny work that usually succeeds. A reply that does overrun there fails
   // loudly, which is the trade ADR 004 took.
   const { dir, server, configPath } = await scenario(
-    (request, response) => respondJson(response, reasoningCompletion(FINDINGS)),
+    (request, response) => respondJson(response, completion(FINDINGS)),
     { contextLength: 6_000 },
   );
 
@@ -154,7 +155,7 @@ test('the degraded rung never advertises a cap its reply budget cannot pay for',
     return respondStream(response, completionFrames(FINDINGS));
   }, { contextLength: 30_000 });
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -180,7 +181,7 @@ test('a cut analysis warns loudly rather than reading as a clean review', async 
     { contextLength: 131_072 },
   );
 
-  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
@@ -190,7 +191,7 @@ test('a cut analysis warns loudly rather than reading as a clean review', async 
 
 test('--cache-buster leads the system message, where a prefix cache diverges', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(FINDINGS)),
+    respondStream(response, completionFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review', '--cache-buster', 'abc-123'], { configPath, cwd: dir });
@@ -212,7 +213,7 @@ test('--cache-buster leads the system message, where a prefix cache diverges', a
 
 test('without the flag nothing is prepended, so ordinary runs stay cacheable', async () => {
   const { dir, server, configPath } = await scenario((request, response) =>
-    respondStream(response, reasoningFrames(FINDINGS)),
+    respondStream(response, completionFrames(FINDINGS)),
   );
 
   const result = await runCompanion(['review'], { configPath, cwd: dir });
@@ -237,7 +238,7 @@ test('a refusal whose replacement was never sent is recorded as a FAILURE, not n
     { contextLength: 13_050, seed: `seed\n${'x'.repeat(29_000)}\n` },
   );
 
-  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
   await server.close();
 
   assert.equal(result.status, 1);

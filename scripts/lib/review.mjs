@@ -3,15 +3,44 @@ import { MAX_FINDINGS } from './review-schema.mjs';
 
 // Terse and negative: a small model follows a short list of prohibitions far
 // better than a long description of good reviewing.
-export const REVIEW_SYSTEM_PROMPT =
+const REVIEW_RULES =
   'You are a code reviewer. Report only defects you can point at in the code you were given: ' +
   'bugs, unhandled edge cases, security holes, broken contracts, tests that assert the wrong thing. ' +
   'No style opinions, no praise, no summaries of what the code does. ' +
   'Never speculate about code you were not shown. ' +
   'Every finding must name the file it is in and quote the exact line as evidence. ' +
-  'If you find no defects, return an empty findings list and say so in the summary — do not invent one. ' +
+  'If you find no defects, return an empty findings list and say so in the summary — do not invent one. ';
+
+// Under a grammar, and only there. Generation is constrained from the first
+// token, so the model has no scratchpad of its own and `analysis` has to be one:
+// opening with `findings` made it commit before reading, and the reviewer got
+// measurably worse. See the note in `review-schema.mjs`.
+const ANALYSIS_FIRST =
   'Use the "analysis" field first: work through the code path by path, considering for each function ' +
   'what it accepts and what a careless caller or an attacker could pass it. Only then fill in findings.';
+
+// Without one, the model has already reasoned in its own channel before it
+// writes a character of the answer, so asking it to reason again in `analysis`
+// asks twice — and nothing bounds the second ask now that no `maxLength` does.
+// Measured 2026-08-04: 38,956 characters of `analysis` on a 100-line file, the
+// whole token budget spent, no findings ever written. The answer goes first, so
+// a reply that runs out of room still carries what it found.
+const FINDINGS_FIRST =
+  'You have already thought about this before writing anything — do not think it through again in the ' +
+  'reply. Write "findings" FIRST, before any other field: a reply that runs out of room must still ' +
+  'carry what you found. Then put a SHORT note of your reasoning in "analysis" — a few sentences for ' +
+  'the reader, not a second review. Length there costs you findings.';
+
+/**
+ * What the model is told, which depends on whether a grammar will hold it to it.
+ *
+ * Two orderings rather than one, because the reason for the original ordering is
+ * a property of constrained generation and does not survive without it. A single
+ * prompt would be wrong on one path whichever ordering it chose.
+ */
+export function reviewSystemPrompt({ structuredOutput = false } = {}) {
+  return REVIEW_RULES + (structuredOutput ? ANALYSIS_FIRST : FINDINGS_FIRST);
+}
 
 /**
  * `wholeFiles` says the complete current content of every changed file is in the

@@ -98,13 +98,23 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * class this repo keeps finding, in the field added to prevent it. `degraded` is
  * kept beside it for the narrower fact it actually names: the schema was refused
  * and the reply was parsed from prose.
+ *
+ * **Both were rewritten on 2026-08-04, when the default stopped sending a
+ * schema (OAI-51).** `!structured` used to mean "we fell back", because a schema
+ * was always asked for; now it is true of every ordinary run, so the old
+ * expressions claimed a retry for a run that sent one request and a fallback for
+ * a schema nobody requested. `degraded` therefore needs BOTH facts — asked for,
+ * and not obtained — and `retried` needs none of them: the request count already
+ * says what it means, across every ladder. Exactly the inversion this docstring
+ * warns about, in the field added to prevent it, which is why it is written down
+ * rather than quietly corrected.
  */
-function runTimings(result, structured) {
+function runTimings(result, { structured, structuredOutput }) {
   return {
     prefillMs: result.prefillMs ?? null,
     generationMs: result.generationMs ?? null,
-    retried: (result.requestCount ?? 1) > 1 || !structured,
-    degraded: !structured,
+    retried: (result.requestCount ?? 1) > 1,
+    degraded: Boolean(structuredOutput) && !structured,
   };
 }
 
@@ -188,7 +198,7 @@ export function jsonReport(parsed, context) {
     contextChecked: budget.checked,
     contextNote: budget.checked ? null : budget.note,
     durationMs,
-    ...runTimings(result, structured),
+    ...runTimings(result, { structured, structuredOutput: context.structuredOutput }),
     // One entry per PHYSICAL request — the first try, a capability degrade, the
     // response_format fallback, a retry after the server dropped one. The
     // timings above belong to the attempt that *answered*; these are how the

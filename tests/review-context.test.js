@@ -8,10 +8,10 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   chatRequests,
+  completion,
   createRepo,
   git,
   modelList,
-  reasoningCompletion,
   respondJson,
   reviewScenario as scenario,
   runCompanion,
@@ -25,7 +25,7 @@ const FINDINGS = JSON.stringify({
   summary: 'No defects found.',
 });
 
-const findings = (request, response) => respondJson(response, reasoningCompletion(FINDINGS));
+const findings = (request, response) => respondJson(response, completion(FINDINGS));
 
 /** The user message of the nth chat request — what the model actually saw. */
 function sentPrompt(server, index = 0) {
@@ -154,7 +154,7 @@ test('an unknown window sends the files but never claims they are complete', asy
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
   const server = await startFakeServer((request, response) => {
     if (request.url.includes('/models')) return respondJson(response, modelList('test-model'));
-    return respondJson(response, reasoningCompletion(FINDINGS));
+    return respondJson(response, completion(FINDINGS));
   });
   const { path: configPath } = writeConfig({
     defaultProvider: 'local',
