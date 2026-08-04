@@ -498,6 +498,21 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
      exact moment the ledger was trying to preserve evidence about it.
   Each is a one-line fix plus a test that the bad value does not count — matching what
   `responseBucket` now does beside (1).
+  **5. `reachedTheModel` reads `error?.status !== undefined` too — and this one is NOT a
+  one-line fix. Read this before touching it.** It is the same loose check, in
+  `scripts/lib/attempt-outcome.mjs`, sitting directly above the `obtainedResponse` that OAI-35
+  tightened — so whoever does 1–4 will see the asymmetry and be tempted. The difference is the
+  failure DIRECTION. A `status: null` makes it return `false` early, skipping the completion-shape
+  and prefill checks below, so an attempt is left NOT warm-eligible. That under-marks, and ADR 012
+  records under-marking as the deliberately chosen lesser evil: over-marking deletes a real cold
+  prefill measurement with no trace, while under-marking quotes a possibly-warm figure beside a
+  caveat that says so — only the second is visible to a reader. So the current looseness fails
+  safe, which is why OAI-35's pass 3 rejected changing it and why it is recorded here rather than
+  fixed. It is still wrong in one case worth naming: `{status: null, prefillMs: 7}` had a prefill
+  measured, so the prompt WAS reached and a repeat could be served warm, and the early return says
+  otherwise. Any fix must preserve the conservative direction — tighten the type check without
+  letting a genuinely absent status fall through to a `true` it has not earned — and must come with
+  a test asserting the cold-prefill column does not gain entries it never measured.
 
 - **OAI-40** — Two pre-existing tests that do not prove what they are named for. Filed 2026-08-04 from
   OAI-35's passes 2 and 3 (`codex-plain` both times), rejected there as out of scope. This is the
@@ -552,3 +567,22 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   so this buys clarity rather than fixing a defect. If it is done, `httpResponseObtained` was the
   suggested name and every recorded benchmark file under `bench/results/` carries the old key, so it
   needs the same read-both-shapes treatment the `not recorded` bucket already gives legacy records.
+
+- **OAI-43** — Decide whether the attempt record deserves one schema both sides read. **Low priority,
+  and it may close as "no" — it is filed because it was rejected on judgement rather than on
+  evidence.** Raised by `codex-adversarial` in OAI-35's pass 2 and dismissed there as out of scope.
+  The observation: adding a field to the ledger means editing two places — `newEntry` in
+  `scripts/lib/attempt-ledger.mjs`, and `RECORD_FIELDS` in `bench/lib/reason-notes.mjs` — and
+  `RECORD_FIELDS` is attempt-record schema metadata living in a *rendering* helper because one
+  paragraph happens to enumerate it. Codex's read: a shared record schema would be the genuine seam,
+  and the current arrangement is a size-driven extraction wearing one.
+  The counter, which is why it was rejected: that two-place edit **is the designed tripwire**. The
+  key-set test goes red the moment the two disagree, which is what forces the reader-facing paragraph
+  to be re-read rather than left quietly describing a record it no longer matches — and that tripwire
+  has now fired usefully twice (OAI-31, then OAI-35). A shared schema keeps them in sync
+  automatically, which sounds better and would have *removed* the prompt to re-read the prose.
+  So the real question is not "is this duplication" but **"is the duplication load-bearing"**, and
+  OAI-35 gave weak evidence for both sides: the tripwire worked, and separately three documents
+  still went stale on a witness count no tripwire watched. Worth an hour to decide deliberately;
+  worth nothing to change by reflex. If it is done, the paragraph must keep something that fails when
+  the record changes, or the one guard that has demonstrably worked here is traded for tidiness.
