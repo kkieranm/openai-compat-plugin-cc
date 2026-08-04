@@ -108,46 +108,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. **PROMOTED 2026-08-04:
-  this is now the highest-value tooling item, ahead of anything measuring the reviewer.** Filed
-  2026-08-02 from OAI-26's pass 3, and seen **twice more during OAI-35** — three sightings in three
-  days, the last qualitatively worse than the rest.
-  **What OAI-35 added, and why it changes the priority.** Pass 2's wide run touched
-  `scripts/lib/body.mjs` and `sse.mjs` — files outside the change set — and restored them
-  byte-identically. Pass 3's was the bad one: **two verifiers mutated the shared checkout
-  concurrently, and one polluted the other's measurement.** One reported two red tests in
-  `attempt-server-responded.test.js` that were another verifier's in-flight mutation, not the
-  feature; it noticed, `rsync`'d the repo to a scratch copy, restored `http.mjs` from HEAD, and only
-  then produced a trustworthy result. **So a `lean-wide` verdict in this repo is currently
-  trustworthy only because a verifier happened to notice and work in a copy.** That is not a property
-  anyone should rely on: the corruption is of the *evidence*, not just the tree, and it is invisible
-  to the commit gate, to a green suite and to a grep.
-  Nothing has yet been damaged — every run this feature was checked against an `rsync -a` snapshot
-  and came back byte-identical — but the checking was manual and only happened because a snapshot was
-  taken first. Take one before every wide run until this is fixed. Verifiers prove findings by
-  editing the tree and running the suite (which is exactly why their findings are trustworthy: two
-  of OAI-26's best were mutation-proved). They restore afterwards by hand. In pass 3 one verifier
-  reported watching **another verifier's** edit appear and revert underneath it, and rebuilt a
-  pristine baseline elsewhere to get a trustworthy result; a second reported the same interference.
-  Nothing went wrong this time — the files were read in full before the commit and were byte-correct
-  — but **the failure mode is silent and undetectable by the usual checks**: the very finding those
-  verifiers filed is that `key === code` → `key.includes(code)` leaves all 399 tests green, so a
-  green suite proves nothing about an unrestored mutation, and neither does a grep. A wide run
-  leaves a window in which the tree may not be what the author thinks it is.
-  **The fix is not in this repo**: `.claude/workflows/review-lean.js` is a symlink into
-  `~/Code/dotfiles`, and the `Workflow` tool already supports `isolation: 'worktree'` per agent,
-  which exists for precisely this ("agents mutate files in parallel and would otherwise conflict").
-  It costs ~200–500ms and disk per agent, which is nothing against a 500k-token verifier stage. Two
-  parts: give mutating verifiers their own worktree, and — since a verifier that cannot mutate
-  cannot prove — keep the mutation capability rather than forbidding it. Filed here rather than only
-  in the dotfiles repo because this is where it bit and where a session picks up work; the edit
-  itself belongs there and must be committed there.
-  **While in that file, one reporting fix too.** A wide run whose verifiers die returns
-  `findings: []` with `unadjudicated: N` and a `failures` block — a died run that reads as a clean
-  one, which happened in OAI-26 pass 1 and hid a real defect until it was resumed. The standing rule
-  says never read "no findings" off a run that died; the workflow should make that impossible to get
-  wrong by refusing to report `findings` as authoritative while `unadjudicated > 0`.
-
 - **OAI-34** — **Build** the TTL challenge instrument, then run it. **Unblocked 2026-08-03 by
   OAI-35**, which landed `serverResponded` on the attempt entry — so the instrument can now tell a
   model evicted mid-prefill (headers already sent, `serverResponded: true`) from a connection that

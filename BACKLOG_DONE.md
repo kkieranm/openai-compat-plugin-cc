@@ -2,6 +2,37 @@
 
 Newest first.
 
+- **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. **Completed
+  2026-08-04.** The fix is in `~/Code/dotfiles` as its backlog item 55, commits `d07ea90` and
+  `cf23052`, with the decision recorded in dotfiles `adr/012-isolating-review-verifiers.md` — this
+  repo is where it bit and where it was tracked, not where it lives.
+  **The item's own premise was refuted before it was built, and that shaped the answer.** It said
+  `isolation: "worktree"` was "the only remaining real control". Measured on Claude Code 2.1.221: a
+  worktree is a **clean checkout of the default branch**, carrying none of the uncommitted change
+  under review — so the flag *alone* would have made every verifier adjudicate the wrong code while
+  sounding exactly as confident, trading a visible corruption for a silent wrong verdict. Verifiers
+  are now isolated **and seeded**, and the seed is proven before any verdict counts; a batch that
+  cannot prove its copy returns no verdicts at all and never falls back to the shared tree.
+  Two traps came out of it, both now in dotfiles `.claude/REPO_TRAPS.md` and both guarded:
+  `--exclude='/.git/'` **deletes** a worktree's `.git` (it is a FILE; a trailing slash matches
+  directories only), after which git resolves upward and later writes land in the main repo while the
+  copy still looks isolated; and a content digest built with `[ -f ]` **follows symlinks**, so this
+  repo's one relative symlink hashed at the source and dangled in the copy — which is what failed the
+  first live mechanism run, after review had passed the code.
+  The reporting half also landed: a run whose verifiers all died returned `findings: []` beside
+  `unadjudicated: N` and read as clean. An incomplete run now **omits `findings` entirely** and leads
+  with `error`, gated on every candidate adjudicated, every finder returned, **and** setup having
+  succeeded — the last clause because with zero candidates the other two hold vacuously.
+  **Standing practice this retires:** the manual `rsync -a` snapshot before every wide run was the
+  only thing making the corruption visible. Keep taking one until a `--wide` run has actually
+  exercised the new path — see the caveat below.
+  **Not proven end to end.** The seed protocol was validated by running the real emitted script in a
+  real isolated worktree (exit 0; modified, untracked, staged-add and staged-rename artifacts all
+  present; suite 425/425; edits contained), but **no full `--wide` run has used it**, because the seed
+  resolves the *session's* repo and this feature was built from a session rooted here rather than in
+  dotfiles. Filed there as items 56 (the same one-character `.git` defect in `/feature`'s own restore)
+  and 57 (a scope-time snapshot, stronger but needing a lifecycle).
+
 - **OAI-35** — Carry `serverResponded` onto the attempt entry. Completed 2026-08-03, **with OAI-37
   absorbed into it** (see below). The field means *an HTTP response was obtained* — headers arrived —
   and rides on every entry: `settle` and `pendUntilReplaced` write `true` from the outcome itself,
