@@ -59,7 +59,7 @@ warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.
 on 2026-08-03**. OAI-24 did not answer the JIT-TTL question so much as establish that a sweep cannot
 — it decided the design and shipped **that decision only**. Its draft instrument was **withdrawn**
 after two review passes and is not in the repo, so **OAI-34 is build-then-run**, and the remaining
-order is **OAI-35 → OAI-34 → OAI-19**. One of its two headline results is now retracted
+order is **OAI-34 → OAI-19**, OAI-35 having landed 2026-08-03. One of its two headline results is now retracted
 and the other has grown:
 
 **Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
@@ -108,9 +108,23 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. Filed 2026-08-02 from
-  OAI-26's pass 3, where it was observed rather than triggered — and the observation is the whole
-  point, because nothing in the commit gate would have caught it. Verifiers prove findings by
+- **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. **PROMOTED 2026-08-04:
+  this is now the highest-value tooling item, ahead of anything measuring the reviewer.** Filed
+  2026-08-02 from OAI-26's pass 3, and seen **twice more during OAI-35** — three sightings in three
+  days, the last qualitatively worse than the rest.
+  **What OAI-35 added, and why it changes the priority.** Pass 2's wide run touched
+  `scripts/lib/body.mjs` and `sse.mjs` — files outside the change set — and restored them
+  byte-identically. Pass 3's was the bad one: **two verifiers mutated the shared checkout
+  concurrently, and one polluted the other's measurement.** One reported two red tests in
+  `attempt-server-responded.test.js` that were another verifier's in-flight mutation, not the
+  feature; it noticed, `rsync`'d the repo to a scratch copy, restored `http.mjs` from HEAD, and only
+  then produced a trustworthy result. **So a `lean-wide` verdict in this repo is currently
+  trustworthy only because a verifier happened to notice and work in a copy.** That is not a property
+  anyone should rely on: the corruption is of the *evidence*, not just the tree, and it is invisible
+  to the commit gate, to a green suite and to a grep.
+  Nothing has yet been damaged — every run this feature was checked against an `rsync -a` snapshot
+  and came back byte-identical — but the checking was manual and only happened because a snapshot was
+  taken first. Take one before every wide run until this is fixed. Verifiers prove findings by
   editing the tree and running the suite (which is exactly why their findings are trustworthy: two
   of OAI-26's best were mutation-proved). They restore afterwards by hand. In pass 3 one verifier
   reported watching **another verifier's** edit appear and revert underneath it, and rebuilt a
@@ -134,46 +148,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   says never read "no findings" off a run that died; the workflow should make that impossible to get
   wrong by refusing to report `findings` as authoritative while `unadjudicated > 0`.
 
-- **OAI-35** — Carry `serverResponded` onto the attempt entry. Filed 2026-08-03 by OAI-24, whose
-  driver was withdrawn because of this gap. **`scripts/lib/http.mjs` already sets
-  `error.serverResponded = true`** on a mid-body socket cut — `cmd-setup.mjs:32` reads it for exactly
-  the question "did a server answer at all" — but `attempt-outcome.mjs`'s `fail()` copies only
-  `outcome`, `reason`, `prefillMs` and `generationMs`, so the flag dies before the ledger. The
-  consequence is that **`transport` with a null `prefillMs` is indistinguishable from an
-  `ECONNREFUSED` that reached no peer**, which is precisely a model evicted mid-prefill before first
-  token.
-  Worth doing on its own merits, not only as OAI-34's prerequisite: [ADR 012](adr/012-surviving-the-server.md)
-  documents "does not establish whether a peer was reached" as a *limitation* of the reason code, and
-  `bench/lib/reliability-report.mjs`'s `non-retryable-transport` paragraph spends four lines saying
-  the table cannot tell you which — three drafts were refuted trying to word around it (OAI-26). This
-  removes the limitation rather than describing it, and would let the reliability report split
-  failures on whether a peer was reached, the same way OAI-24 split them on whether first text
-  arrived.
-  It touches the module OAI-20/22/23/25 hardened, so it gets its own plan gate. Watch the
-  `warmEligible` interaction: `fail()` also consults `reachedTheModel`, whose question is
-  cache-warmth, **not** server-reached — do not conflate them, and do not let a new field change what
-  `dispatched` marks. Prove it end to end with the fake server: a mid-body cut must record
-  `serverResponded: true`, a refused connection `false`.
-  **Two things OAI-31 (2026-08-03) left waiting specifically for this item.**
-  **(a) A test will go red on purpose, and that is the design.**
-  `tests/bench-reason-notes.test.js` pins `RECORD_FIELDS`' membership against a closed ledger entry,
-  so the moment `fail()` copies a tenth field this fails with the message *"the ledger gained or lost
-  a field — give it a reader label in `RECORD_FIELDS`, then re-read the paragraph"*. Do exactly that:
-  add `['serverResponded', '<reader label>']`, then **re-read the rendered sentence**, which
-  enumerates the record to justify saying the table cannot always split failures on whether a peer
-  was reached. That sentence is the limitation this item removes, so it should shrink or go — the
-  point of generating it from a list was that the prose could not quietly outlive the schema.
-  **(b) `bench/lib/reliability-report.mjs` is at 295 of the 300-line ratchet**, and this item adds
-  prose to it. Split at the seam the file already draws — `reasonNotes` describes a `reason`,
-  `outcomeNotes` an `outcome` — rather than raising the ceiling; there is a comment at
-  `RECORD_FIELDS` saying so. ADR 012's "does not establish whether a peer was reached" limitation and
-  the `non-retryable-transport` paragraph both need editing when this lands, and neither is optional:
-  they are the two places that currently *describe* the gap this item closes.
-
-- **OAI-34** — **Build** the TTL challenge instrument, then run it. **Blocked on OAI-35.** Filed
+- **OAI-34** — **Build** the TTL challenge instrument, then run it. **Unblocked 2026-08-03 by
+  OAI-35**, which landed `serverResponded` on the attempt entry — so the instrument can now tell a
+  model evicted mid-prefill (headers already sent, `serverResponded: true`) from a connection that
+  found nothing listening. Filed
   2026-08-03 by OAI-24, which decided the design ([ADR 013](adr/013-observing-the-server.md)) and
   **withdrew the driver from its own commit** after two review passes. This is build-then-run, not
-  just run — without OAI-35 the instrument is blind to the event it exists to detect.
+  just run — until OAI-35 landed, the instrument was blind to the event it exists to detect.
+  Note when picking it up: finding **(1)** below says `runEpisode` must read `prefillMs` from
+  `attempts` rather than the top-level report, and those attempt entries now carry `serverResponded`
+  too — read both from the same place.
   **A reviewed draft is STASHED, not committed and not launchable.** Recover it with
   `git stash pop` (or inspect without applying: `git show stash@{0}^3`) — it holds
   `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs` and `tests/ttl-challenge.test.js`, 876
@@ -419,28 +403,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   text in place, because the plan is the record of what was believed at the time, and that is the
   convention the next one should follow. Housekeeping, so it sits down here; it costs one short file.
 
-- **OAI-37** — `ECONNREFUSED` is cited as an example of never reaching a peer, and a refused
-  connection is a peer answering. Filed 2026-08-03 from the OAI-31 verdict ladder, where it was
-  **raised, then explicitly ruled out of scope by the same reviewer that raised it** — recorded here
-  because "we decided not to" is worth a line and a transcript is not a record. The sentence is in
-  `bench/lib/reliability-report.mjs`'s `non-retryable-transport` paragraph: "some of these did reach
-  one — a TLS certificate rejection, a protocol or a parser error — and some never did, `ENOTFOUND`
-  and `ECONNREFUSED` among them." `ENOTFOUND` is sound: DNS failed and nothing was contacted. **But
-  `ECONNREFUSED` is a TCP RST from the host** — the machine was reached and its network stack
-  replied; what was absent was a process listening on the port.
-  The ruling that parked it, which is also the reason this is low priority: "peer" can defensibly
-  mean the listening server process rather than the responding host, and under that reading the
-  sentence is true. Two reasons to fix it anyway: the paragraph's whole subject is what can and
-  cannot be inferred about reachability, so it is the one place a loose "peer" costs the most; and
-  the sentence is **inherited from OAI-26**, so it is the eighth instance of the class
-  `.claude/REPO_TRAPS.md` records — a claim about a set (`ENOTFOUND` and `ECONNREFUSED` behave alike)
-  that is true of one member and not the other.
-  The fix is one clause, and the trap file says how to check it: name the set, then read it. Either
-  define "peer" where the paragraph first uses it, or move `ECONNREFUSED` to the other side of the
-  sentence with a note that a refused connection reached a host but no server. Do NOT rewrite the
-  surrounding inherited prose while in there — silently rewording inherited text during a fix for
-  something else is exactly how this paragraph accumulated the refuted drafts it now documents.
-
 - **OAI-36** — If a re-render command is ever added, the reliability prose becomes schema-dependent.
   Filed 2026-08-03 from the OAI-31 review, where it was raised at high confidence (0.99) and
   **dismissed with evidence rather than fixed** — recorded here because the evidence is exactly what
@@ -490,3 +452,29 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   adjacent comment promises repair. Fixing (1) and (2) properly probably means the server's status
   or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
   the reason this is one item rather than five.
+
+- **OAI-38** — Reach `http.mjs`'s `!response.complete` branch with a test. Filed 2026-08-04 from
+  OAI-35's pass 3. That branch mints `reason: TRANSPORT` and `serverResponded = true` for a body that
+  ends without an 'error' event, and **nothing reaches it**: deleting its flag write leaves the whole
+  suite green, measured rather than assumed. The obvious fixture does not work — a destroyed socket
+  makes the async iterator throw, so control leaves through the catch and `transportError` mints the
+  error instead, which `http.mjs`'s own comment states three lines above the branch. An earlier draft
+  of `tests/attempt-response-sites.test.js` was credited with covering this and did not go near it.
+  What is needed is a reply that **ends cleanly while short of what it declared** — a `Content-Length`
+  larger than the bytes sent, or chunked encoding without its terminating chunk — so iteration
+  completes normally with `response.complete === false`. Cheap if Node's client cooperates, and worth
+  finding out rather than leaving a named gap; if it does not, the gap stays named and this closes as
+  "not reachable from a fake server", which is itself worth recording. The sibling gap —
+  `body.mjs`'s oversized-document branch, needing 8,000,000 characters — is deliberately NOT part of
+  this: that one is uneconomic rather than unsolved.
+
+- **OAI-39** — `attemptRows` counts `warmEligible` by truthiness. Filed 2026-08-04 from OAI-35's pass
+  3 (raised by `codex-plain`, and rejected there only because it predates the change and was out of
+  that commit's scope). `bench/lib/attempt-rows.mjs` counts with
+  `all.filter(({ attempt }) => attempt.warmEligible)`, so any truthy value — the string `"false"`
+  being the memorable one — increments the figure and the report describes that attempt as
+  warm-eligible. Every sibling split in the same function was tightened to a strict check during
+  OAI-35 for exactly this reason, and this one was left. Not reachable from today's writer, which
+  sets a real boolean; it is the same "unreachable by audit rather than by construction" shape that
+  OAI-35 twice found had stopped being true. One-line fix plus a test that a non-boolean does not
+  count, matching what `responseBucket` now does beside it.

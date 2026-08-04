@@ -35,6 +35,148 @@ function retriedRun() {
   };
 }
 
+test('the response split keeps legacy records out of BOTH answers, in a bucket of their own', () => {
+  // The defect this exists to stop, and it is a silent one. `failedAttempt` here
+  // is a record written before OAI-35 — it carries no `serverResponded` at all,
+  // which is what every entry in `bench/results/` looks like. A two-bucket split
+  // would file each of those as "nothing answered", turning missing
+  // instrumentation into a measurement that a server went quiet, and the
+  // reliability figure would be read off it.
+  const stats = attemptRows([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'transport', requestedModel: 'm',
+    attempts: [
+      failedAttempt('transport', { serverResponded: true }),
+      failedAttempt('non-retryable-transport', { serverResponded: false }),
+      failedAttempt('transport'),
+    ],
+  }] }]);
+
+  assert.deepEqual(stats.byServerResponded, [
+    ['HTTP response obtained', 1],
+    ['no HTTP response obtained', 1],
+    ['not recorded', 1],
+  ]);
+});
+
+test('a bucket nobody hit still prints when there ARE failures — a zero is a measurement', () => {
+  // The mutation this kills, and it went unnoticed for a whole review pass:
+  // dropping `RESPONSE_BUCKETS` from the tally left all 415 tests green. The
+  // three-bucket test above populates every bucket organically, one attempt each,
+  // so seeding changes nothing about its result; the render test below asserts
+  // only the row that was populated. Neither could see the seed disappear.
+  //
+  // Here exactly one bucket is hit, so the other two exist ONLY because they were
+  // seeded — which is the claim the seeding makes: `not recorded: 0` is what says
+  // the other counts are complete, and a suppressed row cannot say it.
+  const stats = attemptRows([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'transport', requestedModel: 'm',
+    attempts: [failedAttempt('transport', { serverResponded: true })],
+  }] }]);
+
+  assert.deepEqual(stats.byServerResponded, [
+    ['HTTP response obtained', 1],
+    ['no HTTP response obtained', 0],
+    ['not recorded', 0],
+  ]);
+});
+
+test('a clean sweep prints no response table at all, like every other failure split', () => {
+  // The other arm, and it must be a separate assertion from the one above or the
+  // two rules collapse into each other. A zero ROW inside a populated table is a
+  // measurement; the whole table on a sweep with no failures is a partition of
+  // nothing. Seeding made `pairs.length` permanently 3, so `countTable`'s empty
+  // guard could never fire for this one table — while every unseeded sibling
+  // collapsed correctly, leaving three all-zero rows as the ONLY table in the
+  // section, under a heading, with the prose that explains them suppressed.
+  const clean = {
+    diffOnly: false,
+    report: {
+      parsed: true, findings: [], analysisCut: false, finishReason: 'stop',
+      usage: { prompt_tokens: 10 }, durationMs: 1000, prefillMs: 500, generationMs: 1500,
+      requestedModel: 'm', attempts: [answered({ warmEligible: false })],
+    },
+    score: { matched: [], unmatched: [], byDefect: [], recall: { total: 0, found: 0, anchored: 0, ranged: 0 } },
+  };
+  const markdown = renderReport([{ caseDef: CASE, runs: [clean] }], {
+    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
+  });
+
+  assert.doesNotMatch(markdown, /Failures by whether an HTTP response was obtained/);
+  // Asserted beside a sibling, so this pins CONSISTENCY with the section rather
+  // than a rule of its own — if failure tables ever start printing at zero, this
+  // should fail with them, not against them.
+  assert.doesNotMatch(markdown, /Failures by whether first model text arrived/);
+});
+
+test('a non-boolean is reported as a writer defect, never laundered into `not recorded`', () => {
+  // `undefined` means the field is absent — a record written before OAI-35. A
+  // string means something WROTE it and wrote it wrong. Folding the second into
+  // the first would let a live writer bug read as a benign old file, so it gets
+  // its own row, outside the partition and deliberately unseeded: it prints only
+  // when it happens.
+  const markdown = renderReport([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'transport', requestedModel: 'm',
+    attempts: [failedAttempt('transport', { serverResponded: 'true' })],
+  }] }], { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false });
+
+  assert.match(markdown, /^\| `recorded as a non-boolean` \| 1 \|$/m);
+  assert.match(markdown, /^\| `not recorded` \| 0 \|$/m, 'a malformed value is not a missing field');
+
+  // And the completeness sentence has to DEFER to that row instead of contradicting
+  // the table printed directly beneath it: `not recorded: 0` means the counts are
+  // complete only if every failure actually answered the question, and this one
+  // answered it unreadably.
+  const note = markdown.split('\n').find((line) => line.startsWith('The last table splits'));
+  assert.match(note, /does NOT mean the counts are complete/);
+});
+
+test('with every value a boolean, the completeness sentence takes its POSITIVE arm', () => {
+  // The complement, and it is not padding: the branch has two arms and only the
+  // pessimistic one was asserted, so a regression that always warned — the easy
+  // way to write this wrong, since the cautious arm looks like the safe default —
+  // would have left the suite green while telling every clean report its counts
+  // could not be trusted.
+  const markdown = renderReport([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'transport', requestedModel: 'm',
+    attempts: [failedAttempt('transport', { serverResponded: false })],
+  }] }], { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false });
+
+  const note = markdown.split('\n').find((line) => line.startsWith('The last table splits'));
+  assert.match(note, /a zero there means every failure above answered the/);
+  assert.doesNotMatch(note, /does NOT mean the counts are complete/);
+});
+
+test('the response split is described as a RESPONSE, never as a peer being reached', () => {
+  // The substitution a reader makes for free, and the table's placement invites
+  // it: this sits directly under a paragraph about reachability and reads like an
+  // answer to it. A certificate rejection completes a connection to a real peer
+  // and obtains no response, so the two axes disagree exactly where it matters.
+  const markdown = renderReport([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'transport', requestedModel: 'm',
+    attempts: [failedAttempt('transport', { serverResponded: false })],
+  }] }], { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false });
+
+  // The ROW, not the title. A title assertion passes on the note sentence that
+  // quotes the same words, so it would stay green with the `countTable` call
+  // dropped entirely.
+  //
+  // That edit used to be easy to make by accident, because the note and the table
+  // were separate pushes into the same array — and they did come apart, on the
+  // zero-failure path. `respondedSection` returns them as one unit now, so the
+  // structure carries what this comment used to have to warn about; the row
+  // assertion stays because it is still the stronger check.
+  assert.match(markdown, /^\| `no HTTP response obtained` \| 1 \|$/m);
+
+  const note = markdown.split('\n').find((line) => line.startsWith('The last table splits'));
+  assert.ok(note, 'the table ships with prose saying what it does not settle');
+  assert.match(note, /not the same question as whether a peer was reached/);
+  // And the legacy row is explained where it is printed, not left as a bare word.
+  // It may NOT assert provenance: absence of the field does not establish that a
+  // record predates it, and an earlier draft of this sentence said exactly that.
+  assert.match(note, /counts attempts carrying no such field/);
+  assert.doesNotMatch(note, /predates this field/);
+});
+
 test('a retried run is ONE logical run and TWO physical attempts', () => {
   const stats = attemptRows([{ caseDef: CASE, runs: [retriedRun()] }]);
   assert.equal(stats.total, 2);

@@ -73,6 +73,16 @@ protocol and parser errors and code-less failures — all cases where a peer *wa
 name would have asserted a fact the classification never established, which is the defect class this
 document opens by naming. The name states the decision made; `.code` carries the rest.
 
+**Still rejected after OAI-35 (2026-08-03), and the reason is worth stating because the item that
+landed it assumed otherwise.** `serverResponded` now rides on every attempt entry, so the record
+does settle one question it could not before — *was an HTTP response obtained* — and the reliability
+report splits failures on it. That is **not** the reachability question above, and the two come
+apart exactly where this paragraph does its work: `ENOTFOUND` contacted nothing, `ECONNREFUSED`
+reached a host whose stack answered with a reset, and a certificate rejection completed a connection
+to a real peer — all three obtained no response and all three record `false`. So a name asserting
+reachability would be as unfounded today as it was then. What changed is that the report now says
+which axis it is talking about.
+
 **Decided at the CALL SITE, not by inspecting `error.code`.** `transportError` has two callers with
 opposite meanings: `bodyStream`'s catch runs only past headers, while the request `'error'` handler
 usually runs before them. Measured on Node 26.3, a socket cut mid-body arrives as `Error: aborted`
@@ -98,7 +108,27 @@ by the OAI-22 adversarial review, after tests that called `transportError` direc
 message belongs to the layer that knows the provider; the reason to the layer that saw what happened.
 
 `serverResponded` follows the same evidence: `delivered` means headers arrived, which is exactly what
-`cmd-setup.mjs` reads to decide whether to tell someone to start a server.
+`cmd-setup.mjs` reads to decide whether to tell someone to start a server. **OAI-35 carried it onto
+the attempt entry** (2026-08-03), where `attempt-outcome.mjs` had been dropping it — `settle` and
+`pendUntilReplaced` write `true` from the outcome itself, since an answered request and a refused
+shape both required a response, while only `fail` has to weigh evidence. It does so from several
+independent witnesses — the flag, an HTTP status code, a completion shape, or a measured prefill —
+because making the record depend on every error-minting site remembering one flag is how a
+post-response path added later records a silent false negative.
+
+The witnesses are **named and never counted**, here or anywhere else. A count is a fact about the
+list that lives away from the list, and this one drifted the moment the fourth was added: three
+separate documents went on saying "three witnesses" while the code said four, one of them
+contradicting itself thirty lines further down. `RECORD_FIELDS` already makes the same move for the
+field list — enumerate, so there is nothing to keep in sync.
+
+The last witness earns its place by *not* depending on a site remembering anything: a measured
+prefill is stamped by the code that read the stream. That property is also its cost, and the cost was
+paid before it was noticed — a test written to prove a minting site still sets the flag went on
+passing with the write deleted, because its fixture delivered model text and the prefill witness
+reconstructed the answer. Any test of a minting site must therefore drive it with **no model text**,
+leaving the flag as the only evidence. See `tests/attempt-response-sites.test.js`, which does, and
+which names the two sites it still cannot reach.
 
 ### One cap evaluation per dispatch (OAI-22)
 
@@ -234,7 +264,9 @@ The rule is evidence-based in both directions, which took two corrections to get
   loop, so an attempt cannot say what the server was doing when it died. `lms ps` is external.
   Request size landed as `promptChars`. *(Corrected 2026-08-03 by OAI-24, which found the original
   "it is not observable from the client" false against `model-info.mjs:82`. See
-  [ADR 013](013-observing-the-server.md).)*
+  [ADR 013](013-observing-the-server.md).)* *(Narrowed again 2026-08-03 by OAI-35: an attempt can now
+  say whether the server **responded**, which is not the same as saying what it was doing. Residency
+  is still unsampled.)*
 - **Retrying is not proven sufficient.** These are the four shapes *observed*, and whether retry
   actually recovers the 37.5% is a measurement OAI-19 will read off the attempt record — not a claim
   made here. The JIT-TTL hypothesis (can an idle TTL unload a model under a long prefill? — the

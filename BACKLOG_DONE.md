@@ -2,6 +2,81 @@
 
 Newest first.
 
+- **OAI-35** — Carry `serverResponded` onto the attempt entry. Completed 2026-08-03, **with OAI-37
+  absorbed into it** (see below). The field means *an HTTP response was obtained* — headers arrived —
+  and rides on every entry: `settle` and `pendUntilReplaced` write `true` from the outcome itself,
+  since an answered request and a refused shape both required a response, while only `fail` weighs
+  evidence, from several independent witnesses (the transport's flag, an HTTP status code, a
+  completion shape, or a measured prefill). Named rather than counted, because the count drifted the
+  moment a fourth was added — see below. Several because one is a single point of forgetting:
+  `provider.mjs` pairs the flag with
+  `.status` today, but a post-response path added later that omits it would silently record a server
+  that answered as one that never did. Proved live as well as on the fake server — a real LM Studio
+  run wrote `{outcome: 'answered', serverResponded: true, prefillMs: 4094}`.
+  **Three of the item's own claims were wrong, and the third is the one worth remembering.**
+  (1) It cited ADR 012 for the phrase "does not establish whether a peer was reached"; that phrase is
+  in ADR 013, quoting it. (2) It predicted the enumeration tripwire would fire "the moment `fail()`
+  copies a tenth field" — `tests/bench-reason-notes.test.js` was already passing `serverResponded`
+  into `fail()`, so the tripwire was pre-armed and fired on the `RECORD_FIELDS` edit instead.
+  (3) **It framed the field as settling whether a *peer was reached*, and it does not.** `ENOTFOUND`
+  contacted nothing, `ECONNREFUSED` reached a host that answered with a reset, and a TLS rejection
+  reached a peer outright — all three obtained no response and all three record `false`. So the
+  reachability limitation is *not* removed, ADR 012's rejection of the name `unreachable` stands, and
+  the `non-retryable-transport` paragraph keeps its hedge instead of losing it. Caught at the plan
+  gate's **blind** re-ask after two thread-carrying rounds had passed it, and recorded as instance 8
+  in `.claude/REPO_TRAPS.md` — the first instance of that class found in a tracker item rather than in
+  code, which is the more dangerous site because nothing executes it.
+  Also landed: the reliability report splits failures on the new field with **three** buckets, the
+  third for records written before it existed, because folding those into `false` would turn missing
+  instrumentation into an observation that nothing answered. `reasonNotes`, `RECORD_FIELDS` and
+  `recordList` moved to `bench/lib/reason-notes.mjs` — the split the old file's own comment
+  prescribed for whoever added the tenth field, rather than raising the 300-line ratchet.
+  **The review's second pass found eleven defects, and five of them were the first pass's own fixes
+  being unproved or overclaimed rather than anything new in the feature.** The instructive one: a test
+  written to guard the three sites that mint the flag built its own error with
+  `serverResponded: true` already on it, so it proved only that `fail()` copies a flag — while its
+  comment said dropping the write at `sse.mjs`, `body.mjs` or `http.mjs` would go red. A verifier
+  deleted the write in `body.mjs` and ran the suite: all green. The sites are now driven end to end
+  through a fake server in `tests/attempt-response-sites.test.js`, and both deletions redden exactly
+  their own case. That is also why `obtainedResponse` has a fourth witness: a measured `prefillMs`
+  proves headers arrived without depending on any site *remembering* to set a flag, which is the
+  failure that turned out to be real rather than theoretical.
+  **A third pass then found that fix had broken the test it shipped beside, and the ladder stopped
+  there because it had started finding its own tail.** The new end-to-end case delivered model text
+  before cutting the socket, so the fourth witness measured a prefill and reconstructed `true` — the
+  case passed with the flag write deleted, which is the same vacuous-guard class arriving by the
+  opposite route. A debug stack showed it never reached the site it was named for either: a destroyed
+  socket throws from the iterator, so `http.mjs`'s `!response.complete` branch cannot see it. The
+  fixture now sends a **role-only delta** — bytes without text, so the catch runs with `delivered`
+  while no prefill is stamped — and each of the three covered sites reddens on deletion of its own
+  write, all three verified by mutation. The two sites nothing reaches are named as uncovered rather
+  than implied to be guarded. Pass 3 also caught the witness count going stale in three documents at
+  once, one of which contradicted itself thirty lines later; the count is gone and the witnesses are
+  enumerated, because a number kept away from the list it describes had by then drifted three times.
+  Both tightened guards (`Number.isInteger(status) && >= 100`, `Number.isFinite(prefillMs) && >= 0`)
+  are mutation-proved, and `prefillMs: 0` is asserted to survive them — a first text inside the
+  timer's resolution is a measurement, not junk.
+  **Three** invariants with no independent derivation behind them were mutation-proved, and the count
+  is three because the review found the first pass had claimed two: reverting `pendUntilReplaced` to a
+  derived value reddens the refusal test, loosening the three-bucket `=== false` to `!== true` reddens
+  the legacy-record test, and — the one that was missing — deleting the `RESPONSE_BUCKETS` seed left
+  the **whole suite green**, so the fix that made a zero row print had nothing behind it at all. Its
+  guard is now a test where exactly one bucket is populated, since the existing ones filled all three
+  organically and could not see the seed disappear.
+
+- **OAI-37** — `ECONNREFUSED` cited as an example of never reaching a peer. Completed 2026-08-03,
+  **absorbed into OAI-35**, which had to rewrite the very paragraph the clause sits in. Leaving it
+  open would have left a tracked item pointing at prose that no longer existed. The sentence now puts
+  `ECONNREFUSED` with the codes that *did* reach something — its reset is the host itself answering —
+  and `ENOTFOUND` alone on the side that contacted nothing. The item's instruction not to reword the
+  surrounding inherited prose was kept for **two of the three** clauses it named: the hedge and the
+  warm-eligibility caveat are byte-unchanged, and `tests/bench-reason-notes.test.js` pins each. The
+  **asymmetry clause was not** — it gained `**on that axis**` and two sentences pointing at the new
+  response table, which is unavoidable once a table answers the narrower question the clause says
+  cannot be answered. An earlier version of this entry claimed all three were untouched: a property of
+  two members asserted of the set, written into the very entry documenting that trap class. Caught in
+  review by diffing the rendered paragraph against `git show HEAD`.
+
 - **OAI-31** — Five findings OAI-26's pass 3 raised and its own rules would not let it fix, plus a
   sixth noticed while filing. Completed 2026-08-03. **All six were verified before any code was
   written** — three by Codex reading the cited code, three by mutation against the live tree — and

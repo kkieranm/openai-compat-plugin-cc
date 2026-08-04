@@ -67,10 +67,91 @@ function reachedTheModel(error, timings) {
 }
 
 /**
+ * Did this failed request obtain an HTTP RESPONSE — did headers arrive?
+ *
+ * A different question from `reachedTheModel` above, and the two must never be
+ * folded together even though both read `error.status`. They read it for
+ * OPPOSITE answers: a status means an HTTP response WAS obtained and the model's
+ * prefill was NOT reached. `reachedTheModel` decides warm-eligibility, where
+ * over-marking deletes a real cold measurement with no trace; this decides only
+ * what the record says happened, and nothing downstream of it touches
+ * `dispatched`.
+ *
+ * Four witnesses, which PARTITION the failure families rather than making every
+ * site redundant — a distinction an earlier draft of this comment got wrong, and
+ * a `lean-wide` verifier proved wrong by tracing the sites:
+ *
+ *   - a `status` — an HTTP status IS a response; nothing else can produce one.
+ *     Covers the validation refusals, which `provider.mjs` also flags. Typed,
+ *     not merely present: `status: null` carries no status and must not read as
+ *     one, which a `!== undefined` check let through.
+ *   - a completion shape — a reply document arrived and `finishAnswer` judged it
+ *     unusable, so bytes were served whatever the verdict on them.
+ *   - `serverResponded` — the transport saw headers and said so. This one carries
+ *     the post-response transport and protocol family: `sse.mjs`, `body.mjs` and
+ *     `http.mjs` mint `protocol`, `bad-json` and `transport` failures with no
+ *     `.status` and no completion shape.
+ *   - a measured `prefillMs` — stamped at the first frame carrying actual text,
+ *     so model output was served, so headers were. See below: this is the only
+ *     witness that survives a site forgetting.
+ *
+ * The fourth exists because the third turned out to be a single point of
+ * forgetting in fact and not just in theory. A verifier DELETED the flag write
+ * in `body.mjs`'s `bad-json` branch and the whole suite stayed green — so
+ * "the flag is their only evidence" was true, and the guard for it was not
+ * there. `prefillMs` comes from the timings the caller measured rather than from
+ * anything a minting site remembered to set, which is exactly the failure that
+ * proved real. It cannot produce a false positive: model text implies headers.
+ *
+ * It is honestly a BACKSTOP, not a live path. Every production site that can
+ * measure a prefill already sets the flag — `sse.mjs`, `http.mjs`, and
+ * `budgetError` via `state.settled` — and the deadline paths that pass
+ * `serverResponded: false` carry no prefill. So today it fires only on a record
+ * that is already self-contradictory. That is the point: the record cannot say
+ * "model text at 7ms" and "nothing answered" at once, whatever a future site
+ * forgets.
+ *
+ * And it has a cost, which the next review found and this comment must not hide:
+ * a witness that reconstructs the value can MASK a test written to guard a site.
+ * The end-to-end case for the delivered-body path measured a prefill, so it went
+ * on passing with the flag write deleted. `tests/attempt-response-sites.test.js`
+ * now drives each covered site with no model text at all, so the flag is the only
+ * witness there and deleting it reddens exactly one case. That file also names
+ * the two sites it does NOT reach — read it before believing any site here is
+ * guarded, because two rounds of this comment claimed more than it could.
+ *
+ * What it does NOT establish is reachability. `false` is the absence of an
+ * obtained response, not evidence about what was at the other end.
+ */
+function obtainedResponse(error, { prefillMs } = {}) {
+  if (error?.serverResponded === true) return true;
+  // A status CODE, not a property that happens to exist. `!== undefined` admitted
+  // `null`; `typeof === 'number'` still admitted `NaN`, `0` and `Infinity`, none
+  // of which any server sent. Each loosening turned "no response" into "a
+  // response" for a request that never got one.
+  if (Number.isInteger(error?.status) && error.status >= 100) return true;
+  if (COMPLETION_SHAPES.has(error?.reason)) return true;
+  // Likewise a MEASUREMENT, not merely a non-null. A `NaN` here would be a
+  // failed measurement claiming to be one, and it would flip an `ECONNREFUSED`
+  // that correctly recorded `false`.
+  return Number.isFinite(prefillMs) && prefillMs >= 0;
+}
+
+/**
  * The entry, with a hook letting a layer that never held its handle reclassify
  * it. Non-enumerable: entries are serialized straight into the benchmark record,
  * and a function there would be dropped by `JSON.stringify` anyway — this keeps
  * it out of the recorded shape entirely.
+ *
+ * It writes `outcome` and `reason` and deliberately not `serverResponded`, which
+ * is load-bearing rather than an omission. There is exactly ONE route in —
+ * `pendUntilReplaced` → `pend` → `refusalSlot.settle()` in `attempt-ledger.mjs` →
+ * here — and `pendUntilReplaced` has already written `true` unconditionally, so
+ * every entry arriving here carries it. Writing the field again would be
+ * deriving it from an error this layer does not have: `refuseLast()` forwards
+ * none. If a second route to `markRefused` is ever added, it has to set the flag
+ * itself or mint `{outcome: 'refused', serverResponded: false}` — a record
+ * claiming nothing answered a request that was answered with a refusal.
  */
 export function reclassifiable(entry) {
   return Object.defineProperty(entry, 'markRefused', {
@@ -114,6 +195,18 @@ export function reclassifiable(entry) {
 export function pendUntilReplaced(entry, error, pend) {
   entry.outcome = 'failed';
   entry.reason = error?.reason ?? SHAPE_REJECTED;
+  // Unconditional, NOT `obtainedResponse(error)`. A shape rejection is an HTTP
+  // response by definition — something read the request and answered it with a
+  // refusal — so this follows from the outcome rather than from evidence about
+  // the error. "Something", not "the model server": a proxy or gateway can
+  // return a 400 without the server behind it ever seeing the request, which is
+  // why the flag is worded as a response obtained and never as a peer reached.
+  // Deriving it would also be wrong twice over in practice:
+  // `refuseLast()` is called with no error at all, which would overwrite the
+  // `true` a preceding `fail()` correctly recorded from the 400's status, and a
+  // `refuse({ reason: null })` would mint a refused entry claiming nothing
+  // answered it.
+  entry.serverResponded = true;
   pend({ entry, error });
 }
 
@@ -126,6 +219,9 @@ export function closeHandle(entry, key, dispatched, pend) {
   return {
     settle({ prefillMs = null, generationMs = null } = {}) {
       entry.outcome = 'answered';
+      // Also from the outcome, not from evidence: an attempt cannot answer
+      // without a response having been obtained.
+      entry.serverResponded = true;
       entry.prefillMs = prefillMs;
       entry.generationMs = generationMs;
       dispatched.add(key);
@@ -156,6 +252,9 @@ export function closeHandle(entry, key, dispatched, pend) {
       const { prefillMs = null, generationMs = null } = timings;
       entry.outcome = 'failed';
       entry.reason = error?.reason ?? null;
+      // The only closer that has to WEIGH this rather than knowing it: a failure
+      // is the one ending that can fall on either side.
+      entry.serverResponded = obtainedResponse(error, { prefillMs });
       entry.prefillMs = prefillMs;
       entry.generationMs = generationMs;
       if (reachedTheModel(error, { prefillMs })) dispatched.add(key);

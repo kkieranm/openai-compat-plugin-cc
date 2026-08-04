@@ -10,6 +10,56 @@
  * wire. See ADR 012 and BACKLOG.md OAI-20.
  */
 
+/**
+ * The three categories that PARTITION a failed attempt's response evidence.
+ *
+ * Named because they are seeded into their tally and asserted by tests, and a
+ * string typed twice is a row that silently splits in two.
+ */
+const RESPONSE_OBTAINED = 'HTTP response obtained';
+const NO_RESPONSE = 'no HTTP response obtained';
+const NOT_RECORDED = 'not recorded';
+
+/**
+ * The partition, seeded so every one of them prints even at zero.
+ *
+ * Exported because `reliability-report.mjs` has to recognise a key that is NOT
+ * one of these — the malformed-value row — to know whether its completeness
+ * sentence still holds. Transcribing the three names there would be a second
+ * copy to drift, and the drift would be silent: a renamed bucket would simply
+ * stop being recognised and the sentence would go quietly wrong.
+ */
+export const RESPONSE_BUCKETS = [RESPONSE_OBTAINED, NO_RESPONSE, NOT_RECORDED];
+
+/**
+ * Which response bucket one failed attempt belongs in.
+ *
+ * The third category is the point. An attempt record written before OAI-35
+ * carries no such field, and folding those into `false` would convert missing
+ * instrumentation into an observation that nothing answered — the same defect
+ * `byFirstText` avoids with its `== null`, arriving here by the opposite route.
+ * That split has two buckets and needs a loose check to keep old records out of
+ * the positive one; this has a bucket of its own for them, so the checks are
+ * STRICT.
+ *
+ * The three are seeded into the tally because they PARTITION every failed
+ * attempt, which makes `not recorded: 0` the statement that the other two counts
+ * are complete. Suppressed, that statement is unavailable, and a reader cannot
+ * tell "no legacy records here" from "this report has no such row".
+ *
+ * The fourth key is deliberately NOT seeded and not part of the partition — it is
+ * a bug report. `undefined` alone means the field is absent; anything else
+ * present was written by something, just not as a boolean, and filing that as
+ * "not recorded" would launder a malformed record into benign legacy data and let
+ * a writer defect read as an old file. It prints only when it happens.
+ */
+function responseBucket(attempt) {
+  if (attempt.serverResponded === true) return RESPONSE_OBTAINED;
+  if (attempt.serverResponded === false) return NO_RESPONSE;
+  if (attempt.serverResponded === undefined) return NOT_RECORDED;
+  return 'recorded as a non-boolean';
+}
+
 /** Every physical attempt across the sweep, tagged with the case it belonged to. */
 function everyAttempt(results) {
   return results.flatMap(({ caseDef, runs }) =>
@@ -28,9 +78,18 @@ function everyAttempt(results) {
   );
 }
 
-/** Count by a key, returned as sorted `[key, count]` pairs so the table is stable. */
-function tally(items, keyOf) {
-  const counts = new Map();
+/**
+ * Count by a key, returned as sorted `[key, count]` pairs so the table is stable.
+ *
+ * `seed` names keys that must appear even at zero. Most splits want the default —
+ * a reason code nobody produced has nothing to say — but a split whose categories
+ * PARTITION the failures is different: there, a zero is a measurement. "No attempt
+ * lacked the field" is what makes the other counts readable as observations rather
+ * than as a sample of unknown coverage, and a suppressed row leaves the reader
+ * unable to tell that from a report which never had the row at all.
+ */
+function tally(items, keyOf, seed = []) {
+  const counts = new Map(seed.map((key) => [key, 0]));
   for (const item of items) {
     const key = keyOf(item);
     counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -84,6 +143,13 @@ export function attemptRows(results) {
     byFirstText: tally(failed, ({ attempt }) => (
       attempt.prefillMs == null ? 'no first model text observed' : 'first model text observed'
     )),
+    // The narrower question, and the only one this record settles about the other
+    // end: did headers arrive. NOT whether a peer was reached — `ECONNREFUSED`
+    // reaches a host and lands in the second bucket, a TLS rejection reaches a
+    // peer and lands there too.
+    //
+    // Seeded, so all three categories print even at zero — see `responseBucket`.
+    byServerResponded: tally(failed, ({ attempt }) => responseBucket(attempt), RESPONSE_BUCKETS),
   };
 }
 

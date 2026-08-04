@@ -1,4 +1,5 @@
-import { attemptRows } from './attempt-rows.mjs';
+import { attemptRows, RESPONSE_BUCKETS } from './attempt-rows.mjs';
+import { reasonNotes } from './reason-notes.mjs';
 
 /**
  * The `## Physical-attempt reliability` section.
@@ -16,154 +17,9 @@ import { attemptRows } from './attempt-rows.mjs';
  * rows.
  */
 
-/**
- * Every field an attempt entry carries, paired with how the paragraph below
- * names it to a reader.
- *
- * **Hand-authored and schema-pinned. What is GENERATED is the prose**, which is
- * rendered from this list rather than transcribing it — and keeping those two
- * words apart matters, because an earlier draft of this comment called the
- * constant itself generated in the same breath as admitting its field column is
- * typed by hand. Nothing stops that column being wrong except
- * `tests/bench-reason-notes.test.js`, which asserts these keys ARE a closed
- * ledger entry's keys. The reader labels are ordinary prose and get ordinary
- * review; only membership is mechanised, because membership is what drifted.
- *
- * It exists because the sentence below used to transcribe this list, and a
- * transcription is a mirror: its first draft named **eight** of the nine, with
- * a key-set test sitting green beside it, and a reviewer rather than the suite
- * found the missing `outcome`. Rendering the sentence from the list means a
- * field cannot be silently omitted from the prose — only mislabelled, which a
- * human can see.
- *
- * Exported solely so that test can read it. That is a public symbol in a
- * rendering module, accepted deliberately: intentional coupling to the schema
- * beats an unguarded prose mirror of it.
- *
- * Headroom note for whoever adds the next field: this file sits close to the
- * 300-line ratchet, and OAI-35 lands `serverResponded` — which turns the
- * enumeration test red here by design and wants a paragraph of its own. Split
- * at the seam this file already draws (`reasonNotes` describes a `reason`,
- * `outcomeNotes` an `outcome`) rather than raising the ceiling.
- */
-export const RECORD_FIELDS = [
-  ['index', 'its index'],
-  ['cause', 'why it was initiated'],
-  ['outcome', 'its outcome'],
-  ['reason', 'its reason code'],
-  // "in characters", said out loud: this layer has no tokenizer, so a token
-  // figure would be an estimate and the field is a character count.
-  ['promptChars', 'the prompt\'s size in characters'],
-  ['warmEligible', 'its warm-eligibility'],
-  ['waitedMs', 'the wait before it'],
-  ['prefillMs', 'its prefill timing'],
-  ['generationMs', 'its generation timing'],
-];
-
-/** The labels as English: "a, b and c". */
-function recordList() {
-  const labels = RECORD_FIELDS.map(([, label]) => label);
-  return `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
-}
-
 function countTable(title, pairs) {
   if (pairs.length === 0) return [];
   return [`${title}`, '', '| | failed attempts |', '| --- | --- |', ...pairs.map(([key, n]) => `| \`${key}\` | ${n} |`), ''];
-}
-
-/**
- * The three REASON codes a reader could misread, each gated on its own code.
- *
- * Split from the outcome paragraphs below at the function size budget, and the
- * seam is the one the report already draws: those describe an `outcome` field,
- * these describe a `reason`, and only the second kind has a row in the table.
- *
- * Every paragraph is gated on the code it is ABOUT. Stated because the first
- * draft got it wrong in a way three reviewers had to find: the `transport`
- * disclaimer sat inside the `non-retryable-transport` block, so a sweep whose
- * only failures were `transport` — the shape LM Studio actually produces —
- * printed a bare row with the one sentence forbidding the server-blame reading
- * nowhere in the document.
- *
- * And each paragraph says what the RECORD holds, never where else in the report
- * a cause might be found. Three drafts tried the latter — "read `.code`", then
- * "the code is not carried in this report", then "the listing below usually
- * names it" — and review refuted all three, the last one decisively: a TLS
- * rejection's message is the words "certificate has expired" and contains no
- * `CERT_HAS_EXPIRED` anywhere, so the sentence was false for exactly the
- * examples the paragraph itself cites.
- *
- * Two further drafts failed the other way, and the rule they produced is the one
- * stated here. "The reason code is all an attempt record carries" was simply
- * false — `newEntry` also records `index`, `cause`, `promptChars`,
- * `warmEligible`, `waitedMs`, `outcome` and both timings. Its replacement, "the
- * record has no peer-reachability field", read as narrow but is a universal
- * wearing a disguise: it quantifies over the *meaning* of every field that might
- * ever be added, so it can go false via a field named anything at all, and a
- * test pinning one literal name would not notice.
- *
- * **So a paragraph does not assert what the record LACKS. It enumerates what
- * the record HOLDS**, which is a closed list, checkable in one place, and the
- * rule this file already followed everywhere else. The enumeration is not
- * transcribed either — it is rendered from `RECORD_FIELDS`, whose membership is
- * pinned against a closed ledger entry in `tests/bench-reason-notes.test.js`.
- * Adding any field — `serverResponded` from OAI-35 is the next one — turns that
- * test red, and the sentence is re-read rather than left quietly stale.
- *
- * One thing this paragraph may NOT do, learned at the cost of two drafts: claim
- * that no attempt carrying this code measured a prefill. `http-errors.mjs`
- * gives the code only to an undelivered failure, but "undelivered" is a
- * call-site judgement about which phase raised the error, not a proof that no
- * bytes ever arrived — its own comment says that path *usually* has no
- * response. So the prose states the ASYMMETRY, which needs no population claim:
- * a measured prefill proves the model was reached, and a missing one is the
- * absence of a measurement, exactly as `firstTextNote` below already says.
- *
- * Scope stated, because it is no longer the whole file: `firstTextNote` below
- * claims from an attempt's timings, which the record does also carry.
- */
-function reasonNotes(sawReason) {
-  const lines = [];
-  if (sawReason('shape-rejected')) {
-    lines.push(
-      // Names `refused` rather than saying "that outcome": the paragraph above
-      // is itself gated, so on a sweep with no refusals there is no antecedent
-      // for a pronoun to point at.
-      '`shape-rejected` below is the terminal twin of the `refused` outcome, and the reason the two must'
-      + ' never be read as synonyms: the server rejected the request\'s shape and **nothing replaced it** —'
-      + ' the fallback never reached the wire, so no later attempt carries the same work. These are'
-      + ' counted as failures, and they are not a server dropping requests. A `shape-rejected` row says'
-      + ' the client stopped, not that the server went quiet.',
-      '',
-    );
-  }
-  if (sawReason('non-retryable-transport')) {
-    lines.push(
-      '`non-retryable-transport` below is a failure that arrived **before any response was obtained**,'
-      + ' carrying an error code this client does not recognise as transient — or no code at all — so it'
-      + ' was not retried. It records that retry decision, and in particular it does **not** say whether'
-      + ' a peer was reached: some of these did reach one — a TLS certificate rejection, a protocol or a'
-      + ' parser error — and some never did, `ENOTFOUND` and `ECONNREFUSED` among them. This table cannot'
-      + ` **always** tell you which. An attempt record carries ${recordList()}. Of those, a **measured**`
-      + ' timing proves the model was reached — that is the one direction this record settles, and it'
-      + ' settles it only for the attempt that carries one. Warm-eligibility turns on an *earlier* request'
-      + ' having got that far, so it speaks for that one and not this. Where nothing was measured, the'
-      + ' absence is the absence of a measurement, not evidence about what was at the other end, and these'
-      + ' rows cannot be told apart.',
-      '',
-    );
-  }
-  if (sawReason('transport')) {
-    lines.push(
-      '`transport` below is a failure a further attempt could plausibly survive, and it is **not** a count'
-      + ' of server misbehaviour. It covers a connection closing mid-body — the shape it was named for —'
-      + ' but also pre-response failures whose code says to try again: `EAI_AGAIN` is a resolver\'s own'
-      + ' "ask again", and a pre-response `ECONNRESET` carried no response at all. The axis is'
-      + ' retryability, never blame.',
-      '',
-    );
-  }
-  return lines;
 }
 
 /**
@@ -177,10 +33,12 @@ function reasonNotes(sawReason) {
  * sweep counted", which is the same split `caveats.mjs` already draws one level
  * up.
  *
- * The two reason-code paragraphs read `byReason` rather than a dedicated tally
- * because there is no fixed reason schema: `attemptRows` counts whatever code
- * each failed attempt carried, so a code is present here exactly when it has a
- * row in the table below.
+ * The reason-code paragraphs — `reasonNotes`, which now lives in
+ * `reason-notes.mjs` — read `byReason` rather than a dedicated tally because
+ * there is no fixed reason schema: `attemptRows` counts whatever code each failed
+ * attempt carried, so a code is present here exactly when it has a row in the
+ * table below. Unnumbered deliberately: this said "the two" while there were
+ * three, having been written before one was added and never re-read.
  */
 function outcomeNotes(stats) {
   const sawReason = (code) => stats.byReason.some(([key]) => key === code);
@@ -253,6 +111,62 @@ function firstTextNote(stats) {
   ];
 }
 
+/**
+ * What the response split does and does not settle, AND the table it explains.
+ *
+ * The two are one unit, returned together and gated once. They were two pushes
+ * into the same array, and that is exactly how they came apart: the note was
+ * gated on a failure having occurred and the table was not, so a clean sweep
+ * printed three all-zero rows with no prose above them — and, since every
+ * unseeded sibling correctly vanished, it was the only table in the section. A
+ * test had even named the two-separate-pushes risk while covering only the other
+ * half of it. Keeping them in one function is the structural form of that test.
+ *
+ * Gated on a failure having occurred, like `firstTextNote` above and for the same
+ * reason: a clean sweep explaining a split that produced no rows would be the
+ * report asserting more than it measured.
+ *
+ * The wording is deliberately about a RESPONSE, never a peer. This is the one
+ * place a reader is most likely to substitute the stronger claim, because the
+ * table sits directly under a paragraph discussing reachability and reads like an
+ * answer to it. It is not: a TLS certificate rejection completes a connection to
+ * a real peer and obtains no HTTP response, so it lands in the same bucket as a
+ * `ENOTFOUND` that contacted nothing. The two axes agree often enough to be
+ * confused and differ exactly where it matters.
+ *
+ * The three categories print even at zero WHEN THERE ARE FAILURES TO PARTITION,
+ * which is when a zero is a measurement: `not recorded: 0` then says the other
+ * two counts are complete, and a suppressed row could not say it. With no
+ * failures at all there is nothing to partition and the zeroes say nothing —
+ * hence the gate on `stats.failed` rather than on the row count, which the
+ * seeding makes permanently non-zero.
+ */
+function respondedSection(stats) {
+  if (stats.failed === 0) return [];
+  // The completeness claim has to survive the fourth row. `not recorded: 0` says
+  // every failure answered the question ONLY IF every failure answered it, and a
+  // `recorded as a non-boolean` row means one did not — it is a writer defect,
+  // not a count. Asserting completeness beside it would be the claim-about-a-set
+  // -from-a-sub-population this repo keeps finding, printed by the very table
+  // that disproves it.
+  const malformed = stats.byServerResponded.some(([key, n]) => n > 0 && !RESPONSE_BUCKETS.includes(key));
+  return [
+    `The last table splits those ${stats.failed} failed attempt(s) on **whether an HTTP response was`
+    + ' obtained** — whether headers arrived. That is not the same question as whether a peer was'
+    + ' reached, and it is deliberately the weaker one: a certificate rejection reaches a peer and'
+    + ' obtains no response, so it is counted beside a hostname that resolved to nothing. A `not'
+    + ' recorded` row counts attempts carrying no such field — the absence of the question rather'
+    + ' than an answer to it'
+    + (malformed
+      ? ', and a zero there does NOT mean the counts are complete here: a row below reports a value'
+        + ' that was not a boolean, so at least one attempt answered the question unreadably.'
+      : ', and with no malformed row below it a zero there means every failure above answered the'
+        + ' question.'),
+    '',
+    ...countTable('Failures by whether an HTTP response was obtained', stats.byServerResponded),
+  ];
+}
+
 /** Logical runs, counted the way the recall table counts them. */
 function runTotals(results) {
   const runs = results.flatMap(({ runs: caseRuns }) => caseRuns);
@@ -290,6 +204,7 @@ export function reliabilitySection(results) {
     ...countTable('Failures by requested model', stats.byModel),
     ...firstTextNote(stats),
     ...countTable('Failures by whether first model text arrived', stats.byFirstText),
+    ...respondedSection(stats),
   );
   return lines;
 }

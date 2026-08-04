@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { attemptRows } from '../bench/lib/attempt-rows.mjs';
 import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
-import { RECORD_FIELDS } from '../bench/lib/reliability-report.mjs';
+import { RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 
@@ -12,8 +12,17 @@ import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 // stop; `transport` is a retryability verdict rather than a count of server
 // misbehaviour; and `non-retryable-transport` says only that a retry was not
 // attempted — NOT, as an earlier draft of both the tracker item and this comment
-// asserted, that the peer was reached. `ENOTFOUND` and `ECONNREFUSED` carry that
-// reason and reached nothing, which is why the claim had to be withdrawn.
+// asserted, that the peer was reached. `ENOTFOUND` carries that reason and
+// reached nothing, which is why the claim had to be withdrawn.
+//
+// OAI-35 corrected the correction, absorbing OAI-37. Pairing `ECONNREFUSED` with
+// `ENOTFOUND` as codes that "reached nothing" was itself false of one member: a
+// refused connection is a TCP reset FROM the host, so the machine was reached and
+// only no process was listening. The withdrawal was right about the code as a
+// whole and wrong about its example — the same class it was withdrawing, one
+// level down. What the paragraph now says is that reachability varies across
+// these codes and the table does not settle it, while a separate and narrower
+// question — was an HTTP RESPONSE obtained — is settled, by `serverResponded`.
 //
 // Split out of `bench-reliability.test.js` in OAI-31, when the guards below grew
 // past the size ratchet. The seam is the one that file already drew in a
@@ -68,11 +77,22 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   assert.doesNotMatch(markdown, /^`transport` below/m);
   // The claim that was WRONG and had to be withdrawn: `ENOTFOUND` and
   // `ECONNREFUSED` are outside the transient whitelist, so they carry this
-  // reason — and they reached no peer at all. Saying "not a reachability
-  // finding" of the whole code asserted a fact that is false of part of it.
+  // reason — and reachability is not uniform across the codes that do. Saying
+  // "not a reachability finding" of the whole code asserted a fact that is false
+  // of part of it.
   assert.doesNotMatch(para, /not a reachability finding/);
+  // Both still NAMED, and that survived OAI-35 moving them to opposite sides of
+  // the sentence — `ENOTFOUND` contacted nothing, `ECONNREFUSED` reached a host
+  // that answered with a reset. A regex asserting only presence cannot see which
+  // side each sits on, so it is the axis clause below that carries that, and this
+  // pair only stops the exceptions being generalised away entirely.
   assert.match(para, /ENOTFOUND/, 'the exceptions must be named, not generalised away');
   assert.match(para, /ECONNREFUSED/);
+  // The two axes, kept apart. Removing the response clause would leave the report
+  // rendering a `serverResponded` column the prose never accounts for; removing
+  // the hedge would claim a reachability finding this record still cannot make.
+  assert.match(para, /whether an HTTP response was obtained/);
+  assert.match(para, /cannot \*\*always\*\* tell you which/);
   assert.doesNotMatch(para, /was unreachable|unreachable host|server was down|could not reach/);
 });
 
@@ -167,6 +187,7 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   //
   // What this does NOT do: check the LABELS. Membership is mechanised because
   // membership is what drifted — the first draft transcribed eight of the nine
+  // fields that existed at the time
   // with this test green, and a reviewer found the missing `outcome`. The
   // reader-facing wording in `RECORD_FIELDS` is ordinary prose and gets
   // ordinary review.
@@ -184,7 +205,7 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
 
   assert.equal(entry.outcome, 'failed');
   assert.equal(entry.reason, 'non-retryable-transport');
-  // Against RECORD_FIELDS, not a second transcription of the same nine names —
+  // Against RECORD_FIELDS, not a second transcription of the same ten names —
   // a literal list here would be one more mirror to drift. BOTH sides sorted,
   // so reordering the labels for readability cannot fail a test about nothing.
   assert.deepEqual(
@@ -194,17 +215,19 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   );
 });
 
-test('every way an entry can close leaves the same nine fields, so the paragraph describes them all', () => {
+test('every way an entry can close leaves the same ten fields, so the paragraph describes them all', () => {
   // The test above drives ONE path. The paragraph speaks for every row in the
   // table, so a closing path with a different key set would have it describing
-  // entries it never saw. That cannot happen — `newEntry` creates all nine up
+  // entries it never saw. That cannot happen — `newEntry` creates all ten up
   // front and the closers only ASSIGN to them — but "cannot happen by
   // construction" is a claim, and this repo has been wrong three times about
   // what needs no test.
   //
   // JSON round-tripped, because that is the form the report is rendered from:
   // it also pins that `markRefused` stays non-enumerable and never appears as
-  // a tenth field.
+  // an ELEVENTH field. It was the tenth until OAI-35 added `serverResponded`,
+  // which is the kind of count a comment carries quietly past the change that
+  // invalidates it.
   const expected = RECORD_FIELDS.map(([field]) => field).sort();
   const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] };
   const cause = { answerAttempt: 1, degrade: null };
@@ -226,7 +249,7 @@ test('every way an entry can close leaves the same nine fields, so the paragraph
 
   // The ENVELOPE the report actually walks, not just the ledger's own array.
   // `attemptRows` reads `run.report.attempts` (and `run.attempts` on the failure
-  // path), so the nine fields have to survive into THAT shape — the paragraph
+  // path), so the ten fields have to survive into THAT shape — the paragraph
   // describes the rows a reader sees, which arrive this way and no other.
   const stats = attemptRows([{ caseDef: CASE, runs: [
     { diffOnly: false, report: { parsed: true, findings: [], attempts: serialized.slice(0, 2) } },

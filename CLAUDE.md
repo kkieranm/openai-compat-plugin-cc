@@ -61,11 +61,15 @@ becomes `refused` only when `begin` creates the replacement entry, and stays a `
 failure when nothing replaced it — see [ADR 012](adr/012-surviving-the-server.md).
 
 Server-state questions are answered by shortening the TTL below a known prefill and trying to falsify
-the JIT-TTL mechanism, never by sampling residency around a run — the instrument is specified, and
-blocked on the attempt record not carrying `serverResponded`, in
+the JIT-TTL mechanism, never by sampling residency around a run — the instrument is specified in
 [ADR 013](adr/013-observing-the-server.md).
 
-`bench/lib/reliability-report.mjs` `reasonNotes` explains each reason code a reader could misread —
+Every attempt entry carries `serverResponded` — *an HTTP response was obtained*, never *a peer was
+reached* — which `settle` and `pendUntilReplaced` take from the outcome while `fail` weighs
+`obtainedResponse`'s independent witnesses — the transport's flag, an HTTP status code, a completion
+shape, or a measured prefill; see [ADR 012](adr/012-surviving-the-server.md).
+
+`bench/lib/reason-notes.mjs` `reasonNotes` explains each reason code a reader could misread —
 `shape-rejected`, `non-retryable-transport`, `transport` — gated on that code appearing in the
 sweep, and enumerates what the attempt record holds rather than asserting what it lacks, rendering
 that list from `RECORD_FIELDS`, whose membership `tests/bench-reason-notes.test.js` pins against a

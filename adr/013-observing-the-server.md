@@ -20,11 +20,21 @@ text*, which is precisely the event this experiment exists to detect, is recorde
 reached a peer. Any dispatch predicate built on today's record is therefore blind to the target
 event, and no amount of care in the bench fixes it.
 
-**So OAI-34 is blocked on OAI-35:** carry `serverResponded` onto the attempt entry. That is
+**So OAI-34 was blocked on OAI-35:** carry `serverResponded` onto the attempt entry. That is
 production plugin code, which OAI-24's plan forbade, so it is its own item with its own plan gate
-rather than something smuggled in here — and it is worth doing on its own merits, since ADR 012
-currently documents "does not establish whether a peer was reached" as a limitation this would
-remove.
+rather than something smuggled in here.
+
+**Unblocked 2026-08-03 — OAI-35 landed, and it corrected the sentence that used to close this
+paragraph.** That sentence said the item was worth doing because ADR 012 documents "does not
+establish whether a peer was reached" as a limitation this would remove. It does not remove it.
+`serverResponded` settles whether an **HTTP response was obtained**, and reachability is a separate
+axis that stays unsettled: `ENOTFOUND`, `ECONNREFUSED` and a TLS rejection differ in how far they
+got and all record `false`. ADR 012's rejection of the name `unreachable` therefore stands.
+
+None of which weakens the unblocking, because the response axis is the one this experiment needs. A
+model evicted mid-prefill has already had its headers sent, so it records `true`; a connection that
+found nothing listening records `false`. Those were the two the record could not tell apart, and now
+it can.
 
 ## The problem
 

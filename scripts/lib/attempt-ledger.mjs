@@ -73,6 +73,14 @@ function newEntry(index, { body, cause, waitedMs }, dispatched) {
       waitedMs,
       outcome: null,
       reason: null,
+      // Whether an HTTP RESPONSE was obtained — headers arrived — which is the
+      // one axis this flag settles. `false` never means "no host was reachable":
+      // `ECONNREFUSED` reached a host whose stack answered with a reset, and a
+      // TLS rejection reached a peer outright, yet both record `false` beside an
+      // `ENOTFOUND` that contacted nothing. Minted here rather than only in the
+      // closers because every closing path must leave the same key set, which
+      // `tests/bench-reason-notes.test.js` pins.
+      serverResponded: false,
       prefillMs: null,
       generationMs: null,
     },

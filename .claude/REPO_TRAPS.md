@@ -750,7 +750,7 @@ thread-carrying round before it did not.
 
 **The rule that came out of it: do not assert what a record LACKS — enumerate what it HOLDS.** An
 absence is a claim about an open set and cannot be pinned; a closed list is checkable in one place.
-The paragraph now names the nine fields, and the test pins the whole key set rather than one name,
+The paragraph now names the ten fields, and the test pins the whole key set rather than one name,
 which couples it to every ledger addition **on purpose** — a new field is exactly when a human must
 re-read the sentence.
 
@@ -761,8 +761,26 @@ also that a field's *name* is not its meaning to a reader: `cause` is `{answerAt
 why the attempt was initiated, and rendering it as the bare word "cause" inside a paragraph about an
 unknown failure cause reads as the opposite of what it holds.
 
-**Guarded by** `tests/bench-reason-notes.test.js` — the enumeration against a closed ledger entry
-(proved: simulating OAI-35's `serverResponded` copy in `fail()` turns it red); the `transport`
+**Instance 8 was in a BACKLOG ITEM, not in code, and that is the new part.** OAI-35 was filed saying
+it would "let the reliability report split failures on whether a peer was reached", and that it
+"removes the limitation rather than describing it". Both were false in the same way as the rest of
+this entry: the field it adds, `serverResponded`, settles whether an **HTTP response was obtained**,
+which is true of a strictly smaller set. `ENOTFOUND` contacted nothing, `ECONNREFUSED` reached a host
+that answered with a reset, and a TLS rejection reached a peer outright — all three record `false`,
+so the reachability axis is exactly as unsettled as before. Caught at the plan gate's **blind**
+re-ask, after two rounds carrying the finding thread had passed it — the second time in this file
+that blindness found what the thread could not.
+
+The consequence to notice is that **a refuted premise in a tracker item is more dangerous than one in
+code**, because it is what the next session reads to decide what to build, and nothing executes it.
+Had the plan inherited the framing, the work would have deleted ADR 012's rejection of the name
+`unreachable` as an obsolete limitation, and a reader of the report would have been handed a
+reachability finding that no record supports. The fix was to keep the hedge, correct the
+`ECONNREFUSED` clause beside it, and name the axis in both the prose and the table title.
+
+**Guarded by** `tests/bench-reason-notes.test.js` — the two-axis pair, which asserts the response
+clause and the reachability hedge together so neither can be dropped alone; the enumeration against a closed ledger entry
+(proved twice: simulating that copy turned it red, and OAI-35 then landed it for real and turned it red again, with the message the test was written to print); the `transport`
 paragraph's absence from a `non-retryable-transport`-only sweep, which is the gate `key === code`
 holds and `key.includes(code)` breaks; the `shape-rejected` assertion scoped through
 `paragraphAbout` rather than matching the count-table row; and the two-message fixture whose halves
@@ -813,3 +831,61 @@ was in decision logic that had never executed against a real server. Review caug
 review was not converging. When a new module's job is to *decide* something, get it running against
 a stub before reviewing it harder — reading cannot substitute for the one thing that exercises the
 branches.
+
+## A test that manufactures the evidence it claims to guard
+
+Confirmed 2026-08-04 by OAI-35's second review pass, where **both Codex lenses and a `lean-wide`
+verifier independently landed on the same test**. The shape: a test is written to prove that some
+producer still sets a field, and it builds its own input with that field already set.
+
+The instance. `serverResponded` is minted at nine sites; for the `protocol`/`bad-json`/`transport`
+family it is the *only* evidence a response arrived, since those errors carry no HTTP status and are
+no completion shape. A test was written for exactly that risk — and its input was
+
+```js
+Object.assign(new Error(reason), { reason, serverResponded: true })
+```
+
+so it exercised `fail()` copying a flag, never any site setting one. Its own comment claimed that
+dropping the write at `sse.mjs`, `body.mjs` or `http.mjs` would leave the suite red. A verifier
+deleted the write in `body.mjs`'s `bad-json` branch and ran all 415 tests: **green**.
+
+**The tell**: the test constructs the object under test rather than obtaining it, and the assertion
+names a value the construction supplied. Read the fixture and the assertion together — if the
+asserted value appears literally in the setup, the test cannot fail for the reason it was written.
+The comment is often the giveaway, because it describes a *deletion elsewhere* that the test has no
+path to.
+
+**The rule**: a test that a PRODUCER still does something has to run the producer. Reaching it needs
+a fixture that gets there — here, a fake server returning a non-JSON document (`body.mjs`) or a
+malformed SSE frame (`sse.mjs`) — and the test must pin the reason code too, or a scenario that stops
+reaching its branch still passes on some other site's flag. Where a site genuinely cannot be reached
+(`body.mjs`'s oversized-document branch needs 8,000,000 characters), say so in the file as an
+uncovered gap rather than letting a nearby passing case imply coverage.
+
+**And the derived rule, which is the more useful half.** Where a fact has a single witness that
+depends on a site *remembering* to set it, prefer a witness that is *derived from work already done*.
+`obtainedResponse` gained a fourth: a measured `prefillMs`, stamped at the first frame carrying model
+text, which proves headers arrived without any site remembering anything. Redundancy that relies on
+discipline is not redundancy.
+
+**Guarded by** `tests/attempt-response-sites.test.js`, which drives **three** minting sites end to
+end — `http-errors.mjs`'s delivered-body path, `body.mjs`'s `bad-json` branch and `sse.mjs`'s
+`protocol` branch. Deleting any one of the three flag writes reddens exactly its own case, each
+verified by mutation. **Two further sites are named there as uncovered** and are not claimed:
+`http.mjs`'s `!response.complete` branch, which no fixture reaches, and `body.mjs`'s
+oversized-document branch, which needs 8,000,000 characters.
+
+**And the sting, which is why this entry has a second half.** The first version of that file made
+this exact error one round later. Its `http.mjs` case delivered model text before cutting the socket,
+so the *fix* for this trap — a fourth witness deriving the answer from a measured prefill — silently
+satisfied the assertion, and deleting the flag write left the suite green. A debug stack then showed
+the case never reached `http.mjs` at all. **A redundant witness added for safety will mask the test
+that guards the thing it is redundant with.** So: drive a minting-site test with the flag as the
+*only* available evidence — here, a role-only SSE delta, which is bytes without text — and run the
+mutation rather than reasoning about it. Every claim of "guarded by test" in this repo has been wrong
+at least once; the mutation is the only thing that has not been.
+
+**Related**: this is [A guard justified by "this cannot be tested"](#a-guard-justified-by-this-cannot-be-tested-carries-an-untested-claim)
+one turn further on — there the claim was that no test was possible, here a test existed and proved
+something else. Both are self-protecting: the passing test is the reason nobody looks again.
