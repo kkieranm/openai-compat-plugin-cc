@@ -1,8 +1,36 @@
 # 013 — Observing the server: intervene, don't sample
 
 **Status:** the DECISION is accepted, 2026-08-03 (OAI-24). The instrument shipped 2026-08-04 (OAI-34),
-**amended**: it can refute the mechanism and it can no longer claim to confirm it. Running it is still
-outstanding.
+**amended**: it can refute the mechanism and it can no longer claim to confirm it. **It has now been
+run — 2026-08-04 — and the deterministic form is REFUTED.**
+
+## Result, 2026-08-04: the deterministic form is refuted
+
+Record `bench/results/ttl-challenge-2026-08-04T18-35-03-245Z.json`, `protocol.canonical: true`,
+instrument at `0c566b6`. Three episodes, `qwen/qwen3.6-27b`, case `scaffold`, TTL shortened to 120s
+against a calibrated prefill of 338.0s.
+
+**All three survived.** Prefill 336.7s / 336.3s / 336.5s — `exposureRatio` 2.80×, slack 216s at the
+narrowest — with the model resident in every one of the 194 / 289 / 203 in-flight samples,
+`unloadAt: null` throughout, `unreadableSamples: 0`, and a maximum sampling gap of 2.15s against a
+2s interval. The applied TTL was read back from the server as 120000ms in every sample, so the
+treatment was in force rather than assumed. `validityFailures: []` in all three: no competing model
+(G2), a response obtained (G5), the treatment confirmed (G6), no self-contradicting record (G8).
+
+**What that licenses, and the boundary.** It refutes the *deterministic* form — the claim that an
+in-flight prefill outlasting the TTL is reliably evicted. It is one model, one case, one TTL, N=3;
+the one-sided 95% upper bound on 0 events in 3 is ~63%, so it says nothing about a low failure
+*rate*. The 27/72 drops that motivated the question were observed on **both** models. **Their cause
+remains unresolved** — this removes a candidate, it does not supply an explanation, and the
+amendment below means no outcome of this instrument ever could.
+
+**One finding about the evidence base, attributed to nothing.** The "limits" section below requires
+`lastUsedTime` be recorded and never branched on. The run shows it is not *available* to branch on:
+LM Studio reports `lastUsedTime: null` for the entire time it is serving a request (`status` read
+`processingPrompt` for 168 consecutive samples per episode, then `generating`), so
+`activityObserved` was `null` in every episode. That is a fact about what the endpoint exposes
+during a request. It is **not** evidence about what the server's timer does, and reading it as any
+would be exactly the attribution this ADR withdrew.
 
 ## Amendment, 2026-08-04 (OAI-34): the confirming outcome is withdrawn
 

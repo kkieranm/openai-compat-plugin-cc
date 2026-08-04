@@ -2,6 +2,77 @@
 
 Newest first.
 
+- **OAI-34** — Build the TTL challenge instrument, then run it. **Completed 2026-08-04, and the
+  answer is negative: the DETERMINISTIC form of the JIT-TTL hypothesis is REFUTED.** A cold request
+  stayed in prefill for 336s under a TTL deliberately shortened to 120s, three times out of three,
+  with the model continuously resident throughout.
+  **Provenance, because the done-condition asks for it rather than a timestamp:** instrument at
+  `0c566b6` (the last commit touching any `ttl-*` module), run from `518db21` with a clean tree,
+  record at `bench/results/ttl-challenge-2026-08-04T18-35-03-245Z.json` —
+  `protocol.canonical: true`, `startedAt 2026-08-04T18:04:02Z`, 67 minutes after the instrument
+  commit.
+  Accepted verdicts: `deterministic-form-refuted`, `inconclusive-failure`. Obtained:
+  `deterministic-form-refuted`, exit 0.
+  **The numbers are quoted here, not just the path, because `bench/results/` is gitignored.** The
+  record exists on one machine. `BACKLOG.md`'s own opening paragraph names what that costs — "ADR
+  004 says four runs, `890ee2e` says five, same experiment, neither now checkable" — so the evidence
+  is transcribed into the tracker where it survives the file:
+  - **Prefill, the controlled quantity: 336.7s / 336.3s / 336.5s** across the three episodes —
+    identical to within 0.4s — against a calibration prefill of 338.0s at the long 4h TTL.
+    (`durationMs` was 389s / 580s / 407s; that spread is generation length and says nothing about
+    the mechanism. Quote prefill.)
+  - **`exposureRatio` 2.80× in every episode**, `slackMs` 216.7s / 216.3s / 216.5s. The refutation
+    rests on `c < prefillMs - ttlMs`, so the narrowest slack — 216s — is the condition, and it is
+    the figure the verdict sentence quotes.
+  - **`appliedTtlMs: 120000` read back from the server in every in-flight sample**, not inferred
+    from `lms load` exiting 0. The shortened treatment was in force for the whole run.
+  - **Continuous residency**: 194 / 289 / 203 in-flight samples, `unreadableSamples: 0`, maximum
+    sample gap 2.15s against a 2s interval, `targetResidentAtStart: true`, and the model absent from
+    **none** of them. `unloadAt: null` in all three — no absence was ever observed, so nothing had
+    to be recorded-and-not-attributed.
+  - **All four validity checks passed in every episode**: `validityFailures: []`,
+    `competingModels: []` (G2), `obtainedResponse: true` (G5), applied TTL matching requested (G6),
+    `contradiction: null` (G8).
+  - Verdict sentence, verbatim: *"3 cold request(s) remained in prefill well past a deliberately
+    shortened TTL without unloading or failing, refuting the DETERMINISTIC form of the mechanism. It
+    does not show the failure rate is low: the one-sided 95% upper bound on 0 events in 3 is ~63%.
+    The narrowest episode cleared expiry by 216s, and this holds provided request serialization and
+    server admission took less than that."*
+  **What this does NOT establish, stated at the same volume as what it does.** It is the dense
+  `qwen/qwen3.6-27b` only, one case (`scaffold`), one TTL (120s), N=3 — and the outcome sentence's
+  own ~63% bound is the instrument saying so. The 27/72 drop rate was observed on **both** models,
+  so the MoE half is untouched by this. And **the cause of those drops remains unresolved**: this
+  refutes one hypothesis about them, it does not explain them. Under no outcome may a write-up name
+  JIT-TTL as the mechanism — the instrument refutes and cannot confirm, which is the design change
+  the plan gate forced.
+  **One observation about the evidence base, recorded and attributed to nothing.**
+  `activityObserved` is `null` in all three episodes — not because the sampler failed, but because
+  **LM Studio reports `lastUsedTime: null` for the whole time it is serving a request** (`status`
+  was `processingPrompt` for 168 consecutive samples per episode, then `generating`). ADR 013
+  nominated `lastUsedTime` as the activity evidence to record-but-never-branch-on; the run shows the
+  field is simply not populated while a request is in flight. That is a fact about what the server
+  exposes. It is **not** evidence about what its timer does, and it must not be read as any.
+  It also sharpens **OAI-45**(2): the stub's `lastUsedAdvances` knob models a state the real server
+  never produces during flight, which is a stronger reason to reconsider it than "unused affordance".
+  **Discharged here rather than carried:** OAI-34's warning that the terminal review batch was
+  itself unreviewed. That batch's only code was `bench/lib/ttl-calibration.mjs`; it was reviewed on
+  2026-08-04 before this run was written up, and the entailment rule reads correctly — `no-response`
+  returns alone, `request-failed` and `no-prefill-measured` remain independent, and `prefill-short`
+  sits in the `else` so an unmeasured prefill is never also called short. **One reviewer, not a
+  ladder pass.** Note also that `calibrationSays` never executed in this run because the calibration
+  cleared; it is exercised by the e2e harness's short-calibration scenario, not by anything in
+  anger.
+  **Known gap, carried forward unchanged:** the withdrawn draft's ten pass-2 findings are still only
+  eight recovered. The two that were never written down anywhere have **not** been recovered — the
+  e2e harness was the recovery mechanism and it surfaced defects in its own scenarios instead. Say
+  that rather than letting a green run stand in for it.
+  **The tracker guard moved with this entry.** `tests/ttl-vocabulary.test.js` parses the
+  `Accepted verdicts:` line and compares it set-wise against the `CONCLUSIVE` list the driver's exit
+  code imports; it was anchored to `- **OAI-34**` in `BACKLOG.md` and now reads this file. It fails
+  closed on a missing anchor, so relocating the entry turned it red rather than passing vacuously —
+  which is how it was noticed. **OAI-46 is still open and its subject is this guard**: it pins this
+  one line and nothing else in the entry.
+
 - **OAI-32** — Stop `review-lean`'s verifiers mutating the LIVE working tree. **Completed
   2026-08-04.** The fix is in `~/Code/dotfiles` as its backlog item 55, commits `d07ea90` and
   `cf23052`, with the decision recorded in dotfiles `adr/012-isolating-review-verifiers.md` — this

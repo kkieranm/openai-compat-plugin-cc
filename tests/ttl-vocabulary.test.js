@@ -90,14 +90,22 @@ test('the tracker names the same verdicts the code calls conclusive', () => {
   // `instrument-failed`", so adding "and `no-exposure`" to the acceptance clause
   // would have passed. A guard that looks exhaustive and is not is worse than
   // none.
-  const backlog = readFileSync(new URL('../BACKLOG.md', import.meta.url), 'utf8');
+  // Reads BACKLOG_DONE.md since 2026-08-04: OAI-34 ran, and the entry moved with
+  // its completion. The guard followed it rather than being retired, because the
+  // entry still states which verdicts were acceptable — a later change to
+  // CONCLUSIVE would silently falsify a historical claim, which is the same drift
+  // in a file nobody re-reads. It failed CLOSED on the move (the anchor assert
+  // below), which is how the relocation was caught rather than missed.
+  const backlog = readFileSync(new URL('../BACKLOG_DONE.md', import.meta.url), 'utf8');
   const start = backlog.indexOf('- **OAI-34**');
-  const end = backlog.indexOf('- **OAI-19**');
+  // The NEXT entry, not a named neighbour: this file is newest-first, so pinning
+  // whichever item happens to sit below would need editing every time one lands.
+  const end = backlog.indexOf('\n- **OAI-', start + 1);
   // Both markers validated and ordered. Unchecked indexOf returns -1, and
   // `slice(start, -1)` would still contain OAI-34 — so the test would pass while
   // reading a region it did not mean to.
   assert.ok(start !== -1, 'the OAI-34 entry must exist');
-  assert.ok(end > start, 'the OAI-19 entry must follow it');
+  assert.ok(end > start, 'an entry must follow it');
   const entry = backlog.slice(start, end);
 
   // One LINE with a stable prefix, rather than a parser guessing where a

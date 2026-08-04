@@ -58,10 +58,17 @@ warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.
 **OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01, OAI-26 on 2026-08-02 and OAI-24
 on 2026-08-03**. OAI-24 did not answer the JIT-TTL question so much as establish that a sweep cannot
 — it decided the design and shipped **that decision only**. Its draft instrument was **withdrawn**
-after two review passes and is not in the repo, so **OAI-34 was build-then-run** — **the build landed
-2026-08-04 and only the run is outstanding**, and the remaining order is **OAI-34 → OAI-19**, OAI-35
-having landed 2026-08-03. The build changed what the run can conclude: the instrument refutes and
-cannot confirm, so OAI-19's write-up may not name JIT-TTL under **any** outcome. One of its two headline results is now retracted
+after two review passes and is not in the repo, so **OAI-34 was build-then-run**; OAI-35 landed
+2026-08-03. **OAI-34 is DONE as of 2026-08-04, build and run both, so OAI-19 is now next with
+nothing ahead of it.** The instrument refutes and cannot confirm, so OAI-19's write-up may not name
+JIT-TTL under **any** outcome — and it now has a negative result to state instead: **the
+deterministic form of the hypothesis is refuted.** A cold request stayed in prefill 336s under a
+TTL shortened to 120s, 3/3, continuously resident, `exposureRatio` 2.80× with 216s of slack at the
+narrowest. That is the dense 27B on one case at N=3, and the ~63% upper bound on 0-events-in-3 is
+part of the finding rather than a footnote to it; **the cause of the 27/72 drops remains
+unresolved** — one hypothesis about them is refuted, none is established, and the drops were seen on
+both models where this ran on one. Evidence and provenance in `BACKLOG_DONE.md`, transcribed there
+because `bench/results/` is gitignored. One of its two headline results is now retracted
 and the other has grown:
 
 **Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
@@ -110,67 +117,6 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-34** — Run the TTL challenge instrument. **The instrument is BUILT and self-tested as of
-  2026-08-04; what remains is the ~45-minute run on the user's own LM Studio, launched when they say
-  so, never incidentally.** Nothing else may be connected: another resident model can trigger
-  Auto-Evict, which the sole-tenancy check now catches and voids the sweep over rather than scoring.
-  **What shipped, and the one design change worth reading first: the instrument REFUTES but cannot
-  CONFIRM.** The confirming verdict was withdrawn during the plan gate after four designs each failed
-  on a different axis, because of a structural fact rather than an implementation gap — proving an
-  unload happened after expiry requires observing the model still resident *after* expiry, and a
-  mechanism that fires *at* expiry never leaves that observation behind. So `mechanism-reproduced` is
-  gone, ADR 013's outcome table lost its confirming row, and an observed absence is recorded in full
-  (`unloadAt`, `lastPresentAt`, bracket width, polling gaps, `exposureRatio`) and **attributed to
-  nothing**. Refutation is unaffected: the spawn-to-request offset cancels between the two sides of
-  the survival comparison, leaving `c < prefillMs - ttlMs` — the slack each episode achieved, ~215s at
-  the measured `scaffold` prefill — which the verdict sentence states and the manifest records, quoting
-  the *narrowest* episode. See [ADR 013](adr/013-observing-the-server.md)'s 2026-08-04 amendment, and
-  **OAI-44** for the parked confirmation question.
-  **The done-condition is rewritten, because the old one was already satisfied by junk.** Not "a file
-  matching `bench/results/ttl-challenge-*.json` exists" — a pre-stash draft left one whose every
-  episode died in ~1s at `--max-tokens 2048` against a 3,912 floor, and it recorded a verdict about
-  the server anyway. That file was deleted 2026-08-04. **Done when a record exists with
-  `protocol.canonical: true`, a stamp later than the commit that landed the instrument, and an
-  accepted `outcome.verdict`** — and the handover records the exact result path
-  and the instrument's commit SHA**, since a timestamp alone does not attest which revision produced
-  it.
-  Accepted verdicts: `deterministic-form-refuted`, `inconclusive-failure`. *(That line is parsed by
-  `tests/ttl-vocabulary.test.js` and compared set-wise against the `CONCLUSIVE` list the driver's exit
-  code imports. **That pins THIS line and nothing else** — a contradictory acceptance clause added
-  elsewhere in the entry would not be caught, which a terminal review round demonstrated by adding one
-  and watching the suite stay green. So the guard is a tripwire on the canonical line, not a proof the
-  paragraph as a whole agrees with the code. An earlier draft said "any verdict other
-  than `instrument-failed`", which
-  quietly re-admitted `no-exposure` and `contradictory-evidence` — both of which ask to be re-run in
-  their own text. Naming the two acceptable verdicts is the fix, and the driver now exits non-zero for
-  everything else, so the exit code and this paragraph read one rule.)* `protocol.canonical` is false whenever any experimental parameter was overridden, which is what
-  keeps a harness run from ever being mistaken for the experiment.
-  **The last review batch is UNREVIEWED, stated rather than left to be assumed.** The ladder ran
-  advisor → `--wide` (5 finders, 6 verifiers, 0 unadjudicated, 5 findings) → two Codex adversarial
-  rounds, and **every batch introduced the next defect** — four rounds running, which is this module's
-  established shape and the reason its causes are now enumerated rather than collapsed into booleans.
-  The final commit fixes the terminal pass's two findings and was not itself reviewed. Nothing in it
-  is load-bearing for the run (one entailed cause removed from a diagnostic list, one prose claim
-  softened to what its guard actually pins), but a session picking this up should review it before
-  trusting the calibration diagnostics.
-  **Known gap, stated rather than discovered later:** the withdrawn draft carried ten open pass-2
-  findings and only eight are recoverable — seven were enumerated in this file and the eighth was the
-  `serverResponded` blocker OAI-35 fixed. **Two were never written down anywhere.** The end-to-end
-  harness is the recovery mechanism for them: it drives the real entry point against a stub `lms`, and
-  it is the thing OAI-24 never had. **Neither has been recovered yet** — the harness's first run
-  surfaced two defects in the harness's *own* scenarios, not in the instrument, and the one real
-  instrument defect found during the build (`[].every()` is `true`, so an empty episode list rendered
-  `deterministic-form-refuted` from zero episodes) was caught by reading rather than by running. Say
-  so rather than letting "the harness caught things" stand in for "the two lost findings are back".
-  **To run it:** `node bench/ttl-challenge.mjs` from the repo root, ~45 minutes, with LM Studio
-  serving, `lms ps` reporting nothing resident, and nothing else connected. No flags — every flag except `--out-dir`
-  makes the run non-canonical (writing the record elsewhere does not change what was measured).
-  **The stash is gone, deliberately.** The withdrawn 876-line draft used to live in `stash@{0}` and
-  the old text here said to `git stash pop` it. That became a **trap** the moment the rebuilt modules
-  landed: popping would have dumped the superseded draft over `bench/lib/ttl-verdict.mjs` and
-  `bench/ttl-challenge.mjs`. It was dropped after the build. **The archive is commit `873dc05`** —
-  `git show 873dc05^3` while it survives gc — and it is superseded, not lost.
-
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
   (2026-07-31); the three items above it are its prerequisites, not competitors, and every item
@@ -191,15 +137,25 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   the cost of two retracted claims — and one arm per model with nothing else varying.
   **The JIT-TTL question moved OUT of this run, 2026-08-03.** OAI-20 deferred it here and OAI-24
   found it could not be answered by a sweep at all: sampling residency around a run cannot tell
-  "loaded throughout" from "unloaded then silently reloaded". It is now **OAI-34**, a 45-minute
-  intervention run *before* this one, and this run may quote only what
-  [ADR 013](adr/013-observing-the-server.md)'s outcome table permits. Two corrections that item
-  produced and this one must not repeat: the **"10-minute idle TTL" has no provenance** here (LM
-  Studio documents a resetting timer with a 60-minute JIT default), and every measured dense prefill
-  — `scaffold` 335s, `model-info` 286s, `structured` 191s — sits *below* even the 600s the
-  hypothesis assumed. If the mechanism is confirmed, `--warm-up` and pacing matter more than retry
-  does; the attempt record carries what would show it (`promptChars`, `waitedMs`, per-attempt
-  timings), and OAI-24 shipped the reader that splits failures on whether a prefill was measured. **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
+  "loaded throughout" from "unloaded then silently reloaded". It became **OAI-34**, an intervention
+  run *before* this one, and **that run happened on 2026-08-04 and came back negative**: the
+  deterministic form is refuted — 336s of prefill under a 120s TTL, 3/3, continuously resident, all
+  four validity checks clean. This run may quote only what
+  [ADR 013](adr/013-observing-the-server.md)'s outcome table permits, which after the 2026-08-04
+  amendment has no confirming row at all. **So the branch this item used to reason forward from is
+  closed, and closed in the direction that removes a conclusion rather than supplying one.** The old
+  text said "if the mechanism is confirmed, `--warm-up` and pacing matter more than retry does" —
+  nothing here confirms it, and nothing can, so **the write-up must report the cause of the drops as
+  unresolved**. Refuting one hypothesis is not explaining the observation. Three limits belong
+  beside the refutation whenever it is quoted: dense 27B only where the 27/72 drops were seen on
+  **both** models, one case at one TTL, and N=3 with a ~63% one-sided upper bound on the failure
+  rate. The attempt record still carries what a pacing effect would show (`promptChars`,
+  `waitedMs`, per-attempt timings) and OAI-24's reader still splits failures on whether a prefill
+  was measured — those stay useful for describing the drops, not for naming them.
+  Two corrections that item produced and this one must not repeat: the **"10-minute idle TTL" has no
+  provenance** here (LM Studio documents a resetting timer with a 60-minute JIT default), and every
+  measured dense prefill — `scaffold` 335s, `model-info` 286s, `structured` 191s — sits *below* even
+  the 600s the hypothesis assumed. **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
   `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a warm pass honestly.
   The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
   still only approximate — token counting need not be identical across models; wall-clock
@@ -581,9 +537,22 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   absence seen after the request already failed but before the companion exits falls inside that
   window. That is ADR 013's own "an unload after the request had already failed" disqualifier, and it
   is harmless today only because nothing is attributed. It becomes load-bearing the moment anything is.
-  **Do not start this before OAI-34 has actually run.** If three episodes survive a 120s TTL against a
-  335s prefill, the deterministic form is refuted and the appetite for confirming a mechanism that
-  just failed to appear should be re-examined rather than assumed.
+  **The precondition on this item is now discharged, and it landed on the side that argues against
+  building anything.** It said: do not start before OAI-34 has run, because if three episodes survive
+  a 120s TTL against a 335s prefill then the deterministic form is refuted and the appetite for
+  confirming a mechanism that just failed to appear should be re-examined rather than assumed. **That
+  is exactly what happened on 2026-08-04** — 3/3 survived, 336s of prefill, continuously resident,
+  216s of slack at the narrowest. So the honest default for this item is now **"no"**, and it needs a
+  positive reason to move rather than merely an unanswered question. What would supply one: a drop
+  recurring on the MoE, or on a case this run did not cover, since the refutation is dense-27B/
+  `scaffold`/120s only.
+  **One finding from that run bears directly on design (b), and shortens it.** The residency
+  endpoint reports **`lastUsedTime: null` for the entire time it is serving a request** (`status`
+  went `processingPrompt` for 168 consecutive samples per episode, then `generating`). So the field
+  ADR 013 nominated as activity evidence is not populated in flight, and `activityObserved` came back
+  `null` in all three episodes. Any telemetry-based design must therefore find a *different* signal
+  than `lms ps`'s activity fields — checking whether one exists is still the five-minute question to
+  ask first, but it should not be asked of that field.
 
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
@@ -599,6 +568,15 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   absent ones: they read as coverage. Either exercise them (the first two map to real recorded
   fields — polling continuity and the `lastUsedTime` evidence ADR 013 requires be recorded and never
   branched on) or delete them and the doc lines that advertise them.
+  **Sharpened by OAI-34's real run, 2026-08-04: `lastUsedAdvances` models a state that does not
+  occur.** LM Studio reports `lastUsedTime: null` for the whole time it is serving a request, so
+  `activityObserved` returned `null` in every episode and the "advancing timestamp" the knob
+  simulates was never observed against the real server. A fixture knob that produces a shape the
+  vendor does not is worse than an unused one — a test built on it would pin the instrument against
+  fiction. So for this knob the choice is narrower than for the other two: **delete it, or keep it
+  explicitly as a not-observed-in-the-wild case and say so in the doc line.** `unreadableFromMs`
+  is untouched by this and remains a genuine shape (the run recorded `unreadableSamples: 0`, so it
+  is real but did not occur).
   Note the mechanical check that found both is worth keeping as a guard rather than a one-off: the
   set of episode verdicts reachable through the e2e matrix should be compared against
   `EPISODE_VERDICTS` minus the stated exemption, so the next hole fails the suite instead of waiting

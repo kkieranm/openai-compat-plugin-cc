@@ -66,8 +66,10 @@ the JIT-TTL mechanism, never by sampling residency around a run — the instrume
 needs residency observed *after* expiry, which a mechanism firing *at* expiry never leaves behind, so
 an observed absence is recorded and attributed to nothing. Its I/O half is driven end to end against a
 stub `lms` in `tests/ttl-challenge-e2e.test.js`, because the same instrument was withdrawn once for
-having a decision-shaped half that had never executed — see
-[ADR 013](adr/013-observing-the-server.md).
+having a decision-shaped half that had never executed. **Run 2026-08-04: the deterministic form is
+refuted** — 3/3 episodes held 336s of prefill under a 120s TTL, continuously resident — which
+removes a candidate for the observed request drops without explaining them; their cause is still
+unresolved. See [ADR 013](adr/013-observing-the-server.md).
 
 Every attempt entry carries `serverResponded` — *an HTTP response was obtained*, never *a peer was
 reached* — which `settle` and `pendUntilReplaced` take from the outcome while `fail` weighs
