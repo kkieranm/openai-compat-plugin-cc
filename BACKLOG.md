@@ -265,6 +265,52 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   its independence; the primary retry evidence is the main arms' `attempts[]` ledger. It carries no
   gate — it is reported whatever it shows, and nothing from it may be quoted as a rate.
 
+  ### Run log, 2026-08-04 — every invocation, as G-G requires
+
+  Transcribed here as each invocation lands, because `bench/results/` is gitignored and this repo has
+  already lost one experiment to keeping only its conclusion. Harness `7735635`, tree clean, LM Studio
+  CLI `71bd99c`, sole tenant throughout; `lms ps` recorded before and after each arm in
+  `bench/results/2026-08-04-oai19-arm-{moe,dense}-state.log`.
+
+  **Invocation 0 — smoke, `--case docs-only --runs 1`, MoE.** Record `2026-08-04T19-53-16-806Z`.
+  Not an arm; run to validate the flag shape before spending hours. Warm-up fired and paid the JIT
+  load (12.5s), `docs-only` scored 1/1 with 0 unmatched, both artefacts written.
+
+  **Invocation 1 — arm 1, MoE `qwen/qwen3.6-35b-a3b`, full corpus, N=3.** Record
+  `2026-08-04T20-49-22-529Z`, 40 minutes. **INVALID** under the gate: `scaffold` scored **0 of 3**
+  (G-B), and unresolved-from-unscored reached **10 of 33** against a ceiling of 3 (G-C). G-A, G-E and
+  G-L all passed. It *met* the utility threshold — full band 10 of 33, 30.3 points — which is G-M
+  and G-D doing exactly what they were separated for: a **valid** arm with this band would have been
+  publishable, and this one is not, for reasons that have nothing to do with the band.
+
+  Three results stand regardless of the arm's invalidity, because they are properties of the physical
+  attempt record rather than of the recall table:
+
+  - **The drop rate replicates.** 31 physical attempts, 17 failed. At the run level, 7 of 18 runs
+    would have failed without retry — **38.9%**, against July's **27 of 72 = 37.5%** on the same
+    denominator. Two independent sessions five days apart agree to about a point.
+  - **Retry is worth ~17 points, and nothing at all where it is needed most.** 11 runs answered on
+    attempt 1, **3 were rescued by a retry**, 4 were lost despite three attempts: 61.1% → 77.8%
+    complete. But `scaffold` went **0 answered, 0 rescued, 3 lost** — 9 attempts, 9 failures. So
+    retry rescues where failures are independent and buys nothing where the failure is deterministic
+    for that request, which is a sharper answer than any single recovery rate. **This supersedes
+    "whether retry recovers the 37.5%" as the question's answer: partially, and not on the case that
+    matters most.**
+  - **The two failure shapes split cleanly on whether generation had started.** All **13**
+    `empty-completion` attempts died before first model text; all **4** `stream-unfinished` attempts
+    died after it. The reason code and the prefill-measured split agree 1:1, which is the first
+    direct evidence that these are two mechanisms rather than one reported two ways.
+
+  And one about the instrument: **the MoE arm was not censored anywhere.** Zero cut runs across the
+  corpus — the first full arm on record with none — with `analysisCap` at 74,000 for five cases.
+  `structured` ran at a cap of **14,407** and still was not cut. Every run carried
+  `contextChecked: true`, so G-L demoted nothing. Set beside the dense model's July caps (`scaffold`
+  30,683, `model-info` 47,724) this is the OAI-49 budget gap measured from the other side.
+
+  **Invocation 2 — arm 1 re-run, MoE, full corpus, N=3.** G-G permits exactly one, and it is final;
+  it is a fresh arm, not a patch of invocation 1. Launched back-to-back after the first, which is
+  recorded because sustained load remains an unresolved factor in the drop mechanism.
+
   **Attempted 2026-07-30 — blocked on OAI-20, and the attempt is the evidence behind it.** Both arms
   ran twice (a predeclared one-retry-per-arm rule, every invocation reported); neither ever passed
   its acceptance gate (every case `scored=3`, no failed/truncated/unreadable/substituted runs), so
