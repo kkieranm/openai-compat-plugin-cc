@@ -58,8 +58,10 @@ warm-up fix is latent robustness for mixed-pair invocations, not an OAI-19 cost.
 **OAI-25 → OAI-26 → OAI-24 → OAI-19**; **OAI-25 landed 2026-08-01, OAI-26 on 2026-08-02 and OAI-24
 on 2026-08-03**. OAI-24 did not answer the JIT-TTL question so much as establish that a sweep cannot
 — it decided the design and shipped **that decision only**. Its draft instrument was **withdrawn**
-after two review passes and is not in the repo, so **OAI-34 is build-then-run**, and the remaining
-order is **OAI-34 → OAI-19**, OAI-35 having landed 2026-08-03. One of its two headline results is now retracted
+after two review passes and is not in the repo, so **OAI-34 was build-then-run** — **the build landed
+2026-08-04 and only the run is outstanding**, and the remaining order is **OAI-34 → OAI-19**, OAI-35
+having landed 2026-08-03. The build changed what the run can conclude: the instrument refutes and
+cannot confirm, so OAI-19's write-up may not name JIT-TTL under **any** outcome. One of its two headline results is now retracted
 and the other has grown:
 
 **Reordered again 2026-08-01, impact first: OAI-30 moved down to sit beside OAI-28.** It had been at
@@ -108,58 +110,43 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
-- **OAI-34** — **Build** the TTL challenge instrument, then run it. **Unblocked 2026-08-03 by
-  OAI-35**, which landed `serverResponded` on the attempt entry — so the instrument can now tell a
-  model evicted mid-prefill (headers already sent, `serverResponded: true`) from a connection that
-  found nothing listening. Filed
-  2026-08-03 by OAI-24, which decided the design ([ADR 013](adr/013-observing-the-server.md)) and
-  **withdrew the driver from its own commit** after two review passes. This is build-then-run, not
-  just run — until OAI-35 landed, the instrument was blind to the event it exists to detect.
-  Note when picking it up: finding **(1)** below says `runEpisode` must read `prefillMs` from
-  `attempts` rather than the top-level report, and those attempt entries now carry `serverResponded`
-  too — read both from the same place.
-  **A reviewed draft is STASHED, not committed and not launchable.** Recover it with
-  `git stash pop` (or inspect without applying: `git show stash@{0}^3`) — it holds
-  `bench/ttl-challenge.mjs`, `bench/lib/ttl-verdict.mjs` and `tests/ttl-challenge.test.js`, 876
-  lines, stashed 2026-08-03 as *"OAI-34 draft: TTL challenge instrument, withdrawn from OAI-24 with
-  10 open findings"*. **If the stash list has been cleared, the commit is `873dc05`** — reachable via
-  `git show 873dc05^3` while it survives gc, which is the whole reason the SHA is written down here.
-  It is worth starting from rather than rewriting: the decision rule is pure and unit-tested, and the
-  eight pass-1 defects are already fixed in it. Ten pass-2 findings remain open, and the first three
-  each let it issue a verdict the evidence does not support:
-  **(1)** `runEpisode` reads a top-level `report.prefillMs`, which the **failure** envelope does not
-  carry (`review-report.mjs:104` is the success path only) — so `firstTokenMs` is null on every
-  failed episode, `exposed` silently falls back to wall clock, and `activityObserved`'s window
-  restriction goes inert on exactly the episodes that matter. Read it from `attempts`, as
-  `attempt-rows.mjs` does.
-  **(2)** The confirming branch never requires `unloadAt < firstTokenMs`, so an unload during
-  **generation** renders `mechanism-reproduced` while the summary string asserts it happened "during
-  an active prefill".
-  **(3)** The two thresholds leave a gap — 130s in flight (not an exposure) with an unload at 125s
-  (past `ttlMs`) classifies as confirming. Gate it on `exposed` too, and give the leftover state its
-  **own** label: reusing `failed-early-with-unload` would print a false string.
-  **(4)** The mismatched-TTL warning says "this episode cannot be classified" and then classifies it.
-  **(5)** `calibrate` throws, discarding the calibration record — write an aborted manifest carrying
-  `summarize(..., { calibrationCleared: false })` and exit nonzero.
-  **(6)** `reachedServer` has **zero** unit tests, and its doc comment claims HTTP status is evidence
-  when the attempt schema never retains `status`.
-  **(7)** The calibration rule (`dispatched && !failed && firstTokenMs`, no `durationMs` fallback)
-  lives in the untested I/O half — extract it as a pure `calibrationCleared(...)`.
-  Then run it: **~45 minutes on the user's own LM Studio, launched when they say so, never
-  incidentally** — same rule as OAI-19, which it sits ahead of because OAI-19's write-up may not name
-  a mechanism until this has run. Nothing else may be connected: another resident model can trigger
-  Auto-Evict and produce the shape the experiment reads. Done when
-  `bench/results/ttl-challenge-*.json` exists and its `outcome.verdict` is recorded here with the
-  wording ADR 013's table permits — and **`instrument-failed` is not a result**, it means the
-  instrument did not run.
-  **A file matching that glob ALREADY EXISTS on the development machine and does not count.**
-  Noticed 2026-08-03 during OAI-31: `bench/results/ttl-challenge-2026-08-03T16-30-54-480Z.json`,
-  `outcome.verdict: "inconclusive-failure"`, left behind by the withdrawn draft. It satisfies the
-  done-condition as that condition was originally written, which is the defect —
-  **existence of an output file is not evidence that the instrument ran**, and `bench/results/` is
-  gitignored so no repo file can warn anyone. Delete it before the real run, or key completion to a
-  stamp later than the commit that lands the instrument. `inconclusive-failure` is not a result
-  either, for the same reason `instrument-failed` is not.
+- **OAI-34** — Run the TTL challenge instrument. **The instrument is BUILT and self-tested as of
+  2026-08-04; what remains is the ~45-minute run on the user's own LM Studio, launched when they say
+  so, never incidentally.** Nothing else may be connected: another resident model can trigger
+  Auto-Evict, which the sole-tenancy check now catches and voids the sweep over rather than scoring.
+  **What shipped, and the one design change worth reading first: the instrument REFUTES but cannot
+  CONFIRM.** The confirming verdict was withdrawn during the plan gate after four designs each failed
+  on a different axis, because of a structural fact rather than an implementation gap — proving an
+  unload happened after expiry requires observing the model still resident *after* expiry, and a
+  mechanism that fires *at* expiry never leaves that observation behind. So `mechanism-reproduced` is
+  gone, ADR 013's outcome table lost its confirming row, and an observed absence is recorded in full
+  (`unloadAt`, `lastPresentAt`, bracket width, polling gaps, `exposureRatio`) and **attributed to
+  nothing**. Refutation is unaffected: the spawn-to-request offset cancels between the two sides of
+  the survival comparison, leaving `c < prefillMs - ttlMs` — the slack each episode achieved, ~215s at
+  the measured `scaffold` prefill — which the verdict sentence states and the manifest records, quoting
+  the *narrowest* episode. See [ADR 013](adr/013-observing-the-server.md)'s 2026-08-04 amendment, and
+  **OAI-44** for the parked confirmation question.
+  **The done-condition is rewritten, because the old one was already satisfied by junk.** Not "a file
+  matching `bench/results/ttl-challenge-*.json` exists" — a pre-stash draft left one whose every
+  episode died in ~1s at `--max-tokens 2048` against a 3,912 floor, and it recorded a verdict about
+  the server anyway. That file was deleted 2026-08-04. **Done when a record exists with
+  `protocol.canonical: true`, a stamp later than the commit that landed the instrument, and an
+  `outcome.verdict` other than `instrument-failed` — and the handover records the exact result path
+  and the instrument's commit SHA**, since a timestamp alone does not attest which revision produced
+  it. `protocol.canonical` is false whenever any experimental parameter was overridden, which is what
+  keeps a harness run from ever being mistaken for the experiment.
+  **Known gap, stated rather than discovered later:** the withdrawn draft carried ten open pass-2
+  findings and only eight are recoverable — seven were enumerated in this file and the eighth was the
+  `serverResponded` blocker OAI-35 fixed. **Two were never written down anywhere.** The end-to-end
+  harness is the recovery mechanism for them: it drives the real entry point against a stub `lms`, and
+  it is the thing OAI-24 never had. **Neither has been recovered yet** — the harness's first run
+  surfaced two defects in the harness's *own* scenarios, not in the instrument, and the one real
+  instrument defect found during the build (`[].every()` is `true`, so an empty episode list rendered
+  `deterministic-form-refuted` from zero episodes) was caught by reading rather than by running. Say
+  so rather than letting "the harness caught things" stand in for "the two lost findings are back".
+  **To run it:** `node bench/ttl-challenge.mjs` from the repo root, ~45 minutes, with LM Studio
+  serving, `lms ps` reporting nothing resident, and nothing else connected. No flags — every flag
+  makes the run non-canonical.
 
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
@@ -546,3 +533,26 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   still went stale on a witness count no tripwire watched. Worth an hour to decide deliberately;
   worth nothing to change by reflex. If it is done, the paragraph must keep something that fails when
   the record changes, or the one guard that has demonstrably worked here is traded for tidiness.
+
+- **OAI-44** — Decide whether a *confirmation-capable* server-state instrument is worth building.
+  **Parked, not closed.** Filed 2026-08-04 by OAI-34, which withdrew its own confirming verdict during
+  the plan gate — see [ADR 013](adr/013-observing-the-server.md)'s amendment. The reason is structural
+  rather than a gap in effort: proving an unload happened after expiry requires observing the model
+  still resident **after** expiry, and a mechanism that fires **at** expiry never leaves that
+  observation behind. Four designs were tried and each failed on a different axis (clock origin;
+  bracket width, where present-at-119s/absent-at-121s straddles a 120s expiry; a calibration-derived
+  bound on the spawn-to-receipt offset, invalid because `prefillMs` starts before the HTTP request and
+  the driver's `Date.now()` is not the monotonic clock attempts are timed on; and gating on the
+  exposure margin, which is post-treatment — the hypothesised eviction truncates the very measurement
+  used to decide whether the episode was exposed).
+  So this is not "try harder with sampling". The two designs that could actually earn a confirmation:
+  **(a) matched controls** — randomised challenge TTLs with long-TTL controls, requiring unload timing
+  to *move with* the assigned TTL, which makes TTL the manipulated variable instead of resting on one
+  coincidence at 120s; ADR 013 costed the corpus-wide version at 3–4h on the MoE and 9–12h on the
+  dense, but a single-case version is much cheaper and was never costed. **(b) server-side telemetry**
+  — if LM Studio ever exposes an unload *reason* or a lifecycle event, the whole problem collapses to
+  reading it. Check that first; it is a five-minute question and it decides whether (a) is worth
+  hours.
+  **Do not start this before OAI-34 has actually run.** If three episodes survive a 120s TTL against a
+  335s prefill, the deterministic form is refuted and the appetite for confirming a mechanism that
+  just failed to appear should be re-examined rather than assumed.

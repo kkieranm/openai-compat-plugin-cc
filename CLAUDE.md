@@ -61,7 +61,12 @@ becomes `refused` only when `begin` creates the replacement entry, and stays a `
 failure when nothing replaced it — see [ADR 012](adr/012-surviving-the-server.md).
 
 Server-state questions are answered by shortening the TTL below a known prefill and trying to falsify
-the JIT-TTL mechanism, never by sampling residency around a run — the instrument is specified in
+the JIT-TTL mechanism, never by sampling residency around a run — the instrument is
+`bench/ttl-challenge.mjs`, and it **refutes but cannot confirm**: proving an unload was post-expiry
+needs residency observed *after* expiry, which a mechanism firing *at* expiry never leaves behind, so
+an observed absence is recorded and attributed to nothing. Its I/O half is driven end to end against a
+stub `lms` in `tests/ttl-challenge-e2e.test.js`, because the same instrument was withdrawn once for
+having a decision-shaped half that had never executed — see
 [ADR 013](adr/013-observing-the-server.md).
 
 Every attempt entry carries `serverResponded` — *an HTTP response was obtained*, never *a peer was
@@ -84,6 +89,9 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns)
 - Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
+- TTL challenge: `node bench/ttl-challenge.mjs` (opt-in, ~45 min, needs LM Studio with **nothing**
+  resident — `lms ps` empty — and nothing else connected). Any flag makes the run non-canonical, which
+  the record states as `protocol.canonical: false`.
 - Load the plugin in a scratch session: `claude --plugin-dir /Users/kieran/Code/openai-compat-plugin-cc -p "/oai:setup"`
 - No build step; the plugin is markdown + JSON + ESM scripts.
 

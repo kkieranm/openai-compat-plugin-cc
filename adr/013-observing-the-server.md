@@ -1,8 +1,72 @@
 # 013 — Observing the server: intervene, don't sample
 
-**Status:** the DECISION is accepted, 2026-08-03 (OAI-24). The instrument is **specified here but not
-shipped** — it was withdrawn from OAI-24's commit after two review passes, and building it plus
-running it is **OAI-34**.
+**Status:** the DECISION is accepted, 2026-08-03 (OAI-24). The instrument shipped 2026-08-04 (OAI-34),
+**amended**: it can refute the mechanism and it can no longer claim to confirm it. Running it is still
+outstanding.
+
+## Amendment, 2026-08-04 (OAI-34): the confirming outcome is withdrawn
+
+The row of the outcome table below that read *"Failure **with** observed eviction"* is **removed**, and
+with it the verdict `mechanism-reproduced`. It was not removed because it was hard to implement. It
+was removed because **it cannot be earned by this design**:
+
+> Proving an unload happened *after* expiry requires observing the model still resident *after*
+> expiry. If the mechanism is real it fires *at* expiry — so that observation cannot exist.
+
+Confirmation-by-sampling is incoherent for a mechanism that fires exactly at the threshold you are
+trying to prove you are past. Four designs were tried and each failed on a *different* axis: the
+clock origin; bracket width (present at 119s, absent at 121s straddles a 120s expiry, so the true
+unload may precede it); an attempt to bound the spawn-to-receipt offset from the calibration run
+(invalid — `prefillMs` starts *before* the HTTP request, a calibration cannot bound a later process's
+startup, and the driver's `Date.now()` is not the monotonic clock attempts are timed on); and finally
+gating on the exposure margin, which is **post-treatment**: the hypothesised eviction truncates the
+very measurement used to decide whether the episode was exposed, so a genuine fast eviction could
+never qualify while every slow false positive would.
+
+**What the instrument does instead.** An observed absence is recorded in full — `unloadAt`,
+`lastPresentAt`, the bracket width, polling gaps, residency at start, `exposureRatio`, and whether the
+failure reason was a client budget — and **attributed to nothing**. The episode vocabulary is
+epistemically neutral (`failure-with-unload-observed`, `failure-without-unload-observed`); no label
+says "post-TTL" or "eviction", because those are the facts that cannot be established.
+
+**Refutation is unaffected**, which is why the instrument is still worth having. Survival needs the
+request to outlast true expiry, and the spawn-to-request overhead *cancels* between the two sides of
+that comparison — leaving only `c`, the serialization/socket-write/admission cost of one request. So
+refutation rests on `c < prefillMs − ttlMs`, the slack the episodes actually achieved (~215s at the
+measured `scaffold` prefill against a 120s TTL). That condition is **stated in the verdict sentence
+and recorded in the manifest**, and the sweep quotes the *narrowest* episode's slack, because a sweep
+is only as sound as its weakest one. `c` was **not measured**, and no black-box anchor available here
+measures it.
+
+**A follow-up item is filed** for a confirmation-capable design — matched TTL controls, or server-side
+telemetry if LM Studio ever exposes an unload *reason*. The question is parked, not closed.
+
+### The limits below are now enforced, and three of them decide
+
+`validityChecks` in `bench/lib/ttl-verdict.mjs` turns three of this ADR's stated limits into code:
+the applied TTL must match what was asked (read back from the server, not inferred from `lms load`
+exiting 0); no model other than the target may appear while the child is alive, because Auto-Evict
+produces the same client-visible shape; and an attempt record that contradicts itself
+(`outcome: 'answered'` or `'refused'` with `serverResponded: false`) is a record the instrument does
+not understand. Any of them yields `instrument-invalid` — **kept distinct from `not-dispatched`**,
+because printing "never dispatched" for a competing model would be exactly the false string this ADR
+exists to prevent.
+
+**One caveat that would have been fatal to a confirming verdict, and is merely recorded now:** the
+sampler's "in-flight" phase means *the child process is alive*, not *the HTTP request is open*. An
+absence seen after the request already failed but before the companion exits falls inside that window.
+That is this ADR's own "an unload after the request had already failed" disqualifier — harmless only
+because nothing is attributed.
+
+### Correction: the provenance of the leftover record
+
+The note below says an accidental import ran the driver "against a server that was down". The one
+artifact that survived on the development machine
+(`bench/results/ttl-challenge-2026-08-03T16-30-54-480Z.json`, deleted by OAI-34) shows otherwise: the
+server was **up** and the model **resident** — its own residency samples prove it — and every episode
+died in ~1s at `--max-tokens 2048` against a floor of 3,912, before any request was sent. The lesson
+is unchanged and arguably sharper: the instrument rendered a verdict about the mechanism from a run in
+which the *instrument's own argument validation* had refused every episode.
 
 Why the withdrawal, because it is the most useful thing this ADR records. A draft driver was written
 and reviewed twice. Pass 1 found eight defects of one class — *a validity guard that narrates instead
@@ -152,13 +216,19 @@ OAI-34's build, not a description of code in the repo.
 
 | Outcome | May say | Must not say |
 |---|---|---|
-| 3/3 survive | On this version and configuration, three cold dense requests remained in prefill beyond a deliberately shortened 120s TTL without unloading or failing — refuting the deterministic form. The July failures remain server-side but mechanistically unresolved. | That TTL can never evict an active request; that any version behaves so; that TTL played no role historically; that the failure rate is low. |
-| Failure **with** observed eviction | A shortened-TTL stress test reproduced an unload during active prefill, establishing this configuration *can* exhibit the mechanism. | That it caused the July failures; that 600s was ever reached historically; that it explains all empty completions or stream drops. |
-| Failure **without** observed eviction | The test failed, but residency evidence did not identify TTL eviction; inconclusive. | Anything naming JIT-TTL. |
+| 3/3 survive | On this version and configuration, three cold dense requests remained in prefill beyond a deliberately shortened 120s TTL without unloading or failing — refuting the deterministic form, provided request serialization and admission fell inside the recorded slack. The July failures remain server-side but mechanistically unresolved. | That TTL can never evict an active request; that any version behaves so; that TTL played no role historically; that the failure rate is low. |
+| Failure, **with or without** an observed absence | The test failed. Residency sampling is recorded alongside it and is not attributed; inconclusive. | Anything naming JIT-TTL — **including when an absence WAS observed**. See the 2026-08-04 amendment: that row used to license a confirmation, and no design could earn it. |
 | `contradictory-evidence` | The request succeeded while residency showed an unload; the instruments disagree. | That either reading is the right one. |
-| `instrument-failed` — undispatched, unconfirmed TTL, or calibration short | Nothing. Fix the instrument and re-run. | Anything at all about the server. |
+| `no-exposure` — some or all episodes did not outlast expiry by the margin | Only that the run did not test the mechanism, and how many episodes cleared it. | That anything was refuted; a survival that never cleared the bar is not a counterexample. |
+| `instrument-failed` — no response obtained, unconfirmed TTL, another model resident, a self-contradictory attempt record, or calibration short | Nothing. Fix the instrument and re-run. | Anything at all about the server. |
 
-**In no outcome may OAI-19 name JIT-TTL as *the cause* of the 37.5%.**
+**In no outcome may OAI-19 name JIT-TTL as *the cause* of the 37.5%.** After the 2026-08-04 amendment
+no outcome licenses naming it at all.
+
+**The mapping is now a TEST, not a promise.** `EPISODE_VERDICTS` in `bench/lib/ttl-verdict.mjs` is
+exported and `tests/ttl-verdict.test.js` drives the rule over every input combination, asserting the
+set it can emit equals the documented set exactly — because this table has already lost a row to
+drift once, and the paragraph below is that incident.
 
 Every row must map to a verdict the code actually produces, and one row here did not. A "Mixed" row
 licensing *"an intermittent association at most"* was removed on 2026-08-03: no verdict mapped to it,
