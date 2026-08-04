@@ -296,6 +296,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   likeliest candidate), drive `bodyStream` directly, or conclude the branch is unreachable on current
   Node and say so in a comment rather than leaving a silent hole. The constant swap already removes
   the divergence risk that motivated touching it, so this is coverage, not correctness.
+  **Enlarged 2026-08-04 by OAI-35, which added a second untested write to the same branch and
+  re-proved the first.** That branch now sets `serverResponded = true` as well as the reason, and
+  deleting *that* line also leaves the whole suite green — so the hole is two lines wide, and the
+  half OAI-35 added is the half its own record depends on. OAI-35's `tests/attempt-response-sites.test.js`
+  names this branch as uncovered rather than implying coverage, and an earlier draft of that file was
+  wrongly credited with reaching it; a debug stack showed the request leaving through the catch below,
+  exactly as this item recorded in 2026-08-01. **So whichever option is taken here, take it for both
+  writes** — a fixture that reaches the branch should assert the reason *and* the flag, and a comment
+  concluding unreachability must say so about both. (OAI-38 was filed for this and withdrawn as a
+  duplicate the same day.)
 
 - **OAI-30** — Retire the last "cannot be tested" justification, at `tests/structure.test.js:279,287`.
   Filed 2026-08-01 from the OAI-25 ladder (Codex adversarial, low/0.97, pass 3 — the no-mutation
@@ -453,28 +463,92 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
   the reason this is one item rather than five.
 
-- **OAI-38** — Reach `http.mjs`'s `!response.complete` branch with a test. Filed 2026-08-04 from
-  OAI-35's pass 3. That branch mints `reason: TRANSPORT` and `serverResponded = true` for a body that
-  ends without an 'error' event, and **nothing reaches it**: deleting its flag write leaves the whole
-  suite green, measured rather than assumed. The obvious fixture does not work — a destroyed socket
-  makes the async iterator throw, so control leaves through the catch and `transportError` mints the
-  error instead, which `http.mjs`'s own comment states three lines above the branch. An earlier draft
-  of `tests/attempt-response-sites.test.js` was credited with covering this and did not go near it.
-  What is needed is a reply that **ends cleanly while short of what it declared** — a `Content-Length`
-  larger than the bytes sent, or chunked encoding without its terminating chunk — so iteration
-  completes normally with `response.complete === false`. Cheap if Node's client cooperates, and worth
-  finding out rather than leaving a named gap; if it does not, the gap stays named and this closes as
-  "not reachable from a fake server", which is itself worth recording. The sibling gap —
-  `body.mjs`'s oversized-document branch, needing 8,000,000 characters — is deliberately NOT part of
-  this: that one is uneconomic rather than unsolved.
+- **OAI-38** — **WITHDRAWN 2026-08-04, same day, as a duplicate of [OAI-28](#). Use OAI-28.** The ID
+  is kept because `plans/oai-35-server-responded.md` cites it in commit `a2395f6`, and a dangling
+  reference is worse than a redirect. Filed from OAI-35's pass 3 for `http.mjs`'s `!response.complete`
+  branch — which OAI-28 had already covered since 2026-08-01, and covered better: OAI-28 records that
+  **both** obvious fixtures were measured on Node 26.3 and **both** raise on the stream instead, and
+  names an HTTP/1.0 connection-close body as the likeliest remaining candidate. This item rediscovered
+  the first half of that and proposed the two fixtures already ruled out.
+  Worth stating why it happened, since the backlog is the thing that was supposed to prevent it: the
+  finding arrived from a reviewer, was verified against the code, and was filed without first being
+  searched for in `BACKLOG.md`. **Verifying a finding is not the same as checking whether it is
+  already tracked.** Its one piece of new evidence has been moved into OAI-28.
 
-- **OAI-39** — `attemptRows` counts `warmEligible` by truthiness. Filed 2026-08-04 from OAI-35's pass
-  3 (raised by `codex-plain`, and rejected there only because it predates the change and was out of
-  that commit's scope). `bench/lib/attempt-rows.mjs` counts with
-  `all.filter(({ attempt }) => attempt.warmEligible)`, so any truthy value — the string `"false"`
-  being the memorable one — increments the figure and the report describes that attempt as
-  warm-eligible. Every sibling split in the same function was tightened to a strict check during
-  OAI-35 for exactly this reason, and this one was left. Not reachable from today's writer, which
-  sets a real boolean; it is the same "unreachable by audit rather than by construction" shape that
-  OAI-35 twice found had stopped being true. One-line fix plus a test that a non-boolean does not
-  count, matching what `responseBucket` now does beside it.
+- **OAI-39** — Four reads that hold only because today's callers behave. Filed 2026-08-04 from
+  OAI-35's passes 2 and 3, where `codex-plain` and `codex-adversarial` raised them and they were
+  rejected **only** as out of that commit's scope — every one predates OAI-35 and none was introduced
+  by it. They are one item because they are one shape: *unreachable by an audit of today's call
+  sites, rather than unreachable by construction* — and OAI-35 twice found that exact reasoning had
+  quietly stopped being true, which is the whole reason they are worth the edit.
+  1. **`attemptRows` counts `warmEligible` by truthiness** — `bench/lib/attempt-rows.mjs`,
+     `all.filter(({ attempt }) => attempt.warmEligible)`. Any truthy value counts, the string
+     `"false"` being the memorable one. Every sibling split in that function was tightened to a
+     strict check during OAI-35; this one was missed.
+  2. **`unresolved` tests `outcome === null` only** — same file. A serialized record that omits
+     `outcome` carries `undefined`, so it increments `total` while landing in none of `answered`,
+     `failed`, `refused` or `unresolved`. The totals then disagree with themselves, which is
+     precisely the bug that bucket exists to make visible.
+  3. **`runTotals` tests `run.error` for truthiness** — `bench/lib/reliability-report.mjs`. A failed
+     run whose message is the empty string is reported as having completed, in the one line that
+     states both denominators.
+  4. **`withLedger` assumes the thrown value takes a property** — `scripts/lib/attempt-ledger.mjs`.
+     `error.attemptRecords = ledger.entries()` on a thrown string or a frozen object throws a
+     `TypeError` from strict-mode ESM, replacing the original failure with a confusing one at the
+     exact moment the ledger was trying to preserve evidence about it.
+  Each is a one-line fix plus a test that the bad value does not count — matching what
+  `responseBucket` now does beside (1).
+
+- **OAI-40** — Two pre-existing tests that do not prove what they are named for. Filed 2026-08-04 from
+  OAI-35's passes 2 and 3 (`codex-plain` both times), rejected there as out of scope. This is the
+  class OAI-35 added to `.claude/REPO_TRAPS.md` — *a test that manufactures or sidesteps the evidence
+  it claims to guard* — found in tests that predate it, so the entry earns its keep immediately.
+  1. **`exactly one attempt answers, and it is the one the headline timings came from`**
+     (`tests/bench-reliability.test.js`) asserts **neither** claim in its title. `answeringAttempt` is
+     a `.find`, so a second answered attempt passes; and it checks the attempt's `prefillMs` against a
+     literal rather than against `run.report.prefillMs`, so it never shows the two share a source.
+     Both halves matter — the second is what makes the cold-prefill exclusion meaningful.
+  2. **`shape-rejected is explained as the terminal twin of refused`**
+     (`tests/bench-reason-notes.test.js`) scopes its first assertion with `paragraphAbout` and then
+     makes its other two document-wide. The comment directly above explains why that is worthless —
+     the document-wide version passed on a count-table row, "proved by gutting the whole paragraph and
+     watching it stay green" — and then two of three assertions are document-wide anyway. Route them
+     through `paragraphAbout` and re-run the gutting mutation the comment describes.
+  Both fixes are small; the value is that each one currently reports coverage it does not have.
+
+- **OAI-41** — Two test files are at the 300-line ratchet, and one of them blocks OAI-40. Filed
+  2026-08-04. **Not new — this promotes OAI-30's "budget note" from a warning inside another item to
+  work of its own, because the headroom it warned about is now gone.** OAI-30 recorded
+  `structure.test.js` at 299 of 300 on 2026-08-01 and told whoever picked it up to make room first;
+  OAI-28 and OAI-30 both still collide with it. Measured rather than predicted:
+  `tests/structure.test.js` is at **exactly 300** and
+  `tests/bench-reliability.test.js` at **294** (`split('\n').length`, the way the ratchet counts —
+  one more than `wc -l`). The comparison is `>`, so structure.test.js has **zero** headroom and
+  bench-reliability has six lines. OAI-35 put ~140 of those lines there.
+  This is the size-growth rule working as designed — the ceiling is meant to force a split rather
+  than be raised — but it is now due, and it is due *before* the next person needs it: **OAI-40's fix
+  lands in `bench-reliability.test.js`**, and `structure.test.js` cannot accept a single new
+  structural guard, which is the file whose whole job is holding them.
+  The seams are visible. `bench-reliability.test.js` mixes attempt ACCOUNTING (which bucket, which
+  denominator) with report RENDERING (what the markdown says) — the same split
+  `bench-reason-notes.test.js` was carved off along in OAI-31, so the precedent and the naming already
+  exist. `structure.test.js` mixes the size ratchet with the other structural guards it has
+  accumulated. Do **not** solve this with an `ALLOWLIST` entry: `tests/structure.test.js` makes an
+  allowlisted file skip the 60-line per-function budget too, so buying headroom silently drops a
+  second guard — the trap OAI-35 avoided by splitting `reason-notes.mjs` out instead.
+
+- **OAI-42** — Consider renaming `serverResponded` to say what it means. **Lowest priority, and it
+  may well close as "no".** Filed 2026-08-04 because three independent reviewers across two OAI-35
+  passes raised it unprompted: the name invites *the server responded to me* — a claim about a peer —
+  where the field means only *an HTTP response was obtained*, and a proxy or gateway can produce one
+  with the model server never seeing the request.
+  The evidence for: this repo has now spent a great deal of prose defending that distinction — in ADR
+  012, ADR 013, `CLAUDE.md`, `REPO_TRAPS.md`, two test files and the ledger's own minting comment —
+  and a reader who trusts the name reaches the wrong conclusion without ever hitting one of them. The
+  original backlog item for OAI-35 made exactly that error in its own text.
+  The evidence against, which is why this is filed rather than done: the name **predates** OAI-35 —
+  `http.mjs` and `cmd-setup.mjs` were reading it before the ledger ever carried it — so a rename
+  touches the transport, not just the record; and the documentation now carries the load correctly,
+  so this buys clarity rather than fixing a defect. If it is done, `httpResponseObtained` was the
+  suggested name and every recorded benchmark file under `bench/results/` carries the old key, so it
+  needs the same read-both-shapes treatment the `not recorded` bucket already gives legacy records.
