@@ -30,8 +30,11 @@ Newest first.
   real isolated worktree (exit 0; modified, untracked, staged-add and staged-rename artifacts all
   present; suite 425/425; edits contained), but **no full `--wide` run has used it**, because the seed
   resolves the *session's* repo and this feature was built from a session rooted here rather than in
-  dotfiles. Filed there as items 56 (the same one-character `.git` defect in `/feature`'s own restore)
-  and 57 (a scope-time snapshot, stronger but needing a lifecycle).
+  dotfiles. Filed there as items 81 (the same one-character `.git` defect in `/feature`'s own restore)
+  and 82 (a scope-time snapshot, stronger but needing a lifecycle), plus 83-86 from the review that
+  closed it — of which **83 is the one to read**: it is the ledger of what this feature was *not*
+  checked by, and it is what the caveat above resolves to. *(Those two were filed as 56/57 and
+  renumbered the same day: dotfiles never reuses an ID, and 56/57 were already absorbed.)*
 
 - **OAI-35** — Carry `serverResponded` onto the attempt entry. Completed 2026-08-03, **with OAI-37
   absorbed into it** (see below). The field means *an HTTP response was obtained* — headers arrived —
