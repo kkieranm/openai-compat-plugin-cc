@@ -21,6 +21,15 @@ Newest first.
     identical to within 0.4s — against a calibration prefill of 338.0s at the long 4h TTL.
     (`durationMs` was 389s / 580s / 407s; that spread is generation length and says nothing about
     the mechanism. Quote prefill.)
+  - **The episodes were genuinely independent trials, and the record proves it rather than assuming
+    it.** All four runs sent an identical prompt (`promptChars: 172431`) and their prefills sit
+    within **1.64s** of each other, `warmEligible: false` throughout. [ADR
+    009](adr/009-measuring-prefill-and-generation.md) is the reason this matters: a server-side
+    prompt cache moves prefill by *tens of times* — 421.7s cold against 11.5s warm on a comparable
+    request — so a cache hit would have read ~10s, not 336s. The `unload` → `load` cycle between
+    episodes therefore defeated the cache. **This is load-bearing for the headline**: the ~63% bound
+    assumes three independent trials, and cache-correlated episodes would have inflated N and
+    understated the bound. It strengthens the refutation rather than qualifying it.
   - **`exposureRatio` 2.80× in every episode**, `slackMs` 216.7s / 216.3s / 216.5s. The refutation
     rests on `c < prefillMs - ttlMs`, so the narrowest slack — 216s — is the condition, and it is
     the figure the verdict sentence quotes.

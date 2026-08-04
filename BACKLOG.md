@@ -582,6 +582,19 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `EPISODE_VERDICTS` minus the stated exemption, so the next hole fails the suite instead of waiting
   for a review.
 
+- **OAI-47** — Make the TTL challenge record self-attesting by stamping the git revision into
+  `environment`. **Small, and filed as satisfied-but-improvable rather than as a defect.** The
+  manifest's `environment` is `{startedAt, model, lmsCommit, residentBefore}` — it names the `lms`
+  build but not the revision of *this* repo that produced it, so the artifact cannot say which
+  instrument wrote it. OAI-34's done-condition anticipated exactly this and solved it out-of-band:
+  the handover records the SHA in `BACKLOG_DONE.md`, and the 2026-08-04 run did so (`0c566b6`). So
+  nothing is currently wrong. What is fragile is that the attestation lives in a *different file*
+  from the record, and `bench/results/` is gitignored — a record copied off this machine arrives with
+  no provenance at all. Add `gitRev` (and whether the tree was dirty, which matters more: a canonical
+  run from a modified tree is not the reviewed instrument, and today nothing in the record would say
+  so). Cheap, and it is the same class this repo already files — a claim that is true because a human
+  remembered to write it down elsewhere.
+
 - **OAI-46** — The tracker-consistency guard pins one line, and its prose now says so — decide whether
   that is enough. **Filed from OAI-34's terminal review round, which demonstrated the gap rather than
   argued it.** `tests/ttl-vocabulary.test.js` reads BACKLOG's `Accepted verdicts:` line and compares

@@ -17,6 +17,14 @@ narrowest — with the model resident in every one of the 194 / 289 / 203 in-fli
 treatment was in force rather than assumed. `validityFailures: []` in all three: no competing model
 (G2), a response obtained (G5), the treatment confirmed (G6), no self-contradicting record (G8).
 
+**The three episodes were independent trials, which the record establishes rather than assumes.**
+All four runs sent an identical prompt (`promptChars: 172431`) and their prefills lie within 1.64s of
+each other, `warmEligible: false` throughout. [ADR 009](009-measuring-prefill-and-generation.md)
+records that a server-side prompt cache moves prefill by tens of times — 421.7s cold against 11.5s
+warm — so a cache hit would have read ~10s here, not 336s. The `unload` → `load` cycle between
+episodes defeated it. That matters because the ~63% bound below assumes independence: had the
+episodes been cache-correlated they would have been one measurement and two replays, inflating N.
+
 **What that licenses, and the boundary.** It refutes the *deterministic* form — the claim that an
 in-flight prefill outlasting the TTL is reliably evicted. It is one model, one case, one TTL, N=3;
 the one-sided 95% upper bound on 0 events in 3 is ~63%, so it says nothing about a low failure
