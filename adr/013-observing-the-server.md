@@ -154,11 +154,12 @@ prefill really is treated as idle, the model **must** unload and the request **m
 survival past expiry is a counterexample. One calibration run plus three challenge episodes, ~45
 minutes.
 
-**When built** (OAI-34) it belongs in `bench/`, and the rule that says what an episode MEANS must be
-a separate, pure, unit-tested module from the I/O that drives it — so the reading of the result is
-fixed before the numbers arrive rather than chosen after. Nothing of the sort is in the repo today;
-the withdrawn draft split them as `bench/ttl-challenge.mjs` and `bench/lib/ttl-verdict.mjs`, and that
-split is the one thing about it worth keeping.
+**Built as specified** (OAI-34, 2026-08-04) in `bench/`: the rule that says what an episode MEANS is a
+separate, pure, unit-tested module from the I/O that drives it, so the reading of the result was fixed
+before any numbers arrived. `bench/lib/ttl-verdict.mjs` holds the rule, `bench/ttl-challenge.mjs` the
+I/O, and the evidence readers sit between them — `ttl-residency.mjs` for `lms ps --json` and
+`ttl-attempts.mjs` for the plugin's attempt record. That split was the one thing about the withdrawn
+draft worth keeping, and it is what it kept.
 
 This answers what OAI-19 needs — *may the write-up name JIT-TTL?* — not the corpus-wide reliability
 estimate it does not need.
@@ -225,10 +226,14 @@ OAI-34's build, not a description of code in the repo.
 **In no outcome may OAI-19 name JIT-TTL as *the cause* of the 37.5%.** After the 2026-08-04 amendment
 no outcome licenses naming it at all.
 
-**The mapping is now a TEST, not a promise.** `EPISODE_VERDICTS` in `bench/lib/ttl-verdict.mjs` is
-exported and `tests/ttl-verdict.test.js` drives the rule over every input combination, asserting the
-set it can emit equals the documented set exactly — because this table has already lost a row to
-drift once, and the paragraph below is that incident.
+**The mapping is now a TEST, not a promise — for BOTH vocabularies.** The rows above are *sweep*
+outcomes; the per-episode verdicts feeding them are a different set, and an earlier draft of this
+paragraph claimed a guard while only the episode set had one. `bench/lib/ttl-verdict.mjs` exports
+`SWEEP_VERDICTS` and `EPISODE_VERDICTS`, and `tests/ttl-verdict.test.js` drives the rule over every
+input combination asserting each emitted set equals its documented set exactly. It also exports
+`CONCLUSIVE` — the two outcomes that mean the experiment produced a result — because the others ask
+to be re-run in their own text, and OAI-34's done-condition and the driver's exit code both read that
+one list rather than restating it.
 
 Every row must map to a verdict the code actually produces, and one row here did not. A "Mixed" row
 licensing *"an intermittent association at most"* was removed on 2026-08-03: no verdict mapped to it,
@@ -240,7 +245,7 @@ recurring class appearing in the document written to prevent it.
 
 ## Consequences
 
-- **When built, the driver is the repo's first `lms` dependency**, confined to `bench/`. It sets up
+- **The driver is the repo's first `lms` dependency**, confined to `bench/`. It sets up
   conditions and observes residency; it never touches the plugin's request path, so
   [ADR 001](001-generic-openai-compatible-plugin.md)'s providers-as-data rule holds — no production
   code changed for OAI-24. The `serverResponded` prerequisite above *is* production code, and is

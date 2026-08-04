@@ -150,6 +150,12 @@ test('a calibration run under broken preconditions does not license the sweep', 
   assert.deepEqual(manifest.calibration.validityFailures, ['sole-tenancy']);
   assert.deepEqual(manifest.episodes, [], 'no challenge episode may run on an unlicensed calibration');
   assert.equal(manifest.outcome.verdict, 'instrument-failed');
+  // The SENTENCE, not just the verdict. This episode's prefill actually cleared
+  // the exposure bar — a wide review reproduced exactly that — so a message
+  // blaming the prefill would be false and would send the operator to the wrong
+  // knob.
+  assert.match(manifest.outcome.says, /sole-tenancy/);
+  assert.doesNotMatch(manifest.outcome.says, /prefill clearing the shortened TTL/);
   assert.equal(result.status, 1);
 });
 

@@ -90,8 +90,8 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns)
 - Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
 - TTL challenge: `node bench/ttl-challenge.mjs` (opt-in, ~45 min, needs LM Studio with **nothing**
-  resident — `lms ps` empty — and nothing else connected). Any flag makes the run non-canonical, which
-  the record states as `protocol.canonical: false`.
+  resident — `lms ps` empty — and nothing else connected). Every flag except `--out-dir` makes the run
+  non-canonical, which the record states as `protocol.canonical: false`.
 - Load the plugin in a scratch session: `claude --plugin-dir /Users/kieran/Code/openai-compat-plugin-cc -p "/oai:setup"`
 - No build step; the plugin is markdown + JSON + ESM scripts.
 

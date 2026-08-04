@@ -131,9 +131,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   episode died in ~1s at `--max-tokens 2048` against a 3,912 floor, and it recorded a verdict about
   the server anyway. That file was deleted 2026-08-04. **Done when a record exists with
   `protocol.canonical: true`, a stamp later than the commit that landed the instrument, and an
-  `outcome.verdict` other than `instrument-failed` — and the handover records the exact result path
+  `outcome.verdict` of **`deterministic-form-refuted` or `inconclusive-failure`** — the two the code
+  exports as `CONCLUSIVE` — and the handover records the exact result path
   and the instrument's commit SHA**, since a timestamp alone does not attest which revision produced
-  it. `protocol.canonical` is false whenever any experimental parameter was overridden, which is what
+  it. *(An earlier draft of this condition said "any verdict other than `instrument-failed`", which
+  quietly re-admitted `no-exposure` and `contradictory-evidence` — both of which ask to be re-run in
+  their own text. Naming the two acceptable verdicts is the fix, and the driver now exits non-zero for
+  everything else, so the exit code and this paragraph read one rule.)* `protocol.canonical` is false whenever any experimental parameter was overridden, which is what
   keeps a harness run from ever being mistaken for the experiment.
   **Known gap, stated rather than discovered later:** the withdrawn draft carried ten open pass-2
   findings and only eight are recoverable — seven were enumerated in this file and the eighth was the
@@ -145,8 +149,8 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `deterministic-form-refuted` from zero episodes) was caught by reading rather than by running. Say
   so rather than letting "the harness caught things" stand in for "the two lost findings are back".
   **To run it:** `node bench/ttl-challenge.mjs` from the repo root, ~45 minutes, with LM Studio
-  serving, `lms ps` reporting nothing resident, and nothing else connected. No flags — every flag
-  makes the run non-canonical.
+  serving, `lms ps` reporting nothing resident, and nothing else connected. No flags — every flag except `--out-dir`
+  makes the run non-canonical (writing the record elsewhere does not change what was measured).
   **The stash is gone, deliberately.** The withdrawn 876-line draft used to live in `stash@{0}` and
   the old text here said to `git stash pop` it. That became a **trap** the moment the rebuilt modules
   landed: popping would have dumped the superseded draft over `bench/lib/ttl-verdict.mjs` and

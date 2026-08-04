@@ -33,7 +33,7 @@ import {
   residencyOf, residentAtStart, unreadableBefore,
 } from './lib/ttl-residency.mjs';
 import {
-  EXPOSURE_MARGIN, calibrationCleared, episodeVerdict, summarize, validityChecks,
+  CONCLUSIVE, EXPOSURE_MARGIN, calibrationCleared, episodeVerdict, summarize, validityChecks,
 } from './lib/ttl-verdict.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -182,7 +182,10 @@ function environmentOf(config) {
 function report(config, environment, calibration, episodes, outcome) {
   const path = writeManifest(config, { environment, calibration, episodes, outcome });
   process.stdout.write(`\n${outcome.verdict}\n\n${outcome.says}\n\nRecord: ${path}\n`);
-  return outcome.verdict === 'instrument-failed' ? 1 : 0;
+  // Non-zero unless the sweep actually produced a result. `no-exposure` and
+  // `contradictory-evidence` both ask to be re-run in their own text, so exiting
+  // 0 for them would tell a script the experiment was done when it was not.
+  return CONCLUSIVE.includes(outcome.verdict) ? 0 : 1;
 }
 
 async function main(argv) {
@@ -197,8 +200,13 @@ async function main(argv) {
     // for a disqualification that only ever reached stderr — and an earlier one
     // printed "ABORT" and then ran the full sweep anyway, exiting 0 with a
     // normal-looking record. Machine-readable, and nonzero.
-    return report(config, environment, calibration, [],
-      summarize([], { calibrationCleared: false }));
+    return report(config, environment, calibration, [], summarize([], {
+      calibrationCleared: false,
+      // The REASON travels with the verdict. Without it the sweep asserts the
+      // prefill fell short even when it cleared the bar and a precondition was
+      // what actually failed.
+      calibrationFailures: calibration.validityFailures,
+    }));
   }
 
   const episodes = await runChallenges(config, caseDef);
