@@ -893,6 +893,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   whole-tree target (`finish_reason: length`, no findings, 59,918 chars), and that is the comparison
   worth quoting.
 
+  **That comparison has now been run, and it confirms the fix.** Whole working tree, same model,
+  49,378 prompt tokens: it completed with `finish_reason: stop` where the pre-fix run died at
+  `length`, having reached its answering phase after 54,127 characters of reasoning. `degraded: false`
+  and `retried: false` held on a 49k-token request too.
+  **It returned 0 findings, and that is a recall observation rather than a Stage 0 failure** —
+  `parsed: true` with content emitted is a genuine "found nothing", not a guillotine. Set beside the
+  1,680-token single-file run, which produced a specific checkable finding, it is also the first
+  direct measurement of the workload envelope the plan asserts: a ~49k-token target is on the reject
+  list, and this is why.
+
   **A defect the flip introduced, caught in review and worth recording as a class.** `runTimings`
   derived both `retried` and `degraded` from `!structured`, which meant "we fell back" only while a
   schema was *always* requested. With the default flipped, every ordinary run would have reported
