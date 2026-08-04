@@ -83,16 +83,30 @@ test('only the outcomes that actually produced a result count as conclusive', ()
 test('the tracker names the same verdicts the code calls conclusive', () => {
   // ADR 013 claims the exit code and the tracker read ONE list. Only the driver
   // imports CONCLUSIVE — BACKLOG.md restates the strings in prose — so without
-  // this the claimed single source does not exist and the two can drift.
+  // this the claimed single source does not exist.
+  //
+  // Set equality on the verdicts NAMED in the done-condition, not a doesNotMatch
+  // on one phrasing: an earlier version only caught the literal "other than
+  // `instrument-failed`", so adding "and `no-exposure`" to the acceptance clause
+  // would have passed. A guard that looks exhaustive and is not is worse than
+  // none.
   const backlog = readFileSync(new URL('../BACKLOG.md', import.meta.url), 'utf8');
-  const doneCondition = backlog.slice(backlog.indexOf('- **OAI-34**'), backlog.indexOf('- **OAI-19**'));
-  for (const verdict of CONCLUSIVE) {
-    assert.ok(doneCondition.includes(verdict), `the done-condition must name "${verdict}"`);
-  }
-  for (const verdict of SWEEP_VERDICTS.filter((v) => !CONCLUSIVE.includes(v))) {
-    assert.ok(!new RegExp(`\`${verdict}\`(?![^.]*\\bnot\\b)`).test(doneCondition)
-      || !doneCondition.includes(`or \`${verdict}\``),
-    `the done-condition must not accept "${verdict}" as completion`);
-  }
-});
+  const start = backlog.indexOf('- **OAI-34**');
+  const end = backlog.indexOf('- **OAI-19**');
+  // Both markers validated and ordered. Unchecked indexOf returns -1, and
+  // `slice(start, -1)` would still contain OAI-34 — so the test would pass while
+  // reading a region it did not mean to.
+  assert.ok(start !== -1, 'the OAI-34 entry must exist');
+  assert.ok(end > start, 'the OAI-19 entry must follow it');
+  const entry = backlog.slice(start, end);
 
+  // One LINE with a stable prefix, rather than a parser guessing where a
+  // markdown sentence ends — the first attempt stopped at nested bold markup and
+  // extracted a region naming no verdicts at all, which would have compared two
+  // empty-ish sets and looked fine.
+  const line = entry.split('\n').find((l) => l.trim().startsWith('Accepted verdicts:'));
+  assert.ok(line, 'the OAI-34 entry must carry an "Accepted verdicts:" line');
+  const named = new Set(SWEEP_VERDICTS.filter((v) => line.includes(`\`${v}\``)));
+  assert.deepEqual([...named].sort(), [...CONCLUSIVE].sort(),
+    'the accepted verdicts must be exactly the conclusive ones');
+});

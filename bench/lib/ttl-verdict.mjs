@@ -31,6 +31,12 @@
  */
 export const EXPOSURE_MARGIN = 1.5;
 
+// The wording for a voided calibration lives with the gate that decides it. The
+// dependency is one-way at call time: that module reads EXPOSURE_MARGIN from
+// here, and this one calls its formatter.
+// eslint-disable-next-line import/first
+import { calibrationSays } from './ttl-calibration.mjs';
+
 /**
  * Every SWEEP outcome `summarize` can return. The exhaustiveness guard reads it,
  * and so does the done-condition below — the outcome table in ADR 013 has already
@@ -133,46 +139,6 @@ export function episodeVerdict({ ttlMs, prefillMs, failed, unloadObserved, obtai
 }
 
 /**
- * Did the calibration establish a prefill that clears the challenge bar?
- *
- * Pure, and separate from the I/O that produced it, so the gate is testable.
- * A MEASURED first token, never a duration standing in for one: the withdrawn
- * draft used `firstTokenMs ?? durationMs`, so a calibration that timed out at
- * 1,800s "cleared" a 180s bar without the model ever emitting a token — the gate
- * reading a failure as proof of the very thing it exists to establish.
- */
-export function calibrationCleared({ obtainedResponse, failed, prefillMs, challengeTtlMs }) {
-  if (!obtainedResponse || failed) return false;
-  if (typeof prefillMs !== 'number') return false;
-  return prefillMs > challengeTtlMs * EXPOSURE_MARGIN;
-}
-
-/**
- * Why a calibration could not license the sweep.
- *
- * BOTH causes, never whichever is checked first. Validity and the exposure bar
- * are independent, so a calibration can fail both at once — and reporting only
- * the preconditions would have the operator fix one, spend another 45 minutes,
- * and meet the other. An earlier fix for the false-prefill sentence introduced
- * exactly that, which is this module's recurring shape: the fix is the next
- * defect.
- */
-function calibrationSays(failures, barCleared) {
-  const bad = failures?.length
-    ? `it ran without the conditions this experiment requires (${failures.join(', ')})` : '';
-  const bar = barCleared === false
-    ? 'its prefill did not clear the shortened TTL by the exposure margin' : '';
-  const both = [bad, bar].filter(Boolean).join(', and ');
-  const remedy = [failures?.length ? 'fix the precondition' : '',
-    barCleared === false ? 'lower the TTL or pick a longer case' : ''].filter(Boolean).join('; ');
-  // `barCleared` is undefined when the caller did not measure it — say nothing
-  // about the prefill rather than guess in either direction.
-  const why = both || 'it did not clear the gate';
-  return `The calibration cannot license this sweep: ${why}. Nothing here tested the mechanism.`
-    + `${remedy ? ` To re-run: ${remedy}.` : ' Re-run once it can.'}`;
-}
-
-/**
  * The states in which this sweep may say NOTHING about the server.
  *
  * The seam is real: below this line every branch is a finding, above it every
@@ -180,12 +146,12 @@ function calibrationSays(failures, barCleared) {
  * whole feature keeps producing — "inconclusive" still reads as a claim about
  * the server, so a broken instrument must not reach it.
  */
-function disqualified(verdicts, calibrationCleared, calibrationFailures, barCleared) {
+function disqualified(verdicts, calibrationCleared, calibrationFailures, causes) {
   // Ordered FIRST, and the ordering is load-bearing: an aborted calibration
   // writes its manifest with an EMPTY episode list, so a check for "no episodes"
   // placed above this would swallow the one state that must be reported.
   if (!calibrationCleared) {
-    return { verdict: 'instrument-failed', says: calibrationSays(calibrationFailures, barCleared) };
+    return { verdict: 'instrument-failed', says: calibrationSays(calibrationFailures, causes) };
   }
   if (verdicts.some((v) => v === 'not-dispatched')) {
     return {
@@ -248,9 +214,9 @@ function refutedSays(count, minSlackMs) {
  * NO outcome licenses naming JIT-TTL as the cause of the 37.5%.
  */
 export function summarize(verdicts, {
-  calibrationCleared = true, calibrationFailures = [], barCleared, minSlackMs = null,
+  calibrationCleared = true, calibrationFailures = [], causes = [], minSlackMs = null,
 } = {}) {
-  const blocked = disqualified(verdicts, calibrationCleared, calibrationFailures, barCleared);
+  const blocked = disqualified(verdicts, calibrationCleared, calibrationFailures, causes);
   if (blocked) return blocked;
   // `[].every(...)` is TRUE, so without this an empty list renders
   // `deterministic-form-refuted` from zero episodes — the vacuous-truth shape

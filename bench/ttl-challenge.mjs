@@ -32,8 +32,9 @@ import {
   activityObserved, entryFor, firstUnload, lastPresentBefore, otherModelsSeen,
   residencyOf, residentAtStart, unreadableBefore,
 } from './lib/ttl-residency.mjs';
+import { calibrationCauses } from './lib/ttl-calibration.mjs';
 import {
-  CONCLUSIVE, EXPOSURE_MARGIN, calibrationCleared, episodeVerdict, summarize, validityChecks,
+  CONCLUSIVE, EXPOSURE_MARGIN, episodeVerdict, summarize, validityChecks,
 } from './lib/ttl-verdict.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -118,15 +119,16 @@ async function calibrate(config, caseDef) {
     competingModels: calibration.competingModels,
     contradiction: calibration.contradiction,
   });
-  // Kept SEPARATE, then combined. Collapsing them into one boolean is what made
-  // the failure message name only one of two simultaneous causes.
-  calibration.barCleared = calibrationCleared({
+  // ENUMERATED, then combined. Every collapse of these into a boolean produced a
+  // message naming one of several simultaneous causes — twice, in consecutive
+  // review rounds.
+  calibration.causes = calibrationCauses({
     obtainedResponse: calibration.obtainedResponse,
     failed: calibration.failed,
     prefillMs: calibration.prefillMs,
     challengeTtlMs: config.challengeTtlSeconds * 1000,
   });
-  calibration.cleared = calibration.validityFailures.length === 0 && calibration.barCleared;
+  calibration.cleared = calibration.validityFailures.length === 0 && calibration.causes.length === 0;
   process.stderr.write(calibration.prefillMs === null
     ? '  no first token measured — calibration did not answer\n'
     : `  first token at ${Math.round(calibration.prefillMs / 1000)}s\n`);
@@ -209,7 +211,7 @@ async function main(argv) {
       // prefill fell short even when it cleared the bar and a precondition was
       // what actually failed.
       calibrationFailures: calibration.validityFailures,
-      barCleared: calibration.barCleared,
+      causes: calibration.causes,
     }));
   }
 

@@ -131,10 +131,13 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   episode died in ~1s at `--max-tokens 2048` against a 3,912 floor, and it recorded a verdict about
   the server anyway. That file was deleted 2026-08-04. **Done when a record exists with
   `protocol.canonical: true`, a stamp later than the commit that landed the instrument, and an
-  `outcome.verdict` of **`deterministic-form-refuted` or `inconclusive-failure`** — the two the code
-  exports as `CONCLUSIVE` — and the handover records the exact result path
+  accepted `outcome.verdict`** — and the handover records the exact result path
   and the instrument's commit SHA**, since a timestamp alone does not attest which revision produced
-  it. *(An earlier draft of this condition said "any verdict other than `instrument-failed`", which
+  it.
+  Accepted verdicts: `deterministic-form-refuted`, `inconclusive-failure`. *(That line is parsed by
+  `tests/ttl-vocabulary.test.js` and compared set-wise against the `CONCLUSIVE` list the driver's exit
+  code imports, so this paragraph cannot drift from the code. An earlier draft said "any verdict other
+  than `instrument-failed`", which
   quietly re-admitted `no-exposure` and `contradictory-evidence` — both of which ask to be re-run in
   their own text. Naming the two acceptable verdicts is the fix, and the driver now exits non-zero for
   everything else, so the exit code and this paragraph read one rule.)* `protocol.canonical` is false whenever any experimental parameter was overridden, which is what

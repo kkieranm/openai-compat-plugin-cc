@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { calibrationCauses, calibrationCleared } from '../bench/lib/ttl-calibration.mjs';
 import {
-  EPISODE_VERDICTS, EXPOSURE_MARGIN, calibrationCleared, episodeVerdict, summarize, validityChecks,
+  EPISODE_VERDICTS, EXPOSURE_MARGIN, episodeVerdict, summarize, validityChecks,
 } from '../bench/lib/ttl-verdict.mjs';
 
 // OAI-34. The decision rule, tested rather than trusted — it is declared in code
@@ -90,20 +91,20 @@ test('a voided calibration says WHICH precondition failed, not that the prefill 
   // not establish a prefill clearing the shortened TTL", and pointed the operator
   // at the one knob that was already fine.
   const { verdict, says } = summarize([], {
-    calibrationCleared: false, calibrationFailures: ['sole-tenancy'], barCleared: true,
+    calibrationCleared: false, calibrationFailures: ['sole-tenancy'], causes: [],
   });
   assert.equal(verdict, 'instrument-failed');
   assert.match(says, /sole-tenancy/);
   assert.doesNotMatch(says, /prefill did not clear/);
   assert.doesNotMatch(says, /lower the TTL or pick a longer case/i);
   // The prefill message still prints when the prefill IS what fell short...
-  const barOnly = summarize([], { calibrationCleared: false, calibrationFailures: [], barCleared: false }).says;
+  const barOnly = summarize([], { calibrationCleared: false, calibrationFailures: [], causes: ['prefill-short'] }).says;
   assert.match(barOnly, /prefill did not clear/);
   assert.doesNotMatch(barOnly, /conditions this experiment requires/);
   // ...and BOTH print when both failed. Naming only one would have the operator
   // fix it, spend another 45 minutes, and meet the other.
   const both = summarize([], {
-    calibrationCleared: false, calibrationFailures: ['ttl-confirmed'], barCleared: false,
+    calibrationCleared: false, calibrationFailures: ['ttl-confirmed'], causes: ['prefill-short'],
   }).says;
   assert.match(both, /ttl-confirmed/);
   assert.match(both, /prefill did not clear/);
@@ -150,6 +151,21 @@ test('the validity checks name what failed, not merely that something did', () =
   );
 });
 
+test('a calibration that cleared the bar and THEN failed is not told its prefill was short', () => {
+  // The same false-sentence class as the precondition/prefill conflation, arriving
+  // through the other input: `calibrationCleared` is false when the request failed
+  // even if the prefill exceeded the bar, so a boolean would have printed "lower
+  // the TTL" for a run whose TTL was fine.
+  const causes = calibrationCauses({
+    obtainedResponse: true, failed: true, prefillMs: 300_000, challengeTtlMs: ttlMs,
+  });
+  assert.deepEqual(causes, ['request-failed']);
+  const { says } = summarize([], { calibrationCleared: false, causes });
+  assert.match(says, /the request failed/);
+  assert.doesNotMatch(says, /prefill did not clear/);
+  assert.doesNotMatch(says, /lower the TTL/i);
+});
+
 test('calibration clears only on a MEASURED prefill from a request that answered', () => {
   const base = { obtainedResponse: true, failed: false, challengeTtlMs: ttlMs };
   assert.equal(calibrationCleared({ ...base, prefillMs: past }), true);
@@ -167,7 +183,7 @@ test('a failed calibration outranks the empty episode list it produces', () => {
   // so an empty-list check placed above the calibration branch would swallow the
   // one state that must be reported — and the draft threw the record away
   // entirely, leaving the disqualification on stderr only.
-  const { verdict, says } = summarize([], { calibrationCleared: false, barCleared: false });
+  const { verdict, says } = summarize([], { calibrationCleared: false, causes: ['prefill-short'] });
   assert.equal(verdict, 'instrument-failed');
   assert.match(says, /calibration cannot license this sweep/i);
   assert.doesNotMatch(says, /No episodes ran/);
