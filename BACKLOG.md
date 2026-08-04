@@ -145,6 +145,14 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   their own text. Naming the two acceptable verdicts is the fix, and the driver now exits non-zero for
   everything else, so the exit code and this paragraph read one rule.)* `protocol.canonical` is false whenever any experimental parameter was overridden, which is what
   keeps a harness run from ever being mistaken for the experiment.
+  **The last review batch is UNREVIEWED, stated rather than left to be assumed.** The ladder ran
+  advisor → `--wide` (5 finders, 6 verifiers, 0 unadjudicated, 5 findings) → two Codex adversarial
+  rounds, and **every batch introduced the next defect** — four rounds running, which is this module's
+  established shape and the reason its causes are now enumerated rather than collapsed into booleans.
+  The final commit fixes the terminal pass's two findings and was not itself reviewed. Nothing in it
+  is load-bearing for the run (one entailed cause removed from a diagnostic list, one prose claim
+  softened to what its guard actually pins), but a session picking this up should review it before
+  trusting the calibration diagnostics.
   **Known gap, stated rather than discovered later:** the withdrawn draft carried ten open pass-2
   findings and only eight are recoverable — seven were enumerated in this file and the eighth was the
   `serverResponded` blocker OAI-35 fixed. **Two were never written down anywhere.** The end-to-end
