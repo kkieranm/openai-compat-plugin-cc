@@ -307,9 +307,18 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   `contextChecked: true`, so G-L demoted nothing. Set beside the dense model's July caps (`scaffold`
   30,683, `model-info` 47,724) this is the OAI-49 budget gap measured from the other side.
 
-  **Invocation 2 — arm 1 re-run, MoE, full corpus, N=3.** G-G permits exactly one, and it is final;
-  it is a fresh arm, not a patch of invocation 1. Launched back-to-back after the first, which is
-  recorded because sustained load remains an unresolved factor in the drop mechanism.
+  **Invocation 2 — arm 1 re-run, MoE, full corpus, N=3. ABORTED after ~5 minutes, deliberately.**
+  Not a gate failure and not a result: the run was killed once the server log identified the cause of
+  the failures it was about to re-measure. It had already produced one crash during `caps`. Reported
+  here because G-G requires every invocation to be reported, aborted ones included.
+
+  **The measurement is SUSPENDED, and the reason is OAI-51: the drops are our own bug.** The whole
+  OAI-19/OAI-20/OAI-24/OAI-34 line of investigation inferred server behaviour from the client side
+  while LM Studio was writing a server log the entire time. It names the cause outright, and the
+  cause is this plugin's own review schema — see OAI-51. Resuming this measurement before that is
+  fixed would produce a baseline contaminated by a defect we can remove, so **no further arm runs
+  until OAI-51 is resolved.** The gate above stands unchanged and is not re-opened by this: nothing
+  in it was wrong, it simply gated a run whose premise has moved.
 
   **Attempted 2026-07-30 — blocked on OAI-20, and the attempt is the evidence behind it.** Both arms
   ran twice (a predeclared one-retry-per-arm rule, every invocation reported); neither ever passed
@@ -801,3 +810,44 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   handles the benchmark. The open question is the product one: should `/oai:review` refuse, warn
   louder, or retry the probe, rather than quietly reviewing under a budget nobody chose? The size
   guard is disarmed on exactly that path, which is when an oversized request goes out unrefused.
+
+- **OAI-51** — **The review schema crashes the model backend. This is the cause of the "server
+  drops", and it is ours, not LM Studio's.** Filed 2026-08-04, from the LM Studio server log — which
+  has existed at `~/.lmstudio/server-logs/` throughout, was never read, and names the failure
+  outright. **This supersedes the framing of OAI-20, OAI-24 and OAI-34**, all three of which
+  characterised these failures from the client side as properties of an unreliable server.
+  The mechanism, quoted from the log rather than inferred:
+  `ValueError: LLGuidance matcher error: lexer error: too many states: 250000 >= 250000`, with
+  `Stop: LexerTooComplex`, raised inside the grammar LLGuidance builds from the `response_format`
+  JSON schema this repo sends (ADR 003). It propagates as a *fatal exception in the backend
+  generation thread*, and the model process then dies with `Fatal Python error: Segmentation fault`
+  → `The model has crashed`. LM Studio reloads it about 12 seconds later, **which is exactly why
+  retry sometimes works** — the retry meets a freshly loaded model.
+  It fires at **~14k constrained tokens**: five instances on 2026-08-04 at 13,956–14,744 tokens and
+  43,389–50,497 bytes, tightly clustered and independent of whether `maxLength` was 65,499 or 74,000.
+  So the trigger is **how long the model generates inside the grammar**, not the cap itself. This
+  repo already wrote the number down and could not explain it — CLAUDE.md's footgun says "a stream
+  drop **~50k chars** into reasoning".
+  **The 2026-07-30 session that produced the 27/72 figure has the same signature**: 53
+  `LexerTooComplex` events and 8 crashes, against zero on 07-28 (81 completions) and zero on 07-29
+  (28 completions). And `empty-completion` and `stream-unfinished` are not two failure modes but
+  **one event observed on either side of first token**, which is why OAI-20's split on "was a prefill
+  measured" partitioned them 13/4 exactly.
+  **Why local coding never sees it, which is the observation that prompted the search:** `/oai:task`
+  sends no `response_format`, so no grammar is built and no lexer state accumulates. Only
+  `/oai:review`'s structured output does. The failure is not a property of these models or of this
+  server; it is a property of asking for long-form generation inside a constrained grammar.
+  Options, and this is a design decision rather than a fix: **(a)** take `analysis` out of the schema
+  entirely and let the model reason unconstrained, parsing only `findings` — the reasoning is already
+  arriving in `reasoning_content` under a grammar that stops the model closing its think block, which
+  is the same problem seen from the other end; **(b)** cap `analysis` far below the ~14k-token
+  threshold, which reintroduces the censorship OAI-15 was raised to remove and makes ADR 008's
+  sizing argument moot; **(c)** drop the schema for large targets and use ADR 003's prompt-and-parse
+  fallback, which touches no grammar at all. **(a) and (c) are the ones that address the mechanism**;
+  (b) trades one known defect for another.
+  **Note against OAI-15 and ADR 008:** raising the reply ceiling *permits* longer constrained
+  generation, so it moves runs toward this threshold rather than away from it. Whether OAI-15 caused
+  the crashes is NOT established here — the derived cap landed 2026-07-28 (`b66a3d5`) and 07-28/07-29
+  are clean, so a corpus-size or backend difference is unexcluded — and it must not be asserted
+  without checking. What is established is the mechanism, its threshold, and its presence in the
+  sessions whose numbers this backlog quotes.
