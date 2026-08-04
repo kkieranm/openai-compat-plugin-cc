@@ -167,6 +167,104 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   how large the distortion would be if the flag were omitted.)
   Done when both arms are recorded with their bands, the pre-OAI-15 figure is struck through in this
   file, and the comparable one replaces it as the number OAI-9 and OAI-11 are scored against.
+
+  ### Acceptance gate, predeclared 2026-08-04 and committed before the first arm
+
+  The 2026-07-30 attempt is publishable *as a failure* only because its gate was written down before
+  it ran. This one is written down for the same reason, and it is deliberately not the July gate:
+  that one required zero failed runs across 18, which — at the measured ~37.5% per-attempt drop and
+  a 3-attempt retry — an arm clears only about a third of the time **even when retry is working
+  exactly as designed**. A gate that is likely to fail on a healthy instrument is not strictness, it
+  is the July error in a new place. Grilled adversarially with Codex over two rounds; every
+  criterion below that survived is one of us failing to break it.
+
+  **The estimand, named before the number exists.** The published figure is recall of the
+  **retry-enabled CLI** over the fixed 11-defect corpus, with unresolved opportunities reported as a
+  band. It is *not* the model's one-request behaviour: `--max-attempts 3` is part of the instrument,
+  and because a drop may correlate with reply length, a successful retry is not guaranteed to be an
+  unbiased sample of what a single request would have produced. The ledger *describes* retry; it
+  does not prove independence.
+
+  Per arm, each arm judged independently:
+
+  - **G-A — zero substituted runs.** Any substitution voids the arm; a mislabelled number is not an
+    uncertain one, and no amount of sampling fixes a wrong label. **Stated limit, not gated:**
+    substitution is checked at *run* level only. `applyFrame` records a served model id as frames
+    arrive (`completion.mjs:65`), but a stream that dies unterminated throws `stream-unfinished`
+    (`completion.mjs:98`), the ledger entry keeps no served identity (`attempt-ledger.mjs:56`), and
+    `answerWithRetry` retries it — so a superseded attempt that observed a *different* model leaves
+    no record. It is not checkable today. It is also not reachable here for the ordinary cause:
+    substitution happens when the requested id is absent, and both ids are served by this machine.
+    Instrumenting it is **OAI-48**.
+  - **G-B — replication floor: every case, all six, contributes ≥2 scored runs of 3.** No case may be
+    dropped from the headline. An earlier draft let cases fall out with the exclusion merely
+    *named*; Codex killed it, correctly — `scaffold` and `structured` could both drop while the arm
+    "passed", leaving a headline over 5 of 11 defects. Naming an exclusion does not repair the
+    estimand, it documents that a different benchmark was measured. `docs-only` is gated too, despite
+    holding no defects: it is the only negative control, so without it there is no false-positive
+    evidence at all.
+  - **G-C — unresolved-from-unscored ≤3 of 33.** Every unscored run (failed, truncated, unreadable)
+    contributes its case's scoreable defects as **unresolved** — lower bound 0 found, upper bound all
+    found — exactly as a cut run does, rather than shrinking the denominator. The corpus offers 33
+    defect-run opportunities (11 × 3). The ceiling is chosen as the largest value that keeps
+    missing-run uncertainty well below the cut-derived uncertainty already expected, so a missing run
+    is never the dominant term.
+  - **G-D — cut runs are not gated.** OAI-15 decided a cut run is scored with its silence reported as
+    a band; capping the cut-derived band would re-litigate that by the back door, and is unachievable
+    by construction for the dense arm (July: `scaffold` cut 2–3 of 3, `model-info` 1 of 3 → ≥8 of 33
+    from cuts alone). The two bands are gated separately. **The *published* interval sums both** —
+    only the thresholds stay apart, or the reported bound would undercover.
+  - **G-E — ledger completeness.** A missing or self-inconsistent `attempts[]` on any run invalidates
+    the invocation.
+  - **G-F — sole tenancy and artifact identity.** Nothing else connected; `lms ps` recorded before
+    *and* after each arm; harness SHA and tree-clean state, corpus state, LM Studio version and both
+    model ids recorded by hand (OAI-47 is not landed). **Stated limit:** pre/post residency does not
+    witness a reload *during* an arm.
+  - **G-L — instrument uniformity: every scored run must carry `contextChecked: true`.** Found while
+    writing this gate, in the July records: **every** off-pattern `analysisCap` there is exactly a
+    run whose window probe failed and whose reply budget silently fell back to 44,405 instead of the
+    window-derived figure — `config-origin` dense scored 44,405 beside 74,000, `caps` MoE 44,405
+    beside 74,000, `scaffold` MoE 44,405 beside 65,499 — and those runs cluster immediately after a
+    failed run. The fallback is not uniformly smaller (dense `scaffold` derives 30,683, below it), so
+    it is not a conservative default; it is **a different instrument**, and July scored it as if it
+    were the same one. Such a run is not scored and counts as unscored under G-C.
+
+  **G-G — the stopping rule is mechanical, because otherwise it is optional stopping.** The *first*
+  invocation of an arm satisfying G-A…G-L is the published arm **automatically, whatever recall it
+  shows**. A second invocation happens if and only if the first fails the gate; the second is final,
+  and if it fails too the arm is published as a failure, as 2026-07-30 was. No passing invocation is
+  ever re-run, and no arm is a merge of two. Every invocation is reported — including the
+  2026-08-04 smoke run (`--case docs-only --runs 1`, MoE, record `2026-08-04T19-53-16-806Z`) and any
+  aborted one.
+
+  **G-M — utility is separate from validity.** A valid arm whose full band (cut + unscored) leaves
+  more than **11 of 33** opportunities unresolved is a *valid bounded observation* and a **failed
+  baseline objective**: it is reported, it does **not** trigger another invocation, and it licenses
+  no downstream A/B. Above a third unresolved, even the majority reading of the corpus is unresolved.
+  This threshold sits only just above July's worst dense pattern, which is the honest position —
+  this arm may well pass validity and fail utility, and that outcome is itself the finding that the
+  OAI-15 ceiling must rise before a scalar baseline exists.
+
+  **The cross-arm comparison is between DEPLOYED SYSTEMS, and the clean decomposition is reported as
+  NOT OBTAINED.** This is the second thing Codex found and it is larger than the `structured`
+  confound already on file. The reply budget is derived from each model's served window, so the arms
+  do not run the same instrument on the same case — measured 2026-07-30, `model-info` capped at
+  **47,724 dense against 74,000 MoE**, `scaffold` at **30,683 against 65,499**, while `structured`
+  differs in *input* rung as well (dense `hunksOnly: true`, MoE `false`). **No case in this corpus is
+  a clean model-only comparison**, so predeclaring a "common support" of 8 defects would have been
+  false precision. What is published is "the shipped `/oai:review` with model A versus with model B,
+  each as deployed, including its window-derived reply budget". The model-versus-scoring-rule
+  decomposition this item originally wanted is **reported as not obtained**; a matched-budget arm is
+  **OAI-49**. Per-run `analysisCap`, `hunksOnly` and `estimatedTokens` are transcribed for every case
+  in both arms so the mismatch is data rather than prose. If one arm passes and the other fails, the
+  passing arm's **absolute** figure stands alone; no comparison is published.
+
+  **The control arm is a weak diagnostic and is labelled one.** `--max-attempts 1`, `scaffold`,
+  both models, `--runs 3`, run *after* both main arms. At most 3 failure observations per model,
+  temporally confounded by running last, and one case wide. It **cannot** establish retry's value or
+  its independence; the primary retry evidence is the main arms' `attempts[]` ledger. It carries no
+  gate — it is reported whatever it shows, and nothing from it may be quoted as a rate.
+
   **Attempted 2026-07-30 — blocked on OAI-20, and the attempt is the evidence behind it.** Both arms
   ran twice (a predeclared one-retry-per-arm rule, every invocation reported); neither ever passed
   its acceptance gate (every case `scored=3`, no failed/truncated/unreadable/substituted runs), so
@@ -611,3 +709,49 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   **(c)** move the done-condition out of prose entirely into a small machine-readable block the tracker
   renders from. **(c) is the only one that actually closes it**, and it is a change to how this repo
   writes backlog items, not to one item — which is why this is a decision and not a fix.
+
+- **OAI-48** — The attempt ledger records no *served* model identity, so a substituted attempt that
+  was later superseded leaves no trace. **Filed 2026-08-04 from OAI-19's gate grill, where Codex
+  broke a construction argument I had written to declare the hole unreachable.** The argument was:
+  substitution means the server *answered*, an answered attempt ends the run, therefore no retry can
+  wash it away. It is wrong on one path. `applyFrame` sets `answer.model` from each streamed frame
+  (`completion.mjs:65`), so a served identity can be observed *before* the reply is usable; a stream
+  that ends unterminated then throws `stream-unfinished` (`completion.mjs:98`), which
+  `answerWithRetry` retries (`answer-attempts.mjs:111`); the ledger entry keeps timings and outcome
+  but no served id (`attempt-ledger.mjs:56`); and only the final report reaches the run-level
+  substitution check (`bench/lib/outcome.mjs:84`). `empty-completion` and `blank-completion` have the
+  same shape. So a wrong-model partial answer followed by a right-model retry is recorded as clean.
+  Fix: carry `requestedModel`, the observed served id, and an explicit **"identity not observed"**
+  state on every attempt entry — the third is load-bearing, since a pre-response failure genuinely
+  has no id and must not read as agreement. Not gated in OAI-19's run: the ordinary cause of
+  substitution is requesting an id the server does not have, and both arms' ids are served here — so
+  the run states the limit rather than pretending to check it.
+
+- **OAI-49** — A matched-budget arm, so a cross-model comparison measures the model rather than the
+  model plus its window. **Filed 2026-08-04 from OAI-19's gate grill; it is the reason that run
+  publishes a deployed-systems comparison and reports the clean decomposition as NOT OBTAINED.** The
+  reply budget is derived from each model's served window, so the two arms do not run the same
+  instrument on the same case: measured 2026-07-30, `model-info` capped at 47,724 for the dense model
+  against 74,000 for the MoE, and `scaffold` at 30,683 against 65,499 — the dense model reasoning
+  under less than half the space on the corpus's largest case. `structured` differs in *input* rung
+  on top of that. No case in the corpus is currently a clean model-only comparison, which is a
+  stronger statement than the `structured` confound already on file and was not previously noticed.
+  Options: pin an explicit `contextLength` for both profiles so the derived reserve matches; or add a
+  `--reserve`/`--analysis-cap` override to the review command and run a matched arm beside the
+  deployed one. The second is more honest — it leaves the shipped behaviour alone and makes the
+  matched arm a separate, labelled instrument — but it is a new flag on a command whose surface this
+  repo guards deliberately, so it is a decision rather than a fix.
+
+- **OAI-50** — Decide whether a run whose context probe failed should be scored at all. **Filed
+  2026-08-04 from OAI-19's gate work, where the July records answered the question by accident.**
+  When `model-info.mjs` cannot detect a served window, the run proceeds with `contextChecked: false`
+  and the reply budget falls back to a fixed 44,405. Every off-pattern `analysisCap` in the
+  2026-07-30 arms is exactly such a run — `config-origin` dense at 44,405 beside 74,000, `caps` MoE
+  at 44,405 beside 74,000, `scaffold` MoE at 44,405 beside 65,499 — and they cluster immediately
+  after a failed run, which suggests the probe fails in whatever server state a drop leaves behind.
+  Those runs were **scored in July as if they were the same instrument as their siblings**, and the
+  fallback is not uniformly conservative: dense `scaffold` derives 30,683, *below* the fallback, so a
+  probe failure there *raises* the ceiling. OAI-19's gate (G-L) excludes them from scoring, which
+  handles the benchmark. The open question is the product one: should `/oai:review` refuse, warn
+  louder, or retry the probe, rather than quietly reviewing under a budget nobody chose? The size
+  guard is disarmed on exactly that path, which is when an oversized request goes out unrefused.
