@@ -147,6 +147,11 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   **To run it:** `node bench/ttl-challenge.mjs` from the repo root, ~45 minutes, with LM Studio
   serving, `lms ps` reporting nothing resident, and nothing else connected. No flags — every flag
   makes the run non-canonical.
+  **The stash is gone, deliberately.** The withdrawn 876-line draft used to live in `stash@{0}` and
+  the old text here said to `git stash pop` it. That became a **trap** the moment the rebuilt modules
+  landed: popping would have dumped the superseded draft over `bench/lib/ttl-verdict.mjs` and
+  `bench/ttl-challenge.mjs`. It was dropped after the build. **The archive is commit `873dc05`** —
+  `git show 873dc05^3` while it survives gc — and it is superseded, not lost.
 
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
