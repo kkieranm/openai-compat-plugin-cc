@@ -16,15 +16,19 @@ import { EXPOSURE_MARGIN } from './ttl-verdict.mjs';
 /**
  * WHY the calibration did not clear, as a list.
  *
- * The failure modes are INDEPENDENT and are reported as such. A calibration
- * whose prefill comfortably cleared the bar and then died would otherwise be
- * told "the prefill did not clear the shortened TTL, lower the TTL" — false, and
- * another 45 minutes spent on the wrong knob.
+ * INDEPENDENT failure modes are reported together; entailed ones are not. A
+ * calibration whose prefill comfortably cleared the bar and then died would
+ * otherwise be told "the prefill did not clear the shortened TTL, lower the TTL"
+ * — false, and another 45 minutes spent on the wrong knob. Conversely no response
+ * entails no prefill, so listing both would invent a second fault to chase.
  */
 export function calibrationCauses({ obtainedResponse, failed, prefillMs, challengeTtlMs }) {
+  // No response ENTAILS no prefill, so reporting both is noise that sends the
+  // operator looking for a second, independent fault. Only genuinely independent
+  // causes are listed — which is the whole point of listing them.
+  if (!obtainedResponse) return ['no-response'];
   const causes = [];
-  if (!obtainedResponse) causes.push('no-response');
-  else if (failed) causes.push('request-failed');
+  if (failed) causes.push('request-failed');
   if (typeof prefillMs !== 'number') causes.push('no-prefill-measured');
   else if (!(prefillMs > challengeTtlMs * EXPOSURE_MARGIN)) causes.push('prefill-short');
   return causes;
@@ -44,7 +48,10 @@ export function calibrationCleared(input) {
 
 /** What each cause means, and what the operator should do about that ONE cause. */
 const CAUSE_TEXT = {
-  'no-response': ['no response was obtained from the server', 'check the server is up'],
+  // NOT "check the server is up": `obtainedResponse` is false for a client-side
+  // refusal and a malformed reply too, so naming one candidate cause would send
+  // the operator to the wrong component for another 45 minutes.
+  'no-response': ['no HTTP response was obtained', 'see the attempt record for how far the request got'],
   'request-failed': ['the request failed', 'see the attempt record for why'],
   'no-prefill-measured': ['no first token was ever measured', 'see the attempt record for why'],
   'prefill-short': ['its prefill did not clear the shortened TTL by the exposure margin',

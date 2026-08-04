@@ -136,7 +136,10 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   it.
   Accepted verdicts: `deterministic-form-refuted`, `inconclusive-failure`. *(That line is parsed by
   `tests/ttl-vocabulary.test.js` and compared set-wise against the `CONCLUSIVE` list the driver's exit
-  code imports, so this paragraph cannot drift from the code. An earlier draft said "any verdict other
+  code imports. **That pins THIS line and nothing else** — a contradictory acceptance clause added
+  elsewhere in the entry would not be caught, which a terminal review round demonstrated by adding one
+  and watching the suite stay green. So the guard is a tripwire on the canonical line, not a proof the
+  paragraph as a whole agrees with the code. An earlier draft said "any verdict other
   than `instrument-failed`", which
   quietly re-admitted `no-exposure` and `contradictory-evidence` — both of which ask to be re-run in
   their own text. Naming the two acceptable verdicts is the fix, and the driver now exits non-zero for
