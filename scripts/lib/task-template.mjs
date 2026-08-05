@@ -71,12 +71,83 @@ const UNKNOWN_TEMPLATE_DISCIPLINE =
   'framing was applied or show that template\'s caveats. Treat it as unverified output from a small local ' +
   'model and check it against the code before anyone acts on it.';
 
+/**
+ * Diagnosis, which is the advisor's mirror image: the advisor judges a plan
+ * before it is carried out, this explains a failure after one already happened.
+ *
+ * Kept apart from the advisor rather than folded in as a lens, because the two
+ * differ in the thing a lens does not change — what the caller must supply. An
+ * advisor request carries a plan; this one carries an observed failure, and a
+ * template that accepted either would have no fixed question left, which is the
+ * whole point of being a template.
+ */
+const DIAGNOSE_SYSTEM =
+  'You are debugging a failure someone has already observed. They will give you the failure — an error, ' +
+  'a stack trace, a wrong output — and the files involved. ' +
+  'Answer in exactly three sections, with these headings and nothing before them: ' +
+  'MOST LIKELY CAUSE, OTHER CANDIDATES, WHAT WOULD DISTINGUISH THEM. ' +
+  'Rank the candidates and say what evidence separates them, because the caller can run things and you ' +
+  'cannot. Point at specific lines in the files you were given. ' +
+  'Never invent file contents, log lines or error text you were not shown. ' +
+  'If the failure could not have come from the code you were given, say that plainly — it is a useful ' +
+  'answer and a guess is not. No fixes unless the cause is certain, and no restating the error back.';
+
+const DIAGNOSE_DISCIPLINE =
+  'This is an unverified diagnosis from a small local model, and it saw only the files that were ' +
+  'attached. The ranking is a suggestion about what to check first, not a finding — run the ' +
+  'distinguishing evidence before anyone acts on it.';
+
+/**
+ * Patch synthesis, and the one template whose output has an OBJECTIVE oracle.
+ *
+ * Every other template here is judged by whether a reader finds it useful, which
+ * is why the benchmark scores declared markers and says plainly what that is
+ * worth. A patch is different: it applies or it does not, and `git apply --check`
+ * settles it without reading a word. The plan named exactly this — "validated
+ * with `git apply --check` — no schema needed" — and it is the reason this
+ * template asks for a diff rather than prose describing a change.
+ *
+ * The prohibition on prose is load-bearing, not stylistic: anything outside the
+ * diff makes the reply unappliable, so the shape request and the oracle are the
+ * same requirement stated twice.
+ */
+const PATCH_SYSTEM =
+  'You are writing a patch. You will be given files and a change to make. ' +
+  'Reply with a unified diff and NOTHING else — no explanation, no preamble, no code fences, no summary. ' +
+  'Start at the first "--- a/" line. Use paths exactly as they were given to you. ' +
+  'Include at least three lines of context around every change so the diff applies cleanly. ' +
+  'Change only what was asked. Never invent file contents you were not shown. ' +
+  'If the change cannot be made from the files you were given, reply with the single word IMPOSSIBLE ' +
+  'and one sentence saying what is missing — an unappliable guess is worse than nothing.';
+
+const PATCH_DISCIPLINE =
+  'This is an unverified patch from a small local model. Whether it APPLIES is checked and reported ' +
+  'above; whether it is CORRECT is not, and applying cleanly is no evidence that it does the right ' +
+  'thing. Read it before anyone commits it.';
+
 export const TEMPLATES = {
   advisor: {
     name: 'advisor',
     system: ADVISOR_SYSTEM,
     discipline: ADVISOR_DISCIPLINE,
     softCeilingTokens: ADVISOR_CEILING_TOKENS,
+  },
+  diagnose: {
+    name: 'diagnose',
+    system: DIAGNOSE_SYSTEM,
+    discipline: DIAGNOSE_DISCIPLINE,
+    softCeilingTokens: ADVISOR_CEILING_TOKENS,
+  },
+  patch: {
+    name: 'patch',
+    system: PATCH_SYSTEM,
+    discipline: PATCH_DISCIPLINE,
+    softCeilingTokens: ADVISOR_CEILING_TOKENS,
+    // The only template with a machine-checkable artifact, which is why it is
+    // the only one carrying an extractor. Named here rather than branched on
+    // elsewhere, so a future template with its own oracle adds a field instead
+    // of a special case.
+    artifact: 'diff',
   },
 };
 
@@ -169,4 +240,15 @@ export function templateNotes({ name, estimatedTokens } = {}) {
 
   notes.push(template.discipline);
   return notes;
+}
+
+/**
+ * Whether this template's answer carries something a machine can check.
+ *
+ * A field on the template rather than a branch at the call site, so a later
+ * template with its own oracle adds data instead of a special case.
+ */
+export function artifactKind(name) {
+  if (!name || !Object.hasOwn(TEMPLATES, name)) return null;
+  return TEMPLATES[name].artifact ?? null;
 }

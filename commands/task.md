@@ -34,14 +34,22 @@ Building the call:
   changes how the model is framed for the whole request.
 - `--template <name>` runs a named task template, which fixes the question, the reply shape and the
   caveats printed with the answer, so a recurring kind of request stops being a prompt someone
-  rewrites each time. One exists: **`advisor`** — a second opinion on an approach you are about to
+  rewrites each time. Three exist. **`advisor`** — a second opinion on an approach you are about to
   take. Describe the plan as the request text and attach the files it touches; the model answers in
   three sections (strongest objection, assumed without evidence, what it would check first) and the
   output carries a line saying the claims are unverified. It judges the **approach**, not the code —
   for a defect hunt over a diff use `/oai:review`. A template supplies its own system prompt, so
   `--template` and `--system` cannot be used together and the script says so rather than picking one.
-  Keep the attachment set small: a large request gets an answer with a note saying it may have
-  crowded out the reasoning.
+  **`diagnose`** — the mirror image, for a failure that already happened: give it the error or wrong
+  output plus the files involved, and it answers with the most likely cause, other candidates, and
+  what evidence would distinguish them. It ranks rather than concludes, because you can run things
+  and it cannot.
+  **`patch`** — a unified diff and nothing else. This is the one template whose answer is checked
+  rather than merely captioned: the diff is extracted and run through `git apply --check`, and the
+  output says `applies`, `does NOT apply` with the reason, or `no diff found`. Applying cleanly is
+  **not** evidence the patch is right, and the note says so. Nothing is ever applied for you.
+  Keep the attachment set small whichever you use: a large request gets an answer with a note saying
+  it may have crowded out the reasoning.
 - If the request text itself needs to mention one of this command's own flags (as in "explain the
   `--file` flag"), either put it after a bare `--` separator or use `--prompt-file`. The script
   reports such a flag rather than silently treating it as part of the request.

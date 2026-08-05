@@ -105,8 +105,10 @@ Making the call — four steps, in this order:
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
   root=$(canon "$root") || { echo "refusing: cannot resolve $root"; exit 1; }
 
-  # Set to `advisor` when the delegated work is a SECOND OPINION on an approach
-  # someone is about to take; leave empty for an analysis or a transformation.
+  # Which named template to run, or empty for a plain analysis:
+  #   advisor  — a second opinion on an approach someone is about to take
+  #   diagnose — a failure that already happened, ranked by likely cause
+  #   patch    — a unified diff, checked with `git apply --check`
   # See the template note below the recipe.
   template=''
 
@@ -122,6 +124,8 @@ Making the call — four steps, in this order:
   case "$template" in
     '') ;;
     advisor) set -- --template advisor ;;
+    diagnose) set -- --template diagnose ;;
+    patch) set -- --template patch ;;
     *) echo "refusing: unknown template $template"; exit 1 ;;
   esac
   # How many arguments the template contributed, so the attachment check below

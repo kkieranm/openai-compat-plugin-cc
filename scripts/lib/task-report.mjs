@@ -7,7 +7,23 @@
 // string-building, and this one writes to stdout and throws.
 import { requireAnswer } from './client.mjs';
 import { renderTaskFooter } from './render.mjs';
-import { templateNotes } from './task-template.mjs';
+import { artifactNote, checkDiff, extractDiff, saveArtifact } from './task-artifact.mjs';
+import { artifactKind, templateNotes } from './task-template.mjs';
+
+/**
+ * The machine-checkable verdict on this run's answer, or null.
+ *
+ * Only the `patch` template has one. `cwd` is the process's, deliberately: the
+ * question "does this apply" is only meaningful against a tree, and the tree the
+ * user ran the command in is the one they mean.
+ */
+function artifactVerdict(outcome, answer) {
+  if (artifactKind(outcome.template) !== 'diff') return null;
+  const diff = extractDiff(answer);
+  const verdict = checkDiff(diff, { cwd: process.cwd() });
+  if (diff && outcome.artifactPath) verdict.saved = saveArtifact(diff, outcome.artifactPath);
+  return verdict;
+}
 
 /**
  * One finished run as one object — the machine-readable half of this command.
@@ -50,6 +66,10 @@ function jsonTaskReport(outcome, answer) {
     content: answer,
     template: template ?? null,
     notes: templateNotes({ name: template, estimatedTokens }),
+    // The objective half, where there is one: `applies` | `rejected` | `absent`,
+    // never a boolean — "there was no diff" and "the diff was broken" are two
+    // different failures with two different fixes.
+    artifact: outcome.artifact ?? null,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
     estimatedTokens,
@@ -113,6 +133,9 @@ export function report(outcome, { json = false } = {}) {
   // — which is the reader least able to tell. The refusal is the one thing both
   // shapes must share, so it happens above the branch rather than inside one.
   const answer = requireAnswer(outcome.result, outcome.profile).trim();
+  // Checked BEFORE either rendering, so both carry the same verdict and neither
+  // can show a patch without saying whether it applies.
+  outcome.artifact = artifactVerdict(outcome, answer);
 
   if (json) {
     process.stdout.write(`${JSON.stringify(jsonTaskReport(outcome, answer), null, 2)}\n`);
@@ -121,6 +144,10 @@ export function report(outcome, { json = false } = {}) {
 
   process.stdout.write(answer);
   writeFooter(outcome);
+  // Above the template's own notes, because it is the more specific fact: the
+  // discipline line says the answer is unverified in general, this says exactly
+  // what was verified about it.
+  if (outcome.artifact) process.stdout.write(`\n${artifactNote(outcome.artifact)}\n`);
   // Same builder `cmd-result.mjs` calls for the same run collected later, and
   // the same seam `renderTaskFooter` already uses: one pure builder, and each
   // path does its own writing. Instance 16 in `.claude/REPO_TRAPS.md` is this

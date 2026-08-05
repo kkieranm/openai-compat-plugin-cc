@@ -203,3 +203,39 @@ what a timer can express" — a refusal whose stated reason is not the condition
 
 **Reversible by:** removing the two keys from `buildProfile`; `eta.mjs` then estimates nothing and the
 line disappears.
+
+### E8 — Three templates, not four: `review` was not built
+
+**Decided:** shipped `advisor`, `diagnose` and `patch`. The plan's fourth named template — "review" —
+was **not** built, and neither was "test drafting".
+
+**Would have asked:** "the plan lists four template kinds; do you want all four?"
+
+**Why not `review`:** `/oai:review` already exists with its own pinned question, its own findings
+shape, its own schema path and its own benchmark. A `--template review` on `/oai:task` would be a
+second, worse implementation of a command that already works, and the drift between two
+implementations of one question is precisely what OAI-83 existed to stop.
+
+**Why not test drafting:** it has no oracle. A drafted test that *passes* proves nothing (it may
+assert the wrong thing, which is this repo's most-repeated defect class), and one that fails is
+indistinguishable from a correct test on broken code. Until there is a way to say whether a drafted
+test is good, shipping the template would produce artifacts nobody could check — the opposite of what
+Stage 2's gate asks for. `patch` was built instead precisely because it *does* have an oracle.
+
+**Reversible by:** both are additive entries in `TEMPLATES` plus a case arm in the delegate recipe;
+neither is blocked by anything shipped.
+
+### E9 — `patch` is the only template with a machine-checkable artifact, and that shaped the design
+
+`git apply --check` settles whether a diff applies without reading a word, which is a categorically
+better oracle than the declared markers everything else is scored by. So the artifact machinery is
+deliberately small and specific rather than a general "artifact system": it is the one case where a
+machine can judge the answer.
+
+Three states, never a boolean — `applies` / `rejected` / `absent`. Collapsing the last two would let a
+template that emitted prose read as one that emitted a broken patch, which are different failures with
+different fixes. And the note refuses to let `applies` imply `correct`, because a clean application is
+no evidence the change is right — instance 14's shape exactly.
+
+**Nothing is ever applied.** `--check` only, verified live: the working tree was untouched after a run
+that produced an applying diff.
