@@ -6,41 +6,56 @@
 // or a server that is not there, still fails **in front of the user**, rather
 // than turning into a job that fails quietly minutes later.
 import { randomUUID } from 'node:crypto';
+import { authPolicyFor } from './job-auth.mjs';
 import { insertJob, markSpawned } from './job-record.mjs';
+import { persistRequest } from './job-request.mjs';
 import { spawnWorker } from './job-spawn.mjs';
 import { openStore } from './job-store.mjs';
 import { prepareTask } from './task-execute.mjs';
 
-/**
- * What the model will be sent, frozen at the moment of submission.
- *
- * `messages` is the whole point and is why the stage gate is met by
- * construction rather than by discipline: it already contains the full text of
- * every attached file, so the worker never reads the filesystem for input and
- * **no later edit can reach the model**. There is no code path by which it
- * could.
- */
-function persistRequest(prep) {
-  const { numeric, messages } = prep;
-  const request = { messages, maxMs: numeric.maxSeconds ? numeric.maxSeconds * 1000 : undefined };
-  // Absent, never null. `client.mjs` builds its body with `!== undefined`, so a
-  // field that round-trips through JSON as null would go on the wire where the
-  // foreground path omits it entirely — a different request wearing the same
-  // name.
-  for (const [key, value] of Object.entries({
-    temperature: numeric.temperature,
-    maxTokens: numeric.maxTokens,
-    maxAttempts: numeric.maxAttempts,
-    timeoutSeconds: numeric.timeoutSeconds,
-  })) {
-    if (value !== undefined) request[key] = value;
-  }
-  return request;
-}
+/** An hour, unless the caller says otherwise. */
+const DEFAULT_BACKGROUND_MAX_SECONDS = 3600;
 
-/** Digests beside the snapshot: which files, and whether they have since moved. */
+/** Digests beside the snapshot: which files, and how much of each was captured. */
 function digestsOf(files) {
   return files.map((file) => ({ path: file.path, bytes: Buffer.byteLength(file.content, 'utf8') }));
+}
+
+/**
+ * Said out loud, because the alternative is a claim this plugin cannot make.
+ *
+ * `normalizeBaseUrl` keeps a base URL's query string verbatim, and the job row
+ * stores it — so a `--base-url` carrying `?api_key=…` puts a real secret into
+ * persisted state. "The credential is never persisted" is true of the profile's
+ * key and false of this one. The row is `0600` and the directory `0700`, which
+ * limits who can read it but does not make the sentence true, so the user is
+ * told rather than reassured.
+ */
+function warnAboutQueryCredentials(profile) {
+  if (!profile.query) return;
+  process.stderr.write(
+    `Note: the base URL's query string (${profile.query}) is stored with this job so the worker can reach the same endpoint. ` +
+      'If it carries a key, that key is now on disk — readable only by you, but on disk.\n',
+  );
+}
+
+function buildJob(prep) {
+  return {
+    id: randomUUID().slice(0, 8),
+    kind: 'task',
+    workspace: process.cwd(),
+    // The EFFECTIVE endpoint, not an origin: an origin drops the `/v1` path, the
+    // query parameters and an explicit `--base-url`, so a worker rebuilding from
+    // the provider name alone would call somewhere submission never validated.
+    transport: { name: prep.profile.name, baseUrl: prep.profile.baseUrl, query: prep.profile.query ?? '' },
+    auth: authPolicyFor(prep.profile),
+    model: prep.model,
+    contextLength: prep.contextLength,
+    request: persistRequest(prep),
+    attachments: digestsOf(prep.files),
+    createdAt: new Date().toISOString(),
+    maxWaitMs: prep.numeric.maxWaitSeconds === undefined ? null : prep.numeric.maxWaitSeconds * 1000,
+  };
 }
 
 /**
@@ -48,27 +63,18 @@ function digestsOf(files) {
  * job.
  */
 export async function submitTask(args) {
-  const prep = await prepareTask(args);
+  // A background run has nobody watching it, so it gets a wall-clock cap whether
+  // or not one was asked for. An uncapped run that wedges holds the queue.
+  const options = { ...args.options };
+  if (options['max-seconds'] === undefined) options['max-seconds'] = String(DEFAULT_BACKGROUND_MAX_SECONDS);
+
+  const prep = await prepareTask({ ...args, options });
+  warnAboutQueryCredentials(prep.profile);
+
   const db = openStore();
-
-  const job = {
-    id: randomUUID().slice(0, 8),
-    kind: 'task',
-    workspace: process.cwd(),
-    transport: { name: prep.profile.name, baseUrl: prep.profile.baseUrl, query: prep.profile.query ?? '' },
-    // Phase 1 records the shape; phase 2 decides it properly, including the
-    // three-way origin check that keeps a credential from following a moved
-    // profile to an endpoint it was never authorised for.
-    auth: { mode: 'none' },
-    model: prep.model,
-    contextLength: prep.contextLength,
-    request: persistRequest(prep),
-    attachments: digestsOf(prep.files),
-    createdAt: new Date().toISOString(),
-    maxWaitMs: null,
-  };
-
+  const job = buildJob(prep);
   const seq = insertJob(db, job);
+
   const pid = await spawnWorker(seq);
   // Stamped only once the child is known to exist, because it is what bounds how
   // long a job may sit with no worker registered before it is treated as one

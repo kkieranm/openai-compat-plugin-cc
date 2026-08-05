@@ -1,6 +1,6 @@
 ---
 description: Delegate a self-contained task to a local model on an OpenAI-compatible server, instead of doing it yourself
-argument-hint: '[--background] [--provider <name>] [--model <id>] [--file <path>]... <what the model should do>'
+argument-hint: '[--background] [--max-wait <s>] [--provider <name>] [--model <id>] [--file <path>]... <what the model should do>'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read, Glob
 ---
@@ -43,6 +43,12 @@ Building the call:
   model for minutes; a local model's prefill alone can take several. Submission still fails *here*
   and now if the server is unreachable or the request will not fit the window, rather than turning
   into a job that fails quietly later.
+
+- `--max-wait <seconds>` caps how long a background job will sit **queued** waiting for its turn, as
+  opposed to how long its own run may take (`--max-seconds`). Two different clocks. A job that cannot
+  tolerate sitting behind a long-running one gives up cleanly without ever sending a request to the
+  model. The default is to wait indefinitely, so pass this when the answer stops being useful after
+  a while.
 
 Run:
 

@@ -62,6 +62,14 @@ export function parseNumericOptions(options) {
       options['max-seconds'] === undefined
         ? undefined
         : parseNumber(options['max-seconds'], 'max-seconds', { min: 1, max: MAX_BUDGET_SECONDS }),
+    // How long a queued job will wait for its turn, as distinct from how long
+    // its own run may take. Two different clocks: a job that cannot tolerate
+    // sitting behind a forty-minute run says so here, and gives up cleanly
+    // without ever sending a chat completion.
+    maxWaitSeconds:
+      options['max-wait'] === undefined
+        ? undefined
+        : parseNumber(options['max-wait'], 'max-wait', { min: 1, max: MAX_BUDGET_SECONDS }),
     // Answer attempts, not physical requests — the two differ, and deliberately.
     // A capability degrade already costs an extra request inside one answer
     // attempt, so capping physical requests at 1 would disable the degrade

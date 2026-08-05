@@ -15,7 +15,7 @@ import { submitTask } from './task-submit.mjs';
 export const TASK_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'max-attempts',
+    'max-attempts', 'max-wait',
   ],
   booleanFlags: ['background'],
   repeatableFlags: ['file'],
