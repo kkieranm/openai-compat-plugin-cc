@@ -33,3 +33,6 @@ Handling failures:
   command later is what gets the answer — do not resubmit the task.
 - A failed job's message and hint come from the run itself; the job's log file is named alongside
   them and holds whatever the worker printed.
+- An id that no longer resolves may simply have aged out: only the newest 50 finished jobs are kept.
+  Retrieve an answer you want to keep, or copy it somewhere, rather than treating the job list as
+  storage.

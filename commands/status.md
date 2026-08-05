@@ -52,3 +52,7 @@ Reading the states:
 Reading a job also collects any whose worker died, so a stuck queue often clears simply by running
 this. If it reports the database was written by a newer version of the plugin, nothing was collected
 — that is deliberate, and the newer plugin is the one that can do it safely.
+
+History is bounded: the newest 50 finished jobs are kept, and older ones are discarded along with
+their logs the next time a job is submitted. A job that has not finished is never discarded, however
+long it has been waiting, so nothing here loses work that is still going.

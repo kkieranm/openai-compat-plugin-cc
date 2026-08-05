@@ -9,6 +9,7 @@ import { UserError } from './errors.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { isTerminal, jobById } from './job-record.mjs';
 import { relativeAge } from './job-render.mjs';
+import { RETAIN } from './job-retention.mjs';
 import { logPathFor } from './job-store.mjs';
 import { openJobs, reconcileAll } from './job-view.mjs';
 import { renderTaskFooter } from './render.mjs';
@@ -83,7 +84,15 @@ export async function runResult(argv) {
   if (!readOnly) reconcileAll(db);
 
   const job = jobById(db, id);
-  if (!job) throw new UserError(`No job with id "${id}".`, { hint: 'Run /oai:status to list what there is.' });
+  // Retention is named here and nowhere else in the failure messages, because
+  // this is the command where it is felt: an id that printed an answer
+  // yesterday can stop resolving, and without the sentence that reads like the
+  // job was lost rather than aged out.
+  if (!job) {
+    throw new UserError(`No job with id "${id}".`, {
+      hint: `Run /oai:status --all to list what there is. Only the newest ${RETAIN} finished jobs are kept.`,
+    });
+  }
   if (job.state !== 'completed') refuse(job);
   writeAnswer(job);
 }

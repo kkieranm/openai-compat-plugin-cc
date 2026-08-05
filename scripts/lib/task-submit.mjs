@@ -9,8 +9,9 @@ import { randomUUID } from 'node:crypto';
 import { authPolicyFor } from './job-auth.mjs';
 import { insertJob, markSpawned } from './job-record.mjs';
 import { persistRequest } from './job-request.mjs';
+import { sweep } from './job-retention.mjs';
 import { spawnWorker } from './job-spawn.mjs';
-import { openStore } from './job-store.mjs';
+import { isBusy, openStore } from './job-store.mjs';
 import { prepareTask } from './task-execute.mjs';
 
 /** An hour, unless the caller says otherwise. */
@@ -59,6 +60,24 @@ function buildJob(prep) {
 }
 
 /**
+ * Housekeeping, and it must never cost the user the job they just submitted.
+ *
+ * A contended database is the failure expected here — another process holding
+ * the write lock past the busy timeout — and the right answer is to leave the
+ * sweep for the next submission, which is exactly as good since nothing depends
+ * on it having happened. Anything else is a defect in the sweep and is raised
+ * rather than swallowed: a blanket catch would turn a broken sweep into an
+ * unbounded table nobody ever hears about.
+ */
+function sweepQuietly(db) {
+  try {
+    sweep(db);
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+  }
+}
+
+/**
  * Submit, spawn, and report the id — the whole foreground half of a background
  * job.
  */
@@ -81,5 +100,10 @@ export async function submitTask(args) {
   // that never started. Stamping it before the spawn would start that clock
   // against a process that does not exist yet.
   markSpawned(db, seq, new Date().toISOString());
+  // Submission is the only place a row is ever created, so it is the only place
+  // the table grows and the only place worth sweeping. Putting it in the readers
+  // instead would make `/oai:status` delete history while someone was looking at
+  // it, for no gain.
+  sweepQuietly(db);
   return { id: job.id, seq, pid };
 }

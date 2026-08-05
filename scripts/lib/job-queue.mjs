@@ -12,6 +12,7 @@
 import { livenessOf } from './job-liveness.mjs';
 import { beat, claimJob, finish, isKnownVersion, jobBySeq, rowsInState } from './job-record.mjs';
 import { reconcile } from './job-reconcile.mjs';
+import { isBusy } from './job-store.mjs';
 import { errorReport } from './review-report.mjs';
 
 /** How often a waiting worker asks whether its turn has come. */
@@ -40,16 +41,6 @@ function inImmediateTransaction(db, fn) {
     }
     throw error;
   }
-}
-
-/**
- * A contended database has told us nothing about any job.
- *
- * Treating a busy timeout as a job failure would kill live work because two
- * processes happened to write at once — so it is retried, never terminalized.
- */
-function isBusy(error) {
-  return error?.errcode === 5 || /database is locked|SQLITE_BUSY/i.test(error?.message ?? '');
 }
 
 /**

@@ -49,8 +49,25 @@ export function databasePath() {
   return join(statePath(), 'jobs.db');
 }
 
+export function logsPath() {
+  return join(statePath(), 'logs');
+}
+
 export function logPathFor(seq) {
-  return join(statePath(), 'logs', `${seq}.log`);
+  return join(logsPath(), `${seq}.log`);
+}
+
+/**
+ * A contended database has told the caller nothing about any job.
+ *
+ * Lives here rather than beside any one caller because it is a fact about
+ * SQLite, not about queueing or retention: after `busy_timeout` expires, a
+ * writer has learned only that someone else held the lock. Treating that as a
+ * verdict would kill live work because two processes happened to write at once,
+ * so every caller retries or defers instead.
+ */
+export function isBusy(error) {
+  return error?.errcode === 5 || /database is locked|SQLITE_BUSY/i.test(error?.message ?? '');
 }
 
 const SCHEMA = `
