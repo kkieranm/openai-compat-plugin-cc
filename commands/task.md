@@ -1,6 +1,6 @@
 ---
 description: Delegate a self-contained task to a local model on an OpenAI-compatible server, instead of doing it yourself
-argument-hint: '[--provider <name>] [--model <id>] [--file <path>]... <what the model should do>'
+argument-hint: '[--background] [--provider <name>] [--model <id>] [--file <path>]... <what the model should do>'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read, Glob
 ---
@@ -35,6 +35,14 @@ Building the call:
 - If the request text itself needs to mention one of this command's own flags (as in "explain the
   `--file` flag"), either put it after a bare `--` separator or use `--prompt-file`. The script
   reports such a flag rather than silently treating it as part of the request.
+
+- `--background` hands the task to a detached worker and prints a job id instead of an answer. The
+  request is frozen at submission — the full text of every `--file` is captured then, so editing
+  those files afterwards does not change what the model is asked. The job outlives this session and
+  is retrievable from any other. Use it when the run would otherwise leave the session waiting on a
+  model for minutes; a local model's prefill alone can take several. Submission still fails *here*
+  and now if the server is unreachable or the request will not fit the window, rather than turning
+  into a job that fails quietly later.
 
 Run:
 

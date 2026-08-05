@@ -99,7 +99,7 @@ function taskRequest({ profile, model, messages, numeric, ledger }) {
  * facts about a run in flight, and belong to whoever is running it. stdout is,
  * because that is the rendering.
  */
-export async function executeTask({ spec, options, inlinePrompt, terminated }) {
+export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
   const numeric = parseNumericOptions(options);
 
   const { config } = loadConfig();
@@ -122,6 +122,23 @@ export async function executeTask({ spec, options, inlinePrompt, terminated }) {
     maxTokens: numeric.maxTokens,
     system: options.system,
   });
+
+  return { numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget };
+}
+
+/**
+ * One run, start to finish. Everything above, and then the call.
+ *
+ * The seam matters beyond tidiness: `--background` needs exactly the first half
+ * — the same profile, the same probe, the same window check, the same built
+ * `messages` — and must then stop and persist rather than dispatch. Sharing the
+ * preparation is what makes a backgrounded job provably the same request the
+ * foreground one would have sent, instead of a second implementation that
+ * resembles it.
+ */
+export async function executeTask(args) {
+  const prep = await prepareTask(args);
+  const { numeric, profile, files, model, messages, estimatedTokens, budget } = prep;
 
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 

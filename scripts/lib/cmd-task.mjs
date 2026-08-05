@@ -7,6 +7,7 @@ import { parseCommandLine } from './args.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { executeTask } from './task-execute.mjs';
 import { report } from './task-report.mjs';
+import { submitTask } from './task-submit.mjs';
 
 // Exported so `tests/plugin.test.js` can prove every flag this command accepts
 // is documented in `commands/task.md`. The markdown is the only description a
@@ -16,12 +17,23 @@ export const TASK_SPEC = {
     'provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
     'max-attempts',
   ],
+  booleanFlags: ['background'],
   repeatableFlags: ['file'],
 };
 
 export async function runTask(argv) {
   const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
-  const outcome = await executeTask({ spec: TASK_SPEC, options, inlinePrompt, terminated });
+  const args = { spec: TASK_SPEC, options, inlinePrompt, terminated };
+
+  if (options.background) {
+    const { id } = await submitTask(args);
+    // stdout, because this id is the whole output of the command and a caller
+    // may well be capturing it.
+    process.stdout.write(`${id}\n`);
+    return;
+  }
+
+  const outcome = await executeTask(args);
 
   // Before the answer, not after: the operator should learn which model is
   // speaking before reading what it said. On stderr and before `report`, which
