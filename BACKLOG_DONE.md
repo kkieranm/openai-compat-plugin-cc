@@ -73,6 +73,18 @@ Newest first.
   true for user-visible output even though the transport consumes SSE, because the reply is buffered
   until complete.
 
+- **OAI-78** — A newline-terminated canonical path substituting a sibling file. **Resolved inside
+  OAI-5, 2026-08-05, before that feature shipped**; commit `306ff75`. Moved here by the 2026-08-05
+  sweep, which found it sitting in the live ordered list describing itself as resolved.
+  It was filed mid-ladder as a low-severity reporting nit, on the stated grounds that containment was
+  not escaped.
+  **Those grounds were refuted by execution in the next pass**: the truncated path was one nobody had
+  canonicalised, a planted sibling escaped the tree, and `/etc/passwd` was read while the audit trail
+  named an in-tree file. It was fixed in the same feature (the canonicaliser now refuses a resolved
+  path containing a control character), reproduced pre-fix and blocked post-fix. Kept here rather than
+  deleted because this file's IDs are stable and global, and because the filing-then-refutation is the
+  most instructive thing the ladder produced. Full account in the OAI-5 entry above.
+
 - **OAI-58** — **The owed step 6 review ladder on OAI-3. Run and closed 2026-08-05**, by
   dual approval at the verdict point (Codex `APPROVE`; a verdict-only Claude approver `APPROVE`;
   combined with `check-plan-gate.sh --dual-approved`, exit 0). It was filed the same day OAI-3
@@ -176,6 +188,127 @@ Newest first.
   **What did NOT land, stated rather than implied by silence: six items from the plan's own
   verification list — see OAI-52**, which is filed above precisely so this entry cannot read as
   complete coverage.
+
+- **OAI-51** — **The review schema crashed the model backend, and the crash was ours.**
+  **Completed 2026-08-04** as **Stage 0** of `plans/local-llms-like-codex.md`; commits `db46d1f`
+  (stop sending a grammar), `5675da5` (answer first) and `a23fdde` (the whole-tree confirmation).
+  **Verified against disk by the 2026-08-05 backlog sweep** rather than taken from the commit
+  messages, because the live backlog header was still calling this the one open item:
+  `cmd-review.mjs:113` gates the schema behind `--structured-output`, and `commands/review.md:27`
+  documents that default as deliberate.
+  **Both halves of the Stage 0 gate hold, and the second is test-pinned.** The first — repeated long
+  generation does not crash the backend — is the measurement below. The second — a parse failure must
+  never render as "no findings" — is `review-report.mjs:140` (`findings: parsed?.findings ?? null`,
+  never `[]`), asserted at `tests/review-json.test.js:83` ("null, not [] — an empty list is a clean
+  review"), with the rendered path printing the reply verbatim at `review-report.mjs:69`.
+  **One deviation from the plan's wording, recorded rather than glossed.** The plan asked for
+  `parsed: complete | partial | failed`. What shipped is a boolean plus a `dropped` count
+  (`structured.mjs:278-281`, `review-report.mjs:139`): per-record loose parsing **is** built — one
+  malformed finding no longer destroys the array — but the tri-state enum does not exist. Functionally
+  the gate is met; the plan's literal shape is not, and a reader comparing the two should know which.
+  **Residue that did NOT come with it:** `parseFindings` still picks one channel and never falls back,
+  and a bare top-level findings *array* is still discarded. Both were OAI-13 sub-items filed as
+  vendor-dependent; the default path now runs the same parser, so they stopped being vendor questions
+  and are **OAI-84**, live.
+
+  The filing account, kept whole because every paragraph in it is a dated measurement:
+
+  **Filed 2026-08-04.** **The review schema crashes the model backend. This is the cause of the "server
+  drops", and it is ours, not LM Studio's.** Filed 2026-08-04, from the LM Studio server log — which
+  has existed at `~/.lmstudio/server-logs/` throughout, was never read, and names the failure
+  outright. **This supersedes the framing of OAI-20, OAI-24 and OAI-34**, all three of which
+  characterised these failures from the client side as properties of an unreliable server.
+  The mechanism, quoted from the log rather than inferred:
+  `ValueError: LLGuidance matcher error: lexer error: too many states: 250000 >= 250000`, with
+  `Stop: LexerTooComplex`, raised inside the grammar LLGuidance builds from the `response_format`
+  JSON schema this repo sends (ADR 003). It propagates as a *fatal exception in the backend
+  generation thread*, and the model process then dies with `Fatal Python error: Segmentation fault`
+  → `The model has crashed`. LM Studio reloads it about 12 seconds later, **which is exactly why
+  retry sometimes works** — the retry meets a freshly loaded model.
+  It fires at **~14k constrained tokens**: five instances on 2026-08-04 at 13,956–14,744 tokens and
+  43,389–50,497 bytes, tightly clustered and independent of whether `maxLength` was 65,499 or 74,000.
+  So the trigger is **how long the model generates inside the grammar**, not the cap itself. This
+  repo already wrote the number down and could not explain it — CLAUDE.md's footgun says "a stream
+  drop **~50k chars** into reasoning".
+  **The 2026-07-30 session that produced the 27/72 figure has the same signature**: 53
+  `LexerTooComplex` events and 8 crashes, against zero on 07-28 (81 completions) and zero on 07-29
+  (28 completions). And `empty-completion` and `stream-unfinished` are not two failure modes but
+  **one event observed on either side of first token**, which is why OAI-20's split on "was a prefill
+  measured" partitioned them 13/4 exactly.
+  **Why local coding never sees it, which is the observation that prompted the search:** `/oai:task`
+  sends no `response_format`, so no grammar is built and no lexer state accumulates. Only
+  `/oai:review`'s structured output does. The failure is not a property of these models or of this
+  server; it is a property of asking for long-form generation inside a constrained grammar.
+  Options, and this is a design decision rather than a fix: **(a)** take `analysis` out of the schema
+  entirely and let the model reason unconstrained, parsing only `findings` — the reasoning is already
+  arriving in `reasoning_content` under a grammar that stops the model closing its think block, which
+  is the same problem seen from the other end; **(b)** cap `analysis` far below the ~14k-token
+  threshold, which reintroduces the censorship OAI-15 was raised to remove and makes ADR 008's
+  sizing argument moot; **(c)** drop the schema for large targets and use ADR 003's prompt-and-parse
+  fallback, which touches no grammar at all. **(a) and (c) are the ones that address the mechanism**;
+  (b) trades one known defect for another.
+  **Stage 0 landed 2026-08-04, and running it produced two results — one banking the gate, one new.**
+
+  **Gate 1 PASSED, measured not argued.** An unconstrained review generated **59,918 characters of
+  reasoning over 340s** — past the 43,389-50,497 byte band in which every grammar-constrained run
+  segfaulted — and the backend did not crash. The server log is the proof: it stood at 43
+  `LexerTooComplex` events and 5 crashes before that run and at **exactly 43 and 5 after it**. The
+  claim "unconstrained is safe" was untested when Stage 0 was planned, and this is the test.
+
+  **New result: removing the grammar removed a second thing nobody had accounted for.** That run
+  produced NO findings — it spent its whole token budget reasoning and died at `finish_reason:
+  length`. The schema's `maxLength` on `analysis` was doing **double duty**: bounding the reply, and
+  forcing the model to stop reasoning and move on to `findings`. The system prompt still says *'Use
+  the "analysis" field first ... Only then fill in findings'*, and the schema ordered
+  `analysis -> findings -> summary`, so with nothing enforcing the bound the model reasons until the
+  budget dies and never reaches the answer. Under a grammar that ordering was safe by construction;
+  unconstrained it is a guarantee of silence on any target big enough to think about.
+  The fix is to invert it — findings first, analysis after — so a budget-exhausted reply still
+  carries what it found. Cheap, and only discoverable by running the thing.
+
+  **The ordering fix landed and was measured, 2026-08-04.** Same file, same model, same flags:
+  before it, `scripts/lib/throughput.mjs` drew 38,956 characters of `analysis` and was still climbing
+  when killed at 160s; after, the run finished in 135s with `finish_reason: stop` and a finding.
+  Reasoning volume barely moved (33,217 chars, 10,221 reasoning tokens) — the model still thinks just
+  as hard, it now **stops and answers**. The instruction is conditional, not global: `analysis` stays
+  first under a grammar, where the measured evidence for that ordering was gathered and still holds,
+  and `findingsFirst()` reorders the schema the prose instruction is rendered from so the two cannot
+  drift. **Attribution caveat, stated rather than glossed:** the small-file baseline was *killed*, not
+  run to failure, so it alone does not establish the fix — the case that definitively failed was the
+  whole-tree target (`finish_reason: length`, no findings, 59,918 chars), and that is the comparison
+  worth quoting.
+
+  **That comparison has now been run, and it confirms the fix.** Whole working tree, same model,
+  49,378 prompt tokens: it completed with `finish_reason: stop` where the pre-fix run died at
+  `length`, having reached its answering phase after 54,127 characters of reasoning. `degraded: false`
+  and `retried: false` held on a 49k-token request too.
+  **It returned 0 findings, and that is a recall observation rather than a Stage 0 failure** —
+  `parsed: true` with content emitted is a genuine "found nothing", not a guillotine. Set beside the
+  1,680-token single-file run, which produced a specific checkable finding, it is also the first
+  direct measurement of the workload envelope the plan asserts: a ~49k-token target is on the reject
+  list, and this is why.
+
+  **A defect the flip introduced, caught in review and worth recording as a class.** `runTimings`
+  derived both `retried` and `degraded` from `!structured`, which meant "we fell back" only while a
+  schema was *always* requested. With the default flipped, every ordinary run would have reported
+  `retried: true` for a single-request run and `degraded: true` for a schema nobody asked for — into
+  the very record OAI-19 reads reliability from. `degraded` now needs both facts (asked for, not
+  obtained) and `retried` needs neither, deriving from the request count alone. This is CLAUDE.md's
+  "when a field's *meaning* changes, grep the aggregates and derived variables" rule, and the field
+  that broke is the one whose own docstring warns about this exact inversion.
+
+  **First real finding off the new path was a false positive, and that is the system working.** It
+  claimed an explicit `null` `completion_tokens` bypasses validation at `throughput.mjs:37`.
+  `Number.isFinite(null)` is `false`, so it does not; the model confused it with the global
+  `isFinite`, which coerces. Refuting it cost under a minute against the code, which is the whole
+  premise of `commands/review.md` — leads, not conclusions.
+
+  **Note against OAI-15 and ADR 008:** raising the reply ceiling *permits* longer constrained
+  generation, so it moves runs toward this threshold rather than away from it. Whether OAI-15 caused
+  the crashes is NOT established here — the derived cap landed 2026-07-28 (`b66a3d5`) and 07-28/07-29
+  are clean, so a corpus-size or backend difference is unexcluded — and it must not be asserted
+  without checking. What is established is the mechanism, its threshold, and its presence in the
+  sessions whose numbers this backlog quotes.
 
 - **OAI-34** — Build the TTL challenge instrument, then run it. **Completed 2026-08-04, and the
   answer is negative: the DETERMINISTIC form of the JIT-TTL hypothesis is REFUTED.** A cold request
