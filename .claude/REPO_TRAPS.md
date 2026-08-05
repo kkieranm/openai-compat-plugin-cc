@@ -919,3 +919,82 @@ at least once; the mutation is the only thing that has not been.
 **Related**: this is [A guard justified by "this cannot be tested"](#a-guard-justified-by-this-cannot-be-tested-carries-an-untested-claim)
 one turn further on — there the claim was that no test was possible, here a test existed and proved
 something else. Both are self-protecting: the passing test is the reason nobody looks again.
+
+## A reassuring measurement taken after the thing being measured is gone
+
+Confirmed 2026-08-05 (OAI-58 ladder), by two security agents reaching **opposite** conclusions about
+the same file from the same repo on the same day.
+
+`job-store.mjs` opens SQLite in WAL mode and chmods `jobs.db` to `0600`. One agent measured the state
+directory after its probe finished and reported: "state dir 700, `jobs.db` 600, `logs/` 700 — no
+WAL/SHM left behind with looser modes after close." The other measured **with a handle still open**,
+and after a `SIGKILL`, and found `jobs.db-wal` at `-rw-r--r--` **holding the prompt and the full text
+of every attached file, while `jobs.db` held neither** — because pre-checkpoint the row lives only in
+the sidecar.
+
+Both measurements were correct. SQLite **removes the WAL on a clean close**, so the tidy-looking
+observation was taken at the one moment the defect cannot exist. Had only the first been recorded,
+OAI-65 would read as refuted by evidence.
+
+The class is wider than SQLite: **anything that cleans up after itself cannot be characterised by a
+post-hoc `stat`, `ls` or `ps`** — temp files, lock files, sidecars, a child process's descriptors, a
+`.tmp` written and renamed. The window in which the artefact exists is the window that must be
+sampled, and "I looked afterwards and it was fine" is not evidence about it.
+
+**How to sample it:** hold the resource open and measure from a second process; or kill -9 mid-flight
+and measure the wreckage. Both are what the second agent did, and both are cheap. Pair with the
+repo's standing positive-control rule: a check that samples the wrong window is one that *cannot*
+fail, which is the failure mode [A test that manufactures the evidence it claims to
+guard](#a-test-that-manufactures-the-evidence-it-claims-to-guard) describes from the other side.
+
+**Related**: [A claim verified at the producer can be false at the
+consumer](#a-claim-verified-at-the-producer-can-be-false-at-the-consumer) — that one is wrong about
+*where*, this one is wrong about *when*.
+
+## A terminal verdict inferred from an intent flag rather than from what happened
+
+Confirmed 2026-08-05 (OAI-58 ladder), executed with a positive control.
+
+`job-reconcile.mjs:30-33` decides a dead worker's terminal state by asking whether
+`cancel_requested_at` is set. If it is, the row is published `cancelled` with `failure: null` and
+`outcome: null`, returning before the `worker-died` branch that would have recorded a reason. The
+probe reconciled **the identical abrupt death** (a real child `SIGKILL`ed while `running`) twice: with
+no cancel pending it produced `worker-died` / `failed`; with a cancel pending, `cancelled` and no
+diagnostic at all. The control fired, so the code *can* tell the two apart — it simply never asks.
+
+The flag records that a user **asked** for something. It is not evidence the thing **happened**, and a
+crash that merely coincides with the request is filed as a clean success. Worse, the crash is the case
+that needed the diagnostic, and `job-render.mjs`'s `noteFor` prints no note for terminal `cancelled` —
+so the information is discarded silently.
+
+**The rule**: a terminal state is a claim about what occurred, so derive it from a witness the acting
+party left behind, never from the request that preceded it. Where no such witness exists — and here it
+did not, which is *why* the inference was written — the fix spans the actor, not just the reader: the
+worker must record that it exited *because of* the cancel. Changing the reader alone flips legitimate
+cancellations to `failed`, which `tests/cancel.test.js:44-101` asserts against.
+
+**Related**: [An outcome inferred from a status code rather than recorded by the layer that
+acted](#an-outcome-inferred-from-a-status-code-rather-than-recorded-by-the-layer-that-acted) — the
+same substitution of a nearby signal for the fact itself.
+
+## A visibility filter keyed on raw state, where blocker-ness is a derived property
+
+Confirmed 2026-08-05 (OAI-58 ladder), executed.
+
+`job-view.mjs:127` decides what a bare `/oai:status` shows from another workspace with
+`row.workspace === cwd || row.state === 'running'`. But whether a row **blocks the queue** is decided
+by `job-queue.mjs`'s `queuedRole()`, which returns `blocks` for a queued row that is
+live-but-unknown-version, `starting`, or `malformed`. **Every one of those has `state='queued'`**, so
+the filter excludes exactly the rows the user most needs to see — while the file's own comment eight
+lines above says "a malformed row holding the head of the queue is the one thing a user most needs to
+see", and ADR 014 promises the same.
+
+The sting: `viewOf()` runs at line 125, one line *before* the filter, and had already computed the
+note ("pid N is alive but has not beaten since 10m ago"). The information was in hand and thrown away.
+
+**The rule**: when a predicate exists in derived form, filtering on the raw column that *usually*
+correlates with it will diverge the moment the derivation grows a case the column does not carry. Two
+things make this worse than an ordinary bug — the divergence is silent, and here the discarded display
+was the **stated mitigation** for an accepted design risk (the recycled-pid wedge), so a display defect
+quietly voided a correctness trade-off recorded in an ADR. **Check whether anything upstream accepted a
+risk on the strength of the thing you filtered out.**

@@ -3,6 +3,40 @@
 Date: 2026-08-05
 Status: accepted (OAI-3, Stage 1 of `plans/local-llms-like-codex.md`)
 
+## Correction, 2026-08-05 — three claims below are wrong, and the text is left standing
+
+Added after the OAI-58 review ladder (one pass, seven stages) ran over this feature. Following this
+repo's convention, the original text is **not rewritten**: it records what was believed when the
+decision was taken, and the corrections are stated here against it.
+
+1. **"`/oai:status` names the blocking pid for the user to deal with by hand" (~line 180) does not
+   hold.** `job-view.mjs:127` gates cross-workspace visibility on `row.state === 'running'`, but every
+   queued blocker — a live unknown-version waiter, a `malformed` row, a `starting` row, the plain
+   queued head — has `state='queued'`. So the blocker is filtered out, and the note explaining it is
+   computed one line earlier and discarded. **This matters beyond the display**, because the
+   recycled-pid wedge is accepted here *on the condition* that the user can see and resolve it. That
+   condition is not met, so the trilemma was traded for something that does not currently exist.
+   Filed as OAI-64; the wedge itself is OAI-69.
+
+2. **The three-origin credential rule is stated correctly and is the wrong granularity.** The rule at
+   ~147-152 is three *origins*, and the code implements exactly that — so this is not a violation of
+   the ADR's letter. But ~143-145 already notices that "an origin drops the `/v1` path, the query
+   string", and does not follow it through: a same-origin tenant move hands the **new** key to the
+   **old** endpoint. Proved on the wire against a real server, with the `apiKeyEnv` swap variant
+   sending an unrelated inherited secret. The harm this section names as its own justification
+   therefore still happens, one path segment down. Filed as OAI-63.
+
+3. **"The credential itself is never stored" (`job-auth.mjs:2-3`, echoed here) is defeated by the
+   warning meant to protect it.** `task-submit.mjs:37-40` interpolates the base URL's query string
+   verbatim into stderr, and `commands/task.md:57` invokes the companion with no redirection, so a
+   query-string credential enters the session transcript. The `0600`/`0700` mitigation this ADR relies
+   on does not apply to that channel. Filed against OAI-55.
+
+Two further gaps in mechanisms this ADR describes, neither contradicting its text: the newer-database
+refusal is checked only when a connection opens, so an in-flight worker bypasses it (OAI-68); and the
+`SQLITE_BUSY`-is-retried property does not hold in the heartbeat, where an uncaught throw kills a
+running worker mid-model-call (OAI-62).
+
 ## Context
 
 A local model call costs minutes — measured, ~335s of *prefill alone* on the dense 27B at 47k prompt

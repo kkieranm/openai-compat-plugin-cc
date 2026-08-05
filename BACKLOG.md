@@ -136,28 +136,245 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 
 ### Stage 1 follow-ups — filed 2026-08-05 when OAI-3 shipped
 
-- **OAI-58** — **The step 6 review ladder is OWED on OAI-3 and has not run.** Filed 2026-08-05, the
-  same day the feature shipped, because an owed review that lives only in a session transcript is an
-  owed review that never happens — the precedent is the discharged `/code-review high` block recorded
-  further up this file.
-  **Scope:** `e74eb2c^..HEAD` — eight commits, 19 new modules, 44 new tests.
-  **It triggers `lean-wide` on the repo's own terms, and not marginally:** the CLAUDE.md rule is that
-  wide mode fires when a change introduces or alters a module carrying vendor or protocol assumptions,
-  and this one introduces process-lifecycle *and* persistence assumptions — a detached worker, pid
-  liveness, a database with two version axes, and a credential decision replayed in a second process
-  minutes later.
-  **The cost is the reason this is an item rather than a step someone squeezes in:** a full ladder
-  here measured ~1.7M subagent tokens, which is one feature per session. The lever is `review-lean`
-  in wide mode **once over the whole feature** rather than per phase — per-phase passes were
-  deliberately not run for this reason, and each phase got a single `advisor` request instead as the
-  tripwire (**every one of which failed to launch, overloaded** — so the mid-build tripwire produced
-  nothing across all eight phases, and this pass is carrying more than it usually would).
-  **OAI-52 item (1) is closed (2026-08-05)** — it was done first, deliberately, because an untested
-  auth module is a finding the fan-out would certainly raise and paying five verifiers to repeat what
-  is written down here is waste. `tests/job-auth.test.js` is therefore **inside this scope**, which
-  stays `e74eb2c^..HEAD` and so extends to it automatically.
-  **Check `unadjudicated` before reading any verdict:** wide mode returns `findings: []` when its
-  verifiers die on the cap, and that shape reads exactly like a clean pass.
+OAI-58, the owed review ladder, was the first item here and is **done (2026-08-05)** — it ran, closed
+by dual approval, and produced the OAI-61 … OAI-73 block immediately below. Its record is in
+`BACKLOG_DONE.md`.
+
+### Filed 2026-08-05 from the OAI-58 ladder — ordered by impact
+
+- **OAI-61** — **`node:sqlite` breaks EVERY command on the Node versions `package.json` declares.**
+  `package.json:8` says `"node": ">=18.18"`; `node:sqlite` arrived in Node 22.5. `oai-companion.mjs:2,3,6,7`
+  import the job commands **statically**, and they chain to `job-store.mjs:13`
+  `import { DatabaseSync } from 'node:sqlite'`. A static import links before any command dispatches, so
+  on Node 18.18–22.4 **every** command fails at load with `ERR_UNKNOWN_BUILTIN_MODULE` — including
+  `/oai:setup` and foreground `/oai:task`, which have nothing to do with background jobs.
+  **Reachability is proved by construction; the 22.5 threshold is CITED, not executed** — this machine
+  has only Node v26.3.1 and no nvm/fnm/volta, so the positive control could not be run here. Run it on
+  a real Node 20 before closing.
+  Two fixes, and the choice is a design call: raise the declared engine and fail with a clear message,
+  or make the job commands a lazy import so only they need 22.5. Whichever is taken, pair it with a
+  structural test that the declaration and the code agree — this is exactly the class
+  `tests/plugin.test.js` exists for.
+
+- **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
+  OAI-52 item (3) recorded "a `SQLITE_BUSY` expiry is retried, never terminalized" as an untested
+  property. It is not merely untested; it is **false in two places**, and this item supersedes that
+  sub-item.
+  **(a) The heartbeat kills the worker outright.** `job-heartbeat.mjs:57-60` calls `beat` and
+  `cancelRequested` inside a `setInterval` callback with **no try/catch**, and `job-record.mjs:176` and
+  `:207-209` are bare `db.prepare(...).run(...)` with no busy retry. **Proved by execution**:
+  `startHeartbeat` with a handle whose `prepare()` throws "database is locked" (errcode 5) kills the
+  process — exit 1, the probe's "SURVIVED" line never printed. So a contended database kills a running
+  worker **mid-model-call**. ADR 014 (~296) itself notes a suspended process holds the writer lock
+  until other writes fail past the timeout, so the contention it needs is a case the design already
+  anticipated.
+  **(b) `finish` discards a completed answer.** `cmd-task-worker.mjs:74` calls `finish` with no busy
+  retry, unlike queue acquisition which has one (`job-queue.mjs:111`). If the lock is held past the
+  10s timeout **after the model has already answered**, the outer catch files a storage error as a task
+  failure and the expensive answer is gone.
+  The catch added for (a) must be **narrowed to busy** — a blanket swallow would hide real corruption,
+  and the stale-beat → `stalled` → non-terminal path already handles a missed beat correctly.
+  **(c) `openStore` itself can throw `database is locked`, at the line whose comment says it cannot.**
+  Observed **once, live**, during the OAI-58 commit gate: `tests/queue.test.js:23` ("two jobs submitted
+  at once run one after the other, never together") failed with
+  `Error: database is locked at openStore (job-store.mjs:151)` — which is
+  `db.exec('PRAGMA journal_mode = WAL')`, the statement immediately after `busy_timeout` is set. The
+  comment at `:145-149` argues that setting `busy_timeout` **first** is what stops exactly this ("with
+  no timeout in force yet a second process opening the store at the same moment fails outright…
+  Every statement after this line waits instead"). It does not, at least not always: converting to WAL
+  needs an exclusive lock, and the busy handler is not honoured for every such case.
+  **Rate and trigger, stated honestly rather than inflated.** It did not reproduce: 8/8 green running
+  `tests/queue.test.js` alone and 3/3 green on the full suite afterwards. The one occurrence was
+  almost certainly two full `npm test` runs overlapping on this machine, which widens the window — a
+  real contention scenario (two plugin commands at once produce the same thing), but not one the suite
+  normally creates. **So this is a genuine intermittent whose rate is unmeasured**, and the value here
+  is the located line plus a comment that overstates its guarantee, not a frequency.
+  It also means the suite carries a rare flake whose failure message is indistinguishable from a real
+  regression — worth a targeted retry at this call site so a contended open waits rather than killing
+  a submission.
+
+- **OAI-63** — **The credential model authorises by ORIGIN while every request is by FULL URL, and the
+  leak is proved on the wire.** `job-auth.mjs:28` stores `originOf(baseUrl)`, discarding path and
+  query; `:45,:59` compare origins only; `cmd-task-worker.mjs:38-45` then builds the profile from the
+  **frozen full endpoint** plus the **freshly resolved key**.
+  Executed end to end through the real CLI — two real `--background` submissions, real detached
+  workers, `providers.json` re-pointed while job 2 sat `queued`. What the server received:
+  ```
+  path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-A
+  path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-B   <-- leak
+  ```
+  Confirmed variants: the query form (`?tenant=a` endpoint, key from the `?tenant=b` profile), and an
+  **`apiKeyEnv` swap** — `baseUrl` untouched, env var repointed, and the worker sent an unrelated
+  inherited secret. **The three-term check validates *where*, never *which secret*.**
+  **Against the ADR, precisely:** `adr/014:147-152` states the rule as three *origins*, so this is not
+  a violation of its letter — but `adr/014:143-145` **explicitly notices** that "an origin drops the
+  `/v1` path, the query string" as its reason for storing the transport whole. The asymmetry was seen
+  and not followed through, and the ADR's own justifying harm happens one path segment down.
+  Severity is deployment-shaped: near-inert on `localhost:1234`, real on path-multiplexed gateways
+  (LiteLLM, Azure APIM, Cloudflare AI Gateway). Not attacker-triggerable — a foot-gun for the
+  legitimate user. Second-order: `task-submit.mjs:2-7` promises submission validates "in front of the
+  user"; it validated `/tenant-a` with KEY-A and the worker sent KEY-B, so **that guarantee does not
+  cover the credential**.
+  **Why this is not a batch fix:** comparing the full normalised endpoint means persisting an
+  authorized *endpoint* instead of `authorizedOrigin` — a payload change, so a `schema_version`
+  decision plus a migration story for rows already written, which is the repo's own grilling-checklist
+  item. **Fix it together with OAI-72's `sameOrigin` half**, which is the identical root cause one
+  layer up and out of the OAI-3 range.
+
+- **OAI-64** — **`/oai:status` cannot show the blocker that is starving you, which VOIDS the mitigation
+  ADR 014 traded the recycled-pid wedge for.** `job-view.mjs:127` filters visibility on
+  `row.workspace === cwd || row.state === 'running'` — a **state** predicate — while blocker-ness is
+  decided by `job-queue.mjs:56-62` `queuedRole()`, which returns `blocks` for a queued row that is
+  live-but-unknown-version, `starting` or `malformed`, and by `job-queue.mjs:96` for the plain queued
+  head. **Every one of those blockers has `state='queued'`**, so none satisfies the exception.
+  `job-view.mjs:118-123` asserts the opposite in its own words ("a malformed row holding the head of
+  the queue is the one thing a user most needs to see") and ADR 014 (~180) promises "`/oai:status`
+  names the blocking pid for the user to deal with by hand".
+  Executed: `tryAcquire(A)='blocked'`, yet `statusView` shows only jobA plus
+  `(1 more elsewhere — pass --all)`. `viewOf(jobB)` had the note **ready** ("pid N is alive but has not
+  beaten since 10m ago") and never reached it, because the row was filtered out one step earlier — the
+  information is computed at `job-view.mjs:125` and discarded.
+  Needs no second plugin build: one queued waiter whose pid was recycled or suspended suffices.
+  The correct predicate is the derived `display`/`liveness` already in hand. **Do this before OAI-69**,
+  which it partly mitigates.
+
+- **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
+  `0644`.** Four related defects in the state directory's posture, all observed with controls.
+  **(a)** `job-store.mjs:154-159` chmods only `databasePath()`. SQLite in WAL mode creates
+  `jobs.db-wal`/`-shm` itself at default mode. Measured under umask 022 with the real `openStore()` +
+  `insertJob()`: `jobs.db` `-rw-------` containing **neither** the secret nor the source, `jobs.db-wal`
+  `-rw-r--r--` containing **both**. It survives SIGKILL, and the worker runs up to 3600s.
+  `job-store.mjs:136-137` states the contract in its own words — the file that holds the user's source
+  is not the file that is protected. **Note for anyone re-checking: SQLite removes the WAL on a clean
+  close, so a post-hoc `stat` sees nothing. Measure with a handle open, or after a crash.**
+  **(b)** `mkdirSync(..., {mode})` never re-applies a mode to an **existing** directory (observed:
+  0755 before, 0755 after). Loosen all three and re-run `openStore()`: `jobs.db` self-heals to `0600`,
+  the state dir and `logs/` stay `0755` **forever**, and every subsequent WAL is created loose. So (a)'s
+  containment rests on one bit nothing re-tightens. **(b) is the load-bearing half — fix it as primary
+  and (a) as belt**, since SQLite recreates the WAL during the process's life and a one-time chmod
+  catches only the current one.
+  **(c)** `job-spawn.mjs:33` opens `logs/<seq>.log` with no `O_NOFOLLOW`, at a predictable sequential
+  path. Observed: the mode argument is ignored when the file exists, and the open **follows a symlink
+  and appends to its target**. Positive control in the same run: the identical open with `O_NOFOLLOW`
+  refused with `ELOOP`. Gated on (b), this is disclosure **plus an arbitrary-file-append primitive**.
+  Note `O_NOFOLLOW` does not cover a pre-existing *regular* file owned by another principal, so pair
+  it with (d).
+  **(d)** Deleting `jobs.db` makes a **new** job inherit an **old** job's log: `AUTOINCREMENT` restarts
+  at 1, `job-spawn.mjs:33` opens `'a'`, and `sweepQuietly` runs *after* `spawnWorker` so the new seq 1
+  is already a known row and its log is not an orphan. Observed end to end — `logs/1.log` survives
+  carrying era-1 output and is attributed to the new job, and both `/oai:status` and `/oai:result`
+  point the user at it.
+
+- **OAI-66** — **Two reconciler diagnoses that contradict the row they are written from.**
+  **(a) A crashed worker is published as a clean `cancelled`.** `job-reconcile.mjs:30-33` treats **any**
+  `cancel_requested_at` as proof the cancellation completed and returns before the `worker-died` branch
+  at `:34-39`, writing `state='cancelled'` with `failure=null` and `outcome=null` — and
+  `job-render.mjs` `noteFor` renders **no note** for terminal `cancelled`. **Proved with a positive
+  control**: the identical abrupt death (a real child SIGKILLed while `running`) reconciled twice — no
+  cancel pending → `worker-died`/`failed`; cancel pending → `cancelled`, `failure=null`. The control
+  fires, so the check *can* distinguish; the verdict is decided purely by whether a cancel was in
+  flight, never by why the process died. **This is a diagnostic that exists and is thrown away.** It
+  pairs with OAI-62(a), which supplies a very reachable crash.
+  **Note for whoever fixes it:** the reconciler cannot be fixed alone. The cooperative exit leaves no
+  positive signal that the worker exited *because of* the cancel — that absence is why the inference
+  exists — so the worker must record something before exiting, spanning `cmd-task-worker.mjs` /
+  `job-heartbeat.mjs`. Changing `job-reconcile.mjs:30` alone flips legitimate cancellations to
+  `failed`, and `tests/cancel.test.js:44-101` asserts the opposite.
+  **(b) `terminalizeUnstarted` blames the submitter for a crash the row proves was the worker's.**
+  `job-reconcile.mjs:50-58` writes "The process that submitted it most likely died before the worker
+  was spawned. Submit it again." unconditionally — but `job-spawn.mjs:40-43` awaits the OS `'spawn'`
+  event before returning and `task-submit.mjs:102` stamps `spawned_at` only after, so a **non-null
+  `spawned_at` is proof the submitter survived process creation**. `job-liveness.mjs:85`
+  (`spawned_at ?? created_at`) collapses the two windows ADR 014:121-122 explicitly distinguishes.
+  Reachable via any throw in the worker's pre-registration window (`cmd-task-worker.mjs:78-92`):
+  `DatabaseTooNewError`, a swept row, an unhandled `SQLITE_BUSY`, OOM. "Submit it again" reproduces a
+  systemic failure identically. The sibling `terminalizeDead` (`:37`) names the log; this one does not.
+
+- **OAI-67** — **A failed spawn blocks the whole queue; a post-spawn write failure reports failure while
+  the worker runs on.** Raised independently by three lenses.
+  **(a)** `spawnWorker` rejects on `'error'` (`job-spawn.mjs:40-43`) and `task-submit.mjs:97` does not
+  catch it, so the row stays `queued` with `spawned_at` NULL. `queuedRole` then returns `starting` →
+  `blocks` (`job-queue.mjs:60`), so **every successor is blocked for the full 120s grace**, not merely
+  this job. The plan's own bullet asked that a spawn `'error'` mark the job failed; it is failed only
+  by the grace, two minutes later, via a different mechanism.
+  **(b)** After `spawnWorker` resolves the child is alive and detached, but `markSpawned`
+  (`job-record.mjs:121`, a bare UPDATE) or `sweepQuietly` (`task-submit.mjs:72-78`, which **rethrows
+  anything non-busy** by deliberate design) can still throw. The submitter then exits non-zero with
+  **no id printed** while the worker proceeds to call the model. The job is discoverable via
+  `/oai:status`, so it is not lost — but the user was told it failed, and a reasonable retry duplicates
+  the work. Once the child is known to exist the submission is accepted; later housekeeping must not
+  convert that into a reported failure.
+
+- **OAI-68** — **`PRAGMA user_version` is checked only when a connection opens, so an in-flight worker
+  bypasses the newer-database refusal.** `applySchema` (`job-store.mjs:120-125`) reads it once inside
+  `openStore()`, and a worker holds that handle for the life of the job — minutes to the 3600s default
+  cap. A newer build opening the same database in that window raises `user_version`; the old worker's
+  later `beat`/`claimJob`/`finish` never recheck and write to a schema it does not understand. This is
+  a hole in the two-version design **on its own terms**, since the stated rule is that a newer database
+  is refused for all mutations. The fix (recheck under the same write lock) touches every mutation path
+  and collides with whatever OAI-63 does to the persisted payload, so sequence it after that decision.
+
+- **OAI-69** — **A recycled pid reads `live` forever and wedges the queue, with no recovery path.**
+  `isAlive` (`job-liveness.mjs:45-53`) proves a pid is *owned*, not that it is owned by our worker. A
+  recycled `worker_pid` reads `live` at `:80`, so every reader and `decide` treat the row as a blocker
+  permanently; the stale heartbeat is cosmetic by explicit design ("the pid decides death; the beat
+  only corroborates"); and cooperative cancel cannot reach a process that is not ours. **I grepped for
+  a recovery path and there is none** — no `--force`, no abandon, in `cmd-cancel.mjs` or
+  `commands/cancel.md`. Recovery today is deleting `jobs.db` by hand. Most reachable across a reboot,
+  where low pids are certainly reused.
+  ADR 014 accepts this wedge **on the stated condition** that `/oai:status` names the blocker — which
+  OAI-64 shows it does not. **So this item's urgency depends on OAI-64 landing**, and it is not an
+  independent gap.
+  Constraint on any fix: `tests/queue-guards.test.js` forbids signalling a process this repo cannot
+  verify, so the answer is operator force-terminalization of the **row**, never a kill.
+
+- **OAI-70** — **Three small correctness guards on the worker's row-decoding path.**
+  **(a)** `resolveCredential` never checks `auth.profile` exists: `job-auth.mjs:54` passes
+  `{provider: auth.profile}` and `config.mjs:197` treats a falsy provider as "use `defaultProvider`".
+  Executed — a row whose `auth` lacks `profile` **completed and sent a credential the job never named**.
+  Reachable only from a forged or foreign row, but one line (`if (!auth?.profile) throw`) closes it.
+  **(b)** It pairs with a real structural gap: `cmd-task-worker.mjs:85` is the **only** consumer of a
+  decoded row that never calls `isKnownVersion`, where `job-queue.mjs:57` and `job-reconcile.mjs:72`
+  both do — and the forward-compat story explicitly contemplates a newer writer's rows in the table.
+  **(c)** A `transport` payload of JSON `null` crashes at `cmd-task-worker.mjs:40` before the auth
+  check, giving exit 2 with a TypeError envelope rather than the UserError exit 1. No credential
+  escaped (the positive control proves the probe would have seen one). Diagnosability only —
+  deliberately not inflated.
+
+- **OAI-71** — **The unknown-context warning is not persisted, so `/oai:result` omits it for exactly the
+  jobs whose input size was never verified.** `cmd-result.mjs:50` always passes `null`. The foreground
+  footer reports that the size check was disabled; the background path drops it. Persisting it adds a
+  field to `outcome`, which is precisely the shape-drift surface OAI-59 is about — so decide it with
+  OAI-59 rather than alone.
+
+- **OAI-72** — **Two credential-exposure defects OUTSIDE the OAI-3 range, filed because they undercut
+  it.** Both verified; `config.mjs` and `cmd-setup.mjs` predate `e74eb2c^`.
+  **(a)** `config.mjs:41-42` writes `providers.json` with **no mode**. Observed on this machine:
+  `-rw-r--r--`, under `~` at `drwxr-x---` and `~/.config` at `drwxr-x--x`, both group `staff`, with a
+  second local account in `staff`. `job-auth.mjs` deliberately stores no credential and defers to this
+  file, so the file's mode is what that decision rests on. **Two honesty caveats kept from the agent
+  that found it:** the read was *not* performed as the other user — this is mode arithmetic over
+  separately verified components — and it deliberately did not check whether the file currently holds
+  an `apiKey`. Mechanism confirmed; today's exposure unverified.
+  **(b)** `cmd-setup.mjs:21` builds its fallback row from the **un-normalised** `rawProfile?.baseUrl`,
+  query intact, and `render.mjs:111` / `cmd-setup.mjs:46` print it to **stdout**. Ran with a positive
+  control: the failing profile printed `…/v1?api_key=sk-QUERY-SECRET-9999`; the control (env var set,
+  so `buildProfile` succeeds) printed `…/v1` clean. Reachable via any `buildProfile` throw.
+  **(c)** `config.mjs:187`'s `sameOrigin` withholding is origin-only, so
+  `--provider prod --base-url <same origin, different path>` keeps prod's key
+  (executed: `apiKey: "KEY-PROD"`, `credentialWithheld: false`). This is OAI-63's root cause one layer
+  up, and the two should be fixed together.
+
+- **OAI-73** — **Coverage the ladder found missing, beyond OAI-52's list.** None is a known defect.
+  (a) an unknown-`schema_version` **queued** row with a **NULL waiter** — `queue-reconcile.test.js`
+  covers the v1 NULL-waiter case and the v99 live/dead-waiter cases, never the v99 × NULL combination;
+  (b) the late worker that loses `registerWaiter` and exits without dispatching
+  (`cmd-task-worker.mjs:92-97`) — its stderr string appears nowhere in `tests/`, and it is the guard
+  that stops a late worker double-dispatching; (c) the `starting` branch of `job-liveness.mjs:87`,
+  which no test drives inside a paused publication/spawn window.
+  Also recorded, not defects: `tests/job-store.test.js` and `tests/structure-jobs.test.js` (plan:435-436)
+  were never created — their function is discharged by `queue-guards.test.js` and the generic ratchet;
+  and the plan asked for the wall clock the new tests add, which was never reported (only the count).
 
 - **OAI-52** — **Six items from OAI-3's own verification list did not land** — **five, since
   2026-08-05: item (1) is done.** Filed the day the feature shipped, from reading the plan's
@@ -201,11 +418,18 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   executed rather than cited.
   **(5) The submitter writes the row exactly once on the success path** — counted through an injected
   store, **not** by mtime, an mtime being the last write rather than a count.
-  **(6) No session identifier appears in a row.** Structurally true — `job-store.mjs`'s `SCHEMA` has
-  no such column — and guarded by nothing. It is the property that distinguishes this design from the
-  reference plugin's, whose `SessionEnd` sweep depends on exactly the field this schema omits, so it is
-  worth a line of test rather than a line of prose. Noted in [ADR 014](adr/014-async-jobs.md) where the
-  claim is made.
+  **(6) No session identifier appears in a row.** ~~Structurally true … and guarded by nothing.~~
+  **Corrected 2026-08-05 by the OAI-58 ladder: this sub-item was misfiled.** A guard exists —
+  `tests/status.test.js:43` asserts `doesNotMatch(JSON.stringify(row), /session/i)` — and it was added
+  in `3e7d429`, *inside* the OAI-3 range and **predating this filing** (`370efc1`). What is true is
+  weaker than "no test": the check is a string match on a JSON dump, so it would catch a column *named*
+  with that word but not a session id stored under an unrelated key, and it carries no positive control
+  proving it can fail. So the remaining work is to strengthen an existing guard, not to write a missing
+  one. It is the property that distinguishes this design from the reference plugin's, whose `SessionEnd`
+  sweep depends on exactly the field this schema omits. Noted in
+  [ADR 014](adr/014-async-jobs.md) where the claim is made.
+  **(3) is superseded by OAI-62**, which found the property is not merely untested but false at two
+  sites, one of which kills a running worker.
 
 - **OAI-53** — `/oai:review --background`. Deferred deliberately in OAI-3, not forgotten: `kind` and
   `schema_version` are in the schema so this fits without a migration, and the worker already runs the
@@ -238,6 +462,24 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   query in two forms: what to send, and what to show. **Note the claim it repairs**: without the
   warning, "the credential is never persisted" was simply untrue, and that sentence had been in the
   plan for fourteen rounds before the gate caught it.
+  **Widened and part-corrected 2026-08-05 by the OAI-58 ladder, in three ways.**
+  **(1) The warning itself prints the secret.** `task-submit.mjs:37-40` interpolates `profile.query`
+  verbatim. Executed: `Note: the base URL's query string (?api-key=sk-SUPER-SECRET-1234) is stored…`.
+  **The consumer, cited rather than assumed:** `commands/task.md:5` declares `allowed-tools: Bash(node:*)`
+  and `:57` invokes the companion with **no stderr redirection**, and the Bash tool returns stderr as
+  conversation content — the same channel the plugin deliberately uses for `substitutionNotice` and
+  `progress.mjs:76`. So the secret leaves the `0600` database and enters the session transcript, and the
+  model provider, on every subsequent turn. **The mitigation this item relies on (`0600`/`0700`) does not
+  apply to the channel the warning uses.** (Not determined: whether that tool result is persisted at
+  rest under `~/.claude/projects/**`. That bounds the blast radius, not whether it leaks.)
+  **(2) It is not a `--base-url`-only problem.** `buildProfile` splits the query off **any** profile's
+  `baseUrl` (`config.mjs:125,149-153`), so a `providers.json` profile with a query-string key triggers
+  this on every `--background` submission — where the secret was never on the command line and never in
+  the conversation, and this warning is what puts it there. For the `--base-url` form the echo adds
+  little, since `commands/task.md` already interpolates `$ARGUMENTS` verbatim.
+  **(3) This item overstates the display side.** "into the `transport` column every `/oai:status` reads"
+  is wrong about the reading: `job-render.mjs:122` prints `transport.baseUrl`, which is query-free. The
+  column holds the secret; nothing renders it.
 
 - **OAI-56** — The prefill-overlap bound: a cancelled or dead job can hold the server for the
   remainder of its prefill after the queue has moved on. **Measured, not assumed** — LM Studio says so
@@ -271,8 +513,16 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   understand is the row it will happily render.
   The fix is not to default the numbers, which would print a fabricated `0.0s`. It is for the footer
   to omit a part it has no value for — the same absence-is-not-a-value rule the request DTO already
-  follows, where `undefined` means absent and `null` is invalid. Low severity (cosmetic, on a path
-  that already tells the user the database is newer), filed for the class rather than the symptom.
+  follows, where `undefined` means absent and `null` is invalid. ~~Low severity (cosmetic, on a path
+  that already tells the user the database is newer)~~, filed for the class rather than the symptom.
+  **Severity raised 2026-08-05 by the OAI-58 ladder: this is not cosmetic.** On the same path
+  (`cmd-result.mjs:29-31`), a newer row whose **content field was renamed** is not rendered oddly — it
+  is reported as **"recorded no answer"**, which is a false statement about a job that produced one.
+  That is the `findings: null` versus `[]` distinction — trap instance 14 in `.claude/REPO_TRAPS.md`,
+  and the defect [ADR 003](adr/003-structured-findings.md) exists to prevent — appearing in a new place.
+  So the fix must report an unsupported payload as unsupported, and render only validated fields;
+  omitting absent parts is necessary but not sufficient. **OAI-71 belongs with this item**, since
+  persisting the unknown-context note adds an `outcome` field and is the same shape-drift surface.
 
 - **OAI-60** — The retention ceiling is a constant in one place and a **literal `50` in prose** in
   `commands/status.md:56` and `commands/result.md:36`. `cmd-result.mjs` interpolates `RETAIN` into its

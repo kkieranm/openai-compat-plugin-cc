@@ -2,6 +2,70 @@
 
 Newest first.
 
+- **OAI-58** — **The owed step 6 review ladder on OAI-3. Run and closed 2026-08-05**, by
+  dual approval at the verdict point (Codex `APPROVE`; a verdict-only Claude approver `APPROVE`;
+  combined with `check-plan-gate.sh --dual-approved`, exit 0). It was filed the same day OAI-3
+  shipped, because an owed review that lives only in a session transcript is one that never
+  happens. Original scope and reasoning below, followed by what the ladder found.
+  The precedent for filing it as an item at all is the discharged `/code-review high` block recorded
+  in `BACKLOG.md`.
+  **Scope:** `e74eb2c^..HEAD` — eight commits, 19 new modules, 44 new tests.
+  **It triggers `lean-wide` on the repo's own terms, and not marginally:** the CLAUDE.md rule is that
+  wide mode fires when a change introduces or alters a module carrying vendor or protocol assumptions,
+  and this one introduces process-lifecycle *and* persistence assumptions — a detached worker, pid
+  liveness, a database with two version axes, and a credential decision replayed in a second process
+  minutes later.
+  **The cost is the reason this is an item rather than a step someone squeezes in:** a full ladder
+  here measured ~1.7M subagent tokens, which is one feature per session. The lever is `review-lean`
+  in wide mode **once over the whole feature** rather than per phase — per-phase passes were
+  deliberately not run for this reason, and each phase got a single `advisor` request instead as the
+  tripwire (**every one of which failed to launch, overloaded** — so the mid-build tripwire produced
+  nothing across all eight phases, and this pass is carrying more than it usually would).
+  **OAI-52 item (1) is closed (2026-08-05)** — it was done first, deliberately, because an untested
+  auth module is a finding the fan-out would certainly raise and paying five verifiers to repeat what
+  is written down here is waste. `tests/job-auth.test.js` is therefore **inside this scope**, which
+  stays `e74eb2c^..HEAD` and so extends to it automatically.
+  **Check `unadjudicated` before reading any verdict:** wide mode returns `findings: []` when its
+  verifiers die on the cap, and that shape reads exactly like a clean pass.
+
+  ### The ladder RAN, 2026-08-05 — one pass, seven stages, 29 ledger entries
+
+  Frozen at `59662b3`, tree clean, baseline `npm test` 533 pass / 0 fail. Stages, in table order:
+  `acceptance-audit` (scout, ~30 plan obligations enumerated); `advisor-opener` (**failed overloaded
+  on first launch, completed on retry** — a died stage, not a coverage gap); `codex-adversarial`
+  (`needs-attention`, 4 high); `codex-plain` (6 findings); `security-review`
+  (**the packaged skill could not launch** — its preamble runs `git diff origin/HEAD...` and this repo
+  has no remote, which is OAI-7; the lens was applied by two scoped substitute agents and is recorded
+  as a substitute, never as the skill passing — logged to `ROUTING_LOG.md` because it blocks the
+  security stage of every ladder in any remoteless repo); `lean-wide`; `advisor-closer`.
+
+  **`lean-wide` completed CLEAN, and this was checked rather than assumed**: `unadjudicated: 0` across
+  all three causes (`agentFailure`, `missingVerdict`, `setupFailure`), `findersReturned` 5/5, 12
+  agents, 0 errors, 0 empty results, 9 candidates, 5 refuted, 1 duplicate collapsed. 961k subagent
+  tokens. The `findings: []`-from-dead-verifiers shape did **not** occur.
+
+  **The pass refuted one of its own findings, by execution.** A `null !== null` hole in
+  `job-auth.mjs`'s origin comparison was raised by the orchestrator, and a security agent killed it by
+  running it with a positive control in the same run: leg 2 is an interlock a null-ish value cannot
+  satisfy, because `normalizeBaseUrl` guarantees an http(s) URL whose `.origin` is never null. The
+  control sent a credential; every null variant reached the server zero times.
+
+  **Two lenses contradicted each other on WAL file modes and both were right** — SQLite removes the
+  WAL on a *clean* close, so the agent that measured after close saw nothing and the agent that
+  measured in-flight and after SIGKILL saw a world-readable file holding the prompt. Recorded because
+  a reader finding only the reassuring measurement would conclude OAI-65 was refuted.
+
+  Findings are filed as **OAI-61 … OAI-73 in `BACKLOG.md`**, with amendments to OAI-52, OAI-55 and OAI-59.
+  Executable probes — red-before fixtures whose controls are already proved to fire — are preserved at
+  `~/.claude/projects/-Users-kieran-Code-openai-compat-plugin-cc/oai-58-probes/`, because they are most
+  of the mutation proof the fixes owe and rewriting them is the expensive path.
+
+  **No code fix was applied, and none is claimed.** This was the ladder's terminal pass, which by
+  its own rule has no fix batch; every finding was dispositioned by FILING it, which the verdict
+  bar explicitly permits ("every still-open entry is one the approver would ship — dismissed,
+  filed, or out of scope"). The work itself is OAI-61 … OAI-73, ordered by impact.
+
+
 - **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.
   **Completed 2026-08-05** as Stage 1 of `plans/local-llms-like-codex.md`. Plan:
   `plans/oai-3-async-jobs.md`; decision record: [ADR 014](adr/014-async-jobs.md).
