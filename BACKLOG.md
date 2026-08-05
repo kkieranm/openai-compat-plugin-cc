@@ -659,9 +659,15 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
   because the alternative is generating prose from a constant, which is worse than the problem.
 
-- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. Left out of OAI-3 phase 4 as unrequested
-  surface, and recorded here so the omission is a decision rather than an oversight. `/oai:task` and
-  `/oai:review` both have it, and the row is already a JSON-shaped record, so the cost is small — but
+- **OAI-57** — No `--json` on `/oai:status`, `/oai:result` **or `/oai:task`**. Left out of OAI-3 phase 4
+  as unrequested surface, and recorded here so the omission is a decision rather than an oversight.
+  **Corrected 2026-08-05, verified against `TASK_SPEC` and by running the command:** this entry used to
+  say "`/oai:task` and `/oai:review` both have it", and that is **false** — only `/oai:review` does
+  (`REVIEW_SPEC.booleanFlags` includes `json`; `TASK_SPEC.booleanFlags` is `['background']`, and
+  `task --json` exits 1 with "Unknown option"). The mistake matters because it makes the item look
+  smaller than it is and because **Stage 2's task benchmark needs exactly this** — a bench that cannot
+  read a machine-readable task envelope must parse the prose footer, which is the class this repo has
+  retracted twice. The row is already a JSON-shaped record, so the cost is still small — but
   the moment it exists it is a **contract**, and the enumerated-field problem OAI-36 describes for the
   bench reliability prose applies to it exactly. Do it when something actually consumes it (the
   `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
