@@ -25,6 +25,12 @@ Building the call:
 
 - Attach files with repeated `--file <path>` when the user names files, or when the request plainly needs specific files you can identify. Attach nothing else — local models have small context windows, and the script refuses oversized input rather than truncating it.
 - Do not paste file contents into the prompt text yourself; `--file` does that with proper delimiters.
+- **`--file <path>:<start>-<end>` attaches only those lines**, which is how a big file joins a small
+  request. The block header names the range and the total (`(lines 3-5 of 210)`), and the request
+  gains a note telling the model the file is partial and not to call anything undefined on that
+  basis — a slice a model believes is a whole file invites exactly that wrong conclusion. An end past
+  the last line is clamped, so `:400-9999` means "to the end"; a start past it is refused, naming the
+  real length.
 - Put every flag **before** the request text. Flags are only recognised up to the first word of the
   prompt; from there the text is taken verbatim, so ordinary punctuation (apostrophes, quotes,
   backslashes) needs no escaping and must not be rewritten.

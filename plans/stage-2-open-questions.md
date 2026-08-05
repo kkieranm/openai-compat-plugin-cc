@@ -239,3 +239,28 @@ no evidence the change is right — instance 14's shape exactly.
 
 **Nothing is ever applied.** `--check` only, verified live: the working tree was untouched after a run
 that produced an applying diff.
+
+### E10 — File slices warn rather than trusting the model to notice
+
+**Decided:** `--file path:N-M` attaches a line range, the block header carries `(lines N-M of TOTAL)`,
+and a sliced request gains an explicit note that the file is partial.
+
+**Would have asked:** "should a slice be silent, on the grounds that the header already says so?"
+
+**Why not silent:** `review.mjs` already learned this and says so — telling a model it has a whole
+file it does not have "is the very defect this argument exists to remove", and its `hunksOnly` warning
+exists because hunks alone invite the "X is not defined" conclusion. A slice invites it identically.
+The header alone is not enough on a long request, where it can end up thousands of tokens from where
+the model is reasoning, so the fact is stated in both places.
+
+**Verified live rather than assumed.** Given `eta.mjs:14-24` and asked what calls the function, the
+model answered "the excerpt only contains the function definitions and does not include any call
+sites… I cannot tell what calls it", and separately noticed the formatting logic was "cut off". That
+is the warning working — it declined to infer absence from a boundary.
+
+**Clamping the end but refusing the start** is asymmetric on purpose: "line 400 to the end" is an
+ordinary thing to mean and refusing it would make a caller count lines, while a start past the end is
+a mistake with no sensible reading.
+
+**Reversible by:** `parseFileArg` returning `{path: given, slice: null}` unconditionally; everything
+downstream then behaves exactly as before.
