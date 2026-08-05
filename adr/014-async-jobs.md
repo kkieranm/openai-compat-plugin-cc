@@ -151,6 +151,12 @@ because comparing only the last two is tautological — both came from submissio
 config is the only term carrying information. A profile that has since moved from host A to host B
 and gained a new key would otherwise send B's credential to A.
 
+That last sentence is the one `tests/job-auth.test.js` executes (added 2026-08-05, after this feature
+shipped without it): a real submission, a real detached worker, and `providers.json` repointed in the
+window between them while the queue is held open — the worker refuses, and contacts the endpoint not
+at all. It carries a positive control in the same file, because a worker that died before ever
+reaching the check satisfies every assertion in the refusal case.
+
 **One exception, stated rather than quietly relied on.** `normalizeBaseUrl` preserves `url.search`
 verbatim, so a `--base-url` carrying `?api_key=…` puts a real secret into stored job state. "The
 credential is never persisted" was untrue without this sentence. Submission **warns explicitly** when

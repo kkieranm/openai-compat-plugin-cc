@@ -152,18 +152,33 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   deliberately not run for this reason, and each phase got a single `advisor` request instead as the
   tripwire (**every one of which failed to launch, overloaded** — so the mid-build tripwire produced
   nothing across all eight phases, and this pass is carrying more than it usually would).
-  **Do OAI-52 item (1) first** — an untested auth module is a finding the fan-out will certainly
-  raise, and paying for five verifiers to tell you what is already written down here is waste.
+  **OAI-52 item (1) is closed (2026-08-05)** — it was done first, deliberately, because an untested
+  auth module is a finding the fan-out would certainly raise and paying five verifiers to repeat what
+  is written down here is waste. `tests/job-auth.test.js` is therefore **inside this scope**, which
+  stays `e74eb2c^..HEAD` and so extends to it automatically.
   **Check `unadjudicated` before reading any verdict:** wide mode returns `findings: []` when its
   verifiers die on the cap, and that shape reads exactly like a clean pass.
 
-- **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
-  feature shipped, from reading the plan's verification section back against the tests that exist, so
+- **OAI-52** — **Six items from OAI-3's own verification list did not land** — **five, since
+  2026-08-05: item (1) is done.** Filed the day the feature shipped, from reading the plan's
+  verification section back against the tests that exist, so
   that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. None of these is a known
   defect; each is a property the plan said would be proved and that nothing currently proves. Ordered
   by what it would cost to be wrong about.
-  **(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.** This is the sharpest of
-  the six and the reason the item is here rather than at the bottom of the file. `authPolicyFor`
+  **~~(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.~~ DONE 2026-08-05** —
+  `tests/job-auth.test.js`, 8 tests. Both sides: `authPolicyFor` records an origin and provably not
+  the key, and `resolveCredential` is exercised on each of its four refusal legs plus the happy path.
+  The wire assertion the plan asked for is there as a real submission and a real detached worker, with
+  the queue held open by a synthetic `running` row so `providers.json` can be repointed in the window
+  between them — the worker then fails `credential-unavailable` and **contacts the endpoint not at
+  all** after the edit, which is asserted against a request-count taken at that moment rather than
+  over the whole recording (submission's own probes legitimately carried the old key, in the
+  foreground, while it was still authorised). **It ships with a positive control in the same file** —
+  the identical fixture with the config left alone completes and carries `Bearer key-a` on the wire —
+  because without it a worker that died before ever reaching `resolveCredential` satisfies every
+  assertion in the negative test. Mutation-proved: neutering the third origin comparison to `false`
+  turns both the unit test and the wire test red and leaves the control green.
+  **Why it was the sharpest of the six, kept because it is the reason for the ordering:** `authPolicyFor`
   (submission) and `resolveCredential` (the worker) implement the rule that a key is sent only when
   the current profile's origin, the persisted `authorizedOrigin` and the persisted transport's origin
   **all three** agree — a rule adopted *because* the two-term version was found to be tautological in
