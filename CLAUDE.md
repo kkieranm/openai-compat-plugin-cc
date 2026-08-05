@@ -112,8 +112,21 @@ ends, against `TERMINAL_STATES` and by running the agent's own `awk` expression 
 `scripts/lib/task-template.mjs` makes `/oai:task --template advisor` a named question rather than a
 prompt each caller rewrites: `TEMPLATES` holds the skeleton, the reply shape and the discipline, the
 whole skeleton goes in the **system** message so `/oai:status` still shows what the user asked, and
-`templateNotes` builds the caveats both `/oai:task` and `/oai:result` print — see
-[ADR 016](adr/016-a-template-is-three-things.md).
+`templateNotes` builds the caveats both `/oai:task` and `/oai:result` print; `advisor`, `diagnose` and
+`patch` ship, and `--json` carries the same notes as an array so a harness cannot read a crowded reply
+as a clean one — see [ADR 016](adr/016-a-template-is-three-things.md).
+
+`scripts/lib/eta.mjs` estimates prefill and generation separately from two per-provider config rates
+and prints **nothing** when a provider has none — a wait copied from other hardware is acted on as
+confidently as a measured one. `scripts/lib/task-artifact.mjs` is the one place a task answer is
+checked rather than captioned: it extracts a `patch` template's diff and runs `git apply --check`,
+reporting `applies` / `rejected` / `absent` and never applying anything.
+
+`bench/task-run.mjs` scores `/oai:task` templates against declared markers grouped by what naming them
+demonstrates, with both framing arms run and never averaged, each case guarded by an **executable
+witness** that must fail on `before/` and pass on `after/` — and it states in every report that a
+marker profile is evidence quality, **not** Stage 2's economic gate. See
+[ADR 017](adr/017-measuring-a-task-not-a-review.md).
 
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
