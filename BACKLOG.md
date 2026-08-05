@@ -917,6 +917,72 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   a companion subcommand so the agent's only verb is `node`. **The third is probably right** and is
   the same shape as OAI-74's "locked-down delegate mode" — decide them together.
 
+- **OAI-79** — **Three remaining sharp edges in the delegate recipe, all fail-closed, deliberately not
+  fixed in OAI-5.** Filed 2026-08-05 from the ladder's terminal pass, where the reason they ship
+  stated is itself the finding: five consecutive fixes in that same six-line block each introduced the
+  next pass's defect, so a sixth edit was judged likelier to add one than remove one. Both approvers
+  accepted that. Do these when the block is next opened for another reason — ideally when the
+  lifecycle moves out of agent shell entirely (OAI-74 with OAI-76), which deletes all three.
+  **(a) The root canonicalisation clobbers its own diagnostic.** `root=$(canon "$root")` assigns
+  before the `||` runs, so on failure `root` is already the empty stdout and the message prints
+  `refusing: cannot resolve ` with the path gone; node's stack carries no path either. The refusal is
+  then global and permanent for that checkout while the agent text says "do not remove that check to
+  make a request work". Two lines: capture `rawroot` first, canonicalise into `root`, name `$rawroot`
+  in the message. Reachable only when a directory *above* the repository holds a control character.
+  **(b) `root=/` refuses every attachment.** The pattern becomes `//*`, which matches no ordinary
+  absolute path in bash or zsh, so a session at `/` outside a git repository can attach nothing. Fails
+  closed; handle the filesystem root as its own case.
+  **(c) `realpathSync("")` returns the cwd rather than throwing**, which is fail-*open* in direction.
+  Masked today at both call sites — `[ -n "$f" ] || continue` for attachments, and root is either the
+  git top level or `$PWD` — so it is latent, not live. It stops being masked the moment either guard
+  moves, which is exactly the kind of change (a) invites.
+
+- **OAI-80** — **The delegate's own report can be forged or degraded by content it does not control.**
+  Filed 2026-08-05 from the ladder's pass-6 and pass-8 security lenses. Neither is disclosure —
+  containment is untouched and both are strictly smaller than the model reply `/oai:result` already
+  prints — but both undermine the *reporting* contract the agent is judged on.
+  **(a) The `attachments` line is ambiguous by construction.** `job-render.mjs:128` joins entries as
+  `path (N B)` with `, `, and the agent is told to take its file list from that line precisely because
+  it is what the job recorded. An in-tree filename containing `, ` or ` (0 B` can therefore forge an
+  extra entry or mask a real one in the list reported upward. The fix belongs with OAI-57's `--json`,
+  where the list is an array and the question does not arise.
+  **(b) The failure note carries up to 400 characters of server-controlled text.** `assertOk` embeds
+  the response body, the recipe now prints the status detail, and the agent is told to quote the note
+  when a job failed — so an untrusted server's text reaches the transcript as something the agent is
+  instructed to repeat. Bound it, or mark it as quoted foreign text rather than diagnosis.
+
+- **OAI-81** — **A submitted attachment leaves a durable plaintext copy outside the file it came
+  from.** Filed 2026-08-05. `persistRequest` freezes `request.messages` — which contains every
+  attached file's full text — into the job row, and `job-retention.mjs` keeps the newest 50 finished
+  jobs. So one mis-selected attachment persists in `jobs.db` until fifty jobs later, **even on a
+  localhost-only deployment where nothing ever left the machine**, in state the user does not think of
+  as holding file contents and which is itself a valid future attachment target. This is a
+  consequence of OAI-3's snapshot-at-submission design (that snapshot is *why* editing a file after
+  submission cannot change what the model was asked), so the fix is not "stop storing it" — it is to
+  decide whether the row should hold the text or a digest plus a reference, and what `/oai:result`
+  then replays. Interacts with OAI-65's `0600`/WAL work: the protection those items argue about is the
+  protection this content is resting on.
+
+- **OAI-82** — **"At most two `task` submissions, at most one accepted job" is not auditable.** Filed
+  2026-08-05. The invariant is stated in the agent, ADR 015, this tracker and the done entry, and only
+  its *accepted* half leaves a trace: an oversize refusal happens before any row exists, so a second
+  submission is invisible afterwards and nothing can reconstruct the count from persisted state. Not a
+  defect — the invariant holds by instruction and the refusal is the point — but it is a claim the
+  repo cannot check, which is the class this repo keeps promoting into structural tests. If it is ever
+  worth checking, the cheap form is a pre-publication attempt counter on the row rather than an
+  idempotency key; note that Codex proposed the full transactional design and it is far more than this
+  earns.
+
+- **OAI-78** — **RESOLVED inside OAI-5 (2026-08-05) before it shipped; the ID is retained so it is
+  never reused.** It was filed mid-ladder as a low-severity reporting nit — a newline-terminated
+  canonical path substituting a sibling file — on the stated grounds that containment was not escaped.
+  **Those grounds were refuted by execution in the next pass**: the truncated path was one nobody had
+  canonicalised, a planted sibling escaped the tree, and `/etc/passwd` was read while the audit trail
+  named an in-tree file. It was fixed in the same feature (the canonicaliser now refuses a resolved
+  path containing a control character), reproduced pre-fix and blocked post-fix. Kept here rather than
+  deleted because this file's IDs are stable and global, and because the filing-then-refutation is the
+  most instructive thing the ladder produced. Full account in `BACKLOG_DONE.md` under OAI-5.
+
 - **OAI-77** — **In-tree secrets are attachable, and containment cannot see it.** Filed 2026-08-05 at
   OAI-5's verdict point. The delegate's enforced check refuses paths that resolve *outside* the root;
   `.git/config` and `.git/logs/HEAD` (a token in an HTTPS remote URL), any in-tree `.env`, and
@@ -926,6 +992,14 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   Note the asymmetry worth keeping: containment is a property of the path, while this is a property of
   the *content*, so a deny-list will always be a heuristic — which is an argument for keeping the
   attachment list small and visible, not against having one.
+  **Widened 2026-08-05 by the ladder's pass-8 security lens: an in-tree HARDLINK to an out-of-tree
+  file passes containment**, verified — `sub/hl.txt` disclosed a file outside the tree. A hardlink has
+  nothing to resolve, so `realpathSync` cannot see through it the way it sees through a symlink, and
+  **unlike the symlink case the audit trail is truthful**: that name genuinely is a name for that
+  inode, so nothing is mislabelled and no check is forged. It belongs here rather than with the
+  containment work because it needs local write access into the tree — the same premise as the rest of
+  this item — and because no path-resolution fix can address it. If it is ever worth closing, the
+  instrument is `st_nlink > 1` or a device/inode comparison against the root, not a path check.
 
 - **OAI-75** — **An unidentified suite intermittent, recorded because it was seen and not explained.**
   Observed once on 2026-08-05 during OAI-5, in the first `npm test` after a live delegation round trip:
@@ -999,9 +1073,25 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   **(c) `prompt.mjs` is not the last word.** The agent holds unscoped `Bash`, so `curl` bypasses the
   companion entirely; `commands/task.md:5` scopes its own grant to `Bash(node:*)` and the agent does
   not. Scoping the agent the same way is incompatible with its one-shell-invocation recipe, which
-  needs `mktemp`, `awk`, `sleep` and `trap`. **Codex's adversarial stage rated the residual high
-  (0.99) and said do not ship**; it shipped anyway, with the limits stated in
-  [ADR 015](adr/015-a-context-broker-not-a-forwarder.md) — recorded here so the dissent is not lost.
+  needs `mktemp`, `awk`, `sleep` and `trap`. Now filed separately as **OAI-76**. **Codex's adversarial
+  stage rated the residual high (0.99) and said do not ship**; it shipped anyway, with the limits
+  stated in [ADR 015](adr/015-a-context-broker-not-a-forwarder.md) — recorded here so the dissent is
+  not lost.
+  **(d) The check and the read are separated by a process boundary, so containment is TOCTOU.** Raised
+  low by the security lens in pass 3 and high by `codex-adversarial` in pass 8. The delegate's shell
+  canonicalises a *pathname* and compares it; `readFileBlocks` then resolves and opens that name again
+  one process later, so an attacker able to swap a symlink or an ancestor directory *between* those
+  moments defeats the check. It is open rather than urgent because it needs a **concurrent local
+  attacker mutating the filesystem mid-run**, which is outside this feature's threat model of untrusted
+  repository *content* — but it is the strongest argument for doing this item properly: the real fix is
+  to validate and read through **one held descriptor** and submit the captured bytes, rather than
+  re-opening a name that was checked earlier. That is only possible here, in `prompt.mjs`, and it
+  cannot be done in agent-authored shell at all.
+  **(e) Whatever lands here should also settle what the root IS.** The delegate anchors containment to
+  `git rev-parse --show-toplevel`, falling back to the working directory outside a repository, so the
+  boundary is only as tight as where the session was rooted — started at `$HOME`, it admits everything
+  under `$HOME`. Stated in the agent text and ADR 015 rather than hidden, but a code-side boundary
+  should decide this deliberately rather than inherit a shell fallback.
 
 - **OAI-33** — Write `plans/README.md`, which the `/feature` skill already points at and this repo
   does not have. Filed 2026-08-02, noticed while filing OAI-26's plan. The skill says naming,
