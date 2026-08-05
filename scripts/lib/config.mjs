@@ -30,6 +30,9 @@ export function configPath() {
   return join(base, 'oai-plugin', 'providers.json');
 }
 
+/** Keys measured in something other than seconds, so the timer ceiling cannot apply. */
+const NON_DURATION_KEYS = new Set(['contextLength', 'prefillTokensPerSecond', 'generationTokensPerSecond']);
+
 /** Read the config, seeding it with defaults the first time. */
 export function loadConfig() {
   const path = configPath();
@@ -69,7 +72,10 @@ function validateConfig(config, path) {
     }
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
-    for (const key of ['contextLength', 'timeoutSeconds', 'idleSeconds', 'maxSeconds', 'retrySeconds']) {
+    for (const key of [
+      'contextLength', 'timeoutSeconds', 'idleSeconds', 'maxSeconds', 'retrySeconds',
+      'prefillTokensPerSecond', 'generationTokensPerSecond',
+    ]) {
       const value = profile[key];
       // `retrySeconds` is the one budget where 0 is a *setting*, not a mistake:
       // it means "retry immediately", which is a coherent choice for a server
@@ -84,9 +90,13 @@ function validateConfig(config, path) {
       }
       // A budget above what setTimeout can express is clamped by Node to 1ms —
       // so an enormous number here would arm an *immediate* timeout, which is
-      // the opposite of what anyone writing it meant. Same ceiling the flags
-      // use; `contextLength` is not a duration and is exempt.
-      if (key !== 'contextLength' && value > MAX_BUDGET_SECONDS) {
+      // the opposite of what anyone writing it meant. Same ceiling the flags use.
+      //
+      // Only DURATIONS have this ceiling. A size and a rate are not times, and
+      // refusing one of them for being "above what a timer can express" would be
+      // a refusal whose stated reason is not the condition tested — the defect
+      // class this repo repeats most.
+      if (!NON_DURATION_KEYS.has(key) && value > MAX_BUDGET_SECONDS) {
         throw new UserError(
           `Provider "${name}" in ${path} has "${key}": ${value} — above the ${MAX_BUDGET_SECONDS}s a timer can express.`,
         );
@@ -160,6 +170,12 @@ export function buildProfile(name, rawProfile) {
     idleSeconds: rawProfile.idleSeconds,
     maxSeconds: rawProfile.maxSeconds,
     retrySeconds: rawProfile.retrySeconds,
+    // Measured throughput, used only to estimate a wait before one is spent.
+    // Rates rather than a hardcoded model class, because ADR 001 makes providers
+    // configuration and nothing here may know which server is slow. Absent means
+    // no estimate is offered at all — see `eta.mjs`, which refuses to invent one.
+    prefillTokensPerSecond: rawProfile.prefillTokensPerSecond,
+    generationTokensPerSecond: rawProfile.generationTokensPerSecond,
     apiKey: resolveApiKey(rawProfile, name),
   };
 }

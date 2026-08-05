@@ -14,6 +14,7 @@ import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveRetryDelay, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { withProgress } from './progress.mjs';
+import { estimateNote, estimateRun } from './eta.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { resolveTemplate } from './task-template.mjs';
 
@@ -174,6 +175,14 @@ export async function executeTask(args) {
   const { numeric, profile, files, model, messages, estimatedTokens, budget, template } = prep;
 
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
+
+  // Before the wait, because that is the only moment it can change a decision:
+  // prefill is silent and can be minutes, and the choice between waiting and
+  // `--background` has to be made now. Nothing is printed when the provider
+  // carries no measured rates — an invented figure would be worse than silence,
+  // since the whole value of this line is that a reader can act on it.
+  const note = estimateNote(estimateRun({ estimatedTokens, maxTokens: numeric.maxTokens, profile }));
+  if (note) process.stderr.write(`${note}\n`);
 
   const ledger = createLedger();
   const startedAt = Date.now();

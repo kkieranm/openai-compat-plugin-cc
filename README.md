@@ -55,10 +55,17 @@ for the reviewer.
 }
 ```
 
-Per-provider options: `defaultModel`, `contextLength`, `timeoutSeconds`, and `apiKeyEnv` (name of an
-environment variable holding the key — preferred) or `apiKey`. All are optional: `contextLength` is
-detected where possible, and `defaultModel` is only needed when a server offers more than one chat
-model. The seeded ports are each project's documented default; correct them if your server listens
+Per-provider options: `defaultModel`, `contextLength`, `timeoutSeconds`, `prefillTokensPerSecond`,
+`generationTokensPerSecond`, and `apiKeyEnv` (name of an environment variable holding the key —
+preferred) or `apiKey`. All are optional: `contextLength` is detected where possible, and
+`defaultModel` is only needed when a server offers more than one chat model.
+
+The two rate options exist only so `/oai:task` can tell you roughly how long a request will take
+**before** it spends it — prefill is silent and can run to minutes on a large input, which is exactly
+when you would rather have used `--background`. They are yours to measure, and nothing is estimated
+without them: a rate copied from someone else's hardware would be acted on as confidently as a real
+one, so the plugin says nothing rather than guessing. Take them from a run's own footer, which
+reports prefill, generation and tokens separately. The seeded ports are each project's documented default; correct them if your server listens
 elsewhere.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is

@@ -175,3 +175,31 @@ adding sibling scripts around it is the kind of edit that invites a careless cha
 runner is opt-in and rarely typed; a documented command in CLAUDE.md costs less than a new script.
 
 **Reversible by:** adding `"bench:task": "node bench/task-run.mjs"` — nothing depends on its absence.
+
+### E7 — Time estimates are configured rates, not a model-class table
+
+**Decided:** `/oai:task` estimates prefill and generation from two per-provider config keys, and
+prints **nothing** when a provider does not carry them.
+
+**Would have asked:** "the measured brackets in the plan are per model class (dense ~335s/47k, MoE
+~67s/47k) — should the plugin ship those as a table keyed by model name?"
+
+**Why not:** ADR 001 makes providers configuration and never code paths, and a table keyed by model
+name is exactly the vendor branch that forbids. It would also be wrong the moment someone runs the
+same model on different hardware, which is the normal case for local inference.
+
+**Why nothing rather than a default:** an estimate is only worth printing if a reader acts on it, and
+a number derived from another machine is acted on exactly as confidently as a real one. The two
+halves are also estimated separately, never blended, because ADR 009 established that no arithmetic
+on a footer recovers one from the other — and it is specifically the silent prefill half that decides
+whether to use `--background`.
+
+**A defect this nearly shipped as dead code.** `buildProfile` is a whitelist and says so: *"a key
+added to validation and forgotten here validates fine and then does nothing."* The rates were
+validated and not whitelisted, so they were silently dropped and the feature would have been inert on
+every provider. Caught by running it rather than by reading. The same edit exposed that the duration
+ceiling was being applied to non-durations, so a fast rate would have been refused for being "above
+what a timer can express" — a refusal whose stated reason is not the condition tested.
+
+**Reversible by:** removing the two keys from `buildProfile`; `eta.mjs` then estimates nothing and the
+line disappears.
