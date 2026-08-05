@@ -10,6 +10,56 @@ import { renderTaskFooter } from './render.mjs';
 import { templateNotes } from './task-template.mjs';
 
 /**
+ * One finished run as one object — the machine-readable half of this command.
+ *
+ * Beside `report` on purpose, following the rule `review-report.mjs` states for
+ * its own pair: two renderings of one run, kept side by side so a fact present
+ * in one cannot quietly go missing from the other. Both take the same `outcome`
+ * and both sit behind the same refusal.
+ *
+ * `notes` is the load-bearing one. The text path prints the template's caveats
+ * under the footer; an envelope that omitted them would be instance 16 on a new
+ * path — a harness reading a large, crowded advisor reply with no indication it
+ * was crowded. It is an ARRAY rather than joined text for the reason OAI-80(a)
+ * gives about the attachments line: a delimiter inside a value is a forgeable
+ * entry, and an array has no delimiter to forge.
+ *
+ * The answer itself stays an opaque string. ADR 016 is explicit that a template
+ * asks for its shape in prose and nothing parses it; structuring the transport
+ * does not change that, and this envelope must not grow a field claiming the
+ * reply conformed.
+ */
+function jsonTaskReport(outcome, answer) {
+  const { result, profile, model, budget, estimatedTokens, durationMs, template, ledger } = outcome;
+  return {
+    provider: profile.name,
+    // What answered, beside what was asked for — the same pair, for the same
+    // reason, as the review envelope: a server may serve a build nobody asked
+    // for, and a record naming only one cannot show it.
+    model: result.model || model,
+    requestedModel: result.requestedModel ?? model,
+    content: answer,
+    template: template ?? null,
+    notes: templateNotes({ name: template, estimatedTokens }),
+    usage: result.usage ?? null,
+    finishReason: result.finishReason ?? null,
+    estimatedTokens,
+    // Whether the size guard was ever armed, and the note saying so when it was
+    // not. Omitting these would report a bare token count a caller could not
+    // tell from a checked one.
+    contextChecked: budget.checked,
+    contextNote: budget.checked ? null : budget.note,
+    durationMs,
+    prefillMs: result.prefillMs ?? null,
+    generationMs: result.generationMs ?? null,
+    retried: (result.requestCount ?? 1) > 1,
+    // One entry per PHYSICAL request, so a reader can separate what the answer
+    // cost from what the run cost. `null` where no ledger reached this far.
+    attempts: ledger ? ledger.entries() : null,
+  };
+}
+
+/**
  * Every field the human path shows, named in one place.
  *
  * Being one place is the point: `/oai:review` renders the same footer from
@@ -41,10 +91,20 @@ function writeFooter({ result, profile, budget, durationMs }) {
  * had nothing to say, and refusing first is how that warning goes missing from
  * exactly the runs that failed.
  */
-export function report(outcome) {
-  // Fails loudly rather than printing nothing: an empty answer with a footer
-  // reads as a successful run that had nothing to say.
-  process.stdout.write(requireAnswer(outcome.result, outcome.profile).trim());
+export function report(outcome, { json = false } = {}) {
+  // Fails loudly rather than printing nothing, and BEFORE either rendering: an
+  // empty answer with a footer reads as a successful run that had nothing to
+  // say, and an empty answer inside an envelope reads the same way to a harness
+  // — which is the reader least able to tell. The refusal is the one thing both
+  // shapes must share, so it happens above the branch rather than inside one.
+  const answer = requireAnswer(outcome.result, outcome.profile).trim();
+
+  if (json) {
+    process.stdout.write(`${JSON.stringify(jsonTaskReport(outcome, answer), null, 2)}\n`);
+    return;
+  }
+
+  process.stdout.write(answer);
   writeFooter(outcome);
   // Same builder `cmd-result.mjs` calls for the same run collected later, and
   // the same seam `renderTaskFooter` already uses: one pure builder, and each

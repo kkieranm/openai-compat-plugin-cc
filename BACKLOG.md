@@ -659,7 +659,14 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
   because the alternative is generating prose from a constant, which is worse than the problem.
 
-- **OAI-57** — No `--json` on `/oai:status`, `/oai:result` **or `/oai:task`**. Left out of OAI-3 phase 4
+- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half SHIPPED 2026-08-05**
+  as the prerequisite Stage 2's task benchmark turned out to have: a bench that cannot read a
+  machine-readable envelope must parse prose, which is the retracted class. What landed mirrors
+  `/oai:review` exactly — the reply as an opaque `content` string (nothing parses the answer's shape),
+  the `notes` array so the template's caveats cannot go missing on the machine path, `contextChecked`
+  beside `estimatedTokens`, and `errorReport` on failure with the exit code and stderr unchanged.
+  **What remains is `/oai:status` and `/oai:result`**, and OAI-80(a)'s forgeable `attachments` line is
+  still the reason to want the status half. Left out of OAI-3 phase 4
   as unrequested surface, and recorded here so the omission is a decision rather than an oversight.
   **Corrected 2026-08-05, verified against `TASK_SPEC` and by running the command:** this entry used to
   say "`/oai:task` and `/oai:review` both have it", and that is **false** — only `/oai:review` does

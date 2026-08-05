@@ -1,0 +1,155 @@
+// `/oai:task --json`: one run as one object, and the refusals it must keep.
+//
+// The envelope exists so a harness can drive the real command instead of parsing
+// its prose — `bench/run.mjs` states why for the review side: a harness that
+// reimplemented the request would measure a reimplementation and report the
+// number as the command's. These tests pin the two things that make the envelope
+// trustworthy rather than merely present: that every caveat the text rendering
+// carries is in it, and that a run with nothing to say still fails.
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { templateNotes } from '../scripts/lib/task-template.mjs';
+
+async function serverAnswering(text, { status = 200 } = {}) {
+  return startFakeServer((request, response) => {
+    if (request.url.includes('/chat/completions')) {
+      if (status !== 200) return respondJson(response, { error: { message: 'the model is on fire' } }, status);
+      return respondJson(response, completion(text));
+    }
+    if (request.url.includes('/models')) return respondJson(response, { data: [{ id: 'small' }] });
+    return respondJson(response, {}, 404);
+  });
+}
+
+async function runTask(server, args, { contextLength = 8192 } = {}) {
+  const { path } = writeConfig({
+    defaultProvider: 'local',
+    providers: { local: { baseUrl: `http://127.0.0.1:${server.port}/v1`, defaultModel: 'small', contextLength } },
+  });
+  return runCompanion(['task', ...args], { configPath: path });
+}
+
+test('--json emits one parseable object carrying the run identity and the answer', async () => {
+  const server = await serverAnswering('the answer');
+  try {
+    const result = await runTask(server, ['--json', 'a question']);
+    assert.equal(result.status, 0, result.stderr);
+
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.content, 'the answer');
+    assert.equal(envelope.provider, 'local');
+    // Both halves of the model fact, for the reason the review envelope gives:
+    // a server can answer from a build nobody asked for.
+    assert.equal(envelope.requestedModel, 'small');
+    assert.ok('model' in envelope);
+    assert.equal(typeof envelope.durationMs, 'number');
+    assert.ok('finishReason' in envelope && 'usage' in envelope);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the envelope carries the SAME template notes the text rendering prints', async () => {
+  // Instance 16 on a new path. The text rendering prints the template's caveats
+  // under the footer; an envelope without them would hand a harness a crowded
+  // advisor reply with no indication it was crowded — and a harness is the
+  // reader least able to notice.
+  const server = await serverAnswering('STRONGEST OBJECTION: none.');
+  try {
+    const result = await runTask(server, ['--json', '--template', 'advisor', 'a plan']);
+    assert.equal(result.status, 0, result.stderr);
+
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.template, 'advisor');
+    assert.deepEqual(envelope.notes, templateNotes({ name: 'advisor', estimatedTokens: envelope.estimatedTokens }));
+    assert.ok(envelope.notes.length >= 1, 'a templated run always owes its reader the discipline line');
+    assert.match(envelope.notes.at(-1), /unverified second opinion/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('notes is an ARRAY, so no delimiter inside a note can forge an entry', async () => {
+  const server = await serverAnswering('answer');
+  try {
+    const result = await runTask(server, ['--json', '--template', 'advisor', 'a plan']);
+    const envelope = JSON.parse(result.stdout);
+    assert.ok(Array.isArray(envelope.notes));
+    // An untemplated run carries none, and must not carry an empty string.
+    const plain = JSON.parse((await runTask(server, ['--json', 'a question'])).stdout);
+    assert.deepEqual(plain.notes, []);
+    assert.equal(plain.template, null);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the size figures say whether the guard was armed, not just a bare number', async () => {
+  const server = await serverAnswering('answer');
+  try {
+    const checked = JSON.parse((await runTask(server, ['--json', 'a question'])).stdout);
+    assert.equal(checked.contextChecked, true);
+    assert.equal(checked.contextNote, null);
+    assert.equal(typeof checked.estimatedTokens, 'number');
+
+    // With no configured window the guard never runs, and a reader must be able
+    // to tell that from a number that was checked and passed.
+    const { path } = writeConfig({
+      defaultProvider: 'local',
+      providers: { local: { baseUrl: `http://127.0.0.1:${server.port}/v1`, defaultModel: 'small' } },
+    });
+    const unarmed = JSON.parse((await runCompanion(['task', '--json', 'q'], { configPath: path })).stdout);
+    assert.equal(unarmed.contextChecked, false);
+    assert.match(unarmed.contextNote, /Context window unknown/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('an empty answer is REFUSED under --json, never returned as empty content', async () => {
+  // The rule `/oai:result` states: "no output, exit 0" is indistinguishable from
+  // a model that had nothing to say. An envelope makes that worse, not better —
+  // `content: ""` looks like a successful run to anything counting rows.
+  const server = await serverAnswering('');
+  try {
+    const result = await runTask(server, ['--json', 'a question']);
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.error, true);
+    assert.ok(!('content' in envelope), 'a refused run has no answer to report');
+    assert.match(result.stderr, /\S/, 'the prose failure path is unchanged');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a failed run is machine-readable too, and still exits nonzero', async () => {
+  // Without this, --json is JSON on success and prose on failure, which is the
+  // half-contract a harness cannot consume — and a run that dies is the run
+  // carrying the most evidence.
+  const server = await serverAnswering('unused', { status: 500 });
+  try {
+    const result = await runTask(server, ['--json', '--max-attempts', '1', 'a question']);
+    assert.notEqual(result.status, 0);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.error, true);
+    assert.equal(typeof envelope.message, 'string');
+    assert.ok('reason' in envelope && 'attempts' in envelope && 'requestedModel' in envelope);
+  } finally {
+    await server.close();
+  }
+});
+
+test('an ordinary run without --json is byte-for-byte what it always was', async () => {
+  const server = await serverAnswering('the answer');
+  try {
+    const result = await runTask(server, ['a question']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^the answer/);
+    assert.doesNotMatch(result.stdout, /^\{/, 'the human path never emits an envelope');
+    assert.match(result.stdout, /provider: local/);
+  } finally {
+    await server.close();
+  }
+});

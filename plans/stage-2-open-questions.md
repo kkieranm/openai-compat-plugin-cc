@@ -87,3 +87,60 @@ inherit them.
 2. **`bench/ttl-challenge.mjs` is already the precedent for a second bench** on a shared chassis —
    reusing `loadCases` and `bench/results/`, replacing scoring wholesale with a pure, unit-tested
    verdict module. I had been treating "distinct from the review benchmark" as unexplored ground.
+   *Codex refined this: TTL shares the loader because it deliberately runs the **same review cases**,
+   which does not establish that review defects and task claims share a schema.*
+
+### E3 — The five design forks, settled with Codex (F1–F5)
+
+Full reply in the session record; the decisions and the one correction that changed my plan:
+
+- **F1 envelope — ship `/oai:task --json` first.** Agreed independently. Codex's reason for rejecting
+  a direct `executeTask` import is sharper than mine was: importing bypasses `cmd-task.mjs`'s
+  *admissibility* decisions — argument handling, the background split, the substitution notice, and
+  the empty-answer policy applied during reporting — so the harness would "measure a lower-level
+  component while claiming to measure `/oai:task`". Footer parsing stays rejected as the retracted
+  server-prose-as-protocol class.
+- **F2 scoring — graded markers**, grouped by what a claim demonstrates (`site`, `mechanism`,
+  `experiment`, `remedy`), with the group vector preserved in the record rather than collapsed to one
+  number. That reproduces ADR 016's zsh partial exactly: site hit, experiment hit, mechanism miss.
+  LLM-as-judge rejected — correlated misconceptions and rubric drift, and it would likely have
+  smoothed that wrong-mechanism answer into "mostly correct".
+- **F3 chassis — a separate `bench/task-run.mjs`**, importing only the genuinely generic modules, with
+  TTL's guarded-main structure so it is importable and testable (which `bench/run.mjs` is not).
+  Explicitly *not* a callback-driven universal loader: `corpus.mjs` enforces review-specific facts,
+  and making it pluggable would produce "a generic-looking API full of domain-dependent branches while
+  weakening validation".
+- **F4 framing — a first-class paired dimension**, both prompts per case, both run, reported as
+  separate columns plus the delta, never averaged. A canonical record must mark itself incomplete
+  unless both arms ran. Deployment judgement uses the *pointed* arm, since ADR 016 establishes that as
+  the intended usage; neutral stays as the control.
+- **F5 ground truth — this repo's real historical defects**, hint-stripped, with an **executable
+  witness** per case: a deterministic oracle that fails on the defective fixture and passes on the
+  fixed one, plus pinned fixture hashes and a leakage guard that the prompt never exposes the fix.
+  A case that cannot support an executable witness is *exploratory evidence, excluded from the
+  gate-bearing corpus* — a commit reference or a human description is **not** the prose equivalent of
+  a live anchor.
+
+### E4 — The correction that changed the plan: marker hit rate is NOT the Stage 2 gate
+
+**This is the entry to read if you read only one.** Stage 2's gate is *"the artifacts are useful often
+enough that Claude verifying them costs less than Claude doing the work"* — an **economic** claim. A
+deterministic hit/miss corpus measures whether the local model emitted useful evidence; it does not
+measure whether verifying beat doing. I had conflated the two, and would have shipped a marker score
+and called the gate met.
+
+What actually satisfies it is a **paired arm**: an assisted run where Claude verifies the artifact
+against the fixture, and a control run where Claude gets the identical files and question with no
+artifact and does the work. Both must satisfy the case oracle; record Claude's usage, elapsed time and
+correctness. Codex's two sharp riders: if Claude rejects the artifact and redoes the work, assisted
+cost is *verification plus redo*; and if Claude **accepts a wrong artifact, that is a gate failure,
+not cheap verification**.
+
+**Would have asked:** "the real gate needs paired Claude runs across a corpus, which costs real
+tokens per case per arm — do you want that measured, and at what corpus size?"
+
+**Decided:** build workstreams 1–4 (the instrument), design the paired arm, and **do not run it at
+corpus scale** without the user — it is the S3 boundary. The marker score will be reported as what it
+is: evidence quality, explicitly not the gate.
+
+**Reversible by:** the paired arm is additive; nothing built for 1–4 presumes it is absent.

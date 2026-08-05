@@ -55,6 +55,15 @@ Building the call:
   into a job that fails quietly later. `/oai:status` says what a job is doing, `/oai:result` prints
   its answer once it has one, and `/oai:cancel` asks it to stop.
 
+- `--json` prints the whole run as one object instead of the answer and its footer: the reply as an
+  opaque string under `content`, plus the provider, the model that answered beside the one requested,
+  usage, timings, the size figures, and `notes` — the same caveat lines the text rendering prints
+  under the footer, as an array. It is for a harness, not a person; the answer's own shape is never
+  parsed, so nothing in the envelope claims the reply conformed to anything. A run that fails prints
+  a failure object on stdout **and still** writes its message to stderr and exits nonzero, so nothing
+  that worked before reads differently. With `--background` it prints `{"id": …, "background": true}`
+  rather than a bare id.
+
 - `--max-wait <seconds>` caps how long a background job will sit **queued** waiting for its turn, as
   opposed to how long its own run may take (`--max-seconds`). Two different clocks. A job that cannot
   tolerate sitting behind a long-running one gives up cleanly without ever sending a request to the
