@@ -82,6 +82,32 @@ far is in a grammar context, but no *long* unconstrained generation has been run
 **Gate:** a job launched in one Claude session is retrievable from another, and editing source after
 submission does not change what the model saw.
 
+> **SHIPPED 2026-08-05 as OAI-3** — gate met, both halves across a real process boundary. Plan:
+> `plans/oai-3-async-jobs.md`; decision record: [ADR 014](../adr/014-async-jobs.md).
+>
+> **Two of this document's own prohibitions were reversed at the user's direction, and the amendment
+> is here rather than in the ADR alone because *What NOT to build* below is what a future reader will
+> check against.** Both lines were written by me and Codex; neither came from the user.
+>
+> - **A queue is IN** (2026-08-04). It was forbidden to keep two model calls off one server; it
+>   delivers that *and* removes the need for mutual exclusion at submission entirely, since two
+>   submissions both succeed. Refusing the second would have needed the lock — the thing that has to be
+>   correct — to deliver a worse outcome.
+> - **SQLite is IN** (2026-08-05), via `node:sqlite`, built into Node 26.3.1, **zero dependencies**.
+>   Fourteen review rounds went into building atomic publication, a never-reused queue position and
+>   terminal immutability out of `wx` files and renames, and each round's fix produced the next round's
+>   defect. A transaction, an `AUTOINCREMENT` and a guarded `UPDATE` answer all three.
+>
+> **A daemon and a web UI stay out**, and nothing about this weakens them: what was adopted is a
+> library that runs inside the commands, not a process that outlives them.
+>
+> Two bullets above are also amended by what shipped. **"Versioned, atomic job files under a
+> workspace-scoped data dir"** — the store is a database, and the dir is **global** with each row
+> naming its workspace, because an id must resolve from any directory. **"One active job per
+> normalized server origin"** — implemented as one active job, full stop; per-origin was not built,
+> and the honest statement of the invariant is "one *background* job at a time" (OAI-54 covers the
+> foreground gap). `agents/oai-delegate.md` is deferred to **Stage 1b**, tracked as OAI-5.
+
 ### Stage 2 — make bounded tasks genuinely useful
 
 Task templates (patch synthesis, focused diagnosis, test drafting, review); context manifests and
@@ -115,7 +141,9 @@ an isolated worktree, patch-based edits, an allowlisted command runner and a str
 A generic ReAct/Codex clone with unlimited tools. A "safe" constrained cap just below 14k — the
 measured threshold is not an API guarantee. Automatic two-pass extraction on every result. A
 provider-specific tangle (`chat-completions | responses` is *configuration*, not `if LM Studio`).
-Concurrent jobs against one physical server. A daemon, SQLite, queue or web UI. Repo indexing/RAG
+Concurrent jobs against one physical server. ~~A daemon, SQLite, queue or web UI.~~ **Amended
+2026-08-05 — see the Stage 1 note above: SQLite and a queue are IN, at the user's direction, and both
+turned out to be the simplifying choice. A daemon and a web UI stay out.** Repo indexing/RAG
 before caller-selected context is proven inadequate. Automatic patch application in the live
 worktree. Parity features (transfer, hooks, rescue, adversarial-review) merely because the reference
 plugin has them. Tiny generation caps on reasoning models — already observed consuming the entire

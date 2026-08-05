@@ -11,6 +11,36 @@ server (which runs in the same process) can never answer the child's request. Th
 `runCompanion` helper in `tests/helpers.mjs`.
 **Guarded by** `tests/structure.test.js` — "tests never spawn a child synchronously".
 
+## A detached child that holds a descriptor is not detached
+
+`detached: true` and `unref()` decide whether a child *survives its parent*. They decide nothing about
+when the parent is observed to have **finished**. That is settled by its descriptors: `'close'` fires
+only once every stdio stream the process opened has been closed, and a child inherits its parent's
+pipes unless told otherwise. So a background worker spawned with `'inherit'` — or with a pipe — keeps
+the submitter's stdout open long after the submitter exits, `tests/helpers.mjs` `runCompanion`
+(which resolves on `'close'`, not `'exit'`) does not return, and **`--background` silently becomes a
+foreground run**: the test hangs for the length of a real model call and then fails for a reason that
+looks nothing like the cause.
+
+The rule: a detached worker writes to a **file** — `stdio: ['ignore', log, log]` — never `'inherit'`
+and never a pipe. Its output has to be readable after the fact anyway, which is the same requirement
+from the other direction.
+
+One adjacent ordering in the same spawn, equally load-bearing: **`unref()` comes *after* awaiting
+`'spawn'` against `'error'`.** Spawn failure is usually an async event, and an unresolved promise does
+not keep node alive — unref first and a failed spawn exits the submitter silently, leaving a row
+nothing will ever pick up. (The third ordering in a spawn, flags before the prompt, has its own entry
+below.)
+
+**Guarded by** `tests/queue-guards.test.js` — "the detached worker never inherits a descriptor from its
+parent", which reads `job-spawn.mjs` and asserts both the stdio shape and `detached: true`. It is a
+structural guard on purpose: the behavioural symptom is a hang, and a hang is exactly what a test
+suite is worst at attributing.
+
+This is the same family as the `spawnSync` entry above — **both are the event loop being blocked by a
+descriptor nobody meant to hold** — and it was the single most-reconfirmed finding of the OAI-3 review
+rounds, raised again in every pass that looked at spawning.
+
 ## Prompt text is prose, not shell syntax
 
 The `"$ARGUMENTS"` blob was originally split with shell-quoting rules "the way a shell would". But

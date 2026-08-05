@@ -134,6 +134,93 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 > vendor-assumption code the trigger targets, and neither `advisor` nor the lean workflow caught
 > them across four and two passes respectively.
 
+### Stage 1 follow-ups — filed 2026-08-05 when OAI-3 shipped
+
+- **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
+  feature shipped, from reading the plan's verification section back against the tests that exist, so
+  that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. None of these is a known
+  defect; each is a property the plan said would be proved and that nothing currently proves. Ordered
+  by what it would cost to be wrong about.
+  **(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.** This is the sharpest of
+  the six and the reason the item is here rather than at the bottom of the file. `authPolicyFor`
+  (submission) and `resolveCredential` (the worker) implement the rule that a key is sent only when
+  the current profile's origin, the persisted `authorizedOrigin` and the persisted transport's origin
+  **all three** agree — a rule adopted *because* the two-term version was found to be tautological in
+  the plan gate. The plan asked for "a profile that moved origin between submission and worker start
+  yields `credential-unavailable`, asserted on the wire". `tests/config.test.js:59-68` covers the
+  foreground analogue (`resolveProfile` does not carry a key to another origin), which is adjacent
+  evidence and not this: it exercises neither module, and the three-term check is exactly the part the
+  foreground path does not have.
+  **(2) `state='running'` and `worker_pid` are never observable apart.** The plan called for this as
+  an *atomicity* assertion, having previously called for a test of the window between them — which
+  the one-transaction design makes unreachable, and a test that cannot fail was itself a gate finding.
+  The property holds by construction today; nothing notices if a later edit splits the `UPDATE`.
+  **(3) A `SQLITE_BUSY` expiry is retried, never terminalized.** `isBusy` exists in `job-store.mjs`
+  and three call sites use it, but no test contends the database hard enough to produce one. This is
+  the failure that kills live work if it ever regresses — a job failed because two processes wrote at
+  the same moment.
+  **(4) A real process killed mid-transaction leaves either the pre-transaction or the committed
+  state, never a partial one.** This is a claim about SQLite rather than about this code, which is why
+  it is fourth; but the design rests on it, and the repo's own habit is that a load-bearing claim gets
+  executed rather than cited.
+  **(5) The submitter writes the row exactly once on the success path** — counted through an injected
+  store, **not** by mtime, an mtime being the last write rather than a count.
+  **(6) No session identifier appears in a row.** Structurally true — `job-store.mjs`'s `SCHEMA` has
+  no such column — and guarded by nothing. It is the property that distinguishes this design from the
+  reference plugin's, whose `SessionEnd` sweep depends on exactly the field this schema omits, so it is
+  worth a line of test rather than a line of prose. Noted in [ADR 014](adr/014-async-jobs.md) where the
+  claim is made.
+
+- **OAI-53** — `/oai:review --background`. Deferred deliberately in OAI-3, not forgotten: `kind` and
+  `schema_version` are in the schema so this fits without a migration, and the worker already runs the
+  foreground executor rather than a copy of it. **The blocker is what gets persisted.** A review's
+  canonical result is its findings, and today `/oai:review` renders them on the way out; persisting
+  the rendering would leave `/oai:result` unable to reconstruct the one distinction that matters —
+  `findings: null` (the reply was unparseable) against `[]` (a clean pass), which is trap instance 14
+  in `.claude/REPO_TRAPS.md` and the defect [ADR 003](adr/003-structured-findings.md) exists to
+  prevent. So this item is really "give the review path an outcome object the way OAI-3 gave the task
+  path one" — `task-execute.mjs`/`task-report.mjs` is the shape to copy — and the backgrounding is the
+  easy half that follows.
+
+- **OAI-54** — Foreground `/oai:task` and `/oai:review` do not join the queue, so the invariant OAI-3
+  ships is honestly "one **background** job at a time". A foreground run started while a background
+  job is mid-flight puts two model calls on one server, which is the case the queue exists to prevent
+  and the memory ceiling makes expensive (`estimated_peak 25.10GiB` against `safe_ceiling 25.08GiB`).
+  Recorded as a known gap in [ADR 014](adr/014-async-jobs.md) rather than discovered later.
+  **The design question this needs answering first, and the reason it is not a small change:** a
+  foreground command that waits its turn is a foreground command that hangs with no output, which is
+  a worse experience than the overlap it prevents. Options are to wait with progress on stderr, to
+  refuse with the blocking job named, or to make `--max-wait` mean something in the foreground too.
+  Decide that with the user before building it.
+
+- **OAI-55** — Redact a credential carried in a `--base-url` query string. `normalizeBaseUrl`
+  preserves `url.search` verbatim, so `--base-url 'https://host/v1?api_key=…'` persists a **real
+  secret** into `jobs.db` and into the `transport` column every `/oai:status` reads. OAI-3 warns at
+  submission and relies on `0600`/`0700`, which was the user's explicit decision ("warn is fine, keep
+  going") and is recorded as such in [ADR 014](adr/014-async-jobs.md) — the alternative of refusing
+  outright would break a legitimate provider whose auth is query-string-only. The fix is to store the
+  query in two forms: what to send, and what to show. **Note the claim it repairs**: without the
+  warning, "the credential is never persisted" was simply untrue, and that sentence had been in the
+  plan for fourteen rounds before the gate caught it.
+
+- **OAI-56** — The prefill-overlap bound: a cancelled or dead job can hold the server for the
+  remainder of its prefill after the queue has moved on. **Measured, not assumed** — LM Studio says so
+  itself on disconnect ("If the model is busy processing the prompt, it will finish first"), and
+  prefill is the expensive half here at ~335s dense / ~67s MoE. Same model next: only a slowdown.
+  Different model next: its JIT load overlaps that prefill, which is the two-models-resident case the
+  memory ceiling forbids. **Deliberately not mitigated in OAI-3**, because the obvious mitigation —
+  polling `lms ps` for idleness before dispatch — is a vendor-specific check in a plugin that is
+  generic by construction ([ADR 001](adr/001-generic-openai-compatible-plugin.md)), and would put an
+  `if LM Studio` where the whole repo has providers-as-data. Any fix must be shaped as configuration
+  or as a generic post-cancel settle delay, not as a vendor probe.
+
+- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. Left out of OAI-3 phase 4 as unrequested
+  surface, and recorded here so the omission is a decision rather than an oversight. `/oai:task` and
+  `/oai:review` both have it, and the row is already a JSON-shaped record, so the cost is small — but
+  the moment it exists it is a **contract**, and the enumerated-field problem OAI-36 describes for the
+  bench reliability prose applies to it exactly. Do it when something actually consumes it (the
+  `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
+
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
   (2026-07-31); the three items above it are its prerequisites, not competitors, and every item
@@ -491,12 +578,17 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   committing: whether three lenses on one model beats three plain passes, since that would deliver
   most of the value with no second model to install.
 
-- **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.
-  Port the reference plugin's generic job model (per-workspace state dir, light index + per-job
-  record, detached self re-exec worker); replace its RPC interrupt with an `AbortController`.
-
-- **OAI-5** — A delegation subagent (`/oai:rescue` + a thin forwarding agent) so a long local-model
-  run does not consume the main session's context.
+- **OAI-5** — A delegation subagent so a long local-model run does not consume the main session's
+  context. **This is Stage 1b of `plans/local-llms-like-codex.md`, deferred by name when OAI-3 shipped
+  rather than dropped — and the parent plan corrects this item's own framing.** As filed it said
+  "`/oai:rescue` + a thin forwarding agent". The plan asks for `agents/oai-delegate.md` as a **context
+  broker, not a forwarder**: its mandate is to select the smallest sufficient file set and make
+  exactly one companion call. That difference is the whole point — it is where this diverges most from
+  `codex-rescue`, and the reason is that Codex can read the repo itself while a local model with a
+  58k window cannot. Forwarding a session's context to a model that small is the failure mode, not the
+  feature. **OAI-3 changed what this needs:** with `--background` shipped, the agent no longer has to
+  hold a session open for the length of a run, so it can submit and hand back an id — which is the
+  ergonomics this item existed for. It is also the likely first consumer of OAI-57's `--json`.
 
 - **OAI-33** — Write `plans/README.md`, which the `/feature` skill already points at and this repo
   does not have. Filed 2026-08-02, noticed while filing OAI-26's plan. The skill says naming,

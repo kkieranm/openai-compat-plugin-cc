@@ -2,6 +2,46 @@
 
 Newest first.
 
+- **OAI-3** — Background jobs: `--background`, plus `/oai:status`, `/oai:result`, `/oai:cancel`.
+  **Completed 2026-08-05** as Stage 1 of `plans/local-llms-like-codex.md`. Plan:
+  `plans/oai-3-async-jobs.md`; decision record: [ADR 014](adr/014-async-jobs.md).
+  **The stage gate, in the plan's own words — "a job launched in one Claude session is retrievable
+  from another, and editing source after submission does not change what the model saw" — is met, and
+  both halves cross a real process boundary rather than being asserted.** Half 1 is
+  `tests/status.test.js` "a job submitted by one process is retrievable by another, from a different
+  directory": two separate `runCompanion` invocations, the second from a different cwd. Half 2 is
+  `tests/background.test.js` "what the model sees is frozen at submission, not read when the worker
+  runs", which uses a **barrier that already existed in the code** rather than a scheduling race —
+  attachments are read before `resolveTarget` probes `/v1/models`, so the fake `/models` handler
+  mutates the file before replying and the eventual chat completion is asserted to carry the original
+  bytes. Mutation-checked: making the worker re-read attachments from disk turns that test red.
+  **The item as filed said to port the reference plugin's job model and "replace its RPC interrupt
+  with an `AbortController`". Both were rejected on evidence, and the reversals are the substance of
+  the work.** The reference plugin (`codex` 1.0.6) kills its background jobs on `SessionEnd`, so
+  porting it would have failed the gate outright. And no `AbortController` exists here: the worker's
+  heartbeat calls `process.exit()`, because setting `process.exitCode` leaves the open socket and the
+  heartbeat timer holding the loop and the request simply continues.
+  **Two prohibitions in the parent plan were reversed at the user's direction, and each turned out to
+  be the simplifying choice** (both now amended in `plans/local-llms-like-codex.md` rather than left
+  contradicting the code): jobs **queue** rather than being refused, which removes the need for mutual
+  exclusion at submission entirely; and **SQLite** (`node:sqlite`, zero dependencies) is the store,
+  after fourteen review rounds spent building atomic publication, a never-reused queue position and
+  terminal immutability out of `wx` files — where every round's fix produced the next round's defect.
+  The whole concurrency design is now one `BEGIN IMMEDIATE` transaction.
+  Nineteen plan-gate rounds, ~74 findings, all accepted, closing on Codex `APPROVE`. What the gate
+  bought, beyond the protocol: a cancel that would have sent `SIGTERM` to a pid the plan itself
+  admitted might be recycled; a credential check comparing two values both derived from submission,
+  and so tautological; a `--base-url` query string silently persisting an API key while the plan
+  claimed credentials were never stored; **two tests that could not fail**; and `--max-wait` capping
+  nothing because two rules contradicted each other.
+  **Shipped state:** 8 phases; **525 tests green**, 44 of them added by this feature. 19 new modules
+  under `scripts/` (2,150 insertions), 10 new files under `tests/` (1,410), and 3 new command
+  markdowns. One real end-to-end run against LM Studio, plus a seeded-history run through the real
+  CLI for retention.
+  **What did NOT land, stated rather than implied by silence: six items from the plan's own
+  verification list — see OAI-52**, which is filed above precisely so this entry cannot read as
+  complete coverage.
+
 - **OAI-34** — Build the TTL challenge instrument, then run it. **Completed 2026-08-04, and the
   answer is negative: the DETERMINISTIC form of the JIT-TTL hypothesis is REFUTED.** A cold request
   stayed in prefill for 336s under a TTL deliberately shortened to 120s, three times out of three,

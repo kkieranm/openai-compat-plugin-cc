@@ -85,6 +85,23 @@ sweep, and enumerates what the attempt record holds rather than asserting what i
 that list from `RECORD_FIELDS`, whose membership `tests/bench-reason-notes.test.js` pins against a
 closed ledger entry.
 
+`/oai:task --background` returns a job id instead of waiting: `scripts/lib/job-store.mjs` is the only
+place this repo opens a database, and the whole concurrency design is a SQLite transaction rather than
+a file protocol — publication is an `INSERT`, a queue position is an `AUTOINCREMENT` that is never
+reused, and `job-queue.mjs`'s `BEGIN IMMEDIATE` makes the eligibility check, the owner registration
+and the transition to `running` one statement nothing can interleave with. **`waiter_pid` (a worker
+exists and is waiting) and `worker_pid` (a worker is running this job) are two different facts, and
+collapsing them made every legitimately queued job look abandoned.** Two versions are tracked
+separately because one number cannot mean both: `PRAGMA user_version` describes the table and a newer
+one is refused for all mutations, while a row's `schema_version` describes its payload, and a row this
+build cannot read is never mutated and never deleted. `job-liveness.mjs` decides death by pid and only
+corroborates with the heartbeat — a worker's last act is to beat — and nothing here ever signals a
+process it cannot verify, which `tests/queue-guards.test.js` enforces structurally; cancel is
+therefore cooperative, and `job-retention.mjs` keeps the newest 50 finished jobs, deleting each row
+before its log so that a crash in between leaves an orphan the same sweep already collects. What the
+model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
+see [ADR 014](adr/014-async-jobs.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see
@@ -110,6 +127,10 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 - **Never `spawnSync` in a test that talks to the in-process fake server** — the sync spawn blocks
   the event loop, the server can never answer, and the run hangs until the client timeout (cost: one
   204-second suite). `tests/helpers.mjs` `runCompanion` is async for this reason; `await` it.
+- **A detached worker must not inherit or be handed a descriptor.** `runCompanion` resolves on
+  `'close'`, which waits for every descriptor the child holds open — so a grandchild holding an
+  inherited pipe turns `--background` into a foreground run and hangs the suite. `job-spawn.mjs` uses
+  `['ignore', log, log]`, and `tests/queue-guards.test.js` guards it.
 - `new URL('localhost:1234')` **parses** (scheme `localhost:`, null origin) — URL parsing alone does
   not validate a base URL, so `normalizeBaseUrl` also checks the protocol is http(s).
 - LM Studio is installed and usually serves models on :1234, but it is only up when started
