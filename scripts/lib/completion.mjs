@@ -89,6 +89,48 @@ export function applyCompletion(answer, payload) {
  * it finished; text with neither is reported as cut short.
  */
 export function finishAnswer(answer, { profile, requestedModel, sawDone, streamed, prefillMs = null, generationMs = null, requestCount = 1 }) {
+  refuseUnusable(answer, { profile, sawDone, streamed });
+  return {
+    content: answer.content,
+    reasoning: answer.reasoning,
+    model: answer.model ?? requestedModel,
+    // Whether the SERVER named a model, or this is the requested id echoed back
+    // by the `??` above. Recorded because that distinction is unrecoverable
+    // downstream once the fallback has happened, and a benchmark attributing
+    // runs to models needs it: without this, a reply that named nothing is
+    // indistinguishable from one that confirmed the id, and the run is credited
+    // to a build that never said it was there.
+    //
+    // Additive on purpose. The `??` and its reasoning below are untouched —
+    // collapsing the pair still prevents reporting a substitution nothing
+    // observed, which is a different question from who answered.
+    modelReported: answer.model !== undefined && answer.model !== null,
+    // Carried beside what answered so the pair travels together to every
+    // consumer, rather than each renderer being handed the requested id
+    // separately — which is how one of the two call sites gets forgotten.
+    //
+    // The `??` above stays, and is not a loss: a server that never names a
+    // model yields requested === served, so it cannot report a substitution
+    // that nothing observed.
+    requestedModel,
+    usage: answer.usage,
+    finishReason: answer.finishReason,
+    prefillMs,
+    generationMs,
+    requestCount,
+  };
+}
+
+/**
+ * The three shapes in which a completion is not an answer, refused in order.
+ *
+ * Split out of `finishAnswer` at the function size budget, and the seam is real:
+ * these decide whether there is an answer at all, while the caller assembles one.
+ * The ORDER is behaviour and must not be rearranged — each refusal names a
+ * different thing that went wrong, and a reply matching two of them should be
+ * reported as the earlier, more specific one.
+ */
+function refuseUnusable(answer, { profile, sawDone, streamed }) {
   if (!answer.sawContent && !answer.sawReasoning) {
     throw new UserError(
       `${profile.name} returned a completion with no message content (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
@@ -119,32 +161,4 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
       },
     );
   }
-  return {
-    content: answer.content,
-    reasoning: answer.reasoning,
-    model: answer.model ?? requestedModel,
-    // Carried beside what answered so the pair travels together to every
-    // consumer, rather than each renderer being handed the requested id
-    // separately — which is how one of the two call sites gets forgotten.
-    //
-    // The `??` above stays, and is not a loss: a server that never names a
-    // model yields requested === served, so it cannot report a substitution
-    // that nothing observed.
-    requestedModel,
-    usage: answer.usage,
-    finishReason: answer.finishReason,
-    // Measured by the transport, defaulted to null here rather than omitted: a
-    // caller reading `result.prefillMs` must get "not determined" from every
-    // path, including the whole-JSON one and any future caller that does not
-    // pass them, not `undefined` that a `?? 0` downstream would turn into a
-    // measurement nobody took.
-    prefillMs,
-    generationMs,
-    // How many requests this one answer cost, as a COUNT. Deliberately not
-    // named `attempts`: the record carries an `attempts` *array* of one entry
-    // per physical request, and two different shapes under one name in one
-    // subsystem is a rename nobody performs until it has already misled someone.
-    // Defaults to 1 so a caller that never retried is not reported as unknown.
-    requestCount,
-  };
 }

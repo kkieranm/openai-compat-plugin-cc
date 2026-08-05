@@ -33,11 +33,17 @@ export const TASK_SPEC = {
  * precisely when the record matters most.
  */
 export async function runTask(argv) {
-  const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
+  // Intent is read from argv BEFORE parsing, and the parse itself is inside the
+  // boundary. Otherwise the failures that happen earliest — a mistyped flag, a
+  // flag word inside the prompt, an unknown template — are exactly the ones that
+  // escape as prose, and a harness driving this command gets JSON for every
+  // failure except the ones it is most likely to cause.
+  const wantsJson = argv.includes('--json');
   try {
+    const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
     await taskFlow(options, inlinePrompt, terminated);
   } catch (error) {
-    if (options.json) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
+    if (wantsJson) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
     throw error;
   }
 }

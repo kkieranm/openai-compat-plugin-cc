@@ -141,6 +141,77 @@ test('a failed run is machine-readable too, and still exits nonzero', async () =
   }
 });
 
+test('a server naming no model is RECORDED as not having named one', async () => {
+  // A fallback to the requested id would make `model === requestedModel` read as
+  // "checked, they matched" where nothing was determined — and a benchmark
+  // attributes runs to models, so that is a number credited to the wrong build.
+  const server = await startFakeServer((request, response) => {
+    if (request.url.includes('/chat/completions')) {
+      return respondJson(response, { choices: [{ message: { content: 'an answer' }, finish_reason: 'stop' }] });
+    }
+    if (request.url.includes('/models')) return respondJson(response, { data: [{ id: 'small' }] });
+    return respondJson(response, {}, 404);
+  });
+  try {
+    const silent = JSON.parse((await runTask(server, ['--json', 'q'])).stdout);
+    // `model` still echoes the requested id — `completion.mjs` collapses them on
+    // purpose, so a substitution nothing observed cannot be reported. What must
+    // NOT happen is that collapse being invisible.
+    assert.equal(silent.model, 'small');
+    assert.equal(silent.requestedModel, 'small');
+    assert.equal(silent.modelReported, false, 'the server named nothing, and the record must say so');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a server that DOES name a model is distinguishable from one that stays silent', async () => {
+  // The other half: without this, `modelReported: false` could be hard-coded and
+  // the test above would still pass.
+  const server = await serverAnswering('an answer');
+  try {
+    const named = JSON.parse((await runTask(server, ['--json', 'q'])).stdout);
+    assert.equal(named.modelReported, true);
+    assert.equal(named.model, 'test-model');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a PRE-REQUEST failure is JSON too, not prose', async () => {
+  // The failures a harness is likeliest to cause are the earliest ones. An
+  // unknown template never reaches the server, and a mistyped flag never reaches
+  // the parser's caller.
+  const server = await serverAnswering('unused');
+  try {
+    const unknown = await runTask(server, ['--json', '--template', 'nope', 'q']);
+    assert.equal(unknown.status, 1);
+    assert.equal(JSON.parse(unknown.stdout).error, true);
+
+    const conflict = await runTask(server, ['--json', '--template', 'advisor', '--system', 's', 'q']);
+    assert.equal(conflict.status, 1);
+    assert.match(JSON.parse(conflict.stdout).message, /--template and --system/);
+
+    // A flag the parser rejects outright — thrown before any option object exists.
+    const bogus = await runTask(server, ['--json', '--nonsense', 'x', 'q']);
+    assert.equal(bogus.status, 1);
+    assert.equal(JSON.parse(bogus.stdout).error, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test('retry state is read from attempts, not duplicated beside it', async () => {
+  const server = await serverAnswering('an answer');
+  try {
+    const envelope = JSON.parse((await runTask(server, ['--json', 'q'])).stdout);
+    assert.ok(!('retried' in envelope), 'a second source for a fact attempts already holds');
+    assert.ok(Array.isArray(envelope.attempts));
+  } finally {
+    await server.close();
+  }
+});
+
 test('an ordinary run without --json is byte-for-byte what it always was', async () => {
   const server = await serverAnswering('the answer');
   try {

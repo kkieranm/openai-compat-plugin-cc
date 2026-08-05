@@ -36,8 +36,17 @@ function jsonTaskReport(outcome, answer) {
     // What answered, beside what was asked for — the same pair, for the same
     // reason, as the review envelope: a server may serve a build nobody asked
     // for, and a record naming only one cannot show it.
+    //
     model: result.model || model,
     requestedModel: result.requestedModel ?? model,
+    // **Whether `model` above is something the server SAID, or the requested id
+    // echoed back.** `completion.mjs` collapses the two deliberately, so that a
+    // server naming nothing cannot produce a substitution report nothing
+    // observed — a decision this envelope does not overturn. But the collapse
+    // makes attribution unfalsifiable downstream, and a benchmark that credits a
+    // run to a model needs to know which it has. Recorded rather than inferred,
+    // because by this point the difference is gone.
+    modelReported: result.modelReported ?? false,
     content: answer,
     template: template ?? null,
     notes: templateNotes({ name: template, estimatedTokens }),
@@ -52,9 +61,15 @@ function jsonTaskReport(outcome, answer) {
     durationMs,
     prefillMs: result.prefillMs ?? null,
     generationMs: result.generationMs ?? null,
-    retried: (result.requestCount ?? 1) > 1,
     // One entry per PHYSICAL request, so a reader can separate what the answer
     // cost from what the run cost. `null` where no ledger reached this far.
+    //
+    // **No `retried` boolean beside it, and that is another deliberate
+    // divergence from the review envelope.** `retried` there is
+    // `(requestCount ?? 1) > 1` — a second source for a fact this list already
+    // holds, which is the mirror-don't-generate defect the review envelope
+    // itself avoids for `substituted`. Two sources disagree eventually; a
+    // consumer counts `attempts`.
     attempts: ledger ? ledger.entries() : null,
   };
 }
