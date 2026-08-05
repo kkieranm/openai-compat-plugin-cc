@@ -189,9 +189,18 @@ Domain:
 
 ## Work tracker
 
-- `BACKLOG.md` — ordered, numbered items with stable global IDs (`OAI-1`, `OAI-2`, …).
+- `BACKLOG.md` — ordered, numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
+  **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**; the tier list's ID
+  sequence must equal the heading sequence, and every ID ever issued must resolve to exactly one live
+  heading, one done/parked heading, or one redirect hop. *(A single bolded `**OAI-n**` inside the tier
+  prose parses as a tier entry — refer to items in other tiers without bold.)*
 - `BACKLOG_DONE.md` — completed items, newest first.
-- "Pick next item" = top of BACKLOG.md; "mark done" = move the item to BACKLOG_DONE.md with the date.
+- `BACKLOG_PARKED.md` — items whose **framing** was disproved, not merely deprioritised. Each carries a
+  **reopening bar**: what would have to be observed for it to become live again. An item still wanted
+  but unscheduled stays in `BACKLOG.md`; parking is for a premise that no longer holds.
+- "Pick next item" = top of BACKLOG.md; "mark done" = move the item to BACKLOG_DONE.md with the date;
+  "park" = move to BACKLOG_PARKED.md with a reopening bar, and add a row to the absorbed-ID table if
+  anything cites it.
 
 ## ADRs
 

@@ -13,7 +13,7 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 > - **Stage 0 shipped** (OAI-51, 2026-08-04, `db46d1f` `5675da5` `a23fdde`) — verified against disk by
 >   this sweep and moved to `BACKLOG_DONE.md`.
 > - **Stage 1 shipped** (OAI-3, 2026-08-05) and **Stage 1b** with it (OAI-5) — and their review
->   ladders filed **23 items**, which are now most of this file.
+>   ladders filed **23 items**, 22 of which are still live: **44% of this file**, from two features.
 > - **Stage 2 is next in the plan** and is tracked as **OAI-83**.
 >
 > **So the ordering below is not the plan's stage order, and that is deliberate.** The stages still
@@ -23,9 +23,11 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 > Stage 2 follows it; the measurement programme trails both.
 >
 > **The measurement programme is no longer suspended.** OAI-19 said "no further arm runs until OAI-51
-> is resolved" — OAI-51 is resolved, so that clause is discharged and the run is launchable whenever
-> the user wants hours of their LM Studio. It is not near the top because the plan stopped making it
-> the ordering, not because anything blocks it.
+> is resolved" — OAI-51 is resolved, so that clause is discharged. **One thing replaced it, and it is
+> much smaller: OAI-84 changes the reply parser**, so the arm should run once that lands rather than
+> immediately. It is not near the top because the plan stopped making it the ordering, not because
+> anything blocks it — and it costs hours of the user's own LM Studio, so it is launched when they say
+> so, never incidentally.
 
 <!-- tiers -->
 ### The order, by impact — tiers, and why each leads where it does
@@ -72,8 +74,10 @@ which is why they are not higher despite being small.
 OAI-73, OAI-52, OAI-79, OAI-75, OAI-39, OAI-45**. OAI-28 leads because it now carries the ratchet
 decision (see the redirect table): `tests/structure.test.js` is at **exactly 300 of 300** and cannot
 accept another guard. **OAI-40 is batchable with it** — its fix lands in `bench-reliability.test.js`,
-the other file OAI-28's split touches, and that file has six lines of headroom. OAI-75 is an
-unidentified intermittent whose next step is capture, not reasoning.
+the other file OAI-28's split touches, and that file has six lines of headroom. **OAI-79 may never be
+worked at all** — its own body says the three sharp edges are *deleted* by moving the delegate's
+lifecycle out of agent shell, which is OAI-74 with OAI-76 in tier 3, so check whether it is still live
+before opening it. OAI-75 is an unidentified intermittent whose next step is capture, not reasoning.
 
 **Tier 7 — the measurement programme: unblocked, and no longer the ordering.** **OAI-19, OAI-50,
 OAI-49, OAI-48, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — every item behind it wants
@@ -355,7 +359,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   decision plus a migration story for rows already written, which is the repo's own grilling-checklist
   item.
 
-  **(d) The same root cause one layer up — moved here 2026-08-05 from OAI-72(c), because it is not a
+  **The same root cause one layer up — moved here 2026-08-05 from OAI-72(c), because it is not a
   second item.** `config.mjs:187`'s `sameOrigin` withholding is origin-only too, so
   `--provider prod --base-url <same origin, different path>` keeps prod's key — executed:
   `apiKey: "KEY-PROD"`, `credentialWithheld: false`. Both halves are the single decision "does
@@ -405,7 +409,8 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   query intact, and `render.mjs:111` / `cmd-setup.mjs:46` print it to **stdout**. Ran with a positive
   control: the failing profile printed `…/v1?api_key=sk-QUERY-SECRET-9999`; the control (env var set,
   so `buildProfile` succeeds) printed `…/v1` clean. Reachable via any `buildProfile` throw.
-  **(c) MOVED 2026-08-05 to [OAI-63](#) as its sub-item (d)** — `config.mjs:187`'s origin-only
+  **(c) MOVED 2026-08-05 into [OAI-63](#)**, where it is the paragraph beginning "The same root cause
+  one layer up" — `config.mjs:187`'s origin-only
   `sameOrigin` withholding. It is OAI-63's root cause one layer up and the two bodies both said to fix
   them together, so it now lives where that decision is made. Nothing was lost: the executed evidence
   (`apiKey: "KEY-PROD"`, `credentialWithheld: false`) went with it. **This item keeps its ID and (a)
@@ -562,8 +567,8 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.findings)) return null;` — so a
   reply of `[{...}, {...}]` fails the object test and returns null. Under a grammar this was a
   degraded-path curiosity; under prose instructions, "emit the findings" answered with a plain array is
-  an *ordinary* thing for a model to do, and this is the most likely single cause of a review that
-  found something reporting nothing.
+  an *ordinary* thing for a model to do, which makes this the most likely candidate for a review that
+  found something reporting nothing — a candidate, not a measurement; see the next-but-one paragraph.
 
   **Why this outranks the vendor items it was filed with.** Both render as trap instance 14 — the
   `findings: null` versus `[]` distinction that [ADR 003](adr/003-structured-findings.md) exists to
@@ -765,6 +770,10 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   compared with `>` (`tests/structure.test.js:12,55`) — **zero headroom** — and
   `tests/bench-reliability.test.js` is at **294**, six lines. (`split('\n').length`, the way the
   ratchet counts; one more than `wc -l`.) OAI-35 put ~140 of those lines there.
+  **The ratchet is being eaten, not merely full, and the dates say so:** OAI-30 recorded
+  `structure.test.js` at **299 of 300 on 2026-08-01** and warned whoever picked it up to make room
+  first; it was at **300 on 2026-08-04** and is at 300 today. One line consumed in three days, and the
+  file has been at the ceiling ever since.
   This is the size-growth rule working as designed — the ceiling is meant to force a split rather than
   be raised — but it is now due, and due *before* the next person needs it: `structure.test.js` is the
   file whose whole job is holding structural guards and it cannot accept another one.
