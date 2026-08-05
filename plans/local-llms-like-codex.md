@@ -79,6 +79,14 @@ far is in a grammar context, but no *long* unconstrained generation has been run
   smallest sufficient file set and make exactly one companion call. This is the piece that differs
   most from `codex-rescue`, and the difference is that Codex can read the repo itself.
 
+  > **Correction, 2026-08-05, when this shipped as OAI-5.** "Exactly one companion call" is not
+  > implementable and was never followed: submission itself refuses an oversized request, which is a
+  > call, and the broker's own mandate is then to re-select. The invariant as built is **at most two
+  > `task` submissions, at most one accepted job** — it bounds submissions, not Bash calls and not
+  > `status`/`result` reads. The broker half of this bullet is otherwise exactly what shipped. See
+  > [ADR 015](../adr/015-a-context-broker-not-a-forwarder.md). Left in place rather than rewritten,
+  > per this repo's convention that a plan records what was believed at the time.
+
 **Gate:** a job launched in one Claude session is retrievable from another, and editing source after
 submission does not change what the model saw.
 

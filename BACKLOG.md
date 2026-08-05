@@ -189,6 +189,20 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   real contention scenario (two plugin commands at once produce the same thing), but not one the suite
   normally creates. **So this is a genuine intermittent whose rate is unmeasured**, and the value here
   is the located line plus a comment that overstates its guarantee, not a frequency.
+  **Second occurrence, 2026-08-05, and it confirms the hypothesised trigger.** Seen during OAI-5's
+  mutation testing, at the same line: `Unexpected failure: Error: database is locked at openStore
+  (job-store.mjs:151)`, this time surfacing through `submitTask` (`task-submit.mjs:93`) rather than
+  the queue test. It happened while two `npm test` invocations genuinely were overlapping — which is
+  exactly the condition the paragraph above guessed at, so **the trigger is now observed rather than
+  inferred**. Still unmeasured as a rate, and still indistinguishable from a real regression when it
+  fires.
+  **Third occurrence, 2026-08-05, during OAI-5's pass 8 audit — and it lands back on the ORIGINAL
+  site.** `tests/queue.test.js:23`, the same test as the first sighting, again `database is locked`,
+  again under concurrent runs, and green on the two runs either side of it. Three sightings, two
+  distinct call sites (`openStore` via the queue test, and via `submitTask`), one trigger. That is
+  enough to stop calling it unexplained: **the mechanism is contention on `PRAGMA journal_mode = WAL`
+  during open, exactly where the comment at `job-store.mjs:145-149` claims the preceding
+  `busy_timeout` makes waiting universal.** What remains unmeasured is the rate.
   It also means the suite carries a rare flake whose failure message is indistinguishable from a real
   regression — worth a targeted retry at this call site so a contended open waits rather than killing
   a submission.
@@ -890,17 +904,104 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   committing: whether three lenses on one model beats three plain passes, since that would deliver
   most of the value with no second model to install.
 
-- **OAI-5** — A delegation subagent so a long local-model run does not consume the main session's
-  context. **This is Stage 1b of `plans/local-llms-like-codex.md`, deferred by name when OAI-3 shipped
-  rather than dropped — and the parent plan corrects this item's own framing.** As filed it said
-  "`/oai:rescue` + a thin forwarding agent". The plan asks for `agents/oai-delegate.md` as a **context
-  broker, not a forwarder**: its mandate is to select the smallest sufficient file set and make
-  exactly one companion call. That difference is the whole point — it is where this diverges most from
-  `codex-rescue`, and the reason is that Codex can read the repo itself while a local model with a
-  58k window cannot. Forwarding a session's context to a model that small is the failure mode, not the
-  feature. **OAI-3 changed what this needs:** with `--background` shipped, the agent no longer has to
-  hold a session open for the length of a run, so it can submit and hand back an id — which is the
-  ergonomics this item existed for. It is also the likely first consumer of OAI-57's `--json`.
+- **OAI-76** — **The delegate's `Bash` grant is unscoped, so the companion is not a chokepoint.**
+  Filed 2026-08-05 at OAI-5's verdict point, where the Codex approver refused to treat this as
+  shippable-by-statement and was right: `agents/oai-delegate.md:5` grants bare `Bash`, while
+  `commands/task.md:5` scopes the identical capability to `Bash(node:*)`. So every boundary OAI-74
+  would add inside `prompt.mjs` is bypassable with one `curl`, and the agent's threat model — which
+  explicitly treats repository contents as untrusted — depends on the agent not doing that.
+  **Why it was not simply fixed:** `Bash(node:*)` is incompatible with the recipe as designed, which
+  must be one shell invocation (shell state does not survive between `Bash` calls) and needs `mktemp`,
+  `awk`, `sleep` and `trap` inside it. The options are a narrower allowlist covering exactly those
+  commands, splitting the recipe and paying a different correctness cost, or moving the lifecycle into
+  a companion subcommand so the agent's only verb is `node`. **The third is probably right** and is
+  the same shape as OAI-74's "locked-down delegate mode" — decide them together.
+
+- **OAI-77** — **In-tree secrets are attachable, and containment cannot see it.** Filed 2026-08-05 at
+  OAI-5's verdict point. The delegate's enforced check refuses paths that resolve *outside* the root;
+  `.git/config` and `.git/logs/HEAD` (a token in an HTTPS remote URL), any in-tree `.env`, and
+  `.claude/settings*.json` are all *inside* it. `agents/oai-delegate.md` names them as never-attach in
+  prose, which is exactly the enforcement gap OAI-74 exists for, one direction over. A deny-list
+  belongs wherever OAI-74's containment lands, since both are the same predicate on the same path.
+  Note the asymmetry worth keeping: containment is a property of the path, while this is a property of
+  the *content*, so a deny-list will always be a heuristic — which is an argument for keeping the
+  attachment list small and visible, not against having one.
+
+- **OAI-75** — **An unidentified suite intermittent, recorded because it was seen and not explained.**
+  Observed once on 2026-08-05 during OAI-5, in the first `npm test` after a live delegation round trip:
+  a `strictEqual` failure with `actual: 2, expected: 0`. It did **not** reproduce — three consecutive
+  full runs green afterwards, on identical content — and **the failing test's name was not captured**,
+  which is the gap that makes this an item rather than a fix. The count shape matches the
+  `assert.equal(scenario.chats().length, 0, …)` family in `tests/job-auth.test.js:167` and
+  `tests/queue-reconcile.test.js:31,67`, i.e. *two chat requests reached a recorder that should have
+  seen none* — which would mean a worker ran where a blocker should have stopped it.
+  **Two hypotheses were tested and neither is supported.**
+  *(1) Store leakage from this machine's real job rows.* `tests/job-helpers.mjs:27-38,116-124` scopes
+  `OAI_PLUGIN_STATE` to a temp dir per scenario and restores it in a `finally`. Not the explanation —
+  though note this rules out the *helper*, not interleaving, which is why (2) was run.
+  *(2) `process.env` interleaving with the new async test.* `OAI_PLUGIN_STATE` is process-global, and
+  OAI-5 added the first `async` test to `tests/plugin.test.js`, which awaits a child four times — so a
+  scenario overlapping it could read the wrong store. **Refuted by execution**: 8/8 green running
+  exactly `node --test tests/plugin.test.js tests/job-auth.test.js tests/queue-reconcile.test.js`, the
+  file combination that would have to interleave.
+  **Attribution, stated at the strength the evidence supports:** 1 failure in ~9 full-suite runs with
+  the OAI-5 diff, 0 in 5 full-suite runs with `tests/plugin.test.js` reverted, 0 in the 8 targeted
+  runs. That is not enough to call it pre-existing and not enough to blame the diff; it is one
+  unexplained event with two candidate causes eliminated.
+  **Still unidentified as of 2026-08-05, and deliberately NOT merged into OAI-62(c).** OAI-5's later
+  passes produced a third `database is locked` sighting with a captured test name, which closed the
+  naming gap **for that signature only**. This item's signature is different — a `strictEqual` of
+  `2` against `0`, which is a chat-request count, not a locked database — and nothing since has
+  reproduced it. Merging them on the strength of "both are flaky" would lose exactly the distinction
+  that makes this one worth keeping open.
+  This is a **different signature from OAI-62(c)** (a locked database), so it is filed separately
+  rather than folded in. Both share the property that matters: a failure indistinguishable from a real
+  regression. Next step is to capture the name — run the suite in a loop with the failing test's
+  output retained, rather than reasoning about which assertion it must have been.
+
+- **OAI-74** — Enforce the attachment boundary for **every** caller, not just the delegate's recipe.
+  **Narrowed 2026-08-05 by OAI-5's second review pass: the delegate path is now enforced.** Its recipe
+  runs `readlink -f` per attachment and refuses the submission when a resolved path leaves the git top
+  level — falling back to the working directory outside a repository, so it is only as tight as where
+  the session was rooted —
+  proved with controls in `bash` and `zsh` (an in-tree symlink to `/etc/hosts` and a bare `/etc/hosts`
+  both refused, in-tree files accepted). So the symlink variant that would have survived a
+  `resolve()`-based fix is closed **for this agent**. What remains, and why the item stays open:
+  the check lives in agent-authored shell, so it protects the delegate and not `prompt.mjs`'s other
+  callers; and an agent holding unscoped `Bash` can still reach the network without the companion at
+  all. Original framing follows.
+  Filed 2026-08-05 from the OAI-5 plan gate, where Codex raised it and it was deliberately **not**
+  grown into that item. `readFileBlocks` (`prompt.mjs:12`) accepts absolute paths and `..`, and
+  `readFileSync` follows symlinks, so a component that selects its own attachments can send a file
+  from outside the working tree to the configured endpoint. `agents/oai-delegate.md` states the rule
+  — repository contents are untrusted data, and every attachment's *resolved* path stays inside the
+  tree unless the user named the file — but prose is not a boundary, and the agent is the first
+  consumer in this repo that chooses files without a human reading the list first.
+  **Not a known exploit and not attacker-triggerable today**: it is a foot-gun that becomes a
+  disclosure path the moment a repository file's content is treated as an instruction. The decision
+  needed first is *where* the check belongs — `prompt.mjs` refusing an out-of-tree `--file` would
+  also constrain the foreground commands, where the user typed the path themselves and the refusal
+  would be wrong. So this is probably an opt-in flag the agent passes, which is a surface decision
+  rather than a one-line guard.
+  **Rescoped 2026-08-05 by OAI-5's security review, which showed the obvious implementation would not
+  work.** Three corrections, the first of which is the reason this item is not what it looked like:
+  **(a) It must dereference, not resolve.** The natural fix — `resolve()` plus a prefix test — accepts
+  an **in-tree symlink pointing outside the tree**, and that variant is worse than the ones it does
+  catch, because it is the only one that leaves *no trace*: verified by execution, a link at
+  `./innocuous-note.txt` was read and `prompt.mjs:23` labelled it `innocuous-note.txt`, so the model
+  header, `digestsOf` and the rendered attachment list **all** name the harmless in-tree path. Absolute
+  and `..` attachments at least appear in those records. So the check needs `realpathSync`, and needs a
+  decision about dangling links, where `realpathSync` throws `ENOENT` and today's code maps that to
+  "File not found".
+  **(b) Containment is necessary and not sufficient.** `.git/config` and `.git/logs/HEAD` (a token in
+  an HTTPS remote), an in-tree `.env`, `.claude/settings*.json` are all *inside* the tree. A perfect
+  boundary admits every one of them.
+  **(c) `prompt.mjs` is not the last word.** The agent holds unscoped `Bash`, so `curl` bypasses the
+  companion entirely; `commands/task.md:5` scopes its own grant to `Bash(node:*)` and the agent does
+  not. Scoping the agent the same way is incompatible with its one-shell-invocation recipe, which
+  needs `mktemp`, `awk`, `sleep` and `trap`. **Codex's adversarial stage rated the residual high
+  (0.99) and said do not ship**; it shipped anyway, with the limits stated in
+  [ADR 015](adr/015-a-context-broker-not-a-forwarder.md) — recorded here so the dissent is not lost.
 
 - **OAI-33** — Write `plans/README.md`, which the `/feature` skill already points at and this repo
   does not have. Filed 2026-08-02, noticed while filing OAI-26's plan. The skill says naming,

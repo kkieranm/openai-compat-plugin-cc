@@ -102,6 +102,13 @@ before its log so that a crash in between leaves an orphan the same sweep alread
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
 see [ADR 014](adr/014-async-jobs.md).
 
+`agents/oai-delegate.md` delegates as a **context broker rather than a forwarder** — it picks the
+smallest sufficient file set itself, spends at most two `task` submissions on at most one accepted
+job, and returns an account plus the job id instead of the model's reply, so neither the reading nor
+the answer lands in the calling session; `tests/plugin.test.js` pins the status line it polls at both
+ends, against `TERMINAL_STATES` and by running the agent's own `awk` expression — see
+[ADR 015](adr/015-a-context-broker-not-a-forwarder.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see

@@ -2,6 +2,77 @@
 
 Newest first.
 
+- **OAI-5** — A delegation subagent, so neither the reading nor the reply lands in the calling
+  session. **Completed 2026-08-05**, Stage 1b of `plans/local-llms-like-codex.md`. Plan:
+  `plans/oai-5-delegation-broker.md`; decision record:
+  [ADR 015](adr/015-a-context-broker-not-a-forwarder.md).
+  `agents/oai-delegate.md` ships as a **context broker, not a forwarder** — it picks the files, makes
+  the submission, waits, and returns an account plus the job id rather than the model's reply. No
+  `.mjs` changed; the feature is one markdown file plus four guards in `tests/plugin.test.js`.
+  **The invariant was corrected on the way in.** Both this file's old entry and the parent plan said
+  "exactly one companion call", which is not implementable — an oversize refusal *is* a call, and
+  re-selecting is the broker's mandate. It ships as **at most two `task` submissions, at most one
+  accepted job**, in that wording in the agent, the ADR and the parent plan's dated correction block.
+  **Verified live, end to end, against LM Studio** rather than a stub. A nested session invoked
+  `oai:oai-delegate`, which selected **one file (`scripts/lib/errors.mjs`, 711 B)**, submitted job
+  `e3835ded`, polled it to `completed`, and returned a summary, the file list, the id, an explicit
+  "unverified — leads, not conclusions" caveat and a pointer to `/oai:result` — without pasting the
+  reply. The model's answer was then checked against the file and was accurate. This is also the first
+  evidence in this repo that **`${CLAUDE_PLUGIN_ROOT}` expands inside an *agent's* Bash call**, which
+  the whole design rests on and which nothing here had ever proved.
+  **Three mutations, each with a restore proved against a backup — and one of them refuted a claim in
+  this feature's own plan.** The plan said reordering the rendered line would turn the *consumer*
+  assertion red. It does not: the exact-line assertion fires first and aborts the test, so no renderer
+  mutation can separate the two. The consumer assertion was therefore proved by mutating the agent's
+  own `awk` expression instead (`$3` → `$2`), which leaves the renderer untouched — one test red, on
+  the right assertion. The other two: collapsing the two-space separator turns the **exact-line**
+  assertion red, and dropping a `TERMINAL_STATES` member turns the **vocabulary** guard red. Recorded
+  because a mutation that cannot fail is this repo's most-repeated defect class, and the plan proposed
+  one.
+  **The step 6 ladder ran EIGHT passes and closed by dual approval** (Codex `APPROVE` + a verdict-only
+  Claude approver `APPROVE`, combined with `check-plan-gate.sh --dual-approved`, exit 0). Stages per
+  pass: `acceptance-audit`, `advisor-opener`, `codex-adversarial`, `codex-plain`, `security-review`
+  and `advisor-closer`. `security-review`'s packaged skill **cannot launch in this remoteless repo**
+  (`git diff origin/HEAD...`; that is OAI-7) and was substituted by scoped agents each pass, recorded
+  as a substitute and never as the skill passing — the OAI-58 precedent. `lean-wide` was evaluated
+  every pass and never triggered: no module is introduced or altered. The `advisor` failed four times
+  (overload, a reply describing a different session, a reply impersonating the orchestrator, a
+  timeout) and completed five; it is never recorded as passing on a pass where it did not complete.
+  Two verdict points rejected before the third approved — the first on ADR staleness, the second on
+  pass completeness, and both objections were fixed rather than argued.
+
+  **The finding worth remembering, because I got it wrong first.** Pass 7 found that
+  `real=$(canon "$f")` is command substitution, which strips trailing newlines — so a symlink to a
+  file whose *name* ends in a newline yields a path **nobody canonicalised**, and a sibling planted at
+  that shortened name and pointing outside the tree is read and recorded under the innocent in-tree
+  name. I first **filed** it as a reporting-integrity nit on grounds I reasoned to ("containment is not
+  escaped, both files are inside the root"); the security lens **refuted those grounds by execution**
+  in the next pass, attaching `/etc/passwd` while the audit trail said `sub/target`. It was then fixed
+  at the canonicaliser — which refuses any resolved path containing a control character — reproduced
+  pre-fix, blocked post-fix, with an ordinary in-tree file still accepted, and re-confirmed
+  independently in pass 8 with its own positive control. **The fix forbids a legal filename rather
+  than handling it**: a repository holding a file whose name ends in a newline now has that file
+  refused. Deliberate, and stated rather than silent. The defect **forged the very audit trail** the
+  design tells its reader to trust, which is why it earned a `.claude/REPO_TRAPS.md` class of its own
+  alongside the option-injection one.
+
+  **Five consecutive fixes each introduced the next pass's defect**, all inside the same six-line
+  shell block: pass 3's armed an RCE (`node -e … "$1"` executing a `--require=` filename), pass 4's
+  broke the failure report, pass 6's created an unsatisfiable instruction, pass 7's was the filing
+  above, pass 8's produced a clobbered error message. That record is why the last three findings ship
+  **stated rather than fixed** — a sixth edit was likelier to add a defect than remove one — and it is
+  the argument both approvers accepted. They point at one decision rather than more edits: move the
+  lifecycle out of agent-authored shell, which is OAI-74 with OAI-76.
+
+  **The plan gate ran six rounds** (Codex `APPROVE` at the last, on the exact text handed over), and
+  four of them found real defects: a shell-injectable prompt recipe, a status field read at the wrong
+  index, an autonomous selector with no repository boundary (filed as **OAI-74**), and — the one that
+  would have broken the feature outright — a poll loop that assumed shell state survives between Bash
+  tool calls, so the captured job id would have been empty and `status ""` would have silently
+  returned the job *list*. Codex also corrected a claim of mine: `README.md`'s "non-streaming" is still
+  true for user-visible output even though the transport consumes SSE, because the reply is buffered
+  until complete.
+
 - **OAI-58** — **The owed step 6 review ladder on OAI-3. Run and closed 2026-08-05**, by
   dual approval at the verdict point (Codex `APPROVE`; a verdict-only Claude approver `APPROVE`;
   combined with `check-plan-gate.sh --dual-approved`, exit 0). It was filed the same day OAI-3

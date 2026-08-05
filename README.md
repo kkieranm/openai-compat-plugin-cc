@@ -87,8 +87,19 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
 - **A schema-constrained reply arrives in the model's reasoning channel**, not `content` — the
   grammar leaves it unable to close its thinking block. The plugin reads it there, but only under a
   schema, where parsing proves what it is. Without one, an empty answer is an error, never silence.
-- **Calls are synchronous and non-streaming.** A slow local model prints a `Contacting …` line to
-  stderr, then the answer with a footer of provider, model, duration and token counts.
+- **A foreground call blocks, and prints nothing until it is done.** The transport itself reads the
+  reply as an SSE stream, but the command buffers it: a slow local model prints a `Contacting …` line
+  to stderr, then the whole answer at once with a footer of provider, model, duration and token
+  counts. Nobody sees output arrive incrementally.
+- **Work that would outlast your patience goes in the background.** `/oai:task --background` prints a
+  job id instead of an answer, and the request — including the full text of every `--file` — is frozen
+  at submission, so editing those files afterwards does not change what the model was asked. The job
+  outlives the session that made it. `/oai:status` says what it is doing, `/oai:result <id>` prints
+  its answer, `/oai:cancel <id>` asks it to stop. One background job runs at a time; the rest queue.
+- **`oai:oai-delegate` is a subagent that does the choosing for you.** Give it a bounded task and it
+  selects the files, submits one background job, and hands back a short account plus the job id —
+  keeping both the file reading and the model's full reply out of your session. The verbatim answer
+  stays one `/oai:result <id>` away.
 
 ## Development
 

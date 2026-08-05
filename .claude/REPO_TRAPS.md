@@ -998,3 +998,65 @@ things make this worse than an ordinary bug — the divergence is silent, and he
 was the **stated mitigation** for an accepted design risk (the recycled-pid wedge), so a display defect
 quietly voided a correctness trade-off recorded in an ADR. **Check whether anything upstream accepted a
 risk on the strength of the thing you filtered out.**
+
+## A helper parses the attacker-influenced value you passed it as its own option
+
+Found 2026-08-05 in OAI-5, in a fix the *previous* review pass had just introduced — which is the
+whole reason it is written down here.
+
+`agents/oai-delegate.md` canonicalises each attachment path so it can refuse one that resolves
+outside the tree. Pass 3 wrote that check with `readlink -f`; pass 4 replaced it with node, to drop a
+GNU-utility assumption from a plugin that is generic by construction:
+
+```sh
+canon() { node -e '…realpathSync(process.argv[1])…' "$1"; }   # the defect
+```
+
+`node -e <script>` does **not** stop option parsing at the script. `"$1"` is still parsed as a node
+option, so a repository file named `--require=/tmp/evil.js` is **preloaded and executed**, and one
+named `--eval=…` replaces the script entirely — which means the attacker also **controls stdout**, so
+the forged path sails through the `case "$real" in "$root"/*)` containment test that follows. Both
+were demonstrated: `--require=` ran the payload; `--eval=` exited 0 having printed an in-tree path.
+`-- "$1"` refuses both and still resolves ordinary files.
+
+**The rule**: passing a value safely through the *shell* is only half of it. Single quotes, `argv`
+arrays and NUL/newline delimiting all stop the **shell** interpreting your data — and none of them
+stop the **program you handed it to** interpreting it. Any helper with its own option parser
+(`node`, `grep`, `rm`, `git`, `curl`) needs `--` before an argument you did not author.
+
+Two sharpeners specific to this instance. The class was *latent* under `readlink -f` — the same
+malicious name produced `illegal option` and rc=1, so the swap to a more capable tool is what armed
+it; **a portability fix changed the blast radius of an input the code already accepted**. And the
+payload defeats the one check the file advertises as not depending on the agent's compliance, so the
+guard's own promise is what it falsifies. **When you replace a helper, re-ask what its argument
+parser does with hostile input — equivalence on the happy path is not equivalence.**
+
+## Command substitution silently truncates the value you are about to validate
+
+Found 2026-08-05 in OAI-5, one pass after the trap above, in the same six-line block — and it was
+first dispositioned as a low-severity nit on grounds that execution then refuted.
+
+`real=$(canon "$f")` canonicalises an attachment path so the next line can refuse one that resolves
+outside the repository. Command substitution strips **trailing newlines**. So for a symlink whose
+target's filename ends in a newline, `$real` is the resolved path minus its last byte — a string that
+**names a different file, and one nobody canonicalised**. Plant a sibling at that shortened name
+pointing outside the tree, and every downstream step behaves correctly on a value that is no longer
+the thing that was checked: containment compares the truncated string and passes, `--file` receives
+it, and `prompt.mjs` labels the result with the innocent in-tree name.
+
+Demonstrated: attaching `sub/a` (→ `sub/target\n`) with a sibling `sub/target` → `/etc/passwd` sent
+the password file while the recorded attachment read `sub/target`. Fixed by making the canonicaliser
+itself refuse a resolved path containing any control character, which closes it at the one place both
+call sites share rather than at each comparison.
+
+**The rule**: `$(…)` is not a transparent pipe — it eats trailing newlines, and a filename is one of
+the few values where that byte is legal and load-bearing. Whenever you capture a path, a name or any
+attacker-influenceable string and then *validate* the captured copy, the thing you validated is not
+provably the thing you will use. Either forbid the characters that survive the round trip badly, or
+never let the value transit a shell at all.
+
+Two sharpeners. **The harm was mis-scoped on the first look** — called reporting-integrity because
+"both files are inside the root", which was simply not true of the sibling; a disposition that reasons
+about *where the files are* rather than *what the resolved path points at* will get this class wrong
+every time. And the defect **forges the very audit trail** the surrounding design tells its reader to
+trust, so the mitigation and the exploit share a mechanism.
