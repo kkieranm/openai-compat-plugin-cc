@@ -144,3 +144,34 @@ corpus scale** without the user — it is the S3 boundary. The marker score will
 is: evidence quality, explicitly not the gate.
 
 **Reversible by:** the paired arm is additive; nothing built for 1–4 presumes it is absent.
+
+### E5 — The instrument reproduces the hand measurement, which is the only reason to trust it
+
+First live run of `bench/task-run.mjs`, 2026-08-05, one case, both arms, against
+`qwen/qwen3.6-35b-a3b`:
+
+| case | arm | profile |
+|---|---|---|
+| prototype-lookup | neutral | **missed** |
+| prototype-lookup | pointed | **exact** |
+
+That is ADR 016's hand grade, produced automatically from declared markers. It matters because the
+scorer was written from the real transcripts *before* this run: the fixtures in
+`tests/task-score.test.js` are ADR 016's actual replies, and the neutral one scores `missed` there
+too. An instrument tuned until it agreed with the answer would prove nothing; one that agrees on
+evidence it was not fitted to is worth something.
+
+**Still not the gate.** One case, one repetition, one model. And a marker profile answers "did the
+model emit useful evidence", not "did verifying cost less than doing" — see E4.
+
+### E6 — `npm run bench:task` is not wired, deliberately
+
+**Decided:** the runner is invoked as `node bench/task-run.mjs`, with no npm script.
+
+**Would have asked:** "should this get a script alias, given `npm run bench` exists?"
+
+**Why:** `package.json`'s `test` script scope is load-bearing and asserted by a structural test, and
+adding sibling scripts around it is the kind of edit that invites a careless change to that line. The
+runner is opt-in and rarely typed; a documented command in CLAUDE.md costs less than a new script.
+
+**Reversible by:** adding `"bench:task": "node bench/task-run.mjs"` — nothing depends on its absence.
