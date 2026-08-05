@@ -109,6 +109,14 @@ export function listJobs(db) {
   return db.prepare('SELECT * FROM jobs ORDER BY seq DESC').all().map(decode);
 }
 
+/**
+ * Every row in one state, oldest first — the two `SELECT`s the eligibility
+ * transaction runs. Ascending, because queue order *is* `seq` order.
+ */
+export function rowsInState(db, state) {
+  return db.prepare('SELECT * FROM jobs WHERE state = ? ORDER BY seq').all(state).map(decode);
+}
+
 /** Records that the child exists, which bounds how long it may go unregistered. */
 export function markSpawned(db, seq, at) {
   db.prepare('UPDATE jobs SET spawned_at = ? WHERE seq = ?').run(at, seq);
@@ -130,6 +138,61 @@ export function registerWaiter(db, seq, pid, at) {
   const info = db
     .prepare("UPDATE jobs SET waiter_pid = ?, last_beat_at = ? WHERE seq = ? AND state = 'queued' AND waiter_pid IS NULL")
     .run(pid, at, seq);
+  return info.changes === 1;
+}
+
+/**
+ * Take ownership and start running, in one statement.
+ *
+ * `state`, `worker_pid`, `started_at` and the first beat move together on
+ * purpose. An earlier design set the state first and the pid afterwards, which
+ * left a window where a row was `running` with no pid — invisible to the next
+ * worker's blocker count, and so a second concurrent model call. There is no
+ * window here because there is no second statement.
+ *
+ * `AND waiter_pid = ?` is the other half: it says *this* worker, not merely some
+ * worker. It is what makes a late arrival safe — against a row already
+ * reconciled away the `UPDATE` matches nothing, and the loser exits without
+ * contacting the server.
+ */
+export function claimJob(db, seq, pid, at) {
+  const info = db
+    .prepare(
+      `UPDATE jobs SET state = 'running', worker_pid = ?, started_at = ?, last_beat_at = ?
+        WHERE seq = ? AND state = 'queued' AND waiter_pid = ?`,
+    )
+    .run(pid, at, at, seq, pid);
+  return info.changes === 1;
+}
+
+/**
+ * "Still here" — cheap, and the only thing a queued worker writes while it
+ * waits.
+ *
+ * Guarded on a non-terminal state so a beat that lands after the verdict cannot
+ * touch a finished row. The beat only ever *corroborates* liveness; the pid is
+ * what decides it, because a worker's last act before dying is to beat.
+ */
+export function beat(db, seq, at) {
+  db.prepare("UPDATE jobs SET last_beat_at = ? WHERE seq = ? AND state IN ('queued','running')").run(at, seq);
+}
+
+/**
+ * Fail a job whose worker never registered, bounded by the startup grace.
+ *
+ * `AND waiter_pid IS NULL` is load-bearing and `finish` cannot supply it: without
+ * it, a reconciler that decided "never started" a microsecond before the worker
+ * finally registered would fail a job that is alive and about to run. With it
+ * the two writes are mutually exclusive — whichever lands first makes the other
+ * match nothing.
+ */
+export function abandonUnstarted(db, seq, failure, at) {
+  const info = db
+    .prepare(
+      `UPDATE jobs SET state = 'failed', failure = ?, completed_at = ?
+        WHERE seq = ? AND state = 'queued' AND waiter_pid IS NULL`,
+    )
+    .run(JSON.stringify(failure), at, seq);
   return info.changes === 1;
 }
 

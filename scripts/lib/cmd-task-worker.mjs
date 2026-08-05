@@ -13,6 +13,7 @@ import { createLedger } from './attempt-ledger.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
 import { UserError } from './errors.mjs';
 import { resolveCredential } from './job-auth.mjs';
+import { awaitTurn } from './job-queue.mjs';
 import { finish, jobBySeq, registerWaiter } from './job-record.mjs';
 import { reconstructRequest } from './job-request.mjs';
 import { openStore } from './job-store.mjs';
@@ -87,7 +88,18 @@ export async function runTaskWorker(argv) {
   // this job" and is recorded far earlier. Without it a queued worker is
   // indistinguishable from one that never started, and anything queued behind a
   // long run would be collected as abandoned.
-  registerWaiter(db, seq, process.pid, now());
+  if (!registerWaiter(db, seq, process.pid, now())) {
+    // Arrived too late: the row was reconciled away, or another worker holds it.
+    // Exiting here is the point — nothing has been sent, and nothing will be.
+    process.stderr.write(`Job ${job.id} is no longer waiting for a worker (state: ${jobBySeq(db, seq)?.state}).\n`);
+    return;
+  }
+
+  const turn = await awaitTurn(db, job, process.pid);
+  if (turn !== 'acquired') {
+    process.stderr.write(`Job ${job.id} never ran (${turn}); no request was sent.\n`);
+    return;
+  }
 
   try {
     await runJob(db, seq, job);

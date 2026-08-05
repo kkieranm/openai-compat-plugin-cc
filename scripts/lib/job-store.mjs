@@ -123,8 +123,13 @@ export function openStore({ readonly = false } = {}) {
   mkdirSync(join(statePath(), 'logs'), { recursive: true, mode: 0o700 });
 
   const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL');
+  // FIRST, before anything that takes a lock. Setting the journal mode is
+  // itself a locking operation, and with no timeout in force yet a second
+  // process opening the store at the same moment fails outright with "database
+  // is locked" — which is how two concurrent submissions killed each other
+  // before either had a job. Every statement after this line waits instead.
   db.exec('PRAGMA busy_timeout = 10000');
+  db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   if (!readonly) applySchema(db);
   else {
