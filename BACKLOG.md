@@ -860,6 +860,49 @@ by dual approval, and produced the OAI-61 … OAI-73 block immediately below. It
   claimed to cover it — but it means **this item's window is guarded by nothing at all**, so if it is
   ever done, it needs its own test rather than an assumption that the OAI-25 pair reaches it.
 
+- **OAI-83** — **Task templates, starting with the one that makes a local ADVISOR a thing you invoke
+  rather than a prompt you rewrite.** Filed 2026-08-05. This is Stage 2 of
+  [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md) ("task templates — patch
+  synthesis, focused diagnosis, test drafting, review"), which has sat in the plan since the direction
+  change and appears nowhere in this tracker; filing it so the omission is a decision rather than an
+  oversight, the same reason OAI-57 exists.
+  **What is actually missing.** `agents/oai-delegate.md` (OAI-5) closed the *ergonomics* — something
+  now selects the files and keeps both the reading and the reply out of the calling session. It is
+  deliberately generic: it carries no opinion about what the model is being asked to *do*. So every
+  advisor-shaped call re-invents its own prompt, and the thing that makes an advisor useful — a fixed
+  question, a fixed output shape, and a fixed standard of evidence — is re-derived each time and
+  drifts between callers. `/oai:review` is the one exception, and it is exactly the shape to copy:
+  it pins the question, pins the reply shape, and pins the **verify-each-claim** duty in
+  `commands/review.md:31-39`.
+  **A template is three things**, and the third is the one that matters here: the prompt skeleton, the
+  expected output shape, and **the discipline the caller owes the result**. A judge template that
+  returns a confident verdict without carrying "these are unverified claims from a small model, check
+  them against the code" forward has made the output *worse* than the raw reply, because it reads as
+  adjudicated. That is trap instance 14's family and the reason ADR 003 exists.
+  **Design forks to settle before building**, none obvious:
+  (a) *Where a template lives* — prose inside the agent, a `templates/` directory the companion reads,
+  or a `--template <name>` flag. The flag is a contract the moment it exists (the OAI-57 argument),
+  and a directory is a new surface `tests/plugin.test.js` would need to guard the way it guards
+  `commands/`.
+  (b) *How it composes with the broker* — the agent chooses files, the template chooses the question,
+  and something must decide which wins when a template implies a file set (a "review this commit"
+  template does).
+  (c) *Whether a lens is a template or a parameter.* **OAI-11's lenses are the same object viewed
+  differently** — one correctness pass, one security pass, one edge-case pass is three templates or
+  one template with a lens argument. Deciding this before OAI-11 is built is what stops the two items
+  fighting; deciding it after means a rewrite.
+  **Constraints that are not negotiable.** A template must not encode a vendor assumption
+  ([ADR 001](adr/001-generic-openai-compatible-plugin.md): providers are configuration, never code
+  paths). And it must carry the workload envelope rather than leaving it to the caller — the measured
+  bracket is a 1,680-token single-file request producing a checkable finding against a 49,378-token
+  whole-tree request returning **zero findings**, so a template whose natural use attaches a large set
+  is a template that produces silence.
+  **Sequencing.** Before OAI-9 and OAI-11, because both consume it: a union of passes (OAI-9) needs
+  the passes to have a stable shape to dedupe, and diverse lenses (OAI-11) need the lens to be a
+  first-class thing rather than a sentence someone typed. After OAI-19 only if a baseline is wanted
+  first — templates change what is measured, so measuring before building them is measuring something
+  that is about to be replaced.
+
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
