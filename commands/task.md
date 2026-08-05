@@ -15,7 +15,7 @@ Core constraints:
 - This command delegates. It does not do the work itself.
 - Return the companion script's stdout verbatim: no paraphrasing, summarising, or commentary before or after it.
 - Do not act on what the local model says — no edits, no fixes, no follow-up tasks. If its answer suggests changes, leave that for the user to ask for.
-- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-seconds`, `--max-attempts`, `--max-tokens`, `--temperature`, `--system`) exactly as given.
+- Preserve the user's own flags (`--provider`, `--model`, `--base-url`, `--timeout`, `--max-seconds`, `--max-attempts`, `--max-tokens`, `--temperature`, `--system`, `--template`) exactly as given.
 - `--timeout` bounds the wait for the model's **first token** — connecting plus reading the prompt, which is silent and can take minutes on a large input. Once tokens are flowing it no longer applies; a separate idle budget (`idleSeconds` in the provider config, 60s by default) ends the run only if output *stops*.
 - `--max-attempts` bounds how many times a request is **re-sent** when the server drops it — an empty completion, a blank one, or a stream that closes part way. Default 3; `--max-attempts 1` disables retry and behaves exactly as this command did before retry existed. It counts *answer attempts*, not HTTP requests: a server refusing a capability already costs an extra request inside a single attempt. A refusal, a bad answer and a timeout are never retried — only a request the server failed to deliver.
 - **Attempts multiply the wall clock**, and without `--max-seconds` there is no ceiling on it: one attempt can run for the first-token budget plus generation that only the idle budget bounds, and three attempts is three of those. Pass `--max-seconds` when that matters — it caps the whole call, retries included.
@@ -32,6 +32,16 @@ Building the call:
   temporary file and pass `--prompt-file <path>`, which is read verbatim.
 - `--system <text>` replaces the default system prompt. Pass it only when the user asks for it; it
   changes how the model is framed for the whole request.
+- `--template <name>` runs a named task template, which fixes the question, the reply shape and the
+  caveats printed with the answer, so a recurring kind of request stops being a prompt someone
+  rewrites each time. One exists: **`advisor`** — a second opinion on an approach you are about to
+  take. Describe the plan as the request text and attach the files it touches; the model answers in
+  three sections (strongest objection, assumed without evidence, what it would check first) and the
+  output carries a line saying the claims are unverified. It judges the **approach**, not the code —
+  for a defect hunt over a diff use `/oai:review`. A template supplies its own system prompt, so
+  `--template` and `--system` cannot be used together and the script says so rather than picking one.
+  Keep the attachment set small: a large request gets an answer with a note saying it may have
+  crowded out the reasoning.
 - If the request text itself needs to mention one of this command's own flags (as in "explain the
   `--file` flag"), either put it after a bare `--` separator or use `--prompt-file`. The script
   reports such a flag rather than silently treating it as part of the request.

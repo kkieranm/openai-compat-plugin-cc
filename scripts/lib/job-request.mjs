@@ -32,10 +32,22 @@ function withoutUndefined(fields) {
  * — it would be an instant on a clock that no longer exists. `maxMs` is stored
  * and the worker mints its own, exactly as the foreground path does.
  */
-export function persistRequest({ profile, numeric, messages }) {
+export function persistRequest({ profile, numeric, messages, template, estimatedTokens }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   return {
     messages,
+    // Gated on the template, because `estimatedTokens` is ALWAYS in hand:
+    // spreading it unconditionally would change every ordinary task's DTO, and
+    // `withoutUndefined` cannot strip a value that is defined. It is persisted
+    // only because a template's size caveat is rendered again by `/oai:result`.
+    //
+    // Note precisely what this gate does and does not guarantee. It emits the
+    // pair or nothing — but if a caller ever passes a template with no estimate,
+    // it writes `template` alone, and the renderer's "size not recorded" state is
+    // what covers that. The pairing is a property of this function's single
+    // caller, not of this line, and saying otherwise here would be a comment
+    // whose stated precondition differs from what is tested.
+    ...(template ? { template, estimatedTokens } : {}),
     ...withoutUndefined({
       timeoutMs: resolveTimeout(profile, timeoutSeconds),
       idleMs: resolveIdle(profile),

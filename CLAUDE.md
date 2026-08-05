@@ -109,6 +109,12 @@ the answer lands in the calling session; `tests/plugin.test.js` pins the status 
 ends, against `TERMINAL_STATES` and by running the agent's own `awk` expression — see
 [ADR 015](adr/015-a-context-broker-not-a-forwarder.md).
 
+`scripts/lib/task-template.mjs` makes `/oai:task --template advisor` a named question rather than a
+prompt each caller rewrites: `TEMPLATES` holds the skeleton, the reply shape and the discipline, the
+whole skeleton goes in the **system** message so `/oai:status` still shows what the user asked, and
+`templateNotes` builds the caveats both `/oai:task` and `/oai:result` print — see
+[ADR 016](adr/016-a-template-is-three-things.md).
+
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line — see
@@ -116,7 +122,12 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 
 ## Commands
 
-- Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns)
+- Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns).
+  **Requires `zsh` on PATH**, and fails loudly without it: `tests/delegate-template.test.js` runs the
+  delegate's shell recipe under every shell present, and zsh is the one that catches word-splitting
+  bugs the POSIX shells agree to miss — it is also the shell the recipe actually runs in. Declared
+  here rather than left implicit, and required rather than skipped, because a suite that silently
+  shrinks its shell matrix is a check that has stopped being able to fail.
 - Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
 - TTL challenge: `node bench/ttl-challenge.mjs` (opt-in, ~45 min, needs LM Studio with **nothing**
   resident — `lms ps` empty — and nothing else connected). Every flag except `--out-dir` makes the run

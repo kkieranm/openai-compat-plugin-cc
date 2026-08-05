@@ -14,7 +14,11 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 >   this sweep and moved to `BACKLOG_DONE.md`.
 > - **Stage 1 shipped** (OAI-3, 2026-08-05) and **Stage 1b** with it (OAI-5) — and their review
 >   ladders filed **23 items**, 22 of which are still live: **44% of this file**, from two features.
-> - **Stage 2 is next in the plan** and is tracked as **OAI-83**.
+> - **Stage 2's first piece shipped** (OAI-83, 2026-08-05) — `/oai:task --template advisor`, decision
+>   record [ADR 016](adr/016-a-template-is-three-things.md). Its review filed OAI-85 and OAI-86, and
+>   **the rest of Stage 2 is still unfiled**: context manifests and file slices, pre-submission time
+>   estimates, patches and findings as separate artifacts, and a task benchmark — that last one is what
+>   would replace the advisor ceiling's admitted guesswork with a measurement.
 >
 > **So the ordering below is not the plan's stage order, and that is deliberate.** The stages still
 > say what to *build* next; they say nothing about the defects the last two stages shipped with. A
@@ -65,10 +69,13 @@ null` against `[]` — appearing in four places. OAI-84 leads because it is the 
 after OAI-63 in tier 3, whose payload decision it collides with. OAI-57's `--json` is the natural home for
 OAI-80(a), so those two are batchable.
 
-**Tier 5 — Stage 2, and the Stage 1 surface deliberately deferred.** **OAI-83, OAI-53, OAI-54,
-OAI-56**. OAI-83 is the plan's own next stage and **gates OAI-9 and OAI-11**, which both consume a
-template shape. OAI-53 and OAI-54 are Stage 1's stated gaps; both need a design decision before code,
-which is why they are not higher despite being small.
+**Tier 5 — what shipping Stage 2's first piece left behind, and the Stage 1 surface deliberately
+deferred.** **OAI-85, OAI-86, OAI-53, OAI-54, OAI-56**. OAI-83 shipped on 2026-08-05 and these two are
+its residue: the first is a caveat missing from `/oai:result`, confirmed pre-existing rather than
+introduced, and the second is the delegate's containment machinery having no test at all — proved by
+mutation, and the sharper of the two because its stakes are disclosure. Both lead the tier because
+they are *wrong today*, where OAI-53 and OAI-54 are Stage 1's stated gaps needing a design decision
+before code, which is why they are not higher despite being small.
 
 **Tier 6 — coverage the ladders found missing, and the ratchet that blocks it.** **OAI-28, OAI-40,
 OAI-73, OAI-52, OAI-79, OAI-75, OAI-39, OAI-45**. OAI-28 leads because it now carries the ratchet
@@ -683,48 +690,32 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   idempotency key; note that Codex proposed the full transactional design and it is far more than this
   earns.
 
-- **OAI-83** — **Task templates, starting with the one that makes a local ADVISOR a thing you invoke
-  rather than a prompt you rewrite.** Filed 2026-08-05. This is Stage 2 of
-  [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md) ("task templates — patch
-  synthesis, focused diagnosis, test drafting, review"), which has sat in the plan since the direction
-  change and appears nowhere in this tracker; filing it so the omission is a decision rather than an
-  oversight, the same reason OAI-57 exists.
-  **What is actually missing.** `agents/oai-delegate.md` (OAI-5) closed the *ergonomics* — something
-  now selects the files and keeps both the reading and the reply out of the calling session. It is
-  deliberately generic: it carries no opinion about what the model is being asked to *do*. So every
-  advisor-shaped call re-invents its own prompt, and the thing that makes an advisor useful — a fixed
-  question, a fixed output shape, and a fixed standard of evidence — is re-derived each time and
-  drifts between callers. `/oai:review` is the one exception, and it is exactly the shape to copy:
-  it pins the question, pins the reply shape, and pins the **verify-each-claim** duty in
-  `commands/review.md:31-39`.
-  **A template is three things**, and the third is the one that matters here: the prompt skeleton, the
-  expected output shape, and **the discipline the caller owes the result**. A judge template that
-  returns a confident verdict without carrying "these are unverified claims from a small model, check
-  them against the code" forward has made the output *worse* than the raw reply, because it reads as
-  adjudicated. That is trap instance 14's family and the reason ADR 003 exists.
-  **Design forks to settle before building**, none obvious:
-  (a) *Where a template lives* — prose inside the agent, a `templates/` directory the companion reads,
-  or a `--template <name>` flag. The flag is a contract the moment it exists (the OAI-57 argument),
-  and a directory is a new surface `tests/plugin.test.js` would need to guard the way it guards
-  `commands/`.
-  (b) *How it composes with the broker* — the agent chooses files, the template chooses the question,
-  and something must decide which wins when a template implies a file set (a "review this commit"
-  template does).
-  (c) *Whether a lens is a template or a parameter.* **OAI-11's lenses are the same object viewed
-  differently** — one correctness pass, one security pass, one edge-case pass is three templates or
-  one template with a lens argument. Deciding this before OAI-11 is built is what stops the two items
-  fighting; deciding it after means a rewrite.
-  **Constraints that are not negotiable.** A template must not encode a vendor assumption
-  ([ADR 001](adr/001-generic-openai-compatible-plugin.md): providers are configuration, never code
-  paths). And it must carry the workload envelope rather than leaving it to the caller — the measured
-  bracket is a 1,680-token single-file request producing a checkable finding against a 49,378-token
-  whole-tree request returning **zero findings**, so a template whose natural use attaches a large set
-  is a template that produces silence.
-  **Sequencing.** Before OAI-9 and OAI-11, because both consume it: a union of passes (OAI-9) needs
-  the passes to have a stable shape to dedupe, and diverse lenses (OAI-11) need the lens to be a
-  first-class thing rather than a sentence someone typed. After OAI-19 only if a baseline is wanted
-  first — templates change what is measured, so measuring before building them is measuring something
-  that is about to be replaced.
+- **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
+  invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is
+  PRE-EXISTING** — `cmd-result.mjs` hardcodes `contextNote: null` at HEAD, and reverting OAI-83 leaves
+  the divergence identical. `task-report.mjs` passes `budget.checked ? null : budget.note`, so the same
+  run warns in the foreground and stays silent after `--background`. This is REPO_TRAPS instance 16's
+  family — a second rendering dropping a caveat the first carries — and it reaches a real state:
+  `checkContextBudget` returns `{checked:false}` without throwing whenever a provider has no
+  `contextLength` and probing cannot determine one, which is the **default for LM Studio here**.
+  **The reason it was not fixed with OAI-83**: the background path never persists `budget`, so the fix
+  is a persistence decision, not a render tweak — either store the note in the request DTO beside
+  `template`/`estimatedTokens`, or recompute it in the worker. Decide which before building.
+
+- **OAI-86** — **The delegate recipe's containment machinery has no test anywhere, proved by
+  mutation.** Filed 2026-08-05 by OAI-83's wide review. `agents/oai-delegate.md` is the file whose every
+  guard exists because something concretely went wrong — `canon`'s `--` stopping a file named
+  `--require=/tmp/evil.js` from being EXECUTED, its control-character refusal stopping a truncated path
+  passing containment, and the `case "$real" in "$root"/*` boundary. **None is executed by any test**:
+  deleting the boundary check leaves the whole suite green, demonstrated with a positive control in the
+  same run. `tests/plugin.test.js` pins only the terminal-state prose and the `awk` expression;
+  `tests/delegate-template.test.js` stubs `canon` to identity and `root=/tmp` deliberately, and now says
+  so plainly rather than claiming coverage elsewhere — the false claim it used to make was itself a
+  finding.
+  **Shape of the fix**: a suite that runs the recipe's containment block against real symlinks and
+  hostile filenames in a scratch tree. Note this is the one part of the recipe where the stakes are
+  disclosure rather than correctness, which is why it is filed rather than folded into an
+  argument-construction suite.
 
 - **OAI-53** — `/oai:review --background`. Deferred deliberately in OAI-3, not forgotten: `kind` and
   `schema_version` are in the schema so this fits without a migration, and the worker already runs the

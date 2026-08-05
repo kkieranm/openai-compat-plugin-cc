@@ -14,8 +14,8 @@ import { submitTask } from './task-submit.mjs';
 // user ever sees, and nothing but a test notices when a flag outlives its docs.
 export const TASK_SPEC = {
   valueFlags: [
-    'provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'max-attempts', 'max-wait',
+    'provider', 'base-url', 'model', 'prompt-file', 'system', 'template', 'timeout', 'max-seconds', 'max-tokens',
+    'temperature', 'max-attempts', 'max-wait',
   ],
   booleanFlags: ['background'],
   repeatableFlags: ['file'],

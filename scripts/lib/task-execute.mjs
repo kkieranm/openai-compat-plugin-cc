@@ -15,6 +15,7 @@ import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveRe
 import { UserError } from './errors.mjs';
 import { withProgress } from './progress.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
+import { resolveTemplate } from './task-template.mjs';
 
 /**
  * Which of the three ways of giving a request is the request.
@@ -52,6 +53,26 @@ function resolvePrompt(spec, options, inlinePrompt, terminated) {
   throw new UserError('No prompt given.', {
     hint: 'Pass the request as text, or use --prompt-file <path> for multi-line prompts.',
   });
+}
+
+/**
+ * The template this run uses, and the one pair of flags that cannot both apply.
+ *
+ * `--system` replaces the default system prompt wholesale and a template
+ * supplies its own, so the two write one slot with nothing to arbitrate between
+ * them. Refused rather than resolved by precedence: a silent winner means the
+ * model was framed one way while the command line says another, which is this
+ * repo's most-repeated defect — a reported state that does not describe what
+ * will actually happen. A composition rule can be added later; changing a silent
+ * winner afterwards could not.
+ */
+function templateFor(options) {
+  if (options.template !== undefined && options.system !== undefined) {
+    throw new UserError('--template and --system cannot be used together.', {
+      hint: 'A template supplies its own system prompt. Drop --system, or drop --template and write the framing yourself.',
+    });
+  }
+  return resolveTemplate(options.template);
 }
 
 /**
@@ -109,6 +130,7 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
       `Note: "${profile.name}" has a credential, but --base-url points at a different host, so it was not sent.\n`,
     );
   }
+  const template = templateFor(options);
   const prompt = resolvePrompt(spec, options, inlinePrompt, terminated);
   const files = readFileBlocks(options.file);
   const { model, contextLength } = await resolveTarget(profile, options);
@@ -120,10 +142,21 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
     model,
     contextLength,
     maxTokens: numeric.maxTokens,
-    system: options.system,
+    // The whole skeleton goes here and nothing is wrapped around the user's
+    // prompt. `requestTextOf` recovers "what this job was asked to do" from the
+    // tail of the user message, and `/oai:status` shows its first line — so a
+    // template prefixed to the prompt would replace the user's own request in
+    // that summary with boilerplate identical on every templated job.
+    system: template ? template.system : options.system,
   });
 
-  return { numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget };
+  return {
+    numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget,
+    // The NAME, not the resolved template: this is what crosses into persisted
+    // state, and a queued job must not snapshot prose that the build reading it
+    // back may have changed.
+    template: template?.name,
+  };
 }
 
 /**
@@ -138,7 +171,7 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
  */
 export async function executeTask(args) {
   const prep = await prepareTask(args);
-  const { numeric, profile, files, model, messages, estimatedTokens, budget } = prep;
+  const { numeric, profile, files, model, messages, estimatedTokens, budget, template } = prep;
 
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
@@ -157,6 +190,11 @@ export async function executeTask(args) {
     model,
     budget,
     estimatedTokens,
+    // Carried explicitly because this is a NEW object, not the prep: the notes a
+    // template owes its reader are rendered from here, and a field left out is a
+    // foreground run that silently prints none of them while the background path
+    // prints them all.
+    template,
     durationMs: Date.now() - startedAt,
     ledger,
   };

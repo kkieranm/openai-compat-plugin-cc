@@ -7,6 +7,7 @@
 // string-building, and this one writes to stdout and throws.
 import { requireAnswer } from './client.mjs';
 import { renderTaskFooter } from './render.mjs';
+import { templateNotes } from './task-template.mjs';
 
 /**
  * Every field the human path shows, named in one place.
@@ -45,4 +46,12 @@ export function report(outcome) {
   // reads as a successful run that had nothing to say.
   process.stdout.write(requireAnswer(outcome.result, outcome.profile).trim());
   writeFooter(outcome);
+  // Same builder `cmd-result.mjs` calls for the same run collected later, and
+  // the same seam `renderTaskFooter` already uses: one pure builder, and each
+  // path does its own writing. Instance 16 in `.claude/REPO_TRAPS.md` is this
+  // repo showing a caveat on one of two renderings of one run — what prevents
+  // that is the single builder, not a shared writer.
+  for (const note of templateNotes({ name: outcome.template, estimatedTokens: outcome.estimatedTokens })) {
+    process.stdout.write(`\n${note}\n`);
+  }
 }

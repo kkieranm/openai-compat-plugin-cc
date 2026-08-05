@@ -13,6 +13,7 @@ import { RETAIN } from './job-retention.mjs';
 import { logPathFor } from './job-store.mjs';
 import { openJobs, reconcileAll } from './job-view.mjs';
 import { renderTaskFooter } from './render.mjs';
+import { templateNotes } from './task-template.mjs';
 
 // No flags. Exported anyway, so `tests/plugin.test.js` covers this command's
 // markdown the same way it covers the others — a command absent from SPECS
@@ -51,6 +52,17 @@ function writeAnswer(job) {
       finishReason: outcome.finishReason,
     })}\n`,
   );
+
+  // From the frozen request, not the outcome: the template and the size it was
+  // measured at are facts about what was ASKED, settled at submission, and the
+  // worker never needs to know either. THESE NOTES come from the same builder
+  // the foreground path uses, so they cannot appear on one rendering and not the
+  // other — a claim scoped to `templateNotes` deliberately, since the footer
+  // above it does still diverge (`contextNote` is null here and populated
+  // there), which is a pre-existing gap this change did not introduce.
+  for (const note of templateNotes({ name: job.request?.template, estimatedTokens: job.request?.estimatedTokens })) {
+    process.stdout.write(`\n${note}\n`);
+  }
 }
 
 /** Why there is no answer to show, in the job's own words where it has any. */

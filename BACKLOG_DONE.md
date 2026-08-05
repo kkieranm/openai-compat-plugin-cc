@@ -2,6 +2,31 @@
 
 Newest first.
 
+- **OAI-83** — Task templates, starting with the one that makes a local **advisor** something you
+  invoke rather than a prompt you rewrite. **Completed 2026-08-05**, Stage 2's first piece of
+  `plans/local-llms-like-codex.md`. Plan: `plans/oai-83-advisor-template.md`; decision record:
+  [ADR 016](adr/016-a-template-is-three-things.md).
+  `/oai:task --template advisor` ships: `scripts/lib/task-template.mjs` owns the skeleton, the reply
+  shape and the discipline, and `agents/oai-delegate.md` passes the flag when the delegated work is a
+  second opinion. **The forks it was filed with were all settled** — (a) a template lives in a code
+  module selected by a flag, not in agent prose or a `templates/` directory; (b) a template never
+  chooses files, so the conflict with the broker is designed out rather than arbitrated; (c) a lens is
+  a **parameter** of a template, decided now and built when OAI-11 needs it, so no `--lens` shipped.
+  **One premise it was filed with was wrong**: OAI-84 was not a sequencing dependency. `parseFindings`
+  has exactly one production caller and the task path parses nothing, so the template's output shape
+  never touched the parser OAI-84 changes.
+  **The ceiling is a heuristic and is labelled as one** — 8000 tokens, anchored between the measured
+  1,680-token run that produced a checkable finding and the 49,378-token run that returned nothing. A
+  large request is answered with a caveat, never refused or trimmed.
+  **What the two review passes actually caught was the plumbing, never the design**, which had
+  survived four Codex plan-gate rounds. The sharpest: the delegate recipe's unquoted
+  `${template:+--template "$template"}` produced a **single** argument under **zsh** — the shell these
+  recipes run in — so every delegate advisor submission was refused, while the guarding test ran `sh`
+  and stayed green. The suite now runs the recipe's real block under every shell with zsh **required**
+  and declared. Two more of the same family: a bare `TEMPLATES[name]` accepted `--template toString`
+  and ran with the default prompt, and a test comment claimed containment coverage that a mutation
+  disproved. Verified live on both paths against a real model; ladder ended on dual approval.
+
 - **OAI-5** — A delegation subagent, so neither the reading nor the reply lands in the calling
   session. **Completed 2026-08-05**, Stage 1b of `plans/local-llms-like-codex.md`. Plan:
   `plans/oai-5-delegation-broker.md`; decision record:

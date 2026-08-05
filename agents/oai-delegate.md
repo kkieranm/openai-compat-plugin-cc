@@ -105,7 +105,30 @@ Making the call — four steps, in this order:
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
   root=$(canon "$root") || { echo "refusing: cannot resolve $root"; exit 1; }
 
+  # Set to `advisor` when the delegated work is a SECOND OPINION on an approach
+  # someone is about to take; leave empty for an analysis or a transformation.
+  # See the template note below the recipe.
+  template=''
+
+  # The closed set builds the arguments LITERALLY inside the matching arm, rather
+  # than expanding `$template` into the command line later. An earlier draft used
+  # `${template:+--template "$template"}` unquoted, relying on field splitting to
+  # produce two words — and under **zsh**, which does not split unquoted
+  # expansions, it produced the single argument `--template advisor`, which the
+  # companion refuses as an unknown option. The submission failed every time.
+  # This shape has no splitting to depend on, so it behaves the same in every
+  # shell, and an unknown name is refused before anything is assembled.
   set --
+  case "$template" in
+    '') ;;
+    advisor) set -- --template advisor ;;
+    *) echo "refusing: unknown template $template"; exit 1 ;;
+  esac
+  # How many arguments the template contributed, so the attachment check below
+  # still counts FILES. Comparing against a bare 0 once the template occupies two
+  # slots would let a job with no attachments through — a containment guard
+  # disarmed as a side effect of a fix somewhere else.
+  before_files=$#
   while IFS= read -r f || [ -n "$f" ]; do
     [ -n "$f" ] || continue
     real=$(canon "$f") || { echo "refusing: cannot resolve $f"; exit 1; }
@@ -115,7 +138,7 @@ Making the call — four steps, in this order:
     esac
     set -- "$@" --file "$real"
   done < "$dir/files"
-  [ "$#" -gt 0 ] || { echo "refusing: no attachments"; exit 1; }
+  [ "$#" -gt "$before_files" ] || { echo "refusing: no attachments"; exit 1; }
   id=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/oai-companion.mjs" task --background \
          "$@" --prompt-file "$dir/prompt.md") || exit 1
 
@@ -160,6 +183,22 @@ Making the call — four steps, in this order:
   measured here at 191–335s before a single token is generated. So a large attachment set makes the
   540s bound expire and the id-only path the *normal* outcome, which is one more reason to keep the
   set small. Never pass `--model` to work around it.
+
+Templates — what the model is asked to *do*, as opposed to which files it is given:
+
+- Set `template=advisor` in the recipe when the work is a **second opinion on an approach**: someone
+  describes what they are about to do and wants the strongest objection to it. Write the plan itself
+  as `prompt.md` and attach the files it touches. The template fixes the question and the reply's
+  three sections, so you do not write that framing yourself and it does not drift between calls.
+- Leave `template` empty for everything else you take — a focused analysis, a mechanical
+  transformation, a question about specific code. A template is not a way to make a request better;
+  it is a fixed question, and the wrong fixed question is worse than none.
+- **A template never chooses files.** Selecting the smallest sufficient set stays entirely yours, and
+  nothing in a template adds to or overrides the caller's list.
+- **When you used a template, relay the caveat lines its output carries** — they sit under the footer
+  and say the answer is unverified and, where it applies, that the request was large enough to have
+  crowded the reasoning. `/oai:result`'s copy of that warning never leaves this session, because you
+  do not paste the reply; yours is the only copy that reaches whoever acts.
 
 When the request is too large:
 
