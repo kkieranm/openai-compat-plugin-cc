@@ -20,6 +20,22 @@
 export const STARTUP_GRACE_MS = 120_000;
 
 /**
+ * How long a live process may go without saying anything before a reader calls
+ * it `stalled`.
+ *
+ * Twelve missed beats at `job-heartbeat.mjs`'s interval. Generous on purpose:
+ * the beat is a timer, and a worker deep in a model call still fires it — even
+ * during prefill, which produces no bytes for minutes but leaves the event loop
+ * idle. A gap this wide therefore means the process is not running its loop at
+ * all: suspended, or wedged.
+ *
+ * **`stalled` is never terminal and never a verdict about the job.** The pid
+ * decides death; the beat only corroborates. Reading a stale beat as death would
+ * deadlock cancellation, since a worker's last act before exiting is to beat.
+ */
+export const STALE_BEAT_MS = 60_000;
+
+/**
  * Alive, as far as the OS will say.
  *
  * `EPERM` means the process exists and belongs to someone else, which is still

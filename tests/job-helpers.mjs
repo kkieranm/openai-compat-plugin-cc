@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../scripts/lib/job-store.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { databasePath, openStore } from '../scripts/lib/job-store.mjs';
 import { jobById, listJobs } from '../scripts/lib/job-record.mjs';
 import { respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 
@@ -62,21 +63,65 @@ export async function deadPid() {
 
 const SYNTHETIC = `
   INSERT INTO jobs (id, kind, state, schema_version, workspace, transport, auth, request, attachments,
-                    created_at, spawned_at, waiter_pid, worker_pid)
-  VALUES (?, 'task', ?, ?, '/tmp', '{}', '{"mode":"none"}', '{"messages":[]}', '[]', ?, ?, ?, ?)
+                    created_at, spawned_at, started_at, last_beat_at, waiter_pid, worker_pid, model,
+                    outcome, failure)
+  VALUES (?, 'task', ?, ?, ?, '{"name":"fake","baseUrl":"http://127.0.0.1:1/v1","query":""}', '{"mode":"none"}',
+          ?, '[]', ?, ?, ?, ?, ?, ?, 'test-model', ?, ?)
 `;
+
+const ago = (ms) => (ms === null ? null : new Date(Date.now() - ms).toISOString());
 
 /**
  * A row no code path in this build produces — a foreign plugin's version, a
  * corrupt shape, or an abandoned submission — inserted directly so the queue's
  * behaviour against it can be observed rather than argued about.
+ *
+ * The timestamps are given as "how long ago", because every property they are
+ * used for is relative to now: a grace period, a stale beat, a deadline.
  */
-export function insertSynthetic(state, { id, state: jobState = 'queued', version = 1, agedMs = 0, waiterPid = null, workerPid = null }) {
-  const stamp = new Date(Date.now() - agedMs).toISOString();
+export function insertSynthetic(state, {
+  id,
+  state: jobState = 'queued',
+  version = 1,
+  agedMs = 0,
+  waiterPid = null,
+  workerPid = null,
+  workspace = '/tmp',
+  request = { messages: [{ role: 'user', content: 'synthetic' }] },
+  startedAgoMs = null,
+  beatAgoMs = null,
+  outcome = null,
+  failure = null,
+}) {
+  const stamp = ago(agedMs);
   return withStore(state, (db) => {
-    db.prepare(SYNTHETIC).run(id, jobState, version, stamp, stamp, waiterPid, workerPid);
+    db.prepare(SYNTHETIC).run(
+      id, jobState, version, workspace, JSON.stringify(request),
+      stamp, stamp, ago(startedAgoMs), ago(beatAgoMs), waiterPid, workerPid,
+      outcome && JSON.stringify(outcome), failure && JSON.stringify(failure),
+    );
     return Number(db.prepare('SELECT seq FROM jobs WHERE id = ?').get(id).seq);
   });
+}
+
+/**
+ * Claim the database for a plugin this build has never heard of.
+ *
+ * Written raw rather than through `openStore`, which is exactly the call that
+ * must refuse afterwards — going through it would be asking the guard to install
+ * the thing it guards against.
+ */
+export function setUserVersion(state, version) {
+  const previous = process.env.OAI_PLUGIN_STATE;
+  process.env.OAI_PLUGIN_STATE = state;
+  try {
+    const db = new DatabaseSync(databasePath());
+    db.exec(`PRAGMA user_version = ${version}`);
+    db.close();
+  } finally {
+    if (previous === undefined) delete process.env.OAI_PLUGIN_STATE;
+    else process.env.OAI_PLUGIN_STATE = previous;
+  }
 }
 
 /**
@@ -86,7 +131,7 @@ export function insertSynthetic(state, { id, state: jobState = 'queued', version
  * counted **on the server** rather than derived from timestamps: a row can say
  * two jobs did not overlap while the requests plainly did.
  */
-export async function queueScenario({ delayMs = 0 } = {}) {
+export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
   const tracker = { inFlight: 0, maxInFlight: 0 };
   const server = await startFakeServer((request, response) => {
     // Only the chat completion is slow. Matching on `/models` alone is not
@@ -101,7 +146,11 @@ export async function queueScenario({ delayMs = 0 } = {}) {
     tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight);
     setTimeout(() => {
       tracker.inFlight -= 1;
-      respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
+      // A server that answers with a refusal rather than a completion, so a test
+      // can watch the whole failure path — worker, envelope, row — instead of
+      // fabricating a `failed` row and asserting on its own fixture.
+      if (failChats) respondJson(response, { error: { message: 'the model is on fire' } }, 500);
+      else respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
     }, delayMs);
   });
 
@@ -116,8 +165,13 @@ export async function queueScenario({ delayMs = 0 } = {}) {
     tracker,
     state,
     chats: () => server.requests.filter((request) => request.url.includes('chat/completions')),
-    submit: (extra = []) =>
-      runCompanion(['task', '--background', ...extra, 'do it'], { configPath, env: { OAI_PLUGIN_STATE: state } }),
+    // Any companion command against this scenario's config and state directory.
+    // `cwd` is a parameter because the workspace a job records is the directory
+    // it was submitted from, and a bare `/oai:status` filters on it — a test
+    // that cannot vary the directory cannot exercise that at all.
+    run: (args, { cwd } = {}) => runCompanion(args, { configPath, env: { OAI_PLUGIN_STATE: state }, cwd }),
+    submit: (extra = [], { cwd } = {}) =>
+      runCompanion(['task', '--background', ...extra, 'do it'], { configPath, env: { OAI_PLUGIN_STATE: state }, cwd }),
   };
 }
 

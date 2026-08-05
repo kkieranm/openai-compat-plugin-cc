@@ -33,6 +33,24 @@ export function buildMessages({ system = DEFAULT_SYSTEM_PROMPT, prompt, files = 
   ];
 }
 
+/**
+ * The request text back out of an assembled user message — everything after the
+ * last file block.
+ *
+ * Here rather than in the reader that wants it, beside the function that decides
+ * the layout, because the two are one definition: a reader that re-derived this
+ * would drift the moment the delimiters changed, and its failure mode is silent.
+ * It showed `--- FILE: scripts/lib/errors.mjs ---` as what a job had been asked
+ * to do, which is a plausible-looking wrong answer rather than an obvious one.
+ */
+export function requestTextOf(content) {
+  const text = String(content ?? '');
+  const marker = text.lastIndexOf('\n--- END FILE: ');
+  if (marker === -1) return text.trim();
+  const lineEnd = text.indexOf('\n', marker + 1);
+  return lineEnd === -1 ? '' : text.slice(lineEnd).trim();
+}
+
 export function readStdin() {
   try {
     return readFileSync(0, 'utf8');

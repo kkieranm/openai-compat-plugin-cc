@@ -7,10 +7,11 @@
 // `AUTOINCREMENT` and a guarded `UPDATE` answer all three, and the OS releases
 // the locks when a process dies — which is the one primitive node core does not
 // otherwise offer. See ADR 014.
-import { chmodSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { UserError } from './errors.mjs';
 
 /**
  * The schema this build understands.
@@ -88,10 +89,11 @@ const SCHEMA = `
  * column or changed what a state means, and this one would corrupt it while
  * believing it was being helpful.
  */
-export class DatabaseTooNewError extends Error {
+export class DatabaseTooNewError extends UserError {
   constructor(found) {
     super(
       `This job database was written by a newer version of the plugin (schema ${found}, this build understands ${USER_VERSION}).`,
+      { reason: 'database-too-new', hint: 'Update the plugin, or use the newer one for background jobs.' },
     );
     this.name = 'DatabaseTooNewError';
     this.found = found;
@@ -117,7 +119,7 @@ function applySchema(db) {
  * `0700` on the directory and `0600` on the file: these rows hold the prompt and
  * the full text of every attached file, which is the user's source code.
  */
-export function openStore({ readonly = false } = {}) {
+export function openStore() {
   const path = databasePath();
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   mkdirSync(join(statePath(), 'logs'), { recursive: true, mode: 0o700 });
@@ -131,11 +133,7 @@ export function openStore({ readonly = false } = {}) {
   db.exec('PRAGMA busy_timeout = 10000');
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
-  if (!readonly) applySchema(db);
-  else {
-    const found = db.prepare('PRAGMA user_version').get().user_version;
-    if (found > USER_VERSION) throw new DatabaseTooNewError(found);
-  }
+  applySchema(db);
   try {
     chmodSync(path, 0o600);
   } catch {
@@ -143,4 +141,27 @@ export function openStore({ readonly = false } = {}) {
     // reason to refuse to run, and the directory above is already restricted.
   }
   return db;
+}
+
+/**
+ * A handle that cannot write, for the one case where reading is still allowed
+ * and writing is not: a database a newer plugin wrote.
+ *
+ * `readOnly: true` rather than a promise not to write. The rule — no migration,
+ * no reconciliation, no retention against a database this build does not
+ * understand — is then enforced by SQLite rather than by every future caller
+ * remembering it; an ordinary handle plus discipline is what lets the next edit
+ * quietly reintroduce the write. Verified: a write through this handle fails
+ * with "attempt to write a readonly database", and it reads across a live WAL.
+ *
+ * Returns `null` when no database exists at all, because a machine that has
+ * never run a background job has nothing to report and should not have state
+ * created for it by a command that only meant to look.
+ */
+export function openStoreForReading() {
+  const path = databasePath();
+  if (!existsSync(path)) return null;
+  const db = new DatabaseSync(path, { readOnly: true });
+  db.exec('PRAGMA busy_timeout = 10000');
+  return { db, version: db.prepare('PRAGMA user_version').get().user_version };
 }

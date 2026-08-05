@@ -5,8 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { RESULT_SPEC } from '../scripts/lib/cmd-result.mjs';
 import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
 import { SETUP_SPEC } from '../scripts/lib/cmd-setup.mjs';
+import { STATUS_SPEC } from '../scripts/lib/cmd-status.mjs';
 import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -17,7 +19,13 @@ const COMMANDS_DIR = join(ROOT, 'commands');
 // pairing that drifts silently, so it is checked instead — this guard was
 // written after finding /oai:task had accepted --system with no mention of it
 // anywhere in commands/task.md.
-const SPECS = { 'review.md': REVIEW_SPEC, 'setup.md': SETUP_SPEC, 'task.md': TASK_SPEC };
+const SPECS = {
+  'result.md': RESULT_SPEC,
+  'review.md': REVIEW_SPEC,
+  'setup.md': SETUP_SPEC,
+  'status.md': STATUS_SPEC,
+  'task.md': TASK_SPEC,
+};
 
 function commandFiles() {
   return readdirSync(COMMANDS_DIR).filter((name) => name.endsWith('.md'));

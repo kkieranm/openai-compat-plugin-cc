@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+import { runResult } from './lib/cmd-result.mjs';
 import { runReview } from './lib/cmd-review.mjs';
 import { runSetup } from './lib/cmd-setup.mjs';
+import { runStatus } from './lib/cmd-status.mjs';
 import { runTaskWorker } from './lib/cmd-task-worker.mjs';
 import { runTask } from './lib/cmd-task.mjs';
 import { UserError } from './lib/errors.mjs';
 
-const COMMANDS = { setup: runSetup, task: runTask, review: runReview };
+const COMMANDS = { setup: runSetup, task: runTask, review: runReview, status: runStatus, result: runResult };
 
 // Dispatched, but never advertised: `task-worker` is how `--background` re-execs
 // itself as a detached process, not something a user types. Keeping it out of

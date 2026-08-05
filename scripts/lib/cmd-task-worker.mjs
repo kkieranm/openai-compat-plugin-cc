@@ -13,6 +13,7 @@ import { createLedger } from './attempt-ledger.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
 import { UserError } from './errors.mjs';
 import { resolveCredential } from './job-auth.mjs';
+import { startHeartbeat } from './job-heartbeat.mjs';
 import { awaitTurn } from './job-queue.mjs';
 import { finish, jobBySeq, registerWaiter } from './job-record.mjs';
 import { reconstructRequest } from './job-request.mjs';
@@ -101,6 +102,9 @@ export async function runTaskWorker(argv) {
     return;
   }
 
+  // Only now: a queued worker is already visible through the wait loop's beat,
+  // and this is the stretch that would otherwise be silent.
+  const stopBeating = startHeartbeat(db, seq);
   try {
     await runJob(db, seq, job);
   } catch (error) {
@@ -109,5 +113,7 @@ export async function runTaskWorker(argv) {
     // one — reason, message, hint, attempts, requested model.
     finish(db, seq, { state: 'failed', failure: errorReport(error), at: now() });
     throw error;
+  } finally {
+    stopBeating();
   }
 }
