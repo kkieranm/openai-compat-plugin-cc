@@ -136,6 +136,27 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
 
 ### Stage 1 follow-ups — filed 2026-08-05 when OAI-3 shipped
 
+- **OAI-58** — **The step 6 review ladder is OWED on OAI-3 and has not run.** Filed 2026-08-05, the
+  same day the feature shipped, because an owed review that lives only in a session transcript is an
+  owed review that never happens — the precedent is the discharged `/code-review high` block recorded
+  further up this file.
+  **Scope:** `e74eb2c^..HEAD` — eight commits, 19 new modules, 44 new tests.
+  **It triggers `lean-wide` on the repo's own terms, and not marginally:** the CLAUDE.md rule is that
+  wide mode fires when a change introduces or alters a module carrying vendor or protocol assumptions,
+  and this one introduces process-lifecycle *and* persistence assumptions — a detached worker, pid
+  liveness, a database with two version axes, and a credential decision replayed in a second process
+  minutes later.
+  **The cost is the reason this is an item rather than a step someone squeezes in:** a full ladder
+  here measured ~1.7M subagent tokens, which is one feature per session. The lever is `review-lean`
+  in wide mode **once over the whole feature** rather than per phase — per-phase passes were
+  deliberately not run for this reason, and each phase got a single `advisor` request instead as the
+  tripwire (**every one of which failed to launch, overloaded** — so the mid-build tripwire produced
+  nothing across all eight phases, and this pass is carrying more than it usually would).
+  **Do OAI-52 item (1) first** — an untested auth module is a finding the fan-out will certainly
+  raise, and paying for five verifiers to tell you what is already written down here is waste.
+  **Check `unadjudicated` before reading any verdict:** wide mode returns `findings: []` when its
+  verifiers die on the cap, and that shape reads exactly like a clean pass.
+
 - **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
   feature shipped, from reading the plan's verification section back against the tests that exist, so
   that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. None of these is a known
@@ -220,6 +241,32 @@ more than the variable under test measures nothing.** Both are cheap to avoid: `
   the moment it exists it is a **contract**, and the enumerated-field problem OAI-36 describes for the
   bench reliability prose applies to it exactly. Do it when something actually consumes it (the
   `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
+
+- **OAI-59** — **`/oai:result` renders a payload it does not understand, and prints `undefined` and
+  `NaNs` when it does.** Filed 2026-08-05, noticed during phase 6 verification against a hand-seeded
+  row and initially written off as a fixture artifact — it is not, and the second look is what this
+  entry records. `renderTaskFooter` does `(durationMs / 1000).toFixed(1)`, so an absent `durationMs`
+  renders `NaNs`, and an absent `model` renders `model: undefined`.
+  **What makes it reachable is new in OAI-3.** Before, the footer only ever rendered an outcome the
+  same process had just produced, so every field was there by construction. Now `cmd-result.mjs`
+  renders an `outcome` **another build persisted**, and `job-view.mjs:33` deliberately keeps reading a
+  database a *newer* plugin wrote — that is the designed behaviour, and [ADR
+  014](adr/014-async-jobs.md) is explicit that the lifecycle envelope is stable across versions while
+  `outcome` is exactly the part that may change shape. So the one row this build is guaranteed not to
+  understand is the row it will happily render.
+  The fix is not to default the numbers, which would print a fabricated `0.0s`. It is for the footer
+  to omit a part it has no value for — the same absence-is-not-a-value rule the request DTO already
+  follows, where `undefined` means absent and `null` is invalid. Low severity (cosmetic, on a path
+  that already tells the user the database is newer), filed for the class rather than the symptom.
+
+- **OAI-60** — The retention ceiling is a constant in one place and a **literal `50` in prose** in
+  `commands/status.md:56` and `commands/result.md:36`. `cmd-result.mjs` interpolates `RETAIN` into its
+  hint correctly, so changing the constant leaves the code truthful and the two command markdowns
+  quietly wrong — and command markdown is precisely the surface CLAUDE.md notes "nothing else notices
+  when it rots", which is why `tests/plugin.test.js` exists. It does not check this.
+  Two lines of fix, and the feature skill's rule picks between them: one definition, or one guard.
+  A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
+  because the alternative is generating prose from a constant, which is worse than the problem.
 
 - **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
   arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
