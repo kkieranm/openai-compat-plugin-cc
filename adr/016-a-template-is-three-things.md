@@ -137,5 +137,22 @@ chain.
   refusal, and the `"$root"/*` boundary — has **no test anywhere**, proved by mutation. Filed as
   OAI-86. `tests/delegate-template.test.js` stubs it deliberately and now says so rather than
   claiming coverage that does not exist.
+- **Measured 2026-08-05, n=6 runs against `qwen/qwen3.6-35b-a3b`, using this feature's own review
+  findings as ground truth: the advisor is a good "what should I check" generator and a weak cold
+  defect-finder, and FRAMING carries most of the signal.** Two known defects were replayed as
+  pre-fix fixtures with every hint stripped, each asked neutrally and pointedly:
+
+  | ground-truth defect | "is this sound?" | caller names the axis |
+  |---|---|---|
+  | prototype-chain lookup | **missed** — generic "it is hardcoded, no extension mechanism", itself a bad objection since the closed set is deliberate | **exact hit** — named `__proto__`/`constructor`, the bypassed `!template` guard, and `Object.hasOwn` as the fix |
+  | zsh word-splitting | **missed**, even when told an agent runs it under the user's login shell | **partial** — named the exact expression and prescribed the exact experiment that found it, but attributed it to globbing options rather than zsh's no-word-splitting default, and hedged to "unguaranteed" |
+
+  The neutral runs also did visibly less work (628 output tokens in 8.2s against 2,788 in 35.6s).
+  **So a fixed question is not sufficient** — which is a real qualification of this ADR's own premise.
+  The template pins the shape and the discipline; the caller still supplies the suspicion. Use it as
+  "here is what I am worried about, what should I check", not "find what is wrong with this".
+  Small sample, and both fixtures came from one feature — treat the direction as established and the
+  magnitude as not.
+
 - The 8000 ceiling has never been measured against a task-shaped corpus. It is a placeholder that
   behaves conservatively, and a small task benchmark (Stage 2's remainder) is what would replace it.
