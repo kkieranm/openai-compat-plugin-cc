@@ -80,6 +80,11 @@ function beatIsStale(row, nowMs) {
  * touch — one a newer plugin wrote, which is never mutated. Showing it is the
  * whole remedy available: it is the row a user has to be told about, because
  * nothing in this build will ever clear it.
+ *
+ * `cancelling` comes *after* `overdue` and `stalled` and not before: a worker
+ * that has stopped checking in is never going to see the cancellation, and
+ * showing the request back to the user as though it had been received would hide
+ * exactly the row they need to deal with by hand.
  */
 function displayOf(row, liveness, nowMs) {
   if (isTerminal(row.state)) return row.state;
@@ -90,6 +95,7 @@ function displayOf(row, liveness, nowMs) {
   const deadline = deadlineOf(row);
   if (deadline !== null && nowMs > deadline) return 'overdue';
   if (beatIsStale(row, nowMs)) return 'stalled';
+  if (row.cancel_requested_at) return 'cancelling';
   return row.state;
 }
 

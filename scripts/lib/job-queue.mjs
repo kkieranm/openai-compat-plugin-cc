@@ -72,11 +72,18 @@ function queuedRole(row, liveness) {
 
 /**
  * The decision itself, run inside the transaction. Returns `acquired`,
- * `blocked` or `gone`.
+ * `blocked`, `cancelled` or `gone`.
  */
 function decide(db, seq, pid, nowMs, at) {
   const mine = jobBySeq(db, seq);
   if (!mine || mine.state !== 'queued') return 'gone';
+  // Inside the transaction, and before the claim rather than beside it. Read
+  // outside, a cancellation landing between the read and the CAS would leave the
+  // job dispatched anyway, and a queued job's cancel then costs a whole model
+  // call — the one thing it exists to avoid. Read here, the write lock means the
+  // two orders are the only two: cancel first and it never runs, claim first and
+  // the heartbeat catches it.
+  if (mine.cancel_requested_at) return 'cancelled';
 
   // EVERY running row is a blocker unless it is provably dead. Qualifying this
   // with `AND worker_pid IS NOT NULL` would be a two-concurrent-calls bug, and a
@@ -131,8 +138,12 @@ function timeOut(db, job, at) {
 }
 
 /**
- * Wait for this job's turn. Returns `acquired`, `queue-timeout`, or `gone` —
- * and only `acquired` means a model may be called.
+ * Wait for this job's turn. Returns `acquired`, `cancelled`, `queue-timeout`, or
+ * `gone` — and only `acquired` means a model may be called.
+ *
+ * `cancelled` is a verdict about the *wait*, not about the job: the worker
+ * returns and exits, leaving the row queued with a pid that is about to stop
+ * existing, and a later reader is what writes the terminal state.
  *
  * The wait clock starts at submission, not at worker start: `--max-wait` answers
  * "how stale may this answer be", which is a question about when the user asked.

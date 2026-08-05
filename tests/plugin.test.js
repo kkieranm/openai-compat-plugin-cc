@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CANCEL_SPEC } from '../scripts/lib/cmd-cancel.mjs';
 import { RESULT_SPEC } from '../scripts/lib/cmd-result.mjs';
 import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
 import { SETUP_SPEC } from '../scripts/lib/cmd-setup.mjs';
@@ -20,6 +21,7 @@ const COMMANDS_DIR = join(ROOT, 'commands');
 // written after finding /oai:task had accepted --system with no mention of it
 // anywhere in commands/task.md.
 const SPECS = {
+  'cancel.md': CANCEL_SPEC,
   'result.md': RESULT_SPEC,
   'review.md': REVIEW_SPEC,
   'setup.md': SETUP_SPEC,

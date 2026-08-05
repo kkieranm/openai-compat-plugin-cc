@@ -64,9 +64,9 @@ export async function deadPid() {
 const SYNTHETIC = `
   INSERT INTO jobs (id, kind, state, schema_version, workspace, transport, auth, request, attachments,
                     created_at, spawned_at, started_at, last_beat_at, waiter_pid, worker_pid, model,
-                    outcome, failure)
+                    outcome, failure, cancel_requested_at)
   VALUES (?, 'task', ?, ?, ?, '{"name":"fake","baseUrl":"http://127.0.0.1:1/v1","query":""}', '{"mode":"none"}',
-          ?, '[]', ?, ?, ?, ?, ?, ?, 'test-model', ?, ?)
+          ?, '[]', ?, ?, ?, ?, ?, ?, 'test-model', ?, ?, ?)
 `;
 
 const ago = (ms) => (ms === null ? null : new Date(Date.now() - ms).toISOString());
@@ -90,6 +90,7 @@ export function insertSynthetic(state, {
   request = { messages: [{ role: 'user', content: 'synthetic' }] },
   startedAgoMs = null,
   beatAgoMs = null,
+  cancelAgoMs = null,
   outcome = null,
   failure = null,
 }) {
@@ -98,7 +99,7 @@ export function insertSynthetic(state, {
     db.prepare(SYNTHETIC).run(
       id, jobState, version, workspace, JSON.stringify(request),
       stamp, stamp, ago(startedAgoMs), ago(beatAgoMs), waiterPid, workerPid,
-      outcome && JSON.stringify(outcome), failure && JSON.stringify(failure),
+      outcome && JSON.stringify(outcome), failure && JSON.stringify(failure), ago(cancelAgoMs),
     );
     return Number(db.prepare('SELECT seq FROM jobs WHERE id = ?').get(id).seq);
   });
@@ -144,7 +145,7 @@ export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
     }
     tracker.inFlight += 1;
     tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       tracker.inFlight -= 1;
       // A server that answers with a refusal rather than a completion, so a test
       // can watch the whole failure path — worker, envelope, row — instead of
@@ -152,6 +153,14 @@ export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
       if (failChats) respondJson(response, { error: { message: 'the model is on fire' } }, 500);
       else respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
     }, delayMs);
+    // A client that goes away mid-request — which is exactly what cancelling a
+    // running job produces — must not leave a long timer pending in the test
+    // process, or every cancellation test pays the full delay in wall clock
+    // after it has already finished asserting.
+    response.on('close', () => {
+      if (!response.writableEnded) tracker.inFlight -= 1;
+      clearTimeout(timer);
+    });
   });
 
   const { path: configPath } = writeConfig({

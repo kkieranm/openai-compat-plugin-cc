@@ -42,7 +42,8 @@ Building the call:
   is retrievable from any other. Use it when the run would otherwise leave the session waiting on a
   model for minutes; a local model's prefill alone can take several. Submission still fails *here*
   and now if the server is unreachable or the request will not fit the window, rather than turning
-  into a job that fails quietly later.
+  into a job that fails quietly later. `/oai:status` says what a job is doing, `/oai:result` prints
+  its answer once it has one, and `/oai:cancel` asks it to stop.
 
 - `--max-wait <seconds>` caps how long a background job will sit **queued** waiting for its turn, as
   opposed to how long its own run may take (`--max-seconds`). Two different clocks. A job that cannot

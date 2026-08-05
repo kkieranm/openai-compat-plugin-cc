@@ -41,6 +41,9 @@ Reading the states:
   process, so the plugin never signals one it cannot verify. The job id and pid are shown for you
   to deal with by hand.
 - `overdue` — past its own `--max-seconds` cap while its process is still alive. Same caveat.
+- `cancelling` — someone ran `/oai:cancel` on it and its worker has not exited yet. It stops at its
+  next check-in, a few seconds away, and then reads `cancelled`. A job showing `stalled` instead will
+  never see the request.
 - `malformed` — a row this build cannot have produced (running with no worker pid). It blocks the
   queue and is reported rather than guessed at.
 - `completed`, `failed`, `cancelled`, `queue-timeout` — finished. `queue-timeout` means the job gave

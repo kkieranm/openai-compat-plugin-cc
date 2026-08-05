@@ -64,7 +64,15 @@ function noteFor(view, nowMs) {
     return `past its own ${Math.round((view.deadline - Date.parse(view.started_at)) / 1000)}s cap, and pid ${view.pid} is still alive.`;
   }
   if (view.display === 'stalled') {
-    return `pid ${view.pid} is alive but has not beaten since ${relativeAge(view.last_beat_at, nowMs)}.`;
+    // A stalled worker is the one case where a cancellation goes unheard, and
+    // saying so here is the difference between "wait a moment" and "deal with
+    // this by hand".
+    const unheard = view.cancel_requested_at ? ' It will not see the cancellation asked for, either.' : '';
+    return `pid ${view.pid} is alive but has not beaten since ${relativeAge(view.last_beat_at, nowMs)}.${unheard}`;
+  }
+  if (view.display === 'cancelling') {
+    return `cancellation asked for ${relativeAge(view.cancel_requested_at, nowMs)}; it stops at its next check-in,`
+      + ' and reads cancelled once its worker has exited.';
   }
   if (view.display === 'dead' || view.display === 'never-started') {
     return `written by a newer plugin (row schema ${view.schema_version}), so this build will not touch it.`;

@@ -40,6 +40,26 @@ function terminalizeDead(db, row, at) {
 }
 
 /**
+ * A job nothing ever picked up, past the grace that bounds how long a spawn may
+ * take.
+ *
+ * A cancellation asked for first wins here too, for the same reason it does
+ * above: the user asked for this job not to run, and it is not going to run.
+ * Calling that `failed` would report a granted request as a fault.
+ */
+function terminalizeUnstarted(db, row, at) {
+  if (row.cancel_requested_at) {
+    return abandonUnstarted(db, row.seq, { state: 'cancelled', at }) ? 'cancelled' : null;
+  }
+  const failure = report(
+    'worker-never-started',
+    `No worker ever registered for job ${row.id}, so it will never run.`,
+    'The process that submitted it most likely died before the worker was spawned. Submit it again.',
+  );
+  return abandonUnstarted(db, row.seq, { state: 'failed', failure, at }) ? 'worker-never-started' : null;
+}
+
+/**
  * Reconcile one row. Returns the reason it was terminalized, or `null` if it was
  * left exactly as it was found.
  *
@@ -53,14 +73,7 @@ export function reconcile(db, row, { nowMs = Date.now(), at = new Date().toISOSt
 
   const state = liveness ?? livenessOf(row, nowMs);
   if (state === 'dead') return terminalizeDead(db, row, at);
-  if (state === 'never-started') {
-    const failure = report(
-      'worker-never-started',
-      `No worker ever registered for job ${row.id}, so it will never run.`,
-      'The process that submitted it most likely died before the worker was spawned. Submit it again.',
-    );
-    return abandonUnstarted(db, row.seq, failure, at) ? 'worker-never-started' : null;
-  }
+  if (state === 'never-started') return terminalizeUnstarted(db, row, at);
   // live, starting, malformed: nothing has been established about this job.
   return null;
 }

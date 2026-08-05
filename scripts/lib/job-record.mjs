@@ -178,21 +178,57 @@ export function beat(db, seq, at) {
 }
 
 /**
- * Fail a job whose worker never registered, bounded by the startup grace.
+ * Ask a job to stop. Writes one column and terminalizes nothing.
+ *
+ * That restraint is the whole cancellation design. Writing `cancelled` here
+ * would say a job had stopped while its model call was still in flight, and the
+ * only way to make it true would be to signal a pid recorded minutes ago —
+ * which may by then belong to something else entirely. So this records the
+ * *request*, the worker acts on it, and a later reader observes the exit.
+ *
+ * Guarded on a non-terminal state, so a cancel racing a verdict loses and the
+ * caller learns it from re-reading the row. `cancel_requested_at IS NULL` keeps
+ * a repeat cancel from overwriting when it was first asked for.
+ */
+export function requestCancel(db, seq, at) {
+  const info = db
+    .prepare(
+      `UPDATE jobs SET cancel_requested_at = ?
+        WHERE seq = ? AND state IN ('queued','running') AND cancel_requested_at IS NULL`,
+    )
+    .run(at, seq);
+  return info.changes === 1;
+}
+
+/**
+ * Has anyone asked this job to stop? The one question a worker asks about
+ * itself, and it asks the database rather than a signal handler.
+ */
+export function cancelRequested(db, seq) {
+  return Boolean(db.prepare('SELECT cancel_requested_at FROM jobs WHERE seq = ?').get(seq)?.cancel_requested_at);
+}
+
+/**
+ * Terminalize a job whose worker never registered, bounded by the startup grace.
  *
  * `AND waiter_pid IS NULL` is load-bearing and `finish` cannot supply it: without
  * it, a reconciler that decided "never started" a microsecond before the worker
  * finally registered would fail a job that is alive and about to run. With it
  * the two writes are mutually exclusive — whichever lands first makes the other
  * match nothing.
+ *
+ * The state is a parameter because a job the user asked to cancel ends as
+ * `cancelled` even when nothing ever picked it up: it will not run, which is
+ * what was asked for, and reporting `failed` for a granted request is a wrong
+ * answer that looks like a right one.
  */
-export function abandonUnstarted(db, seq, failure, at) {
+export function abandonUnstarted(db, seq, { state, failure = null, at }) {
   const info = db
     .prepare(
-      `UPDATE jobs SET state = 'failed', failure = ?, completed_at = ?
+      `UPDATE jobs SET state = ?, failure = ?, completed_at = ?
         WHERE seq = ? AND state = 'queued' AND waiter_pid IS NULL`,
     )
-    .run(JSON.stringify(failure), at, seq);
+    .run(state, failure ? JSON.stringify(failure) : null, at, seq);
   return info.changes === 1;
 }
 
