@@ -13,6 +13,7 @@ import { RETAIN } from './job-retention.mjs';
 import { logPathFor } from './job-store.mjs';
 import { openJobs, reconcileAll } from './job-view.mjs';
 import { renderTaskFooter } from './render.mjs';
+import { artifactNote } from './task-artifact.mjs';
 import { templateNotes } from './task-template.mjs';
 
 // No flags. Exported anyway, so `tests/plugin.test.js` covers this command's
@@ -60,6 +61,9 @@ function writeAnswer(job) {
   // other — a claim scoped to `templateNotes` deliberately, since the footer
   // above it does still diverge (`contextNote` is null here and populated
   // there), which is a pre-existing gap this change did not introduce.
+  // The verdict the worker computed, so a backgrounded patch says whether it
+  // applies exactly as a foreground one does.
+  if (outcome.artifact) process.stdout.write(`\n${artifactNote(outcome.artifact)}\n`);
   for (const note of templateNotes({ name: job.request?.template, estimatedTokens: job.request?.estimatedTokens })) {
     process.stdout.write(`\n${note}\n`);
   }

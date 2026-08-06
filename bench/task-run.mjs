@@ -85,10 +85,14 @@ export function runSweep(cases, options, { execute = invoke } = {}) {
   if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
     throw new Error(`--runs must be a positive whole number, got ${JSON.stringify(options.runs)}`);
   }
-  const arms = options.arm?.length ? options.arm : ARMS;
-  for (const arm of arms) {
+  // De-duplicated, because completeness is judged by WHICH arms ran, never how
+  // many: `--arm neutral --arm neutral` has length 2, so a length test called a
+  // single-arm sweep complete and the INCOMPLETE banner never printed.
+  const requested = options.arm?.length ? [...new Set(options.arm)] : [...ARMS];
+  for (const arm of requested) {
     if (!ARMS.includes(arm)) throw new Error(`unknown --arm "${arm}"; have: ${ARMS.join(', ')}`);
   }
+  const arms = requested;
   const results = [];
 
   for (const caseDef of cases) {
@@ -138,7 +142,7 @@ function modelCell(runs) {
  */
 export function renderReport({ results, arms }) {
   const lines = ['# Task benchmark', ''];
-  if (arms.length < ARMS.length) {
+  if (!ARMS.every((arm) => arms.includes(arm))) {
     lines.push(`**INCOMPLETE — only the ${arms.join(', ')} arm ran.** Framing is the dominant variable`);
     lines.push('measured here, so a single-arm sweep is not a benchmark of the template.', '');
   }
@@ -174,6 +178,10 @@ export async function main(argv) {
     if (!known.has(id)) throw new Error(`no such case "${id}"; have: ${[...known].join(', ')}`);
   }
   const selected = options.case?.length ? all.filter((c) => options.case.includes(c.id)) : all;
+  // Kept BESIDE the unknown-id check, not replaced by it. Adding that check in
+  // pass 1 deleted this one, so an empty corpus persisted a successful report
+  // with no rows — a result from no evidence.
+  if (selected.length === 0) throw new Error('no cases to run — the corpus is empty');
 
   const sweep = runSweep(selected, options);
   const markdown = renderReport(sweep);

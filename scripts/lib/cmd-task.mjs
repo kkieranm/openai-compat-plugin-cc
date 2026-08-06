@@ -3,7 +3,7 @@
 // What the request *is* — the profile, the prompt's source, the attachments and
 // the budgets the answer runs under — lives in `task-execute.mjs`; how the
 // finished run is shown lives in `task-report.mjs`.
-import { parseCommandLine } from './args.mjs';
+import { parseCommandLine, splitBlob } from './args.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { errorReport } from './review-report.mjs';
 import { executeTask } from './task-execute.mjs';
@@ -21,6 +21,9 @@ export const TASK_SPEC = {
   booleanFlags: ['background', 'json'],
   repeatableFlags: ['file'],
 };
+
+/** Flags whose next token is their value — the set `splitBlob` builds internally. */
+const TAKES_VALUE = new Set([...TASK_SPEC.valueFlags, ...TASK_SPEC.repeatableFlags]);
 
 /**
  * The command, and the envelope its failures take when a machine is reading.
@@ -62,11 +65,20 @@ export async function runTask(argv) {
  * rather than re-implementing it, and stops at `--` exactly as the parser does.
  */
 function jsonIntent(argv) {
-  const tokens = argv.length === 1 && /\s/.test(argv[0]) ? argv[0].split(/\s+/) : argv;
-  for (const token of tokens) {
+  // `splitBlob` for the blob form, because it is the tokenizer the parser itself
+  // uses and it KNOWS which flags take a value. The hand-rolled version this
+  // replaces bailed at the first non-flag token, so `--file x --json` — the most
+  // natural harness call, in either form — reported no JSON intent at all. It is
+  // tolerant of an unknown flag, which is why a pre-parse is possible here.
+  const tokens = argv.length === 1 ? splitBlob(argv[0], TASK_SPEC).tokens : argv;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = String(tokens[i]);
     if (token === '--') return false;
-    if (token === '--json') return true;
-    if (!token.startsWith('--')) return false;
+    const name = token.startsWith('--') ? token.slice(2).split('=')[0] : null;
+    if (name === 'json') return true;
+    if (name === null) return false;
+    // Skip this flag's value, or `--file x --json` reads `x` as the prompt.
+    if (TAKES_VALUE.has(name) && !token.includes('=')) i += 1;
   }
   return false;
 }

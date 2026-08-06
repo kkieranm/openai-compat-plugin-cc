@@ -1060,3 +1060,17 @@ Two sharpeners. **The harm was mis-scoped on the first look** — called reporti
 about *where the files are* rather than *what the resolved path points at* will get this class wrong
 every time. And the defect **forges the very audit trail** the surrounding design tells its reader to
 trust, so the mitigation and the exploit share a mechanism.
+
+17. **An export that reads as shipped and is reachable by nothing.** Four instances in one change set
+    (Stage 2, 2026-08-05/06): `saveArtifact` gated on a field nothing ever set; `NO_RATE_NOTE`
+    documented as "so every caller says it the same way" with no caller; an `unavailable` branch
+    matching a stderr string `git apply --check` never emits; and a delegate recipe arm for a flag
+    combination the CLI had just started refusing. Each was reviewed by eye and survived, because
+    reading a module tells you what it *would* do, not whether anything asks it to.
+    **A structural guard was attempted and does NOT work here, which is worth knowing before someone
+    tries again.** "Every `scripts/lib` export has a non-test consumer" produces 38 hits, most of them
+    wrong: this repo has deliberate test-only exports (`RESULT_SPEC` and the other command SPECs say so
+    in their own docstrings — they exist so `tests/plugin.test.js` can check the markdown). Narrowing
+    it to "used by nothing at all, tests included" catches only one of the four. So reachability here
+    is not syntactically decidable, and the honest control is the review question: **for each new
+    export, name the production call site.** If you cannot, it is not shipped.

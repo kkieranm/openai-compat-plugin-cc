@@ -7,24 +7,8 @@
 // string-building, and this one writes to stdout and throws.
 import { requireAnswer } from './client.mjs';
 import { renderTaskFooter } from './render.mjs';
-import { artifactNote, checkDiff, extractDiff } from './task-artifact.mjs';
+import { artifactNote } from './task-artifact.mjs';
 import { artifactKind, templateNotes } from './task-template.mjs';
-
-/**
- * The machine-checkable verdict on this run's answer, or null.
- *
- * Only the `patch` template has one. `cwd` is the process's, deliberately: the
- * question "does this apply" is only meaningful against a tree, and the tree the
- * user ran the command in is the one they mean.
- */
-function artifactVerdict(outcome, answer) {
-  if (artifactKind(outcome.template) !== 'diff') return null;
-  const diff = extractDiff(answer);
-  // Checked, never written. Persisting the extracted diff was designed and never
-  // built — `saveArtifact` existed but was unreachable, so it is gone rather than
-  // left looking shipped. Recorded as unbuilt in plans/stage-2-open-questions.md.
-  return checkDiff(diff, { cwd: process.cwd() });
-}
 
 /**
  * One finished run as one object — the machine-readable half of this command.
@@ -67,9 +51,9 @@ function jsonTaskReport(outcome, answer) {
     content: answer,
     template: template ?? null,
     notes: templateNotes({ name: template, estimatedTokens }),
-    // The objective half, where there is one: `applies` | `rejected` | `absent`,
-    // never a boolean — "there was no diff" and "the diff was broken" are two
-    // different failures with two different fixes.
+    // The objective half, where there is one: `applies` | `rejected` | `absent` |
+    // `unavailable`, never a boolean — "there was no diff", "the diff was broken"
+    // and "nothing could check it" are three different failures.
     artifact: outcome.artifact ?? null,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
@@ -134,9 +118,6 @@ export function report(outcome, { json = false } = {}) {
   // — which is the reader least able to tell. The refusal is the one thing both
   // shapes must share, so it happens above the branch rather than inside one.
   const answer = requireAnswer(outcome.result, outcome.profile).trim();
-  // Checked BEFORE either rendering, so both carry the same verdict and neither
-  // can show a patch without saying whether it applies.
-  outcome.artifact = artifactVerdict(outcome, answer);
 
   if (json) {
     process.stdout.write(`${JSON.stringify(jsonTaskReport(outcome, answer), null, 2)}\n`);

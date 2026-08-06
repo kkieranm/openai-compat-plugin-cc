@@ -97,3 +97,28 @@ test('checking never touches the working tree', async () => {
   const { stdout } = await run('git', ['status', '--porcelain'], { cwd: dir });
   assert.equal(stdout.trim(), '', '--check must not modify anything');
 });
+
+test('the verdict is computed where every other run fact is, so a job can carry it', async () => {
+  // The regression this exists to stop: computing the verdict at RENDER time meant
+  // /oai:result could never have it, so pass 1 refused --template patch
+  // --background — which made the patch template unreachable through the delegate
+  // agent, whose only submission is a background one. Nothing tested any of it.
+  const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
+  const dir = await repoWith('one\ntwo\nthree\n');
+  const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: dir });
+  assert.equal(verdict.state, 'applies');
+  // And a template with no oracle gets no verdict rather than a misleading one.
+  assert.equal(artifactFor({ template: 'advisor', answer: GOOD, cwd: dir }), null);
+  assert.equal(artifactFor({ template: undefined, answer: GOOD, cwd: dir }), null);
+});
+
+test('a cwd that is not a work tree is UNAVAILABLE, and that branch is reachable', async () => {
+  // The pass-1 version matched a stderr string `git apply --check` never emits,
+  // so the branch could not fire at all. Driven against a real non-repo dir.
+  const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
+  const notARepo = mkdtempSync(join(tmpdir(), 'oai-norepo-'));
+  const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: notARepo });
+  assert.equal(verdict.state, 'unavailable');
+  assert.match(verdict.detail, /work tree|not installed/);
+  assert.match(artifactNote(verdict), /NOT CHECKED/);
+});

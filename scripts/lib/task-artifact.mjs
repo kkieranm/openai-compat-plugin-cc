@@ -7,6 +7,7 @@
 // exists and the reason it is small: it is not a general "artifact system", it
 // is the one case where a machine can check the answer.
 import { execFileSync } from 'node:child_process';
+import { artifactKind } from './task-template.mjs';
 
 /** A model that cannot make the change is told to say so; this is that word. */
 export const IMPOSSIBLE = 'IMPOSSIBLE';
@@ -47,6 +48,16 @@ export function extractDiff(content) {
  */
 export function checkDiff(diff, { cwd }) {
   if (!diff) return { state: 'absent', detail: 'the reply contained no unified diff' };
+  // Preflight, because the previous version decided `unavailable` by matching
+  // stderr for "not a git repository" — a string `git apply --check` does not
+  // emit, since it does not require a repository at all. That branch could never
+  // fire, which made a state nobody could reach look like a handled case.
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, stdio: ['ignore', 'ignore', 'ignore'] });
+  } catch (error) {
+    const why = error.code === 'ENOENT' ? 'git is not installed or not on PATH' : 'not inside a git work tree';
+    return { state: 'unavailable', detail: why };
+  }
   try {
     execFileSync('git', ['apply', '--check', '-'], { cwd, input: diff, stdio: ['pipe', 'ignore', 'pipe'] });
     return { state: 'applies', detail: null };
@@ -58,9 +69,6 @@ export function checkDiff(diff, { cwd }) {
       return { state: 'unavailable', detail: `could not run git: ${error.code}` };
     }
     const stderr = String(error.stderr ?? '').trim();
-    if (/not a git repository/i.test(stderr)) {
-      return { state: 'unavailable', detail: 'not inside a git repository, so nothing could be checked' };
-    }
     return { state: 'rejected', detail: stderr.split('\n')[0] || 'git apply --check refused it' };
   }
 }
@@ -80,3 +88,18 @@ export function artifactNote({ state, detail }) {
   return `PATCH: no diff found — ${detail}. Nothing was checked and nothing was changed.`;
 }
 
+
+/**
+ * The verdict for one finished run, or null when this template has no oracle.
+ *
+ * Here rather than in a renderer, and that placement is the whole point of this
+ * function existing. Computing it at render time meant `/oai:result` could never
+ * carry it — the worker never saw it, because it did not exist until something
+ * rendered — so a backgrounded patch printed a discipline line about a check
+ * nobody had run. Refusing the combination was pass 1's stopgap and it broke the
+ * delegate agent, whose only submission is a background one.
+ */
+export function artifactFor({ template, answer, cwd }) {
+  if (artifactKind(template) !== 'diff') return null;
+  return checkDiff(extractDiff(answer), { cwd });
+}

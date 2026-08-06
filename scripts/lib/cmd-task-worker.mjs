@@ -19,6 +19,7 @@ import { finish, jobBySeq, registerWaiter } from './job-record.mjs';
 import { reconstructRequest } from './job-request.mjs';
 import { openStore } from './job-store.mjs';
 import { errorReport } from './review-report.mjs';
+import { artifactFor } from './task-artifact.mjs';
 
 export const TASK_WORKER_SPEC = {
   valueFlags: ['seq'],
@@ -45,8 +46,12 @@ function transportProfile(job) {
 }
 
 /** What `/oai:result` will render. Enough to reconstruct the run, nothing live. */
-function outcomeOf(result, durationMs) {
+function outcomeOf(result, durationMs, template) {
   return {
+    // The same verdict the foreground computes, persisted so `/oai:result` can
+    // report it. Without this the discipline line describes a check that never
+    // ran on this path.
+    artifact: artifactFor({ template, answer: result.content ?? '', cwd: process.cwd() }),
     content: result.content ?? '',
     reasoning: result.reasoning ?? '',
     model: result.model ?? null,
@@ -71,7 +76,7 @@ async function runJob(db, seq, job) {
   // run that looks like it worked and said nothing, which is the shape this repo
   // keeps having to unpick.
   requireAnswer(result, profile);
-  finish(db, seq, { state: 'completed', outcome: outcomeOf(result, Date.now() - startedAt), at: now() });
+  finish(db, seq, { state: 'completed', outcome: outcomeOf(result, Date.now() - startedAt, job.request?.template), at: now() });
 }
 
 export async function runTaskWorker(argv) {

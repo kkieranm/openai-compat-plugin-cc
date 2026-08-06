@@ -14,6 +14,7 @@ import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveRetryDelay, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { withProgress } from './progress.mjs';
+import { artifactFor } from './task-artifact.mjs';
 import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { resolveTemplate } from './task-template.mjs';
@@ -68,16 +69,6 @@ function resolvePrompt(spec, options, inlinePrompt, terminated) {
  * winner afterwards could not.
  */
 function templateFor(options) {
-  // A template whose answer is CHECKED cannot be backgrounded yet: the check runs
-  // at render time, the worker never computes it, and `/oai:result` would print a
-  // discipline line claiming a check that never happened. Refusing is loud; the
-  // alternative shipped a false assurance. Lifting this means moving the check
-  // into the outcome so it flows through the worker like every other fact.
-  if (options.template === 'patch' && options.background) {
-    throw new UserError('--template patch cannot be used with --background yet.', {
-      hint: 'The patch is checked with `git apply --check` as it is rendered, and a background job is rendered by /oai:result, which cannot run that check. Drop --background.',
-    });
-  }
   if (options.template !== undefined && options.system !== undefined) {
     throw new UserError('--template and --system cannot be used together.', {
       hint: 'A template supplies its own system prompt. Drop --system, or drop --template and write the framing yourself.',
@@ -217,6 +208,10 @@ export async function executeTask(args) {
     // foreground run that silently prints none of them while the background path
     // prints them all.
     template,
+    // Computed HERE, beside every other fact about the run, so it survives onto a
+    // persisted outcome and reaches `/oai:result`. The worker computes its own for
+    // the same reason.
+    artifact: artifactFor({ template, answer: result.content ?? '', cwd: process.cwd() }),
     durationMs: Date.now() - startedAt,
     ledger,
   };

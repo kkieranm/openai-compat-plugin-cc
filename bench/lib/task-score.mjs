@@ -58,17 +58,42 @@ function scoreClaim(answer, claim) {
   return { id: claim.id, hit, contradicted };
 }
 
-/** `marker` present with a non-word character (or an edge) on each side. */
+/** Words that flip a claim, and how far ahead of the marker they still reach. */
+const NEGATIONS = ['not', 'never', 'no', "n't", 'without', 'unlike', 'rather than', 'instead of'];
+const NEGATION_WINDOW = 40;
+
+/**
+ * `marker` present, word-bounded, and NOT inside a negation or a quotation.
+ *
+ * Boundaries alone only made an accidental hit rarer; they did not capture what a
+ * contradiction IS. "the code does NOT have a prototype problem" and a reply that
+ * quotes the question back were both scored `contradicted` — which ranks below a
+ * miss, so a correct answer was punished for discussing the right thing.
+ *
+ * This is still not semantic and is not claimed to be; `MARKER_LIMITS` says what
+ * marker matching is worth. It refuses the two shapes that were demonstrably
+ * wrong. The scan advances past each match rather than by one character, so a
+ * long reply full of near-misses cannot go quadratic.
+ */
 function bounded(text, marker) {
   if (!marker) return false;
   let from = 0;
   for (;;) {
     const at = text.indexOf(marker, from);
     if (at === -1) return false;
+    from = at + marker.length;
     const before = at === 0 ? ' ' : text[at - 1];
-    const after = at + marker.length >= text.length ? ' ' : text[at + marker.length];
-    if (!/[a-z0-9_]/.test(before) && !/[a-z0-9_]/.test(after)) return true;
-    from = at + 1;
+    const after = from >= text.length ? ' ' : text[from];
+    if (/[a-z0-9_]/.test(before) || /[a-z0-9_]/.test(after)) continue;
+    const lead = text.slice(Math.max(0, at - NEGATION_WINDOW), at);
+    // Word-bounded, or this check commits the very defect it exists to fix:
+    // `'known'.includes('no')` is true, so a bare substring test read "a known
+    // prototype vector" as a negation. Caught by an existing test, which is the
+    // only reason it is not in the shipped code.
+    if (NEGATIONS.some((word) => new RegExp(`(^|[^a-z0-9_])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9_]|$)`).test(lead))) continue;
+    // A quoted restatement is the caller's own words coming back, not a claim.
+    if (/["“'']\s*$/.test(lead)) continue;
+    return true;
   }
 }
 

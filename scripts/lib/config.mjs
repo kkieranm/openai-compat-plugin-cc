@@ -31,7 +31,7 @@ export function configPath() {
 }
 
 /** Keys measured in something other than seconds, so the timer ceiling cannot apply. */
-const NON_DURATION_KEYS = new Set(['contextLength', 'prefillTokensPerSecond', 'generationTokensPerSecond']);
+const NON_DURATION_KEYS = new Set(['contextLength']);
 
 /** Measured throughput, which is a positive number rather than a whole one. */
 const RATE_KEYS = new Set(['prefillTokensPerSecond', 'generationTokensPerSecond']);
