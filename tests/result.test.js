@@ -9,11 +9,11 @@ import test from 'node:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
 
 const workspace = (tag) => mkdtempSync(join(tmpdir(), `oai-res-${tag}-`));
 
-test('a completed job hands back its answer and footer, from another directory', async () => {
+test('a completed job hands back its answer and footer, from another directory', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const submit = await scenario.submit([], { cwd: workspace('a') });
@@ -33,7 +33,7 @@ test('a completed job hands back its answer and footer, from another directory',
   }
 });
 
-test('a job that has not finished is refused, naming the state', async () => {
+test('a job that has not finished is refused, naming the state', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario({ delayMs: 2000 });
   try {
     const submit = await scenario.submit();
@@ -52,7 +52,7 @@ test('a job that has not finished is refused, naming the state', async () => {
   }
 });
 
-test('a failed job reports what went wrong and where its log is', async () => {
+test('a failed job reports what went wrong and where its log is', { skip: NEEDS_SQLITE }, async () => {
   // Driven through a server that refuses, so the envelope under test is the one
   // the worker actually wrote rather than a fixture asserting on itself.
   const scenario = await queueScenario({ failChats: true });
@@ -72,7 +72,7 @@ test('a failed job reports what went wrong and where its log is', async () => {
   }
 });
 
-test('a job that completed with nothing to say is refused rather than printed as success', async () => {
+test('a job that completed with nothing to say is refused rather than printed as success', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     insertSynthetic(scenario.state, {
@@ -90,7 +90,7 @@ test('a job that completed with nothing to say is refused rather than printed as
   }
 });
 
-test('an id nobody has, and no id at all, are both refused', async () => {
+test('an id nobody has, and no id at all, are both refused', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const missing = await scenario.run(['result', 'nosuchid']);

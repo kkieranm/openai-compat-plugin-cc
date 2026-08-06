@@ -94,3 +94,8 @@ Handling failures:
 
 - The script exits 1 with a specific message and remediation for user-fixable problems (server down, no model loaded, input too large for the window, missing file). Show that message; do not retry with different flags, and do not silently drop files to make the input fit.
 - If it reports that no provider is reachable, suggest `/oai:setup`.
+- `--background` needs `node:sqlite`. Node.js provides it unflagged from 22.13 (23.4 on the 23.x
+  line), but a build compiled without SQLite, or one started with `--no-experimental-sqlite`, lacks it
+  at any version. On a runtime that does not provide it, it exits 1 saying so; the foreground form of
+  this command is unaffected
+  and is the way to run a task there.

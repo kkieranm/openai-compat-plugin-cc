@@ -10,8 +10,74 @@
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { UserError } from './errors.mjs';
+
+/**
+ * `node:sqlite` is the one thing this plugin needs that a runtime it supports may
+ * not have, and a *static* import of it fails at LINK time — before any command
+ * dispatches, and so for every command, including the ones that never open a
+ * database. Catching it here is what keeps `/oai:setup`, `/oai:review` and
+ * foreground `/oai:task` working where background jobs cannot.
+ *
+ * Detected, never inferred from `process.version`, because the version does not
+ * answer the question: the module landed in v22.5.0 but stayed behind
+ * `--experimental-sqlite` until v22.13.0 (v23.4.0 on the 23.x line), so a version
+ * comparison admits 22.5–22.12 where the import still throws — and a build
+ * compiled without SQLite, or one merely started with `--no-experimental-sqlite`,
+ * would be admitted at any version at all. See ADR 018.
+ *
+ * The failure is CAPTURED here and classified at first use, never acted on at
+ * module scope. Throwing here would take down every command that never opens a
+ * database — which is precisely the defect this guard exists to remove, and
+ * reintroducing it for a different cause is no better than leaving it.
+ */
+let DatabaseSync = null;
+let importFailure = null;
+try {
+  const sqlite = await import('node:sqlite');
+  // Asserted inside the `try`, not destructured out of it, so that "`DatabaseSync`
+  // is falsy" ALWAYS implies "`importFailure` is set". Destructuring left a third
+  // state — a module that resolved but exported nothing — in which the refusal
+  // below did `throw null` and printed `Unexpected failure: null`. The invariant
+  // now holds by construction rather than by a null check a later edit can drop.
+  if (!sqlite.DatabaseSync) throw new Error('node:sqlite resolved without a DatabaseSync export');
+  DatabaseSync = sqlite.DatabaseSync;
+} catch (error) {
+  importFailure = error;
+}
+
+/**
+ * The database constructor, or a refusal the user can act on.
+ *
+ * Every opener goes through here, and each calls it *before* it touches the
+ * filesystem or the network: `openStore` before it creates the state
+ * directories, `openStoreForReading` before its existence check — because that
+ * function returns `null` for "no database exists, nothing to report", and
+ * rendering an unavailable runtime as `null` would report a missing capability as
+ * an absence of jobs (the `findings: null` versus `[]` confusion ADR 003 exists
+ * to prevent, one subsystem over) — and `submitTask` before it probes the server.
+ *
+ * `ERR_UNKNOWN_BUILTIN_MODULE` is the ONLY shape that means "this runtime does
+ * not offer it", and that is measured rather than assumed: the `node:` scheme
+ * resolves against the builtin registry alone and never falls through to package
+ * resolution, so an absent builtin, a flag-gated one and a build compiled without
+ * it all raise that single code. An earlier draft of this guard also accepted
+ * `ERR_MODULE_NOT_FOUND` whenever the message mentioned sqlite. Nothing can
+ * produce it — and matching on message text is exactly what would relabel a
+ * genuine loader fault as a stale Node, sending the user to fix the one thing
+ * that is not wrong. Anything else is rethrown with its cause intact.
+ */
+export function requireDatabaseSync() {
+  if (DatabaseSync) return DatabaseSync;
+  if (importFailure?.code !== 'ERR_UNKNOWN_BUILTIN_MODULE') throw importFailure;
+  throw new UserError(
+    `Background jobs need the \`node:sqlite\` module, which this Node.js (${process.version}) does not provide.`,
+    {
+      hint: 'Node.js serves it unflagged from 22.13 (23.4 on the 23.x line). If this runtime is already newer, it was built without SQLite or started with --no-experimental-sqlite. /oai:setup, /oai:review and foreground /oai:task work either way.',
+      reason: 'no-sqlite',
+    },
+  );
+}
 
 /**
  * The schema this build understands.
@@ -137,11 +203,12 @@ function applySchema(db) {
  * the full text of every attached file, which is the user's source code.
  */
 export function openStore() {
+  const Database = requireDatabaseSync();
   const path = databasePath();
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   mkdirSync(join(statePath(), 'logs'), { recursive: true, mode: 0o700 });
 
-  const db = new DatabaseSync(path);
+  const db = new Database(path);
   // FIRST, before anything that takes a lock. Setting the journal mode is
   // itself a locking operation, and with no timeout in force yet a second
   // process opening the store at the same moment fails outright with "database
@@ -176,9 +243,10 @@ export function openStore() {
  * created for it by a command that only meant to look.
  */
 export function openStoreForReading() {
+  const Database = requireDatabaseSync();
   const path = databasePath();
   if (!existsSync(path)) return null;
-  const db = new DatabaseSync(path, { readOnly: true });
+  const db = new Database(path, { readOnly: true });
   db.exec('PRAGMA busy_timeout = 10000');
   return { db, version: db.prepare('PRAGMA user_version').get().user_version };
 }

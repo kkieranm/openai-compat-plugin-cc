@@ -1,5 +1,26 @@
 # Done
 
+- **OAI-61** — capability-gate `node:sqlite` so the plugin loads on the runtimes `package.json`
+  declares. Done 2026-08-06. **Shipped NARROWED**: a partial plan withdrawal under `adr/033` returned it
+  to its approved scope after six review-ladder passes established that the build had grown three
+  mechanisms no plan approved — a credential-notice subsystem, a permission-hardening module, and an
+  `onProfile` hook — and that the large majority of ~5.5M subagent tokens had gone on reviewing that
+  scaffolding rather than the gate, which was stable and repeatedly confirmed from pass 2. The withdrawn
+  work is **OAI-94** and **OAI-95**, each carrying its open findings. Codex ruled the decomposition; the
+  user adjudicated partial over whole.
+  **What the ladder found that the gate itself needed:** a static `node:sqlite` import in
+  `tests/job-helpers.mjs` killed ELEVEN test files at LINK time on the exact runtimes this feature
+  restores — no skip can rescue a link failure — now fixed lazily and guarded structurally by
+  `tests/harness-guards.test.js`, the class having been confirmed three times. And `npm test` passed
+  only while the working tree was DIRTY: one test asked the ambient directory for uncommitted changes,
+  which the commit gate's own commit removes, so the suite read 632/0 dirty and **630/2** clean. Every
+  green reported during this feature before that fix was conditioned on it. The gate is now measured in
+  a committed copy.
+  **Proven vs cited:** the guard is proved structurally and by mutation (four capability tests fail by
+  name), and the `--no-experimental-sqlite` arm is a real runtime without the module, executed here. The
+  version thresholds (22.13 / 23.4 / 18.19 / 20.6) are **cited, not executed** — this machine has only
+  v26.3.1 and the user directed that no older Node be installed.
+
 Newest first.
 
 - **OAI-83** — Task templates, starting with the one that makes a local **advisor** something you

@@ -10,7 +10,7 @@ import test from 'node:test';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deadPid, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, deadPid, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
 
 // Resolved, because a child's `process.cwd()` is: on macOS the temp directory is
 // reached through a symlink, so the workspace a row records is the real path and
@@ -18,7 +18,7 @@ import { deadPid, insertSynthetic, queueScenario, readJob, setUserVersion, waitF
 const workspace = (tag) => realpathSync(mkdtempSync(join(tmpdir(), `oai-ws-${tag}-`)));
 const FIVE_MINUTES = 300_000;
 
-test('a job submitted by one process is retrievable by another, from a different directory', async () => {
+test('a job submitted by one process is retrievable by another, from a different directory', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const here = workspace('a');
@@ -46,7 +46,7 @@ test('a job submitted by one process is retrievable by another, from a different
   }
 });
 
-test('a job with attachments shows what was asked, not the first file it was given', async () => {
+test('a job with attachments shows what was asked, not the first file it was given', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // `buildMessages` puts file blocks *before* the prompt, so the naive "first
@@ -66,7 +66,7 @@ test('a job with attachments shows what was asked, not the first file it was giv
   }
 });
 
-test('reading is what collects a job whose worker died', async () => {
+test('reading is what collects a job whose worker died', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // There is no daemon: if reading did not reconcile, this row would sit
@@ -85,7 +85,7 @@ test('reading is what collects a job whose worker died', async () => {
   }
 });
 
-test('a live worker that has stopped beating reads stalled, and is not terminalized', async () => {
+test('a live worker that has stopped beating reads stalled, and is not terminalized', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // This test's own pid, so the liveness probe gets a real answer: alive.
@@ -107,7 +107,7 @@ test('a live worker that has stopped beating reads stalled, and is not terminali
   }
 });
 
-test('a live worker past its own run cap reads overdue, and is not terminalized', async () => {
+test('a live worker past its own run cap reads overdue, and is not terminalized', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     insertSynthetic(scenario.state, {
@@ -129,7 +129,7 @@ test('a live worker past its own run cap reads overdue, and is not terminalized'
   }
 });
 
-test('a malformed blocker is named rather than guessed at', async () => {
+test('a malformed blocker is named rather than guessed at', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // Running with no pid: this build writes the two together, so the row is
@@ -146,7 +146,7 @@ test('a malformed blocker is named rather than guessed at', async () => {
   }
 });
 
-test('a bare status is scoped to this directory; --all is not', async () => {
+test('a bare status is scoped to this directory; --all is not', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const here = workspace('here');
@@ -173,7 +173,7 @@ test('a bare status is scoped to this directory; --all is not', async () => {
   }
 });
 
-test('a database a newer plugin wrote is read, said so, and never written to', async () => {
+test('a database a newer plugin wrote is read, said so, and never written to', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // A known-version row with a dead worker: against a database this build owns

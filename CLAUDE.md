@@ -102,6 +102,11 @@ before its log so that a crash in between leaves an orphan the same sweep alread
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
 see [ADR 014](adr/014-async-jobs.md).
 
+`job-store.mjs` `requireDatabaseSync()` gates `node:sqlite` as a **capability rather than a version** —
+one caught dynamic import classified at first use, so a runtime without that builtin loses background
+jobs alone instead of every command, and an unrecognised fault keeps its cause instead of being
+relabelled a stale Node — see [ADR 018](adr/018-a-capability-not-a-version.md).
+
 `agents/oai-delegate.md` delegates as a **context broker rather than a forwarder** — it picks the
 smallest sufficient file set itself, spends at most two `task` submissions on at most one accepted
 job, and returns an account plus the job id instead of the model's reply, so neither the reading nor

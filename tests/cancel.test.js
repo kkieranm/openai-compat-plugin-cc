@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isAlive } from '../scripts/lib/job-liveness.mjs';
-import { insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -41,7 +41,7 @@ async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
   throw new Error(`no worker ever registered as waiting for job ${id}`);
 }
 
-test('cancel records the request and terminalizes nothing', async () => {
+test('cancel records the request and terminalizes nothing', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // This test process's own pid, so the row's worker is genuinely alive for
@@ -70,7 +70,7 @@ test('cancel records the request and terminalizes nothing', async () => {
   }
 });
 
-test('a running worker exits at its next check-in, and the next read says cancelled', async () => {
+test('a running worker exits at its next check-in, and the next read says cancelled', { skip: NEEDS_SQLITE }, async () => {
   // Long enough that the model call is unambiguously still in flight when the
   // cancellation lands: the worker is inside a request, with no signal handler
   // and nothing sent to it, so the only thing that can end it is the row it
@@ -100,7 +100,7 @@ test('a running worker exits at its next check-in, and the next read says cancel
   }
 });
 
-test('cancelling a queued job stops it before it reaches the model at all', async () => {
+test('cancelling a queued job stops it before it reaches the model at all', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario({ delayMs: 6000 });
   try {
     const first = await scenario.submit();
@@ -131,7 +131,7 @@ test('cancelling a queued job stops it before it reaches the model at all', asyn
   }
 });
 
-test('a job that already finished is reported rather than cancelled', async () => {
+test('a job that already finished is reported rather than cancelled', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     insertSynthetic(scenario.state, {
@@ -152,7 +152,7 @@ test('a job that already finished is reported rather than cancelled', async () =
   }
 });
 
-test('a cancelled job nothing ever picked up reads cancelled, not failed', async () => {
+test('a cancelled job nothing ever picked up reads cancelled, not failed', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // Two rows identical but for the cancellation, so the difference between the
@@ -176,7 +176,7 @@ test('a cancelled job nothing ever picked up reads cancelled, not failed', async
   }
 });
 
-test('cancel refuses an unknown id, a missing id, and a database it may not write to', async () => {
+test('cancel refuses an unknown id, a missing id, and a database it may not write to', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // Creates the database, so the unknown-id refusal below is the one about a

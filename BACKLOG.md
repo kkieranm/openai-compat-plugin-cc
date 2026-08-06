@@ -43,10 +43,13 @@ Impact is blast radius × whether the thing is wrong *today* ÷ cost to resolve.
 to be decided or measured first. **This list is asserted against the heading order below** by the
 sweep's close-out script; the two cannot drift apart silently.
 
-**Tier 1 — the plugin does not load on the platform it declares.** **OAI-61**. Alone in its tier
-because nothing else here is total: a static import chain reaches `node:sqlite` before any command
-dispatches, so on Node 18.18–22.4 `/oai:setup` fails for a reason that has nothing to do with it. One
-item, a small fix, and the largest blast radius in the file.
+**Tier 1 — a warning about a secret prints the secret.** **OAI-94**. It inherits this tier from OAI-61,
+now closed, and it leads for a reason worth stating plainly: OAI-61's ladder BUILT the fix for this and
+then gave it back. A partial plan withdrawal under `adr/033` returned that feature to the capability
+gate it was actually approved for, which restored `warnAboutQueryCredentials` to its pre-existing form —
+the one that interpolates the query string into the warning. The defect is proved by execution, the
+repair is designed and was reviewed across four ladder passes, and none of it is in the tree. That is
+the highest-value item in this file by some distance: known defect, known fix, zero design risk.
 
 **Tier 2 — a background job kills, loses or misreports live work.** **OAI-62, OAI-67, OAI-66, OAI-64,
 OAI-69**. One subsystem, five independent closes, so they sit adjacent rather than merged. OAI-62
@@ -104,6 +107,16 @@ OAI-46, OAI-47, OAI-36, OAI-33, OAI-7**. Four of these ask "is this worth doing"
 this", and the honest answer for at least OAI-42, OAI-43 and OAI-46 may be no. They are kept because
 each was rejected on judgement rather than on evidence, and the judgement is worth recording once.
 OAI-33 and OAI-7 are housekeeping that costs one file each.
+**Tier 9 — credential disclosure the OAI-61 ladder found and scoped out.** **OAI-91, OAI-92, OAI-93,
+OAI-95**. OAI-95 is the withdrawn permission hardening and sits here rather than in tier 1 because,
+unlike OAI-94, nothing regressed when it left: the pre-existing bare `chmodSync` is still in place, so
+the tree is where it was, not worse. The first three both
+concern a query string in `--base-url` reaching somewhere it is not announced. They sit last because
+neither is wrong for a caller who does not put a secret in a URL, and because OAI-61 deliberately
+declined to half-fix them: OAI-91's warning belongs where the URL is resolved rather than where a job
+is submitted, and OAI-92 needs a cooperating server to fire. They are filed rather than folded in
+because widening a feature to cover every place a defect *could* also apply is how that feature stops
+converging — which the ladder that found them demonstrated at length.
 <!-- /tiers -->
 
 ### Absorbed IDs — where a merged or moved number now resolves
@@ -210,19 +223,31 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 
 ## Items
 
-- **OAI-61** — **`node:sqlite` breaks EVERY command on the Node versions `package.json` declares.**
-  `package.json:8` says `"node": ">=18.18"`; `node:sqlite` arrived in Node 22.5. `oai-companion.mjs:2,3,6,7`
-  import the job commands **statically**, and they chain to `job-store.mjs:13`
-  `import { DatabaseSync } from 'node:sqlite'`. A static import links before any command dispatches, so
-  on Node 18.18–22.4 **every** command fails at load with `ERR_UNKNOWN_BUILTIN_MODULE` — including
-  `/oai:setup` and foreground `/oai:task`, which have nothing to do with background jobs.
-  **Reachability is proved by construction; the 22.5 threshold is CITED, not executed** — this machine
-  has only Node v26.3.1 and no nvm/fnm/volta, so the positive control could not be run here. Run it on
-  a real Node 20 before closing.
-  Two fixes, and the choice is a design call: raise the declared engine and fail with a clear message,
-  or make the job commands a lazy import so only they need 22.5. Whichever is taken, pair it with a
-  structural test that the declaration and the code agree — this is exactly the class
-  `tests/plugin.test.js` exists for.
+- **OAI-94** — **the credential notice prints the credential it is warning about.**
+  `task-submit.mjs` `warnAboutQueryCredentials` interpolates the query string into its own warning:
+  `Note: the base URL's query string (?api_key=SUPERSECRET123) is stored with this job…`, on **stderr**,
+  which reaches terminals, CI logs and the delegate agent's captured output. **Observed on a real
+  submission**, not argued. It also promises "readable only by you", which `openStore` cannot guarantee.
+  **Provenance, stated because it is unusual:** OAI-61's review ladder found this, fixed it, and had the
+  fix reviewed across four passes — then gave it back. That feature was returned to its approved scope
+  by a partial plan withdrawal (`adr/033`), and the notice went with it. Nothing here is undesigned.
+  The withdrawn design, in order, each version killed by an execution path that falsified its claim:
+  (1) interpolate the query string — printed the secret; (2) print parameter NAMES only — defeated by a
+  bare valueless token `?SUPERSECRET123`, which parses AS a name; (3) claim the key "goes to the
+  provider" — false when a `--file` is missing and nothing is sent; (4) "if this submission succeeds" —
+  false when `spawnWorker` throws after `insertJob`: row written, exit 2, no job id; (5) "readable only
+  by you" — a guarantee the code cannot give; (6) state only the MECHANISM plus unfalsifiable advice —
+  which a reviewer then showed had bought safety by becoming uninformative. The landing design is
+  Codex's: *"If this submission creates a job record, its full endpoint — including this query string —
+  will be written to jobs.db; a later worker-start failure does not remove it"* — conditional, true on
+  every path, and interpolating nothing. **Carry these open findings:** the notice must be gated on the
+  whole endpoint rather than on `profile.query` alone, since a credential in the PATH is persisted with
+  no notice at all and is disclosed on MORE surfaces; and `provider.mjs:101` interpolates the `Location`
+  header verbatim, so a query-preserving redirect (the norm) puts the credential on five surfaces —
+  stderr, the persisted `failure` column, the worker log, the bare `/oai:status` list and `/oai:result`.
+  **Also carry the test lesson**, which cost four passes: every assertion about this notice ran on a
+  REFUSAL path where the notice never fires, so a real injected leak reported green. Any fix needs a
+  success-path witness, and a redirect witness answering `301` with `location: <full request URI>`.
 
 - **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
   OAI-52 item (3) recorded "a `SQLITE_BUSY` expiry is retried, never terminalized" as an untested
@@ -1651,3 +1676,57 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 
 - **OAI-7** — Publish: README install instructions, and verify the marketplace path
   (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
+
+- **OAI-91** — **A query-string credential is transmitted by every provider-touching command, and only
+  background `/oai:task` says so.** `normalizeBaseUrl` keeps a base URL's query string verbatim, so
+  `--base-url 'https://host/v1?api_key=SECRET'` sends that key on every request. `submitTask` warns,
+  because the key also lands in the job row — but the notice is scoped to STORAGE, deliberately (see
+  `adr/018`): a draft claimed transmission too and was false whenever `readFileBlocks` threw before a
+  byte was sent. Foreground `/oai:task`, `/oai:review` and `/oai:setup`'s probe all transmit it and say
+  nothing. Warning in one command and not the others is arbitrary, so the fix belongs where the URL is
+  resolved, not where a job is submitted — probably `resolveProfile`, once, for every command.
+  Found by the OAI-61 review ladder (pass 5) and scoped out of it rather than half-done.
+
+- **OAI-92** — **`assertOk` embeds 400 characters of a server's error body into persisted job state.**
+  `provider.mjs:100-103` builds a non-2xx message from `readText(response, {limit: 400})`; that message
+  reaches `errorReport` (`cmd-task-worker.mjs:117`), is written to the `failure` column, and is rendered
+  by `/oai:status` (`job-render.mjs:80`) and `cmd-result.mjs`. A proxy or gateway that echoes the
+  request URI in its 4xx page — nginx does — therefore writes `?api_key=…` into durable state and onto
+  the screen. Requires a cooperating server, which is why it is filed rather than fixed inside OAI-61.
+  Found by that feature's `security-review` stage.
+
+- **OAI-93** — **`providers.json` is created world-readable and holds the long-lived credential.**
+  `config.mjs:47-48` writes the config with **no mode argument** — directory `0755`, file `0644` — and
+  never chmods it, while that file can hold a literal `apiKey`. The whole job-state tree is hardened to
+  `0600`/`0700` (see `adr/018`), so the *ephemeral* copy of a credential is protected and the permanent
+  one is not. Pre-existing and outside the OAI-61 diff, which is why it was filed rather than folded
+  in; found by that feature's `security-review` stage, which measured the modes rather than reading
+  them. Fix is one `mode` argument plus a narrowing pass for configs that already exist, and it should
+  reuse whatever verified-chmod helper OAI-95 lands, rather than trusting `chmod` not to throw — an
+  earlier version of that helper was disproved on a FAT image, where the call silently no-ops.
+
+- **OAI-95** — **permission hardening for the job state tree, withdrawn from OAI-61 with its findings.**
+  `job-store.mjs` chmods `jobs.db` to `0600` best-effort and swallows every failure, so hardening that
+  fails does so silently. OAI-61's ladder built a `state-permissions.mjs` (`restrict`, `narrowOrWarn`)
+  to fix that and it was withdrawn with the rest of the unplanned scaffolding (`adr/033`); the tree is
+  back to the pre-existing bare `chmodSync`, which is where it was rather than worse.
+  **Design already established, and each point was proved by execution rather than argued:**
+  `restrict()` must **verify the mode took** rather than trust `chmodSync` not to throw — disproved on
+  a FAT image, where the call silently no-ops and leaves the file readable; the chmod must run **before**
+  `PRAGMA journal_mode = WAL`, because SQLite creates `-wal`/`-shm` with the main file's mode as it
+  stands at that moment and nothing chmods them afterwards, so a first-ever submission wrote the query
+  string, the prompt and every attached file into a `jobs.db-wal` left at **0644**; and the failure must
+  be **reported**, since the rest of the code's reassurances are written as though it succeeded.
+  **Carry these open findings, none of which the withdrawn version closed:** `restrict()` returns true
+  on a **symlink** (it follows one, making `openStore` a chmod primitive against any victim-owned path)
+  and on a **dangling** symlink (ENOENT counted as success), and does not check the owner is the current
+  user; on **macOS an ACL is invisible to `st_mode`**, so it can return true at 0600 while
+  `group:everyone allow read` persists — the exact inverse of the FAT case, reachable with no attacker
+  action via one inheritable ACE on any parent of `~/.local/state`, and this repo runs on darwin; the
+  early chmod's return value is **discarded**, so a throw in `applySchema` (a too-new database, which is
+  reachable and tested) skips the warning entirely; `jobs.db-journal` is in **no** narrowing list though
+  SQLite writes it whenever WAL cannot engage, holding pre-images of committed pages; `openStoreForReading`
+  narrows nothing, creating `-wal`/`-shm` at 0644; log files get the mode only on creation and `'a'`
+  follows symlinks; and a state directory **owned by someone else** throws `ERR_SQLITE_ERROR`, which is
+  not a `UserError`, so the single most likely permission failure a real user hits prints
+  `Unexpected failure: <stack>` and exits 2 unclassified.

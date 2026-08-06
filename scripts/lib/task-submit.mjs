@@ -12,7 +12,7 @@ import { insertJob, markSpawned } from './job-record.mjs';
 import { persistRequest } from './job-request.mjs';
 import { sweep } from './job-retention.mjs';
 import { spawnWorker } from './job-spawn.mjs';
-import { isBusy, openStore } from './job-store.mjs';
+import { isBusy, openStore, requireDatabaseSync } from './job-store.mjs';
 import { prepareTask } from './task-execute.mjs';
 
 /** An hour, unless the caller says otherwise. */
@@ -83,6 +83,13 @@ function sweepQuietly(db) {
  * job.
  */
 export async function submitTask(args) {
+  // FIRST, before the server is probed and before anything is written. A runtime
+  // that cannot open the store can never accept this job, and everything below
+  // costs something the user does not get back: `prepareTask` makes real requests
+  // to the provider, which a submission that can never be accepted should not
+  // spend.
+  requireDatabaseSync();
+
   // A background run has nobody watching it, so it gets a wall-clock cap whether
   // or not one was asked for. An uncapped run that wedges holds the queue.
   const options = { ...args.options };

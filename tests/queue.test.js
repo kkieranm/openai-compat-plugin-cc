@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { finish } from '../scripts/lib/job-record.mjs';
-import { queueScenario, readJob, waitForState, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, queueScenario, readJob, waitForState, withStore } from './job-helpers.mjs';
 
 /** A queued job whose worker has registered — "waiting", not merely "recorded". */
 async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
@@ -20,7 +20,7 @@ async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
   throw new Error(`job ${id} never had a worker register`);
 }
 
-test('two jobs submitted at once run one after the other, never together', async () => {
+test('two jobs submitted at once run one after the other, never together', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario({ delayMs: 400 });
   try {
     // Submitted concurrently on purpose: both workers race for the head of the
@@ -48,7 +48,7 @@ test('two jobs submitted at once run one after the other, never together', async
   }
 });
 
-test('--max-wait gives up while still queued, without sending a chat completion', async () => {
+test('--max-wait gives up while still queued, without sending a chat completion', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario({ delayMs: 2500 });
   try {
     const first = await scenario.submit();
@@ -74,7 +74,7 @@ test('--max-wait gives up while still queued, without sending a chat completion'
   }
 });
 
-test('a worker whose job goes terminal before its turn contacts nothing', async () => {
+test('a worker whose job goes terminal before its turn contacts nothing', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario({ delayMs: 1500 });
   try {
     const first = await scenario.submit();

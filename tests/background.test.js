@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, readJob, stateDir, waitForState } from './job-helpers.mjs';
 
 /** Answers the probe, then one non-streaming completion. */
 function modelsAndChat(answer = 'the answer', id = 'test-model') {
@@ -26,7 +26,7 @@ function modelsAndChat(answer = 'the answer', id = 'test-model') {
   };
 }
 
-test('a background job outlives the command that submitted it', async () => {
+test('a background job outlives the command that submitted it', { skip: NEEDS_SQLITE }, async () => {
   const server = await startFakeServer(modelsAndChat());
   const state = stateDir();
   const { path: configPath } = writeConfig({
@@ -68,7 +68,7 @@ test('a background job outlives the command that submitted it', async () => {
   }
 });
 
-test('submission fails in the foreground rather than becoming a broken job', async () => {
+test('submission fails in the foreground rather than becoming a broken job', { skip: NEEDS_SQLITE }, async () => {
   // A server that refuses the probe: the user finds out now, at the prompt, not
   // in a job record they have to go looking for later.
   const server = await startFakeServer((_request, response) => respondJson(response, { error: 'nope' }, 500));
@@ -104,7 +104,7 @@ test('the worker command is dispatched but never advertised', async () => {
 });
 
 
-test('what the model sees is frozen at submission, not read when the worker runs', async () => {
+test('what the model sees is frozen at submission, not read when the worker runs', { skip: NEEDS_SQLITE }, async () => {
   // The barrier is already in the code: attachments are read before the model
   // probe, so a handler that edits the file while answering /models is
   // guaranteed to run after the snapshot and before the chat request. No
@@ -154,7 +154,7 @@ test('what the model sees is frozen at submission, not read when the worker runs
   }
 });
 
-test('an optional field left unset is omitted from the wire, never sent as null', async () => {
+test('an optional field left unset is omitted from the wire, never sent as null', { skip: NEEDS_SQLITE }, async () => {
   const state = stateDir();
   const server = await startFakeServer(modelsAndChat());
   const { path: configPath } = writeConfig({

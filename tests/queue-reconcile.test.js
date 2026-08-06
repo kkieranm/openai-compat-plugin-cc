@@ -8,7 +8,7 @@
 // them eats a job.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deadPid, insertSynthetic, queueScenario, readJob, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, deadPid, insertSynthetic, queueScenario, readJob, waitForState } from './job-helpers.mjs';
 
 const THREE_MINUTES = 180_000;
 
@@ -19,7 +19,7 @@ async function submitAndSettle(scenario, extra = []) {
   return waitForState(scenario.state, submit.stdout.trim(), ['completed', 'failed', 'queue-timeout']);
 }
 
-test('a running row with no pid blocks the queue rather than being guessed at', async () => {
+test('a running row with no pid blocks the queue rather than being guessed at', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // This build writes state and pid in one statement, so only a legacy or
@@ -35,7 +35,7 @@ test('a running row with no pid blocks the queue rather than being guessed at', 
   }
 });
 
-test('a dead running row from a newer plugin neither blocks nor gets written to', async () => {
+test('a dead running row from a newer plugin neither blocks nor gets written to', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // The self-contradiction that would wedge the queue permanently: it counts
@@ -55,7 +55,7 @@ test('a dead running row from a newer plugin neither blocks nor gets written to'
   }
 });
 
-test('a queued row from a newer plugin blocks while its waiter lives', async () => {
+test('a queued row from a newer plugin blocks while its waiter lives', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // A real worker is waiting on it; we simply cannot read its payload. Going
@@ -71,7 +71,7 @@ test('a queued row from a newer plugin blocks while its waiter lives', async () 
   }
 });
 
-test('a queued row from a newer plugin is skipped, untouched, once its waiter is gone', async () => {
+test('a queued row from a newer plugin is skipped, untouched, once its waiter is gone', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const pid = await deadPid();
@@ -89,7 +89,7 @@ test('a queued row from a newer plugin is skipped, untouched, once its waiter is
   }
 });
 
-test('a submission whose worker never arrived is failed once the grace has passed', async () => {
+test('a submission whose worker never arrived is failed once the grace has passed', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // The submitter died between committing the row and spawning the child.
@@ -106,7 +106,7 @@ test('a submission whose worker never arrived is failed once the grace has passe
   }
 });
 
-test('a worker that registered is never abandoned, however long it waits', async () => {
+test('a worker that registered is never abandoned, however long it waits', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     // Three minutes past a two-minute grace, and still legitimate: the grace

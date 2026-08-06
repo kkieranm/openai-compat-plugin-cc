@@ -43,3 +43,8 @@ Handling failures:
   does not understand.
 - A job that has already finished is not an error: the command says so, exits 0, and names the state
   it finished in. For a completed one it points at `/oai:result`.
+- Background jobs need `node:sqlite`. Node.js provides it unflagged from 22.13 (23.4 on the 23.x
+  line), but a build compiled without SQLite, or one started with `--no-experimental-sqlite`, lacks it
+  at any version. On a runtime that does not provide it the script exits 1 saying so, and
+  `/oai:setup`, `/oai:review` and
+  foreground `/oai:task` keep working.

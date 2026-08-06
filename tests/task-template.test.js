@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chatRequests, completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
 import { requestTextOf } from '../scripts/lib/prompt.mjs';
 import { TEMPLATES } from '../scripts/lib/task-template.mjs';
 
@@ -130,7 +130,7 @@ test('an ordinary task prints no template notes at all', async () => {
   }
 });
 
-test('/oai:result carries the same discipline line the foreground rendering does', async () => {
+test('/oai:result carries the same discipline line the foreground rendering does', { skip: NEEDS_SQLITE }, async () => {
   // Instance 16 in `.claude/REPO_TRAPS.md`: a second rendering of one run that
   // drops a caveat the first carried — which this repo produced *inside* the
   // module written to prevent it. Driven through a real background job and a
@@ -151,7 +151,7 @@ test('/oai:result carries the same discipline line the foreground rendering does
   }
 });
 
-test('/oai:result renders the SIZE caveat from the frozen request, not just the discipline line', async () => {
+test('/oai:result renders the SIZE caveat from the frozen request, not just the discipline line', { skip: NEEDS_SQLITE }, async () => {
   // The distinguishing assertion this suite lacked. `/oai:result` reads
   // `job.request.estimatedTokens` across a JSON round trip and a process
   // boundary, and the existing test submitted a small prompt — so pointing that
@@ -183,7 +183,7 @@ test('/oai:result renders the SIZE caveat from the frozen request, not just the 
   }
 });
 
-test('an untemplated background job prints no notes on collection either', async () => {
+test('an untemplated background job prints no notes on collection either', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const submit = await scenario.submit();

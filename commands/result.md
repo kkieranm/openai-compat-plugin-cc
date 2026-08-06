@@ -36,3 +36,8 @@ Handling failures:
 - An id that no longer resolves may simply have aged out: only the newest 50 finished jobs are kept.
   Retrieve an answer you want to keep, or copy it somewhere, rather than treating the job list as
   storage.
+- Background jobs need `node:sqlite`. Node.js provides it unflagged from 22.13 (23.4 on the 23.x
+  line), but a build compiled without SQLite, or one started with `--no-experimental-sqlite`, lacks it
+  at any version. On a runtime that does not provide it the script exits 1 saying so, and
+  `/oai:setup`, `/oai:review` and
+  foreground `/oai:task` keep working.

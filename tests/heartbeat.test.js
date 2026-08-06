@@ -8,11 +8,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { startHeartbeat } from '../scripts/lib/job-heartbeat.mjs';
 import { openStore } from '../scripts/lib/job-store.mjs';
-import { insertSynthetic, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test('the heartbeat advances the beat while it runs, and stops when told to', async () => {
+test('the heartbeat advances the beat while it runs, and stops when told to', { skip: NEEDS_SQLITE }, async () => {
   const state = stateDir();
   const seq = insertSynthetic(state, { id: 'beating', state: 'running', workerPid: process.pid, beatAgoMs: 60_000 });
   const before = readJob(state, 'beating').last_beat_at;
@@ -37,7 +37,7 @@ test('the heartbeat advances the beat while it runs, and stops when told to', as
   delete process.env.OAI_PLUGIN_STATE;
 });
 
-test('a real worker keeps beating across a slow model call', async () => {
+test('a real worker keeps beating across a slow model call', { skip: NEEDS_SQLITE }, async () => {
   // Deliberately longer than BEAT_MS, because the thing under test is the
   // wiring: `startHeartbeat` works in isolation whether or not the worker calls
   // it, and the gap this closes was in the worker, not in the timer.

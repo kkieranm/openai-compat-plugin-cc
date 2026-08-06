@@ -9,7 +9,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { RETAIN, sweep } from '../scripts/lib/job-retention.mjs';
-import { insertSynthetic, queueScenario, readJob, readJobs, stateDir, waitForState, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, readJobs, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
 // Stated independently of `logPathFor`, so a test cannot agree with the code
 // about a layout they both got wrong.
@@ -32,7 +32,7 @@ function fillTerminal(state, n) {
 
 const runSweep = (state) => withStore(state, (db) => sweep(db));
 
-test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50', () => {
+test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const seqs = fillTerminal(state, RETAIN + 5);
 
@@ -43,7 +43,7 @@ test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50',
   assert.deepEqual(left, seqs.slice(5), 'and what remains is exactly the newest 50');
 });
 
-test('a job that is still active is exempt however old it is, and is not counted either', () => {
+test('a job that is still active is exempt however old it is, and is not counted either', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const month = 30 * 24 * 60 * 60 * 1000;
   // Ancient enough that any rule reading age rather than state would take them,
@@ -63,7 +63,7 @@ test('a job that is still active is exempt however old it is, and is not counted
   assert.ok(readJob(state, 'ancientr'));
 });
 
-test('a row a newer plugin wrote is never deleted, and is not counted toward the ceiling', () => {
+test('a row a newer plugin wrote is never deleted, and is not counted toward the ceiling', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Two finished rows in the same position — the two oldest of all — differing
   // in nothing but the version stamped on them. That is what makes the two
@@ -78,7 +78,7 @@ test('a row a newer plugin wrote is never deleted, and is not counted toward the
   assert.ok(readJob(state, 'foreign'), 'erasing a newer build\'s completed job is data loss, not housekeeping');
 });
 
-test("a deleted job's log goes with it, while a surviving job's log stays", () => {
+test("a deleted job's log goes with it, while a surviving job's log stays", { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const seqs = fillTerminal(state, RETAIN + 2);
 
@@ -92,7 +92,7 @@ test("a deleted job's log goes with it, while a surviving job's log stays", () =
   }
 });
 
-test('an orphaned log is swept, and anything else in the directory is left alone', () => {
+test('an orphaned log is swept, and anything else in the directory is left alone', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
   writeLog(state, live);
@@ -114,7 +114,7 @@ test('an orphaned log is swept, and anything else in the directory is left alone
   );
 });
 
-test('a deleted sequence is never reused, so a later job cannot sort ahead of an earlier one', () => {
+test('a deleted sequence is never reused, so a later job cannot sort ahead of an earlier one', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const seqs = fillTerminal(state, RETAIN + 3);
   const highest = Math.max(...seqs);
@@ -130,7 +130,7 @@ test('a deleted sequence is never reused, so a later job cannot sort ahead of an
   assert.ok(!deleted.includes(next));
 });
 
-test('submitting a background job is what runs the sweep', async () => {
+test('submitting a background job is what runs the sweep', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
     const seqs = fillTerminal(scenario.state, RETAIN + 1);

@@ -13,7 +13,7 @@ import { writeFileSync } from 'node:fs';
 import { authPolicyFor, resolveCredential } from '../scripts/lib/job-auth.mjs';
 import { finish } from '../scripts/lib/job-record.mjs';
 import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
 /**
  * A config on disk for the duration of one call.
@@ -138,7 +138,7 @@ async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
   throw new Error(`job ${id} never had a worker register`);
 }
 
-test('a worker refuses to send a key the profile earned somewhere else, and sends nothing at all', async () => {
+test('a worker refuses to send a key the profile earned somewhere else, and sends nothing at all', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await heldScenario();
   try {
     const submitted = await scenario.submit();
@@ -175,7 +175,7 @@ test('a worker refuses to send a key the profile earned somewhere else, and send
   }
 });
 
-test('the same fixture, config left alone, reaches the model carrying the key', async () => {
+test('the same fixture, config left alone, reaches the model carrying the key', { skip: NEEDS_SQLITE }, async () => {
   // The positive control. Without it the test above is satisfied by a worker
   // that never got as far as `resolveCredential` — a broken fixture and a
   // working refusal produce the same three assertions.

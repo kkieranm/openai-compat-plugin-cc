@@ -5,11 +5,48 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { databasePath, openStore } from '../scripts/lib/job-store.mjs';
 import { jobById, listJobs } from '../scripts/lib/job-record.mjs';
 import { respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+
+// `node:sqlite` is a capability, not a given: it is absent on Node 18.18–22.12,
+// on builds compiled without SQLite, and under `--no-experimental-sqlite`. A
+// STATIC import of it here would link before any module body or `skip` ran, so
+// every one of the ten files importing this one died at link with
+// `ERR_UNKNOWN_BUILTIN_MODULE` — no test run, no skip reported, nothing said.
+// Detected once, with the caught dynamic import `job-secrets.test.js` uses.
+let parentHasSqlite = true;
+try {
+  await import('node:sqlite');
+} catch {
+  parentHasSqlite = false;
+}
+
+/**
+ * `false` when a job database can be opened here, otherwise the REASON to skip.
+ *
+ * A string rather than `true` on purpose: a bare boolean skip names nothing, and
+ * a test matrix that shrinks without saying what went unrun is a check that has
+ * stopped being able to fail.
+ */
+export const NEEDS_SQLITE = parentHasSqlite ? false : 'needs node:sqlite to open a job database';
+
+const nodeRequire = createRequire(import.meta.url);
+
+/** `node:sqlite`, or a failure naming the caller that should never have got here. */
+function sqliteModule() {
+  try {
+    return nodeRequire('node:sqlite');
+  } catch (cause) {
+    throw new Error(
+      'setUserVersion requires node:sqlite, which this runtime does not have; '
+      + 'the calling test should have been skipped on NEEDS_SQLITE',
+      { cause },
+    );
+  }
+}
 
 /** A state directory of its own, so no test ever touches the real one. */
 export function stateDir() {
@@ -116,6 +153,10 @@ export function setUserVersion(state, version) {
   const previous = process.env.OAI_PLUGIN_STATE;
   process.env.OAI_PLUGIN_STATE = state;
   try {
+    // Resolved here rather than at module scope so this file still LINKS without
+    // `node:sqlite`, and synchronously — through `require` rather than `import` —
+    // because making this async would ripple into all ten calling files.
+    const { DatabaseSync } = sqliteModule();
     const db = new DatabaseSync(databasePath());
     db.exec(`PRAGMA user_version = ${version}`);
     db.close();
