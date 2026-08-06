@@ -117,6 +117,13 @@ declined to half-fix them: OAI-91's warning belongs where the URL is resolved ra
 is submitted, and OAI-92 needs a cooperating server to fire. They are filed rather than folded in
 because widening a feature to cover every place a defect *could* also apply is how that feature stops
 converging — which the ladder that found them demonstrated at length.
+
+**Tier 10 — residue from the OAI-61 ladder, in code that SHIPPED.** **OAI-96, OAI-97, OAI-98**. These
+are last because none is wrong for a working install today, and first among equals is OAI-96, which is
+the only one touching code that just landed. They are recorded rather than carried into OAI-94/95
+because they belong to the capability gate, not to the withdrawn mechanisms — filing them separately is
+what stops the withdrawal from becoming a place unrelated findings go to be forgotten.
+
 <!-- /tiers -->
 
 ### Absorbed IDs — where a merged or moved number now resolves
@@ -1729,4 +1736,55 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   narrows nothing, creating `-wal`/`-shm` at 0644; log files get the mode only on creation and `'a'`
   follows symlinks; and a state directory **owned by someone else** throws `ERR_SQLITE_ERROR`, which is
   not a `UserError`, so the single most likely permission failure a real user hits prints
-  `Unexpected failure: <stack>` and exits 2 unclassified.
+  `Unexpected failure: <stack>` and exits 2 unclassified. Finally, the warning is **invisible on the
+  worker path**: `cmd-task-worker.mjs` opens the store in a process whose stderr IS the job log, so it
+  is written where the user has no reason to look, and it names neither the mode it wanted nor the mode
+  it found — so a reader cannot tell 0644 from 0666. Any fix must also pin the hardening's own tests:
+  in the withdrawn version, deleting the `-wal`/`-shm` entries from the narrowing list reddened
+  **nothing**, and nothing asserted the directory mode at all.
+
+- **OAI-96** — **three pieces of residue in the shipped `node:sqlite` guard.** All found by OAI-61's
+  final pass, all in code that landed in `2312c47`, none blocking.
+  (a) **`throw null` is still reachable.** `job-store.mjs`'s comment claims the invariant holds "by
+  construction rather than by a null check a later edit can drop", and the truthy check closed the
+  *resolved-but-no-export* route — but a **falsy rejection value** still reaches `throw importFailure`
+  and prints `Unexpected failure: null`, the exact string the comment says was eliminated. Proved by
+  execution with a loader hook; no shipping Node produces it, which is why it is low. Fix is
+  `importFailure = error ?? new Error(…)` **plus softening the comment to what is true** — an
+  overstated invariant is the more durable half of this defect.
+  (b) **Two assertion triples in `tests/runtime-capability.test.js` are non-separable** — the exit-code
+  assertions move as one under any exit-code edit, and the refusal-message assertions under any message
+  edit. **They must NOT be deleted.** The `assert.deepEqual(server.requests, [])` check passes
+  *vacuously* if the command dies for any reason before the probe, and its neighbours are what establish
+  the refusal path was the one taken: they are subsumed-as-CONTROL, not subsumed-as-redundant. This
+  repo deleted four assertions on the redundancy reading during that same ladder, so the distinction is
+  filed as a documentation fix before someone applies the rule again.
+  (c) Six unused imports in `tests/runtime-capability.test.js`, left by the split. No lint catches them.
+
+- **OAI-97** — **an intermittent test failure, observed once and never reproduced.** During OAI-61 a
+  full-suite run failed an `assert.equal(status, 0, stderr)` in a job/background test, with stderr
+  opening on the ordinary `Checking fake for available models…` preamble. It did **not** reproduce
+  across ten subsequent full-suite runs. Recorded rather than closed because a flake that is not
+  understood is a test that cannot be trusted to fail for the right reason, and this suite gates every
+  commit. The one lead: it is a submission returning non-zero, not an assertion about content, so the
+  place to look is worker spawn or queue timing rather than any single test's logic.
+  **Second occurrence, 2026-08-06, while closing the session**: a full-suite run read **629/1**, and the
+  failure detail did not survive into the summary — three immediate reruns were 630/0. So the rate is
+  now two observations against roughly fourteen clean full-suite runs, and it remains unidentified.
+  Anyone picking this up should capture `npm test` to a file rather than grepping a live pipe, since
+  both observations lost the failing test's name that way.
+
+- **OAI-98** — **job state is trusted completely once it is on disk.** Two findings from OAI-61's
+  `security-review`, both needing write access to the state directory — a shared `XDG_STATE_HOME`, a
+  pre-created `/tmp` path, not the default `~/.local/state`.
+  (a) **A tampered row redirects the prompt.** `cmd-task-worker.mjs` `transportProfile` takes `baseUrl`
+  and `query` **verbatim** from the row, so replacing `jobs.db` sends the whole prompt and every attached
+  file to an attacker's endpoint, and the reply is printed by `/oai:result` — reaching the delegate
+  agent's context. *Proved not redirectable: the configured credential.* `job-auth.mjs`'s third
+  comparison anchors on the **current config's** origin, so a forged `authorizedOrigin` is refused —
+  that check genuinely defeats a fully attacker-written row and is worth keeping. But the common local
+  case has no key (`mode:'none'`), and then nothing is checked at all.
+  (b) **No `PRAGMA secure_delete`**, so `job-retention.mjs`'s `DELETE` leaves `transport.query` — and
+  the prompt — recoverable in freelist pages of a file whose permissions are the only protection.
+  Deliberately separate from OAI-95: hardening the *modes* does not help once the bytes are readable by
+  a process that legitimately opened the file.
