@@ -15,10 +15,13 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 > - **Stage 1 shipped** (OAI-3, 2026-08-05) and **Stage 1b** with it (OAI-5) — and their review
 >   ladders filed **23 items**, 22 of which are still live: **44% of this file**, from two features.
 > - **Stage 2's first piece shipped** (OAI-83, 2026-08-05) — `/oai:task --template advisor`, decision
->   record [ADR 016](adr/016-a-template-is-three-things.md). Its review filed OAI-85 and OAI-86, and
->   **the rest of Stage 2 is still unfiled**: context manifests and file slices, pre-submission time
->   estimates, patches and findings as separate artifacts, and a task benchmark — that last one is what
->   would replace the advisor ceiling's admitted guesswork with a measurement.
+>   record [ADR 016](adr/016-a-template-is-three-things.md). Its review filed OAI-85 and OAI-86.
+> - **Stage 2's remainder shipped** 2026-08-06 — `--json`, a task benchmark, pre-submission time
+>   estimates, `diagnose` and `patch` templates, and file slices; decision record
+>   [ADR 017](adr/017-measuring-a-task-not-a-review.md). **Two of its deliverables were reported as
+>   shipped and were not built** (OAI-90), its review ladder never reached approval (OAI-89), and the
+>   gate it exists to answer is still unmeasured (OAI-87) against a corpus of one case (OAI-88). Those
+>   four are the residue, and they were only visible because the ladder ran late.
 >
 > **So the ordering below is not the plan's stage order, and that is deliberate.** The stages still
 > say what to *build* next; they say nothing about the defects the last two stages shipped with. A
@@ -69,8 +72,12 @@ null` against `[]` — appearing in four places. OAI-84 leads because it is the 
 after OAI-63 in tier 3, whose payload decision it collides with. OAI-57's `--json` is the natural home for
 OAI-80(a), so those two are batchable.
 
-**Tier 5 — what shipping Stage 2's first piece left behind, and the Stage 1 surface deliberately
-deferred.** **OAI-85, OAI-86, OAI-53, OAI-54, OAI-56**. OAI-83 shipped on 2026-08-05 and these two are
+**Tier 5 — what shipping Stage 2 left behind.** **OAI-85, OAI-86, OAI-53, OAI-54, OAI-56, OAI-87,
+OAI-88, OAI-89, OAI-90**. The last four are Stage 2's own residue, filed 2026-08-06 after a review
+ladder that ran late: OAI-90 is two deliverables that were reported as shipped and were not built,
+OAI-89 is the ladder that never reached approval, OAI-87 is the gate nobody has measured, and OAI-88
+is the corpus that measures it being a single case. They sort BELOW the two OAI-83 residue items
+because none of them is wrong *today* — they are absences, where OAI-85 and OAI-86 are live gaps. OAI-83 shipped on 2026-08-05 and these two are
 its residue: the first is a caveat missing from `/oai:result`, confirmed pre-existing rather than
 introduced, and the second is the delegate's containment machinery having no test at all — proved by
 mutation, and the sharper of the two because its stakes are disclosure. Both lead the tier because
@@ -762,6 +769,62 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   generic by construction ([ADR 001](adr/001-generic-openai-compatible-plugin.md)), and would put an
   `if LM Studio` where the whole repo has providers-as-data. Any fix must be shaped as configuration
   or as a generic post-cancel settle delay, not as a vendor probe.
+
+- **OAI-87** — **Stage 2's gate is unmeasured, and a marker score is not it.** Filed 2026-08-06.
+  `plans/local-llms-like-codex.md` Stage 2 asks whether "the artifacts are useful often enough that
+  Claude verifying them costs less than Claude doing the work" — an **economic** claim.
+  `bench/task-run.mjs` answers a different question: did the local model emit evidence a case declared
+  in advance. Both `MARKER_LIMITS` and [ADR 017](adr/017-measuring-a-task-not-a-review.md) say so, and
+  the report prints it, so nothing currently misreports — **the gate is simply not measured.**
+  **What would measure it**, settled with Codex and recorded in
+  [`plans/stage-2-open-questions.md`](plans/stage-2-open-questions.md) E4: a **paired arm**. An
+  assisted run where Claude verifies the artifact against the case's fixture, and a control run where
+  Claude gets the identical files and question with no artifact and does the work. Both must satisfy
+  the case oracle; record Claude's tokens, elapsed time and whether the conclusion was right. Two
+  riders that are the whole point: if Claude rejects the artifact and redoes the work, assisted cost is
+  **verification plus redo**; and if Claude **accepts a wrong artifact that is a gate FAILURE**, not
+  cheap verification.
+  **Not started because it spends the user's tokens per case per arm** — it is the one item here whose
+  cost is theirs rather than the machine's, so it is launched when they say so.
+
+- **OAI-88** — **The task corpus has ONE case, so every number it produces is n=1.** Filed 2026-08-06.
+  `bench/task-cases/prototype-lookup` is the whole corpus. This file's own standing methodology note
+  says N=1 per arm is a lottery ticket, and that applies to the instrument as much as to the runs.
+  **The next case is already specified and cheap**: the zsh word-splitting defect from OAI-83, whose
+  executable witness is a loop comparing argv across `sh`, `dash`, `bash` and `zsh` — the exact script
+  that found it. A third could be the render-scope artifact defect from the Stage 2 ladder.
+  **The bar a case must clear** is in `bench/lib/task-corpus.mjs`: `before/` and `after/` trees, a
+  witness that FAILS on the first and PASSES on the second, and no prompt containing a marker it will
+  be scored on.
+
+- **OAI-89** — **The Stage 2 ladder never reached dual approval, and four of its entries are filed
+  rather than fixed.** Filed 2026-08-06. Two passes ran (`80f6bea`, `4310475`), 39 ledger entries, and
+  the ladder ended by **termination, not approval** — so nothing in it is `verified`; every entry is
+  `pending verification`. The ledger is `plans/stage-2-ladder-ledger.md` and it is the handoff.
+  **Pass 3 is owed for a specific reason, not as ceremony:** pass 2's batch **widened the frozen diff**
+  to `cmd-task-worker.mjs` and `cmd-result.mjs`, which neither pass reviewed. Carried forward as
+  filed-not-fixed: an empty file reporting one line where `wc -l` reports none; the slice note's
+  position, which Codex argues belongs in the **system message** (the same move templates already
+  make, and it would decouple the warning from the status excerpt entirely); `tests/file-slices.test.js`
+  now pulling `node:sqlite` transitively, which is OAI-61's import chain; and `bench/task-run.mjs`'s
+  `main()` having no test.
+  **Start it in a FRESH session.** The clause in the repo's own methodology fired: pass 2's findings sat
+  mostly inside pass 1's repairs, and two of them were defects the author had already reasoned about
+  and shipped anyway.
+
+- **OAI-90** — **Two Stage 2 deliverables were never built, and were reported as shipped.** Filed
+  2026-08-06 by the late review ladder, which is the only reason they are visible.
+  **(a) Artifact PERSISTENCE.** The plan asks for "patches and findings stored as separate artifacts
+  beside the raw output". Only the *check* was built: `saveArtifact` existed but was gated on a field
+  nothing ever set, so it was unreachable, and it is now deleted rather than left looking shipped.
+  Wiring a `--save-artifact <path>` flag was **deliberately rejected mid-ladder** — a caller-supplied
+  write path for model-generated content is a new consideration that would fire `security-review`, and
+  growing the reviewed surface inside a pass is its own defect. Decide the shape deliberately: a flag,
+  a fixed location beside the job log, or not at all.
+  **(b) Context manifests.** Never built, never deferred, never recorded until now. The plan pairs it
+  with file slices ("context manifests and file *slices*"); slices shipped, manifests did not, and
+  nothing anywhere said so. Decide whether a manifest is a distinct thing from the delegate's existing
+  `files` list before building anything.
 
 - **OAI-28** — **Make room in the two test files that are full, then give `http.mjs`'s two untested
   transport writes the coverage they have never had.** **Merged 2026-08-05 by the backlog sweep from
