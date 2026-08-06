@@ -1039,6 +1039,24 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the OAI-5 diff, 0 in 5 full-suite runs with `tests/plugin.test.js` reverted, 0 in the 8 targeted
   runs. That is not enough to call it pre-existing and not enough to blame the diff; it is one
   unexplained event with two candidate causes eliminated.
+  **Second observation, 2026-08-06, and it is a different shape — a HANG, not a failure.** Two
+  independent `npm test` invocations were found still alive after **6h38m and 6h47m**, both wedged on
+  the same file: `tests/review-json.test.js`. Both were runs this session started, saw exceed their
+  tool timeout, and moved to the background without ever completing. Two separate runs stopping in the
+  same place is not scheduling noise.
+  **This retracts an explanation given earlier the same day.** A single failing test during the Stage 2
+  work was dismissed as "flaky under parallel load" because it passed when re-run alone. That reading is
+  unsupported: load does not explain a run that never terminates, and it was a guess offered as an
+  answer.
+  **The live capture was lost** — the two processes were killed at the user's request before a stack was
+  taken, so the next step is to reproduce rather than to read. Concretely: run
+  `node --test tests/review-json.test.js` alone in a loop and watch for one that does not return, then
+  take a report with `kill -SIGUSR1 <pid>` **before** killing it. The fake server and its
+  `runCompanion` children are the obvious suspects — `tests/helpers.mjs` resolves on `'close'`, which
+  waits for every descriptor a child holds, and this repo has already shipped one hang from exactly that
+  (see the footgun about a detached worker inheriting a descriptor).
+  **Whether the two observations are one bug is unknown** and should not be assumed: one is a wrong
+  count that vanished, the other is a run that never ends.
   **Still unidentified as of 2026-08-05, and deliberately NOT merged into OAI-62(c).** OAI-5's later
   passes produced a third `database is locked` sighting with a captured test name, which closed the
   naming gap **for that signature only**. This item's signature is different — a `strictEqual` of
