@@ -48,8 +48,28 @@ function normalize(text) {
 function scoreClaim(answer, claim) {
   const text = normalize(answer);
   const hit = claim.any.some((marker) => text.includes(normalize(marker)));
-  const contradicted = (claim.contradictions ?? []).some((marker) => text.includes(normalize(marker)));
+  // A contradiction outranks everything, so it must be the harder match, not the
+  // easier one. A bare substring scored a correct, fully-hedged answer as
+  // `contradicted` — below a miss — merely for containing the phrase inside an
+  // unrelated clause. Requiring a word boundary on both sides does not make this
+  // semantic, and it is not claimed to be: it makes an accidental hit rarer,
+  // and MARKER_LIMITS already says what marker matching is worth.
+  const contradicted = (claim.contradictions ?? []).some((marker) => bounded(text, normalize(marker)));
   return { id: claim.id, hit, contradicted };
+}
+
+/** `marker` present with a non-word character (or an edge) on each side. */
+function bounded(text, marker) {
+  if (!marker) return false;
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(marker, from);
+    if (at === -1) return false;
+    const before = at === 0 ? ' ' : text[at - 1];
+    const after = at + marker.length >= text.length ? ' ' : text[at + marker.length];
+    if (!/[a-z0-9_]/.test(before) && !/[a-z0-9_]/.test(after)) return true;
+    from = at + 1;
+  }
 }
 
 /**

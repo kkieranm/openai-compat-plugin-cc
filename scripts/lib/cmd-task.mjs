@@ -38,7 +38,13 @@ export async function runTask(argv) {
   // flag word inside the prompt, an unknown template — are exactly the ones that
   // escape as prose, and a harness driving this command gets JSON for every
   // failure except the ones it is most likely to cause.
-  const wantsJson = argv.includes('--json');
+  // Parsed, never scanned. `argv.includes` misses the single-blob form the slash
+  // command actually sends (`['--json --nonsense x']` is one element), so the
+  // failures a harness is likeliest to cause escaped as prose from the one form
+  // that matters — and it also treated `--json` AFTER a bare `--` as intent when
+  // it is prompt text. A tolerant pre-parse answers the same question the parser
+  // would, and falls back to false when even that cannot be determined.
+  const wantsJson = jsonIntent(argv);
   try {
     const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
     await taskFlow(options, inlinePrompt, terminated);
@@ -46,6 +52,23 @@ export async function runTask(argv) {
     if (wantsJson) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
     throw error;
   }
+}
+
+/**
+ * Whether the caller asked for JSON, decided the way the parser would.
+ *
+ * Tolerant by construction: this runs BEFORE validation, so it must survive the
+ * very argv that is about to be refused. It reuses `splitBlob`'s tokenization
+ * rather than re-implementing it, and stops at `--` exactly as the parser does.
+ */
+function jsonIntent(argv) {
+  const tokens = argv.length === 1 && /\s/.test(argv[0]) ? argv[0].split(/\s+/) : argv;
+  for (const token of tokens) {
+    if (token === '--') return false;
+    if (token === '--json') return true;
+    if (!token.startsWith('--')) return false;
+  }
+  return false;
 }
 
 async function taskFlow(options, inlinePrompt, terminated) {

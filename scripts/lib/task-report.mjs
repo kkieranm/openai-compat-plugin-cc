@@ -7,7 +7,7 @@
 // string-building, and this one writes to stdout and throws.
 import { requireAnswer } from './client.mjs';
 import { renderTaskFooter } from './render.mjs';
-import { artifactNote, checkDiff, extractDiff, saveArtifact } from './task-artifact.mjs';
+import { artifactNote, checkDiff, extractDiff } from './task-artifact.mjs';
 import { artifactKind, templateNotes } from './task-template.mjs';
 
 /**
@@ -20,9 +20,10 @@ import { artifactKind, templateNotes } from './task-template.mjs';
 function artifactVerdict(outcome, answer) {
   if (artifactKind(outcome.template) !== 'diff') return null;
   const diff = extractDiff(answer);
-  const verdict = checkDiff(diff, { cwd: process.cwd() });
-  if (diff && outcome.artifactPath) verdict.saved = saveArtifact(diff, outcome.artifactPath);
-  return verdict;
+  // Checked, never written. Persisting the extracted diff was designed and never
+  // built — `saveArtifact` existed but was unreachable, so it is gone rather than
+  // left looking shipped. Recorded as unbuilt in plans/stage-2-open-questions.md.
+  return checkDiff(diff, { cwd: process.cwd() });
 }
 
 /**

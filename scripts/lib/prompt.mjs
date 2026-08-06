@@ -43,7 +43,11 @@ export function readFileBlocks(paths = []) {
     const path = relative(process.cwd(), absolute) || rawPath;
     if (!slice) return { path, content };
 
-    const lines = content.split('\n');
+    // A file ending in a newline splits to a trailing empty element that is not
+    // a line. Counting it made every ordinary source file one line too long, so
+    // `:2-2` on a one-line file was ACCEPTED and attached nothing.
+    const raw = content.split('\n');
+    const lines = raw.length > 1 && raw[raw.length - 1] === '' ? raw.slice(0, -1) : raw;
     if (slice.start > lines.length) {
       throw new UserError(`${given}: the file has ${lines.length} lines.`);
     }
@@ -95,8 +99,14 @@ export function buildMessages({ system = DEFAULT_SYSTEM_PROMPT, prompt, files = 
     // the request by the last `\n--- END FILE: `, and `/oai:status` renders that.
     return `${header}\n${file.content}\n--- END FILE: ${file.path} ---`;
   });
+  // The note goes BEFORE the blocks, and that position is load-bearing rather
+  // than cosmetic. `requestTextOf` recovers the request as everything after the
+  // LAST `--- END FILE: `, and `job-render.mjs` shows its FIRST line as what a
+  // job was asked to do. With the note after the blocks, every backgrounded
+  // sliced job displayed the warning instead of the request — permanently, since
+  // the messages are frozen at submission.
   const note = sliceNote(files);
-  const body = note ? [...blocks, note] : blocks;
+  const body = note ? [note, ...blocks] : blocks;
   const content = body.length > 0 ? `${body.join('\n\n')}\n\n${prompt}` : prompt;
   return [
     { role: 'system', content: system },

@@ -7,7 +7,6 @@
 // exists and the reason it is small: it is not a general "artifact system", it
 // is the one case where a machine can check the answer.
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
 
 /** A model that cannot make the change is told to say so; this is that word. */
 export const IMPOSSIBLE = 'IMPOSSIBLE';
@@ -52,8 +51,17 @@ export function checkDiff(diff, { cwd }) {
     execFileSync('git', ['apply', '--check', '-'], { cwd, input: diff, stdio: ['pipe', 'ignore', 'pipe'] });
     return { state: 'applies', detail: null };
   } catch (error) {
-    const detail = String(error.stderr ?? '').trim().split('\n')[0] || 'git apply --check refused it';
-    return { state: 'rejected', detail };
+    // A tool that could not RUN is not a patch that does not apply. Reporting a
+    // missing `git` or a non-repository cwd as `rejected` would be a verdict
+    // about the diff that nothing actually reached.
+    if (error.code === 'ENOENT' || error.code === 'EACCES') {
+      return { state: 'unavailable', detail: `could not run git: ${error.code}` };
+    }
+    const stderr = String(error.stderr ?? '').trim();
+    if (/not a git repository/i.test(stderr)) {
+      return { state: 'unavailable', detail: 'not inside a git repository, so nothing could be checked' };
+    }
+    return { state: 'rejected', detail: stderr.split('\n')[0] || 'git apply --check refused it' };
   }
 }
 
@@ -68,12 +76,7 @@ export function checkDiff(diff, { cwd }) {
 export function artifactNote({ state, detail }) {
   if (state === 'applies') return 'PATCH: applies cleanly to the working tree. That it applies is not evidence it is right.';
   if (state === 'rejected') return `PATCH: does NOT apply — ${detail}. The reply is shown in full below; nothing was changed.`;
+  if (state === 'unavailable') return `PATCH: NOT CHECKED — ${detail}. This is not a verdict about the patch.`;
   return `PATCH: no diff found — ${detail}. Nothing was checked and nothing was changed.`;
 }
 
-/** Write the extracted artifact beside a run, returning the path or null. */
-export function saveArtifact(diff, path) {
-  if (!diff) return null;
-  writeFileSync(path, diff);
-  return path;
-}

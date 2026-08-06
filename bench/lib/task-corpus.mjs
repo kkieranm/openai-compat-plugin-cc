@@ -61,7 +61,11 @@ function validate(caseDef, dir) {
   for (const arm of ARMS) {
     const prompt = caseDef.prompts[arm].toLowerCase();
     for (const claim of caseDef.claims) {
-      for (const marker of claim.any) {
+      // BOTH lists. A prompt containing a contradiction phrase baits the model
+      // into echoing it, and the echo then scores as a genuine contradiction —
+      // which ranks below a miss, so the case would punish an answer for
+      // repeating its own question.
+      for (const marker of [...claim.any, ...(claim.contradictions ?? [])]) {
         if (prompt.includes(marker.toLowerCase())) {
           fail(id, `the ${arm} prompt contains the marker "${marker}" — it would be scoring itself`);
         }

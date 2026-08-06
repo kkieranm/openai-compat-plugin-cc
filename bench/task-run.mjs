@@ -77,8 +77,18 @@ export function invoke(caseDef, arm, options) {
  * prefix here.
  */
 export function runSweep(cases, options, { execute = invoke } = {}) {
+  // Validated here rather than trusted: `--runs 0` used to persist an all-zero
+  // table with zero failures, which reads as a clean sweep produced from no
+  // evidence — the `[].every()` shape this repo names elsewhere. An unknown arm
+  // sent `undefined` as the prompt and recorded the result as a real failure.
   const runsPerCase = Number(options.runs ?? 1);
+  if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
+    throw new Error(`--runs must be a positive whole number, got ${JSON.stringify(options.runs)}`);
+  }
   const arms = options.arm?.length ? options.arm : ARMS;
+  for (const arm of arms) {
+    if (!ARMS.includes(arm)) throw new Error(`unknown --arm "${arm}"; have: ${ARMS.join(', ')}`);
+  }
   const results = [];
 
   for (const caseDef of cases) {
@@ -101,6 +111,24 @@ export function runSweep(cases, options, { execute = invoke } = {}) {
 }
 
 /**
+ * Which model answered, and whether it SAID so.
+ *
+ * A benchmark credits numbers to a model, so a run answered by a build nobody
+ * asked for, or by one that never identified itself, must be visible in the
+ * summary and not only in the record. `?` marks an id the server never confirmed
+ * — `completion.mjs` echoes the requested one when the reply names none.
+ */
+function modelCell(runs) {
+  const seen = new Set();
+  for (const run of runs) {
+    const report = run.report ?? {};
+    if (report.error) continue;
+    seen.add(`${report.model ?? 'unknown'}${report.modelReported === false ? '?' : ''}`);
+  }
+  return seen.size === 0 ? '—' : [...seen].sort().join(', ');
+}
+
+/**
  * The report, which must state what it is not.
  *
  * Arms are reported side by side and NEVER averaged: ADR 016 found framing to be
@@ -115,13 +143,17 @@ export function renderReport({ results, arms }) {
     lines.push('measured here, so a single-arm sweep is not a benchmark of the template.', '');
   }
 
-  lines.push(`| case | arm | exact | partial | missed | contradicted | failed |`, `|---|---|---|---|---|---|---|`);
+  lines.push(
+    `| case | arm | model | exact | partial | missed | contradicted | failed |`,
+    `|---|---|---|---|---|---|---|---|`,
+  );
   for (const { caseDef, runs } of results) {
     for (const arm of arms) {
-      const { counts, failed } = tallyArm(runs.filter((run) => run.arm === arm));
+      const armRuns = runs.filter((run) => run.arm === arm);
+      const { counts, failed } = tallyArm(armRuns);
       lines.push(
-        `| ${caseDef.id} | ${arm} | ${counts.exact} | ${counts.partial} | ${counts.missed} | ` +
-          `${counts.contradicted} | ${failed} |`,
+        `| ${caseDef.id} | ${arm} | ${modelCell(armRuns)} | ${counts.exact} | ${counts.partial} | ` +
+          `${counts.missed} | ${counts.contradicted} | ${failed} |`,
       );
     }
   }
@@ -134,8 +166,14 @@ export function renderReport({ results, arms }) {
 export async function main(argv) {
   const { options } = parseArgs(argv, TASK_BENCH_SPEC);
   const all = loadTaskCases(ROOT);
+  // EVERY requested id must exist. Filtering silently dropped a typo whenever it
+  // was mixed with a valid id, and the persisted record then looked like it had
+  // honoured the request while omitting a case.
+  const known = new Set(all.map((c) => c.id));
+  for (const id of options.case ?? []) {
+    if (!known.has(id)) throw new Error(`no such case "${id}"; have: ${[...known].join(', ')}`);
+  }
   const selected = options.case?.length ? all.filter((c) => options.case.includes(c.id)) : all;
-  if (selected.length === 0) throw new Error(`no such case; have: ${all.map((c) => c.id).join(', ')}`);
 
   const sweep = runSweep(selected, options);
   const markdown = renderReport(sweep);

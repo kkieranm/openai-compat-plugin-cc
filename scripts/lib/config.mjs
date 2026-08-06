@@ -33,6 +33,9 @@ export function configPath() {
 /** Keys measured in something other than seconds, so the timer ceiling cannot apply. */
 const NON_DURATION_KEYS = new Set(['contextLength', 'prefillTokensPerSecond', 'generationTokensPerSecond']);
 
+/** Measured throughput, which is a positive number rather than a whole one. */
+const RATE_KEYS = new Set(['prefillTokensPerSecond', 'generationTokensPerSecond']);
+
 /** Read the config, seeding it with defaults the first time. */
 export function loadConfig() {
   const path = configPath();
@@ -82,6 +85,17 @@ function validateConfig(config, path) {
       // that does not need time to recover — and it is what the test suite uses
       // so a retry path costs no wall clock. Every other key here is a duration
       // or a size where 0 would disarm the thing it configures.
+      // A measured throughput is essentially never a whole number, and
+      // `eta.mjs` accepts any finite positive rate — validating it as an integer
+      // refused exactly the values the feature exists to record.
+      if (RATE_KEYS.has(key)) {
+        if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
+          throw new UserError(
+            `Provider "${name}" in ${path} has "${key}": ${JSON.stringify(value)} — expected a positive number of tokens per second.`,
+          );
+        }
+        continue;
+      }
       const floor = key === 'retrySeconds' ? 0 : 1;
       if (value !== undefined && (!Number.isInteger(value) || value < floor)) {
         throw new UserError(

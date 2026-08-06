@@ -121,9 +121,10 @@ const PATCH_SYSTEM =
   'and one sentence saying what is missing — an unappliable guess is worse than nothing.';
 
 const PATCH_DISCIPLINE =
-  'This is an unverified patch from a small local model. Whether it APPLIES is checked and reported ' +
-  'above; whether it is CORRECT is not, and applying cleanly is no evidence that it does the right ' +
-  'thing. Read it before anyone commits it.';
+  'This is an unverified patch from a small local model. Any line above beginning "PATCH:" is the ' +
+  'result of running `git apply --check`, and its absence means no check was run — neither is ' +
+  'evidence the patch is CORRECT, since applying cleanly says nothing about doing the right thing. ' +
+  'Read it before anyone commits it.';
 
 export const TEMPLATES = {
   advisor: {

@@ -14,7 +14,7 @@ import { loadConfig, resolveProfile } from './config.mjs';
 import { parseNumericOptions, prepareRequest, resolveIdle, resolveMax, resolveRetryDelay, resolveTarget, resolveTimeout } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { withProgress } from './progress.mjs';
-import { estimateNote, estimateRun } from './eta.mjs';
+import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
 import { resolveTemplate } from './task-template.mjs';
 
@@ -68,6 +68,16 @@ function resolvePrompt(spec, options, inlinePrompt, terminated) {
  * winner afterwards could not.
  */
 function templateFor(options) {
+  // A template whose answer is CHECKED cannot be backgrounded yet: the check runs
+  // at render time, the worker never computes it, and `/oai:result` would print a
+  // discipline line claiming a check that never happened. Refusing is loud; the
+  // alternative shipped a false assurance. Lifting this means moving the check
+  // into the outcome so it flows through the worker like every other fact.
+  if (options.template === 'patch' && options.background) {
+    throw new UserError('--template patch cannot be used with --background yet.', {
+      hint: 'The patch is checked with `git apply --check` as it is rendered, and a background job is rendered by /oai:result, which cannot run that check. Drop --background.',
+    });
+  }
   if (options.template !== undefined && options.system !== undefined) {
     throw new UserError('--template and --system cannot be used together.', {
       hint: 'A template supplies its own system prompt. Drop --system, or drop --template and write the framing yourself.',
@@ -181,8 +191,11 @@ export async function executeTask(args) {
   // `--background` has to be made now. Nothing is printed when the provider
   // carries no measured rates — an invented figure would be worse than silence,
   // since the whole value of this line is that a reader can act on it.
-  const note = estimateNote(estimateRun({ estimatedTokens, maxTokens: numeric.maxTokens, profile }));
-  if (note) process.stderr.write(`${note}\n`);
+  // Says which of the two it is. Silence would leave a reader unable to tell an
+  // unmeasured provider from a run nobody thought to estimate — and NO_RATE_NOTE
+  // exists precisely so every caller says that the same way.
+  const estimate = estimateRun({ estimatedTokens, maxTokens: numeric.maxTokens, profile });
+  process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
 
   const ledger = createLedger();
   const startedAt = Date.now();

@@ -6,6 +6,7 @@
 // or a server that is not there, still fails **in front of the user**, rather
 // than turning into a job that fails quietly minutes later.
 import { randomUUID } from 'node:crypto';
+import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
 import { authPolicyFor } from './job-auth.mjs';
 import { insertJob, markSpawned } from './job-record.mjs';
 import { persistRequest } from './job-request.mjs';
@@ -89,6 +90,12 @@ export async function submitTask(args) {
 
   const prep = await prepareTask({ ...args, options });
   warnAboutQueryCredentials(prep.profile);
+
+  // The estimate belongs here MORE than on the foreground path, not less: "shown
+  // before submission" is what the plan asked for, and this is submission. It is
+  // also the moment a caller decides whether the wait is worth a `--max-wait`.
+  const estimate = estimateRun({ estimatedTokens: prep.estimatedTokens, maxTokens: prep.numeric.maxTokens, profile: prep.profile });
+  process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
 
   const db = openStore();
   const job = buildJob(prep);

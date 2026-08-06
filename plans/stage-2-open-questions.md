@@ -264,3 +264,27 @@ a mistake with no sensible reading.
 
 **Reversible by:** `parseFileArg` returning `{path: given, slice: null}` unconditionally; everything
 downstream then behaves exactly as before.
+
+### E11 — What the late ladder found, and the two things I told the user were shipped
+
+Run 2026-08-06 over `5a010e2..HEAD` after the user asked for it. **19 ledger entries, 18 accepted.**
+Recorded here because two of them contradict what I reported when I said Stage 2 was complete.
+
+- **Artifact PERSISTENCE was never built.** `saveArtifact` was gated on `outcome.artifactPath`, which
+  nothing ever set — no flag, no default. The plan's "patches and findings stored as separate
+  artifacts beside the raw output" did not happen; only the *check* did. The dead function is deleted
+  rather than wired: a caller-supplied write path for model-generated content would newly fire
+  `security-review`, mid-ladder, on a sticky trigger.
+- **Context manifests were never built OR deferred.** No code, no decision, no record. This entry is
+  the record.
+
+The finding that justifies the whole exercise: **the slice note broke `/oai:status`**, and my own
+guard test could not see it. `requestTextOf` returns everything after the last `--- END FILE: `, and
+`job-render.mjs` shows its FIRST line — so every backgrounded sliced job displayed the boilerplate
+warning instead of the request, unrecoverably, since messages are frozen at submission. My test read
+the right function and asserted `.pop()`, the LAST line. It passed green on the broken behaviour it
+was written to guard. Proven by re-running the mutation after the fix: the re-aimed test now fails on
+the old code it used to pass.
+
+**Two dead exports in one change set** — `saveArtifact` and `NO_RATE_NOTE`, both exported, both
+documented as load-bearing, both unreachable — which is a class, not a coincidence.

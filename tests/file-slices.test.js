@@ -10,12 +10,16 @@ import { test } from 'node:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildMessages, parseFileArg, readFileBlocks, requestTextOf } from '../scripts/lib/prompt.mjs';
+import { buildMessages, parseFileArg, readFileBlocks } from '../scripts/lib/prompt.mjs';
+import { excerptOf } from '../scripts/lib/job-render.mjs';
 
 function fileWith(lines) {
   const dir = mkdtempSync(join(tmpdir(), 'oai-slice-'));
   const path = join(dir, 'a.txt');
-  writeFileSync(path, lines.join('\n'));
+  // WITH a trailing newline, like every real source file. The first version of
+  // this helper omitted it, which is why the phantom-line defect survived: the
+  // fixtures did not resemble the files the code actually reads.
+  writeFileSync(path, `${lines.join('\n')}\n`);
   return path;
 }
 
@@ -75,11 +79,17 @@ test('a whole-file request is unchanged — no header suffix, no note', async ()
   assert.match(user.content, /--- FILE: .*a\.txt ---/);
 });
 
-test('slicing does not break what /oai:status shows as the request', async () => {
-  // `requestTextOf` finds the tail after the last `\n--- END FILE: `, and the
-  // status line renders its first line. The slice note sits between the blocks
-  // and the prompt, so it must not become what the job "was asked to do".
+test('slicing does not break what /oai:status ACTUALLY shows as the request', async () => {
+  // Asserted through `excerptOf`, the real consumer, and not through
+  // `requestTextOf`. The first version of this test called `requestTextOf` and
+  // asserted `.pop()` — the LAST line — while `job-render.mjs:47` reads `[0]`,
+  // the FIRST. It therefore passed green while every backgrounded sliced job
+  // displayed the slice warning instead of the question, unrecoverably, since a
+  // job's messages are frozen at submission. A guard must read the same accessor
+  // its consumer reads; touching the same function is not enough.
   const files = readFileBlocks([`${fileWith(TEN)}:3-5`, fileWith(TEN)]);
   const [, user] = buildMessages({ prompt: 'the real request', files });
-  assert.equal(requestTextOf(user.content).split('\n').pop(), 'the real request');
+  assert.equal(excerptOf({ request: { messages: [user] } }), 'the real request');
+  // And the warning is still present, just not where the excerpt looks.
+  assert.match(user.content, /PARTIAL/);
 });
