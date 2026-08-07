@@ -30,10 +30,10 @@ misdiagnosed as server flakiness for four days (OAI-51). The ordinary path now a
 prose and parses leniently — a bare top-level array is the same reply as `{findings: […]}`, and the
 channel is an ordered attempt over a candidate list that is `[content]` alone without a schema, which
 is where that no-scratchpad guarantee is now written rather than inferred (the prose-to-JSON scan is
-not dialect and lives in `scripts/lib/json-scan.mjs`, which ranks an accepted object above an
-accepted array and asks `scripts/lib/findings-candidate.mjs` `findingsShaped` whether a candidate is
-one — strictly when the scanner dug it out of prose, since the prompt asks the model to quote source
-and a quoted array outranking the payload is how three false-cleans got in); `--structured-output`
+not dialect and lives in `scripts/lib/json-scan.mjs`, which takes the LAST of the outermost candidates
+`scripts/lib/findings-candidate.mjs` `findingsShaped` accepts — outermost because a wrapper contains
+its own findings array, and last because the prompt orders the model to quote source, so brackets
+precede the answer; a decoy that TRAILS the answer is what the predicate is for); `--structured-output`
 opts back in for a server known not to have that
 grammar engine — see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —

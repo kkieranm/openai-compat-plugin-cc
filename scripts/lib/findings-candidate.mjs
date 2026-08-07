@@ -33,28 +33,37 @@
  *     file and no defect, and the all-dropped rule then reported the whole reply
  *     unreadable while the real payload sat intact further down.
  *
- * So a scanned array must be non-empty AND every element must look like a
+ * So a scanned list must be non-empty and at least one element must look like a
  * finding. That is a weaker test than `normalizeFinding` on purpose: this decides
  * which candidate to READ, and normalization still decides what survives.
  *
- * What this does NOT catch, stated because it is a real limit and not an
- * oversight: a complete `{findings: […]}` wrapper quoted as an example ahead of
- * the real one wins, both being objects and position deciding within a scan. No
- * positional rule separates a schema-shaped example from a schema-shaped answer,
- * and under a schema `matchesSchema` cannot either, since both conform. It
- * behaves identically in the version before any of this — see ADR 003.
+ * **`some`, never `every`, and the same rule on BOTH spellings.** Both halves of
+ * that sentence were learned the hard way and neither is safe to "tidy":
+ *
+ *   - `every` broke the guarantee that a bare array is the SAME REPLY as
+ *     `{findings: […]}`. A mixed `[valid, {evidence:"…"}]` was rejected whole
+ *     when wrapped in prose, while the identical payload as a whole reply or as
+ *     an object kept the valid finding and counted the other as dropped. A
+ *     future edit back to `every` reopens exactly that.
+ *   - Applying the rule to arrays only left the object branch lenient, and since
+ *     the scanner tried objects first, the lenient branch decided everything. A
+ *     quoted `{"findings": []}` example was accepted vacuously and the review was
+ *     reported CLEAN — the same false-clean the array branch had just been fixed
+ *     for, through the spelling the fix never touched.
+ *
+ * A decoy that survives `some(named)` is not this function's problem: it is
+ * handled by POSITION, in `extractJson`, which takes the last outermost
+ * candidate. Content and position each cover what the other cannot, and trying
+ * to make this predicate cover both is what produced the two defects above.
  */
 export function findingsShaped(value, whole = false) {
   const objects = (list) => list.every((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
-  const named = (item) => typeof item.file === 'string' || typeof item.summary === 'string';
-  if (Array.isArray(value)) {
-    if (!objects(value)) return false;
-    return whole || (value.length > 0 && value.every(named));
-  }
-  // The wrapped spelling's items were never checked at all, so a sample
-  // `{"findings": ["hello","world"]}` quoted ahead of the real payload won on
-  // position. The `findings` key is strong evidence on its own, so requiring
-  // objects is enough here — it need not also require they be named.
+  // Non-empty, not merely present. `file: ""` is a string, so a decoy carrying
+  // empty keys passed selection, won, normalized to nothing, and took the real
+  // payload down with it through the all-dropped rule.
+  const named = (item) => Boolean(item.file?.trim?.() || item.summary?.trim?.());
+  const usable = (list) => objects(list) && (whole || (list.length > 0 && list.some(named)));
+  if (Array.isArray(value)) return usable(value);
   if (!value || typeof value !== 'object' || !Array.isArray(value.findings)) return false;
-  return objects(value.findings);
+  return usable(value.findings);
 }

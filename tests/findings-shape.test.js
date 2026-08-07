@@ -212,6 +212,80 @@ test('a decoy array does not outrank a payload that is ALSO a bare array', () =>
   assert.equal(parsed.findings[0].file, 'a.js', 'the decoy array must not win when the payload is a bare array too');
 });
 
+// Pass 4's set. Every one of these was a confirmed defect in the previous
+// batch's own candidate selection, and each is written so that reverting ITS
+// fix alone turns it red — the previous batch's witnesses passed under three
+// different mutations of the code they were supposed to guard.
+const REAL_ARRAY = JSON.stringify([FINDING]);
+const REAL_WRAPPER = JSON.stringify({ analysis: 'a', findings: [FINDING], summary: 'one defect' });
+const parse = (content) => parseFindings({ content, reasoning: '' }, { structured: false });
+
+test('a fence must BE the whole reply to be judged as one', () => {
+  // `FENCE` matches anywhere, so a model fencing a quoted fixture mid-prose had
+  // it accepted under the generous whole-reply rule — skipping the scanned
+  // predicate and the ranking both. The empty case is the false-clean again.
+  assert.equal(parse(`Fixture:\n\n\`\`\`json\n[{"file":"f.js","summary":"s"}]\n\`\`\`\n\nFindings:\n${REAL_ARRAY}`).findings[0].file, 'a.js');
+  assert.equal(parse(`Example:\n\n\`\`\`json\n[]\n\`\`\`\n\n${REAL_WRAPPER}`).findings.length, 1, 'a fenced [] must not read as a clean review');
+  // …and a fence that IS the whole reply still gets the generous rule.
+  assert.deepEqual(parse('```json\n[]\n```').findings, []);
+});
+
+test('a NAMED decoy array does not outrank a payload that is also an array', () => {
+  // The case the previous witness missed: it used an unnamed decoy, which the
+  // predicate rejects, so it never tested the ranking at all. A named decoy
+  // passes the predicate, and then only position can decide.
+  const parsed = parse(`I saw \`const CASES = [{"file":"f.js","summary":"s"}];\` then:\n${REAL_ARRAY}`);
+  assert.equal(parsed.findings[0].file, 'a.js');
+});
+
+// The two tests below decoy AFTER the payload, and that is the whole point of
+// them. Ranking takes the last outermost candidate, so a decoy sitting BEFORE
+// the answer is rejected by position no matter what the predicate says — both of
+// these passed under a mutated predicate when written the obvious way round, and
+// were rewritten. Trailing junk is precisely where content has to decide,
+// because position now argues for it.
+test('a wrapped decoy is held to the same rule as a bare one', () => {
+  // The object branch was lenient where the array branch was strict, so a
+  // trailing `{"findings":[…]}` example outranks the answer and — its items all
+  // dropping — reports the whole reply unreadable.
+  assert.equal(parse(`${REAL_ARRAY}\n\nFor example {"findings":[{"note":"eg"}]}`)?.findings[0]?.file, 'a.js');
+  // A quoted EMPTY wrapper is the false-clean again, through the spelling the
+  // previous batch's fix never touched.
+  assert.equal(parse(`${REAL_WRAPPER}\n\nThe shape is {"findings": []}`)?.findings.length, 1, 'a trailing empty wrapper must not read as a clean review');
+});
+
+test('a decoy naming only empty strings is not a candidate', () => {
+  // `file: ""` is a string. Testing presence rather than content let such a
+  // decoy win, drop to nothing, and take the real payload down with it.
+  assert.equal(parse(`${REAL_ARRAY}\n\nThe shape is [{"file":"","summary":""}]`)?.findings[0]?.file, 'a.js');
+});
+
+test('one malformed entry does not discard its siblings, in any spelling', () => {
+  // The guarantee ADR 003 states in its own words: a bare array is the SAME
+  // REPLY as `{findings: […]}`. Requiring EVERY element to be named broke it for
+  // the prose-wrapped spelling alone, which is why this asserts all three
+  // together rather than the repaired one on its own.
+  const mixed = [FINDING, { evidence: 'also suspicious' }];
+  const expected = { findings: [FINDING], dropped: 1 };
+  for (const [spelling, content] of [
+    ['prose-wrapped', `Findings: ${JSON.stringify(mixed)}`],
+    ['whole reply', JSON.stringify(mixed)],
+    ['object-wrapped', JSON.stringify({ findings: mixed })],
+  ]) {
+    const parsed = parse(content);
+    assert.equal(parsed?.findings.length, expected.findings.length, `${spelling}: the valid finding must survive`);
+    assert.equal(parsed.dropped, expected.dropped, `${spelling}: the malformed sibling must be counted, not fatal`);
+  }
+});
+
+test('a wrapper is never replaced by the array nested inside it', () => {
+  // What makes "last wins" safe. Every accepted wrapper contains an accepted
+  // array — its own `findings` — which starts later, so a global last-candidate
+  // rule would return that array and lose `analysis` and `summary` with it.
+  const parsed = parse(`Findings:\n${REAL_WRAPPER}`);
+  assert.equal(parsed.summary, 'one defect', 'the wrapper must win over its own findings array');
+});
+
 test('a bare array that IS the whole reply keeps the generous rule', () => {
   // The strict rule applies only to what the scanner digs out of prose. A whole
   // reply competes with nothing, so an empty one stays a clean review and a list

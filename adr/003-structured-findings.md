@@ -270,3 +270,63 @@ remainder — so such a run is counted and printed in its own column, not droppe
 predeclared G-B and G-C are counted over exactly that partition, so the shift is stated here rather
 than discovered mid-arm. The direction is worth being explicit about: the old behaviour was the
 miscount, and a gate that now sees fewer scored runs is the gate working.
+
+## 2026-08-07, third amendment — position decides, and it points the other way
+
+The second amendment's two rules were both wrong, and the fourth review pass proved it by finding
+four more defects inside them. They are recorded because the correction is instructive, not because
+the churn is:
+
+- **"An accepted object outranks an accepted array"** is unconditional on position, so a real
+  bare-array payload appearing FIRST loses to an unrelated findings-shaped object appearing later.
+  The comment defending it claimed it "does not cost the prose-wrapped-array case anything". False.
+- **The strict predicate was applied to arrays only.** The object branch stayed lenient, and since
+  the scanner tried objects first, the lenient branch decided everything. A quoted `{"findings": []}`
+  example was accepted vacuously and the review reported CLEAN — *the identical false-clean the array
+  branch had just been fixed for, through the spelling the fix never touched.*
+- **A fence was matched anywhere in the reply** and passed as the whole reply, so a fenced fixture
+  mid-prose skipped both the predicate and the ranking.
+- **`every(named)` broke the equivalence this ADR states in its own words.** A mixed
+  `[valid, {evidence:"…"}]` was rejected whole when wrapped in prose while the identical payload as a
+  whole reply or as `{findings: […]}` kept the valid finding and counted the other as dropped.
+
+### The rule that replaces them
+
+**Among OUTERMOST candidates, the LAST one wins.** Decided with Codex after both of the obvious
+options were put to it and both rejected.
+
+`outermost` is what makes `last` safe, and this is the part that is easy to get wrong: every accepted
+`{findings: […]}` wrapper CONTAINS an accepted array — its own `findings` value — starting later. A
+global last-candidate rule would return that inner array, losing `analysis` and `summary`, and under a
+schema the reconstructed value would then fail conformance. So a candidate contained by another
+accepted candidate is a *part* of it, not a competitor. With containment handled, object-precedence
+becomes unnecessary rather than merely masked, and is deleted.
+
+The predicate keeps `some(named)`, on **both** spellings, with `named` requiring a non-empty string.
+Content and position each cover what the other cannot: position rejects a decoy that precedes the
+answer, content rejects one that trails it. Trying to make the predicate cover both is what produced
+two of the defects above.
+
+**This rests on a judgement, not a measurement, and it should be read as one.** The claim is that a
+review model quotes source and reasons BEFORE its answer, because the prompt orders it to quote the
+offending line — so the answer is last. The corpus cannot check this: `bench/results` stores `raw`
+only when a reply failed to parse, and a decoy that wins *parses*, so a decoy win is recorded as a
+scored run with poor recall and is invisible as a parse event. 31 result files and 116 run-shaped
+nodes hold zero non-null `raw`. The frequency therefore ships **unmeasured**.
+
+**Accepted limit — JSON in trailing commentary.** The symmetric failure of last-wins: a reply that
+emits its payload and then discusses another findings-shaped object after it will select the trailing
+one. Judged rarer than leading quoted source. Note that the *previous* rule failed this case too, for
+a different reason, so this is a limit rather than a regression. The limit recorded in the second
+amendment — a quoted complete wrapper before the real one — is **closed** by this change.
+
+### What the pass actually taught
+
+Four passes produced four instances of a check that could not fail, the last two of them in witnesses
+written specifically to end the previous instance. Two independent reviewers proved it by mutation
+with the suite green at 680/680. The response was to make the discipline mechanical: **each fix in
+this batch was mutated back alone and required to turn a named test red, as it landed.** Two of the
+six witnesses did not — the new ranking rule saved their fixtures regardless of the predicate — and
+both were rewritten to place the decoy AFTER the payload, which is the only position where the
+predicate is the thing deciding. That is the difference between a batch that holds and the three
+before it.

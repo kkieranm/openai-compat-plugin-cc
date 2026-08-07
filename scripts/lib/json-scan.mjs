@@ -37,30 +37,36 @@ function balanced(text, from, open, close) {
     else if (character === open) depth += 1;
     else if (character === close) {
       depth -= 1;
-      if (depth === 0) return { json: text.slice(start, index + 1), start };
+      if (depth === 0) return { json: text.slice(start, index + 1), start, end: index + 1 };
     }
   }
   return null;
 }
 
 /**
- * The first balanced `open`…`close` run in `text` that parses AND is accepted,
- * with where it started — so two scans can be compared by position.
+ * EVERY balanced `open`…`close` run in `text` that parses and is accepted, each
+ * with the span it occupies.
+ *
+ * It used to return the first and stop, which is what made position a trap: the
+ * first accepted candidate is routinely a quoted example and the real answer is
+ * further down. Deciding between candidates needs all of them, and deciding
+ * *correctly* needs their extents, not just their starts — see `extractJson`.
  */
 function scanFor(text, open, close, accept) {
+  const found = [];
   let from = 0;
   for (;;) {
-    const found = balanced(text, from, open, close);
-    if (!found) return null;
+    const run = balanced(text, from, open, close);
+    if (!run) return found;
     try {
-      const value = JSON.parse(found.json);
-      if (accept(value)) return { value, start: found.start };
+      const value = JSON.parse(run.json);
+      if (accept(value)) found.push({ value, start: run.start, end: run.end });
     } catch {
       // Not it — an unparseable candidate is expected here.
     }
     // Resume past this candidate's opening bracket, so a nested or adjacent one
     // later in the reply still gets its turn.
-    from = found.start + 1;
+    from = run.start + 1;
   }
 }
 
@@ -89,22 +95,47 @@ function scanFor(text, open, close, accept) {
  * nothing, it finds the array's first element — unless the caller's predicate
  * rejects that element, which for a findings payload it does.
  *
- * **An accepted OBJECT outranks an accepted ARRAY, and position decides only
- * within one scan.** Earliest-across-both-scans was tried and was wrong: a
- * quoted array of objects sitting before the real `{findings: […]}` wrapper beat
- * it on position, and the reply came back either as a clean review or as
- * unreadable, with real findings discarded either way. Ranking by shape fixes
- * that wherever in the reply the wrapper sits, and it does not cost the
- * prose-wrapped-array case anything: that reply has no acceptable object in it
- * at all, its payload's first element being a bare finding with no wrapper key.
+ * **Among OUTERMOST candidates, the LAST one wins.** Two earlier rules were
+ * tried and both were wrong, and the way they were wrong is the point:
  *
- * Object-versus-array is structural, so knowing which won teaches this module
- * nothing about findings. `whole` is passed to `accept` for the same reason —
- * only this function knows whether a candidate was the entire reply or was dug
- * out of prose, and only the caller knows what to do with that.
+ *   - *Earliest wins.* A quoted array of objects before the real payload beat
+ *     it, and the reply came back clean or unreadable with real findings gone.
+ *   - *An accepted object outranks an accepted array.* This looked safe and is
+ *     not: it is unconditional on position, so a real BARE-ARRAY payload sitting
+ *     FIRST loses to an unrelated findings-shaped object appearing later. It
+ *     also only ever masked the predicate rather than helping it.
+ *
+ * Position is the right signal, pointing the other way. The reply is a review,
+ * and its prompt orders the model to quote the offending source line — so
+ * bracketed prose comes BEFORE the answer, and the answer is last. **That is a
+ * judgement about how models reply, not a measurement**; the corpus cannot check
+ * it, because a decoy that wins still parses and is recorded as a clean run. Its
+ * symmetric failure is a reply that trails commentary containing JSON after the
+ * payload, judged rarer than leading quoted source. See ADR 003.
+ *
+ * `outermost` is what makes "last" safe, and without it last-wins is broken:
+ * every accepted `{findings: […]}` wrapper CONTAINS an accepted array — its own
+ * `findings` value — which starts later. Taking the last candidate globally
+ * would therefore return a wrapper's own array, losing `analysis` and `summary`,
+ * and under a schema the reconstructed value would then fail conformance. So a
+ * candidate contained by another accepted candidate is a PART of it, not a
+ * competitor, and only the survivors are ranked.
+ *
+ * Containment is structural, so none of this teaches the module what a finding
+ * is. `whole` is passed to `accept` for the same reason — only this function
+ * knows whether a candidate was the entire reply or was dug out of prose, and
+ * only the caller knows what to do with that.
  */
 export function extractJson(text, accept = () => true) {
-  for (const candidate of [text.trim(), text.match(FENCE)?.[1]]) {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(FENCE);
+  // A fence counts as the whole reply only when it IS the whole reply. Matching
+  // one anywhere let a model fence a quoted fixture mid-prose and have it
+  // accepted under the generous whole-reply rule, skipping both the scanned
+  // predicate and the ranking below — so a fenced `[]` before real findings
+  // reported a clean review.
+  const whole = [trimmed, fenced?.[0] === trimmed ? fenced[1] : null];
+  for (const candidate of whole) {
     if (!candidate) continue;
     try {
       const value = JSON.parse(candidate);
@@ -114,7 +145,11 @@ export function extractJson(text, accept = () => true) {
     }
   }
 
-  const scanned = (open, close) => scanFor(text, open, close, (value) => accept(value, false));
-  const found = scanned('{', '}') ?? scanned('[', ']');
-  return found ? found.value : null;
+  const scan = (open, close) => scanFor(text, open, close, (value) => accept(value, false));
+  const candidates = [...scan('{', '}'), ...scan('[', ']')];
+  const outermost = candidates.filter(
+    (one) => !candidates.some((other) => other !== one && other.start <= one.start && other.end >= one.end),
+  );
+  if (!outermost.length) return null;
+  return outermost.reduce((last, one) => (one.start > last.start ? one : last)).value;
 }
