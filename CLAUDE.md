@@ -107,6 +107,12 @@ one caught dynamic import classified at first use, so a runtime without that bui
 jobs alone instead of every command, and an unrecognised fault keeps its cause instead of being
 relabelled a stale Node — see [ADR 018](adr/018-a-capability-not-a-version.md).
 
+`task-submit.mjs` `noteEndpointPersistence()` warns that a background submission persists its whole
+endpoint by **taking no argument, gating on nothing, and running before anything else writes to
+stderr** — the code cannot know which part of a URL is a secret, and `process.exit(2)` discards
+undrained stderr, so the notice describes the storage rather than the credential and is emitted where
+no preamble can crowd it out — see [ADR 019](adr/019-a-notice-that-cannot-print-the-secret.md).
+
 `agents/oai-delegate.md` delegates as a **context broker rather than a forwarder** — it picks the
 smallest sufficient file set itself, spends at most two `task` submissions on at most one accepted
 job, and returns an account plus the job id instead of the model's reply, so neither the reading nor

@@ -43,15 +43,7 @@ Impact is blast radius × whether the thing is wrong *today* ÷ cost to resolve.
 to be decided or measured first. **This list is asserted against the heading order below** by the
 sweep's close-out script; the two cannot drift apart silently.
 
-**Tier 1 — a warning about a secret prints the secret.** **OAI-94**. It inherits this tier from OAI-61,
-now closed, and it leads for a reason worth stating plainly: OAI-61's ladder BUILT the fix for this and
-then gave it back. A partial plan withdrawal under `adr/033` returned that feature to the capability
-gate it was actually approved for, which restored `warnAboutQueryCredentials` to its pre-existing form —
-the one that interpolates the query string into the warning. The defect is proved by execution, the
-repair is designed and was reviewed across four ladder passes, and none of it is in the tree. That is
-the highest-value item in this file by some distance: known defect, known fix, zero design risk.
-
-**Tier 2 — a background job kills, loses or misreports live work.** **OAI-62, OAI-67, OAI-66, OAI-64,
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-62, OAI-67, OAI-66, OAI-64,
 OAI-69**. One subsystem, five independent closes, so they sit adjacent rather than merged. OAI-62
 leads: it kills a worker mid-model-call and discards an answer the model already paid for. OAI-67 and
 OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash published as a clean
@@ -59,7 +51,7 @@ OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash publis
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
 OAI-64 shows it does not, so OAI-69 is not an independent gap and must not be scheduled as one.
 
-**Tier 3 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-65, OAI-72,
+**Tier 2 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-65, OAI-72,
 OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved on the wire,
 not argued. OAI-65 is next because its load-bearing half is a directory mode nothing re-tightens, so
 every later WAL file inherits it. Then the three that are one decision apiece (OAI-72's config mode
@@ -68,14 +60,14 @@ are one decision viewed twice** (where the boundary lives, and what verb the age
 should be decided together even though they close separately. OAI-77 and OAI-81 trail: both need
 local write access or a mis-selection, and neither has a path-shaped fix.
 
-**Tier 4 — a result the plugin cannot understand is reported as an absence.** **OAI-84, OAI-59,
+**Tier 3 — a result the plugin cannot understand is reported as an absence.** **OAI-84, OAI-59,
 OAI-70, OAI-68, OAI-60, OAI-57, OAI-80, OAI-82**. This is trap instance 14's family — `findings:
 null` against `[]` — appearing in four places. OAI-84 leads because it is the only one on the
 **shipped default path** of `/oai:review`; OAI-59 is the same shape on `/oai:result`. OAI-68 sorts
-after OAI-63 in tier 3, whose payload decision it collides with. OAI-57's `--json` is the natural home for
+after OAI-63 in tier 2, whose payload decision it collides with. OAI-57's `--json` is the natural home for
 OAI-80(a), so those two are batchable.
 
-**Tier 5 — what shipping Stage 2 left behind.** **OAI-85, OAI-86, OAI-53, OAI-54, OAI-56, OAI-87,
+**Tier 4 — what shipping Stage 2 left behind.** **OAI-85, OAI-86, OAI-53, OAI-54, OAI-56, OAI-87,
 OAI-88, OAI-89, OAI-90**. The last four are Stage 2's own residue, filed 2026-08-06 after a review
 ladder that ran late: OAI-90 is two deliverables that were reported as shipped and were not built,
 OAI-89 is the ladder that never reached approval, OAI-87 is the gate nobody has measured, and OAI-88
@@ -87,28 +79,32 @@ mutation, and the sharper of the two because its stakes are disclosure. Both lea
 they are *wrong today*, where OAI-53 and OAI-54 are Stage 1's stated gaps needing a design decision
 before code, which is why they are not higher despite being small.
 
-**Tier 6 — coverage the ladders found missing, and the ratchet that blocks it.** **OAI-28, OAI-40,
+**Tier 5 — coverage the ladders found missing, and the ratchet that blocks it.** **OAI-28, OAI-40,
 OAI-73, OAI-52, OAI-79, OAI-75, OAI-39, OAI-45**. OAI-28 leads because it now carries the ratchet
 decision (see the redirect table): `tests/structure.test.js` is at **exactly 300 of 300** and cannot
 accept another guard. **OAI-40 is batchable with it** — its fix lands in `bench-reliability.test.js`,
 the other file OAI-28's split touches, and that file has six lines of headroom. **OAI-79 may never be
 worked at all** — its own body says the three sharp edges are *deleted* by moving the delegate's
-lifecycle out of agent shell, which is OAI-74 with OAI-76 in tier 3, so check whether it is still live
+lifecycle out of agent shell, which is OAI-74 with OAI-76 in tier 2, so check whether it is still live
 before opening it. OAI-75 is an unidentified intermittent whose next step is capture, not reasoning.
 
-**Tier 7 — the measurement programme: unblocked, and no longer the ordering.** **OAI-19, OAI-50,
+**Tier 6 — the measurement programme: unblocked, and no longer the ordering.** **OAI-19, OAI-50,
 OAI-49, OAI-48, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — every item behind it wants
 a number to beat. It is hours of the user's own LM Studio rather than an edit, so it is launched when
 they say so, never incidentally. OAI-50, OAI-49 and OAI-48 are the three instrument questions its
 predeclared gate names as stated limits.
 
-**Tier 8 — decisions that may close as "no", and housekeeping.** **OAI-27, OAI-29, OAI-42, OAI-43,
+**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-27, OAI-29, OAI-42, OAI-43,
 OAI-46, OAI-47, OAI-36, OAI-33, OAI-7**. Four of these ask "is this worth doing" rather than "do
 this", and the honest answer for at least OAI-42, OAI-43 and OAI-46 may be no. They are kept because
 each was rejected on judgement rather than on evidence, and the judgement is worth recording once.
 OAI-33 and OAI-7 are housekeeping that costs one file each.
-**Tier 9 — credential disclosure the OAI-61 ladder found and scoped out.** **OAI-91, OAI-92, OAI-93,
-OAI-95**. OAI-95 is the withdrawn permission hardening and sits here rather than in tier 1 because,
+**Tier 8 — credential disclosure a ladder found and scoped out.** **OAI-91, OAI-92, OAI-93,
+OAI-95, OAI-99, OAI-100, OAI-101, OAI-102**. The last four are OAI-94's residue and they double this
+tier, which is the finding: that feature made *one* output path safe and its reviews then enumerated
+four more, none of which it touched. OAI-102 leads them and is the one to do first — it is a
+one-function fix, and unlike every other item here the code already knows the value is a credential at
+the moment it prints it. OAI-95 is the withdrawn permission hardening and sits here rather than alongside the now-shipped OAI-94 because,
 unlike OAI-94, nothing regressed when it left: the pre-existing bare `chmodSync` is still in place, so
 the tree is where it was, not worse. The first three both
 concern a query string in `--base-url` reaching somewhere it is not announced. They sit last because
@@ -118,11 +114,19 @@ is submitted, and OAI-92 needs a cooperating server to fire. They are filed rath
 because widening a feature to cover every place a defect *could* also apply is how that feature stops
 converging — which the ladder that found them demonstrated at length.
 
-**Tier 10 — residue from the OAI-61 ladder, in code that SHIPPED.** **OAI-96, OAI-97, OAI-98**. These
+**Tier 9 — residue from the OAI-61 ladder, in code that SHIPPED.** **OAI-96, OAI-97, OAI-98**. These
 are last because none is wrong for a working install today, and first among equals is OAI-96, which is
 the only one touching code that just landed. They are recorded rather than carried into OAI-94/95
 because they belong to the capability gate, not to the withdrawn mechanisms — filing them separately is
 what stops the withdrawal from becoming a place unrelated findings go to be forgotten.
+
+**Tier 10 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-103, OAI-104**.
+Both are the same class rather than the same subsystem: a statement this repo makes about itself that
+nothing checks. OAI-104 is the sharper one and is nearly free — this file's own tier/heading invariant
+is asserted to be enforced by a script that does not exist, so the guard that was supposed to make
+drift impossible has never once run. OAI-103 is the same shape one level out: a machine-readable
+payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
+as a clean one.
 
 <!-- /tiers -->
 
@@ -161,7 +165,7 @@ arm.
 ### The parked theme — "make `/oai:review` trustworthy before extending the plugin further"
 
 Parked 2026-08-04 by the direction change, and kept here rather than in `BACKLOG_PARKED.md` because it
-is context for Tier 7 rather than an item. Everything in it was sized to answer "is the reviewer
+is context for Tier 6 rather than an item. Everything in it was sized to answer "is the reviewer
 trustworthy" before extending the plugin — and OAI-51 then found the reviewer was crashing the model
 backend with its own request, so the thing being measured was broken throughout. Stage 0 changed how
 replies are produced, which invalidates any baseline taken before it.
@@ -229,32 +233,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 > approval, producing the OAI-61 … OAI-73 block. Its record is in `BACKLOG_DONE.md`.
 
 ## Items
-
-- **OAI-94** — **the credential notice prints the credential it is warning about.**
-  `task-submit.mjs` `warnAboutQueryCredentials` interpolates the query string into its own warning:
-  `Note: the base URL's query string (?api_key=SUPERSECRET123) is stored with this job…`, on **stderr**,
-  which reaches terminals, CI logs and the delegate agent's captured output. **Observed on a real
-  submission**, not argued. It also promises "readable only by you", which `openStore` cannot guarantee.
-  **Provenance, stated because it is unusual:** OAI-61's review ladder found this, fixed it, and had the
-  fix reviewed across four passes — then gave it back. That feature was returned to its approved scope
-  by a partial plan withdrawal (`adr/033`), and the notice went with it. Nothing here is undesigned.
-  The withdrawn design, in order, each version killed by an execution path that falsified its claim:
-  (1) interpolate the query string — printed the secret; (2) print parameter NAMES only — defeated by a
-  bare valueless token `?SUPERSECRET123`, which parses AS a name; (3) claim the key "goes to the
-  provider" — false when a `--file` is missing and nothing is sent; (4) "if this submission succeeds" —
-  false when `spawnWorker` throws after `insertJob`: row written, exit 2, no job id; (5) "readable only
-  by you" — a guarantee the code cannot give; (6) state only the MECHANISM plus unfalsifiable advice —
-  which a reviewer then showed had bought safety by becoming uninformative. The landing design is
-  Codex's: *"If this submission creates a job record, its full endpoint — including this query string —
-  will be written to jobs.db; a later worker-start failure does not remove it"* — conditional, true on
-  every path, and interpolating nothing. **Carry these open findings:** the notice must be gated on the
-  whole endpoint rather than on `profile.query` alone, since a credential in the PATH is persisted with
-  no notice at all and is disclosed on MORE surfaces; and `provider.mjs:101` interpolates the `Location`
-  header verbatim, so a query-preserving redirect (the norm) puts the credential on five surfaces —
-  stderr, the persisted `failure` column, the worker log, the bare `/oai:status` list and `/oai:result`.
-  **Also carry the test lesson**, which cost four passes: every assertion about this notice ran on a
-  REFUSAL path where the notice never fires, so a real injected leak reported green. Any fix needs a
-  success-path witness, and a redirect witness answering `301` with `location: <full request URI>`.
 
 - **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
   OAI-52 item (3) recorded "a `SQLITE_BUSY` expiry is retried, never terminalized" as an untested
@@ -1743,6 +1721,53 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   in the withdrawn version, deleting the `-wal`/`-shm` entries from the narrowing list reddened
   **nothing**, and nothing asserted the directory mode at all.
 
+- **OAI-99** — **a query-preserving redirect puts the credential on five surfaces.** `provider.mjs`
+  `assertOk` interpolates `response.headers.location` verbatim into a `UserError` on any 3xx. A server
+  that redirects while preserving the query — the ordinary shape for a gateway moving `/v1` — echoes
+  `?api_key=…` straight back, and that message reaches stderr, the job log, the persisted `error`
+  column, `/oai:status` and `/oai:result`. Sibling to OAI-92, which is the same module doing the same
+  thing with a 4xx body rather than a header. Found by OAI-94's probe and confirmed by reading the
+  code; filed rather than folded in because it is a distinct output path with its own redaction
+  semantics, and OAI-94's notice is safe and true without it.
+  **A required test travels with this item, and it is the reason the item exists rather than a note:**
+  OAI-94's backlog entry asked for a witness answering `301` with `location: <the full request URI>`
+  and asserting the credential does not appear in the resulting message. That witness had no subject
+  in OAI-94 — it exercises `provider.mjs`, which that change deliberately did not touch — so it was
+  neither written nor silently dropped. Whoever fixes this writes it.
+
+- **OAI-100** — **a path credential reaches stderr on any failed request.** `provider.mjs`
+  `describeFailure` interpolates `profile.baseUrl` into three messages — connection refused (`:64`),
+  DNS failure (`:69`) and the generic transport wording (`:74`). `normalizeBaseUrl` keeps a credential
+  sitting in the URL **path** inside `baseUrl`, so `--base-url https://host/v1/sk-live-…` discloses it
+  the moment the server is unreachable. It fires inside `prepareTask`, which OAI-94's notice now runs
+  before — so the caller is warned that the endpoint will be persisted and then has the credential
+  disclosed to stderr anyway, by a different code path that says nothing. Found by OAI-94's
+  compensating security lens — that feature's `security-review` stage could not launch at all, SEVEN
+  deterministic failures across seven passes, and the cause is now confirmed structural rather than
+  flaky: the stage is a built-in command whose own frontmatter interpolates `git diff --name-only
+  origin/HEAD...` before reading its argument, and this repo has no git remote — so the lens stood in for it — and verified by
+  reading the three call sites.
+
+- **OAI-101** — **`/oai:status` prints the persisted endpoint, path credential included.**
+  `job-render.mjs:122` renders `provider` as `${transport.name} → ${transport.baseUrl}`. The row holds
+  the effective endpoint by design (a worker rebuilding from the provider name alone would call
+  somewhere submission never validated — `adr/014`), so a credential in the path is displayed by an
+  ordinary status check, and the delegate agent captures that output. The query string is not shown
+  here, which is why this is separate from OAI-91: the disclosure is specific to the path form. Fix is
+  a render-time redaction, not a change to what is stored.
+
+- **OAI-102** — **the refusal for a credential in a URL prints that credential.** `config.mjs:141-145`
+  rejects a `--base-url` carrying userinfo and builds the message from `raw` — the complete URL — so
+  `http://user:hunter2@host/v1` puts `hunter2` on stderr. **The other two exits from `normalizeBaseUrl`
+  echo `raw` too** and a fix that covers only the credentials branch is half-done: `:137` (non-http
+  scheme) is reachable with userinfo intact, and `:132` (unparseable) can hold one in a string that
+  never became a URL. This is the sharpest member of the tier, because the argument that protects the
+  others does not apply: OAI-94 declined to gate its notice on "does this look like a secret" since the
+  code cannot know — but here the code *does* know, since the branch printing the credential is the
+  branch that exists because it identified one. Found by OAI-94's `codex-adversarial` pass 4 at high
+  confidence and confirmed independently; filed rather than fixed there because `config.mjs` is
+  pre-existing code that diff does not touch, on exactly the reasoning that filed OAI-100.
+
 - **OAI-96** — **three pieces of residue in the shipped `node:sqlite` guard.** All found by OAI-61's
   final pass, all in code that landed in `2312c47`, none blocking.
   (a) **`throw null` is still reachable.** `job-store.mjs`'s comment claims the invariant holds "by
@@ -1773,6 +1798,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   now two observations against roughly fourteen clean full-suite runs, and it remains unidentified.
   Anyone picking this up should capture `npm test` to a file rather than grepping a live pipe, since
   both observations lost the failing test's name that way.
+  **Third occurrence, 2026-08-07, during OAI-94's pass-6 batch**: `actual: 2, expected: 0` mid-batch,
+  then three consecutive captured green runs at 637/637. The failing test's name was lost to a live
+  pipe for the THIRD time, by the same person who wrote the sentence above telling them not to — which
+  is the actual finding here. The rate is now three observations against roughly thirty clean
+  full-suite runs. Anyone picking this up should make the capture the default, not the advice:
+  a note that has failed to be followed three times is not a note, it is a missing default.
 
 - **OAI-98** — **job state is trusted completely once it is on disk.** Two findings from OAI-61's
   `security-review`, both needing write access to the state directory — a shared `XDG_STATE_HOME`, a
@@ -1788,3 +1819,25 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the prompt — recoverable in freelist pages of a file whose permissions are the only protection.
   Deliberately separate from OAI-95: hardening the *modes* does not help once the bytes are readable by
   a process that legitimately opened the file.
+
+- **OAI-103** — **`--json` omits the caveats the human-readable reply prints.** `/oai:task --json`
+  carries `templateNotes` as an array precisely so a harness cannot read a crowded reply as a clean
+  one (ADR 016). The `--background` submission path does not: it returns a job id, and the notes a
+  foreground run would have printed — including the endpoint-persistence notice ADR 019 added — reach
+  stderr only, where a `--json` consumer parsing stdout never sees them. So the machine-readable form
+  is quieter than the human one about exactly the things a machine should not silently drop. Found
+  during OAI-94's ladder and filed rather than folded in, because the fix is a payload decision that
+  collides with OAI-57's, not a change to the notice.
+
+- **OAI-104** — **this file's structural invariant is enforced by a script that does not exist.**
+  `BACKLOG.md` states that the tier list "is asserted against the heading order below by the
+  sweep's close-out script; the two cannot drift apart silently." There is no such script anywhere in
+  the repo, and no test in `tests/` checks the invariant either — so the two *can* drift apart
+  silently, and the sentence promising otherwise is the reason nobody would look. Verified by search
+  during OAI-94's residue step, after a `scout` had to check the invariant by hand (66 IDs, exact
+  match) precisely because nothing automated does — and then, minutes later, a scripted edit to this
+  very file deleted 28 headings and nothing but a manual count noticed. This is the repo's own
+  "a check that reports success may be one that cannot fail" class, applied to its tracker: the fix is
+  either a real guard in `tests/` — the natural home, since `tests/structure.test.js` already guards
+  file size and `tests/plugin.test.js` guards the command surface — or deleting the claim. Do not
+  leave the sentence standing without one of the two.

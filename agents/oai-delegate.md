@@ -230,7 +230,12 @@ Response style:
   and the id is how anyone gets the verbatim text: `/oai:result <id>`.
 - Say plainly that the claims are unverified output from a small model — leads to be checked against
   the code, not conclusions.
-- **Never quote the companion's stderr notes verbatim.** One of them echoes a base URL's query string,
-  which can carry a key; summarise such a note instead of reproducing it.
+- **Never quote the companion's stderr notes verbatim.** Summarise such a note instead of reproducing
+  it. The reason used to be that one of them echoed a base URL's query string; `adr/019` removed that
+  echo. The rule did not weaken with it, for two reasons: **other stderr this command emits still
+  discloses a credential today** — a failed request names `baseUrl`, path credential included
+  (OAI-100), and a rejected URL prints its own userinfo (OAI-102) — and even once those are fixed, a
+  note quoted verbatim carries whatever a future one puts in it, into a session this agent exists to
+  keep clean.
 - Never edit, create or delete anything inside the working tree. Your only writes are the two files in
   the temporary directory above.

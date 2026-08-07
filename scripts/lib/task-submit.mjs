@@ -26,18 +26,38 @@ function digestsOf(files) {
 /**
  * Said out loud, because the alternative is a claim this plugin cannot make.
  *
- * `normalizeBaseUrl` keeps a base URL's query string verbatim, and the job row
- * stores it — so a `--base-url` carrying `?api_key=…` puts a real secret into
- * persisted state. "The credential is never persisted" is true of the profile's
- * key and false of this one. The row is `0600` and the directory `0700`, which
- * limits who can read it but does not make the sentence true, so the user is
- * told rather than reassured.
+ * `buildJob` persists the EFFECTIVE endpoint, so a `--base-url` carrying a
+ * credential — `?api_key=…`, or a token sitting in the path, which
+ * `normalizeBaseUrl` keeps in `baseUrl` — puts a real secret into persisted
+ * state. Three things about this notice are deliberate, and each replaces a
+ * wording an execution path falsified (`adr/019`):
+ *
+ * It takes **no argument**, because a function handed the URL is a function
+ * that will eventually interpolate it: the version this replaces printed the
+ * query string into its own warning about that query string, on stderr, which
+ * reaches terminals, CI logs and the delegate agent's captured output.
+ *
+ * It is **unconditional**, because gating needs the code to know which part of
+ * a URL is a secret and it cannot: `?SUPERSECRET123` parses as a parameter
+ * NAME, and a credential in the path is persisted with the same consequence and
+ * matches no query test at all.
+ *
+ * It is **conditional in what it says** rather than in when it fires. "If this
+ * submission creates a job record" survives a failure before `insertJob`, and
+ * the worker-start clause is true precisely because `spawnWorker` runs after
+ * it. It promises nothing about who can read the file: that guarantee belongs
+ * to hardening this tree does not yet have (OAI-95).
+ *
+ * The sentence is NOT exported, and `tests/credential-notice.test.js` writes it
+ * out again rather than importing it. That duplication is deliberate: an
+ * imported expectation moves with the code, so adding an equivalent assurance
+ * here would change both sides at once and the test would pass. The second copy
+ * is what makes a wording change fail.
  */
-function warnAboutQueryCredentials(profile) {
-  if (!profile.query) return;
+function noteEndpointPersistence() {
   process.stderr.write(
-    `Note: the base URL's query string (${profile.query}) is stored with this job so the worker can reach the same endpoint. ` +
-      'If it carries a key, that key is now on disk — readable only by you, but on disk.\n',
+    'Note: if this submission creates a job record, its full endpoint — including any query string — ' +
+      'will be written to jobs.db; a later worker-start failure does not remove it.\n',
   );
 }
 
@@ -95,8 +115,8 @@ export async function submitTask(args) {
   const options = { ...args.options };
   if (options['max-seconds'] === undefined) options['max-seconds'] = String(DEFAULT_BACKGROUND_MAX_SECONDS);
 
+  noteEndpointPersistence();
   const prep = await prepareTask({ ...args, options });
-  warnAboutQueryCredentials(prep.profile);
 
   // The estimate belongs here MORE than on the foreground path, not less: "shown
   // before submission" is what the plan asked for, and this is submission. It is

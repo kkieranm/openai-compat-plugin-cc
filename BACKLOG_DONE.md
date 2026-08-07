@@ -1,5 +1,32 @@
 # Done
 
+- **OAI-94** — a credential notice that cannot print the credential. Done 2026-08-07, decision record
+  [ADR 019](adr/019-a-notice-that-cannot-print-the-secret.md). `warnAboutQueryCredentials` is replaced
+  by `noteEndpointPersistence()`, which **takes no argument, gates on nothing past
+  `requireDatabaseSync()`, and runs before anything else writes to stderr**. Seven review-ladder
+  passes, dual-approved at pass 7.
+  **The position is the part that was nearly lost.** The call originally kept its old spot below
+  `prepareTask`, and pass 5's review dismissed the resulting delivery risk on a measurement that varied
+  stderr volume *after* the notice and never before it — the wrong axis. Both approvers then rejected
+  the feature at the verdict point on the same defect, reproduced against the real CLI: a 1 MB provider
+  name (config puts no ceiling on one) pushes the notice past the pipe buffer, `process.exit(2)`
+  discards what has not drained, and the notice is **lost on a run that has already written a row
+  holding the credential** — 131245 bytes of stderr, notice absent. The appealing remedy,
+  `fs.writeSync(2, …)`, was measured and **does not work**: `process.stderr.write` queues in userland
+  and flushes asynchronously. Moving the call above `prepareTask` does, at an accepted cost in
+  precision — it now also fires on submissions that persist nothing, where the sentence stays true
+  because its conditional is "if this submission creates a job record".
+  **What it left behind:** four further credential disclosures its own reviews found and filed rather
+  than fixed — OAI-99, OAI-100, OAI-101, OAI-102 — so six now stand enumerated and unfixed. One output
+  path was made safe. OAI-100 is the sharpest: the notice now *precedes* the transport errors that
+  disclose a path credential, so a caller is warned and then leaked to by a different code path that
+  says nothing.
+  **`security-review` never ran, in any of the seven passes**, and this was a credentials feature. Not
+  a flaky launch: the stage is a built-in command whose frontmatter interpolates
+  `git diff --name-only origin/HEAD...` before reading its argument, and this repo has no remote. A
+  security lens folded into `codex-adversarial` stood in for it and is what found OAI-100. Filed
+  against the toolchain, not this repo.
+
 - **OAI-61** — capability-gate `node:sqlite` so the plugin loads on the runtimes `package.json`
   declares. Done 2026-08-06. **Shipped NARROWED**: a partial plan withdrawal under `adr/033` returned it
   to its approved scope after six review-ladder passes established that the build had grown three

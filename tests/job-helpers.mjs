@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { databasePath, openStore } from '../scripts/lib/job-store.mjs';
 import { jobById, listJobs } from '../scripts/lib/job-record.mjs';
-import { respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { COMPANION, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 
 // `node:sqlite` is a capability, not a given: it is absent on Node 18.18–22.12,
 // on builds compiled without SQLite, and under `--no-experimental-sqlite`. A
@@ -241,4 +241,53 @@ export async function waitForState(state, id, states, { timeoutMs = 15_000 } = {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`job ${id} never reached ${states.join('|')}; last state was ${last?.state ?? '(no row)'}`);
+}
+
+/**
+ * Run the companion with a deliberately SLOW stderr consumer — the one thing
+ * `runCompanion` cannot do, since it drains as fast as the child writes and so
+ * leaves nothing pending for `process.exit(2)` to discard. Discarding it is the
+ * defect under test, so the slow reader is part of the fixture (`adr/019`).
+ * Resolves on `'close'`, so no descriptor outlives the test.
+ */
+export function submitWithSlowStderr(args, { configPath, state }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [COMPANION, ...args], {
+      env: { ...process.env, OAI_PLUGIN_CONFIG: configPath, OAI_PLUGIN_STATE: state },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    // A wedge must REJECT, never resolve. Resolving with what was collected would
+    // turn the hang into a PASS: `close` reports a null status after a kill, which
+    // satisfies the nonzero-exit assertion, and the notice may already have been
+    // delivered before the wedge. So the backstop fails by name or not at all.
+    // 30s because this is a hang backstop and not a functional assertion — a tight
+    // timer under load would add a second flake source to the file that most needs
+    // to be trustworthy (OAI-97).
+    const deadline = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('the companion never exited: the slow-stderr fixture wedged'));
+    }, 30_000);
+    // Stated limit: this reject path is itself UNEXERCISED — nothing in the suite
+    // wedges, so the backstop has never fired. It is a hang guard, not a tested
+    // invariant, and saying so is cheaper than implying coverage it does not have.
+    let stderr = '';
+    child.stdout.resume();
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      child.stderr.pause();
+      // 30ms: long enough that the child outruns the reader, short enough not to pad the suite.
+      setTimeout(() => child.stderr.resume(), 30);
+    });
+    // Mirrors `runCompanion`: a spawn failure is an unhandled 'error' event
+    // otherwise, which crashes the runner instead of failing this test.
+    child.on('error', (error) => {
+      clearTimeout(deadline);
+      reject(error);
+    });
+    child.on('close', (status) => {
+      clearTimeout(deadline);
+      resolve({ status, stderr });
+    });
+  });
 }
