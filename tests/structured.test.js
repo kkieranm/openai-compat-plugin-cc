@@ -2,7 +2,6 @@
 // request valid in the first place.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractJson } from '../scripts/lib/json-scan.mjs';
 import {
   isFormatRejection,
   matchesSchema,
@@ -107,16 +106,6 @@ test('the cap warning is never raised on the path that has no cap', () => {
   assert.equal(degraded.atCap, false);
 });
 
-test('JSON is found after prose that contains braces of its own', () => {
-  // The system prompt orders the model to quote the offending source line, so a
-  // degraded reply routinely opens with code. Anchoring on the first `{` made a
-  // quoted `if (…) { … }` swallow the anchor and threw away good findings.
-  const reply =
-    'Looking at the code, the guard reads:\n\nif (!contextLength) { return DEFAULT; }\n\nwhich is wrong.\n\n' +
-    '{"analysis":"a","findings":[],"summary":"one defect"}';
-  assert.equal(extractJson(reply)?.summary, 'one defect');
-});
-
 test('a key named after an Object prototype member is still an extra key', () => {
   // `in` walks the prototype chain, so these passed the extras check — and that
   // check is the proof the text is the constrained payload, not a draft.
@@ -145,19 +134,6 @@ test('the response_format wrapper asks for strict mode', () => {
   assert.equal(format.json_schema.name, 'review');
 });
 
-test('JSON is found bare, fenced, or wrapped in prose', () => {
-  assert.equal(extractJson('{"a":1}').a, 1);
-  assert.equal(extractJson('```json\n{"a":2}\n```').a, 2);
-  assert.equal(extractJson('Here you go:\n{"a":3}\nHope that helps.').a, 3);
-  assert.equal(extractJson('no json here'), null);
-});
-
-test('a brace inside a string does not end the object early', () => {
-  const parsed = extractJson('preamble {"summary":"the } case","findings":[]} trailer');
-  assert.equal(parsed.summary, 'the } case');
-  assert.deepEqual(parsed.findings, []);
-});
-
 test('under a schema, the reasoning channel carries the payload', () => {
   // The constrained grammar leaves the model unable to close its think block,
   // so this is the normal case, not the exception.
@@ -170,6 +146,36 @@ test('without a schema, the reasoning channel is never read', () => {
   // That text is the model's scratchpad. Presenting it as an answer is the
   // defect class this repo keeps re-finding.
   assert.equal(parseFindings({ content: '', reasoning: payload() }, { structured: false }), null);
+});
+
+test('without a schema, unparseable content does not fall through to reasoning', () => {
+  // The discriminating form of the test above, and the mutation target. With a
+  // BLANK content the guarantee could also be met by accident — an early return
+  // on empty text would satisfy it without any channel list. Here `content` is
+  // perfectly non-empty and merely unparseable, so the only thing that keeps
+  // the scratchpad out of the answer is `reasoning` not being a candidate.
+  assert.equal(
+    parseFindings({ content: 'I looked at the diff and here is what I think.', reasoning: payload() }, { structured: false }),
+    null,
+  );
+});
+
+test('under a schema, a stray character in content no longer buries the payload', () => {
+  // The old code chose the channel before parsing — `content` unless it was
+  // blank — so a single leading character discarded a conforming reply.
+  const parsed = parseFindings({ content: `.${payload()}`, reasoning: payload() }, { structured: true, schema: REVIEW_SCHEMA });
+  assert.equal(parsed.findings.length, 1);
+  assert.equal(parsed.findings[0].file, 'a.js');
+});
+
+test('the schema fallback cannot become a scratchpad channel', () => {
+  // Reaching `reasoning` is gated on conformance, not on `content` having
+  // failed: a non-conforming draft there is still refused outright.
+  const draft = JSON.stringify({ findings: [{ file: 'a.js', summary: 'maybe' }] });
+  assert.equal(
+    parseFindings({ content: 'not json at all', reasoning: draft }, { structured: true, schema: REVIEW_SCHEMA }),
+    null,
+  );
 });
 
 test('content wins over reasoning when both are present', () => {

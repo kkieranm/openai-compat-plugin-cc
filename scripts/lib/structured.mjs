@@ -194,9 +194,28 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   if (structured && !schema) {
     throw new TypeError('parseFindings needs the exact schema the request sent when structured');
   }
-  const text = structured && !content.trim() ? reasoning : content;
-  if (!text?.trim()) return null;
+  // The channel list IS the ADR 003 guarantee, written where a reader can see
+  // it rather than inferred from a ternary further down. Without a schema there
+  // is exactly one channel to read, and `reasoning` is not in the list at all —
+  // so no later change to the parsing below can accidentally reach it.
+  const channels = structured ? [content, reasoning] : [content];
 
+  // Tried in order, and the FIRST that yields a usable payload wins. It used to
+  // be chosen before the parse — `content` unless it was blank — so under a
+  // schema one stray character in `content` buried a perfectly good payload in
+  // `reasoning` and the user was told the model returned the wrong shape. The
+  // blank-content case is not special here; a blank channel simply fails to
+  // parse like any other.
+  for (const channel of channels) {
+    if (!channel?.trim()) continue;
+    const found = findingsIn(channel, { structured, schema });
+    if (found) return found;
+  }
+  return null;
+}
+
+/** One channel's text, read as findings — or null if it does not carry any. */
+function findingsIn(text, { structured, schema }) {
   const parsed = extractJson(text);
   // A bare top-level array is the SAME REPLY as `{findings: [...]}`, and asked
   // in prose a model emits one about as readily as the other. It used to be
@@ -210,7 +229,8 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   // Under a schema, conformance is the whole proof. A server that accepts
   // `response_format` without enforcing it would otherwise let a scratchpad
   // draft — the first `{...}` in the reasoning text — be shipped as findings,
-  // which is exactly what reading that channel is supposed to rule out.
+  // which is exactly what reading that channel is supposed to rule out. It is
+  // also what keeps the fallback above from becoming a scratchpad channel.
   // Without a schema nothing was promised, so repair what is repairable.
   if (structured && !matchesSchema(shaped, schema)) return null;
 
