@@ -762,8 +762,11 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   idempotency key; note that Codex proposed the full transactional design and it is far more than this
   earns.
 
-- **OAI-112** — **The candidate-selection design is under a PARTIAL PLAN WITHDRAWAL, and the user
-  adjudicates part versus whole.** Filed 2026-08-07 from OAI-84's review ladder, which ran six passes
+- **OAI-112** — **The candidate-selection design is under a PARTIAL PLAN WITHDRAWAL. ADJUDICATED
+  PARTIAL BY THE USER, 2026-08-07** — so the two repairs OAI-84 shipped STAY, and only the
+  candidate-selection design is replaced. The replacement goes through a fresh step-3 plan gate and
+  earns its own ladder; the one-per-feature replacement budget is not consumed until that ladder's
+  ledger opens. Filed 2026-08-07 from OAI-84's review ladder, which ran six passes
   and ended WITHOUT dual approval (both approvers returned `CHANGES-REQUIRED`). What is withdrawn is
   only the candidate-selection design that grew across passes 2-5 — **the two repairs OAI-84 was filed
   for both stand and are audited**: the channel fallback under `--structured-output`, and the bare

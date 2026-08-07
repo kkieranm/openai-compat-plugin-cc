@@ -45,8 +45,10 @@ failure of the run: a partial plan withdrawal was open and gate-blocking.
 - Both repairs the item was filed for **landed and were audited** — commits through `674cf49`, suite
   692/0 verified in a committed copy, verify skill all three steps including a CLI before/after control.
 - What is **withdrawn** is the candidate-selection design that grew across passes 2-5. Filed as
-  **OAI-112**; the user adjudicates **part versus whole**, and the one-per-feature replacement-ladder
-  budget is UNSPENT. Replacement code is not eligible until a fresh step-3 plan gate closes.
+  **OAI-112**. **The user adjudicated it PARTIAL on 2026-08-07** — so the two shipped repairs STAY and
+  only candidate selection is replaced. Replacement code is not eligible until a fresh step-3 plan
+  gate closes, and the one-per-feature replacement-ladder budget is not consumed until that
+  replacement ladder's ledger opens. **Do not re-ask this question.**
 - Two live defects are filed separately and are fixable without that decision: **OAI-113** (quadratic
   scan, measured 39.15s end-to-end against 0.13s/0.14s controls) and **OAI-114** (a primitive sibling
   discards a whole findings list — a regression from base).
