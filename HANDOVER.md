@@ -4,10 +4,7 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1, 2 and 3 are
-complete and all three were non-clean; pass 3's between-pass batch has LANDED at `9a38a2a` with the
-suite at 680 pass / 0 fail, and **pass 4 is required** because pass 3 raised two code defects — both
-of them inside pass 2's own fixes. Pass 4 runs the full table against `9a38a2a`. The plan is
+**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1-4 are complete and all were non-clean; pass 4's batch has LANDED at `e5f5828` with the suite at 686 pass / 0 fail, and **pass 5 is required**. Pass 4 replaced the candidate-selection design outright on Codex consensus rather than patching it again. The plan is
 `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
 the size budget forced a new file into the file list. The ledger mirror lives in this session's
 scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
@@ -17,6 +14,12 @@ under "Environment recorded at run start" below. It was stale once already (it c
 unstarted at a HEAD where both were committed, quoted a suite count two commits out of date, and
 pointed `git log` at a commit five back), which the ladder caught as a finding. Re-write it whenever
 the state it describes changes.
+
+**Pass 5's closing rule, fixed in advance so it cannot be renegotiated under pressure:** if pass 5
+returns findings inside pass 4's own batch again, the ladder STOPS there and takes the verdict point
+with them open and honestly mapped. Five consecutive passes finding defects in the previous batch
+would mean the module needs a rewrite the ladder cannot supervise — that is a residue item for the
+user, not a pass 6.
 
 ## Where to pick up
 
