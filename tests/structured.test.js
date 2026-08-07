@@ -179,6 +179,10 @@ test('the schema fallback cannot become a scratchpad channel', () => {
 });
 
 test('content wins over reasoning when both are present', () => {
+  // This predates the ordered-attempt loop and is now the ONLY thing pinning
+  // candidate order: the other channel tests all have exactly one channel that
+  // can win, so they would pass just as happily against `[reasoning, content]`.
+  // Reorder that list and this is the single test that goes red.
   const parsed = parseFindings(
     { content: payload([{ ...FINDING, file: 'real.js' }]), reasoning: payload([{ ...FINDING, file: 'scratch.js' }]) },
     { structured: true, schema: REVIEW_SCHEMA },

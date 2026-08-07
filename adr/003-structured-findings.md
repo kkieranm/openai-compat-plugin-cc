@@ -136,3 +136,47 @@ the hazard the diagnostic then detected.
 The residual case is narrower and is handled separately: a reply that parses *and* was cut
 (`finish_reason: length`) — complete JSON followed by a truncated tail. See the caveat added in
 `review.mjs`.
+
+## Amendment, 2026-08-07 — the channel is chosen by what parses, and one half of the item was filed against this ADR
+
+Two ways a reply was thrown away and reported as "no findings in the requested shape" (OAI-84).
+Neither was a new defect; both had been reachable since this ADR shipped, and one of them became
+*ordinary* the moment the 2026-08-04 amendment made prose-and-parse the default path.
+
+**A bare top-level array is now the same reply as `{findings: [...]}`.** It was not rejected by the
+`typeof` test — arrays pass that — but by `parsed.findings` being undefined, one line further on.
+Under a schema this never arose: the grammar produced the object. Asked for the shape *in prose*,
+which is what every ordinary review now does, a model emits a bare array about as readily as the
+wrapper. The array is wrapped before anything downstream reads it, so the two spellings cannot
+diverge on `dropped`, `summary` or the cap diagnostics — merely agreeing about accept/reject would
+leave two spellings of one reply producing two different results.
+
+The alternative considered and rejected was to accept `[]` but refuse a non-empty array whose
+elements all fail normalization. It makes the verdict depend on **spelling**: `["hello"]` would be
+unreadable while `{"findings":["hello"]}` already parses to `findings: [], dropped: 1` and reads as
+a clean review. That all-dropped-reads-as-clean hazard is real and is filed as its own item; it
+belongs to both spellings equally and is not repaired by making one of them worse.
+
+**Channel selection is no longer a guess made before the parse.** The old code picked `content`
+unless it was blank, so under a schema one stray character in `content` buried a conforming payload
+sitting in `reasoning`, and the user was told the model returned the wrong shape. It is now an
+ordered attempt over a candidate list, the first usable payload winning, with `matchesSchema` still
+the proof under a schema — so the fallback cannot become a scratchpad channel, which is the whole
+point of the rule above.
+
+**What the item got wrong, recorded because acting on it would have reversed this ADR.** OAI-84 filed
+the channel defect as applying "regardless of `structuredOutput`" and proposed a try-the-other-channel
+fallback. That claim is false. On the default path `reasoning` was never read at all, deliberately,
+for the reason stated in the Decision above: without a grammar that text is the model's scratchpad.
+The filed fix would have shipped scratchpad as findings. So the channel repair lands **only** under
+`--structured-output`, and the default path's candidate list is written out as a list containing
+`content` alone — the guarantee stated where a reader can see it, rather than left as a consequence
+of a ternary. Its guard is asserted with **non-empty unparseable** content, because with blank
+content an early return on empty text would satisfy the assertion without any channel list at all:
+the test would pass against the mutation it exists to catch.
+
+**A seam moved.** Pulling JSON out of text that was not promised to be JSON is not structured-output
+dialect, and `structured.mjs` is the module that owns dialect. `FENCE`, `balancedObject` and
+`extractJson` now live in `scripts/lib/json-scan.mjs`. The trigger was the size budget rather than
+taste, and the move is behaviour-preserving — evidenced by its pre-existing cases passing unchanged
+either side of it, not by the suite count, which new witnesses also moved.

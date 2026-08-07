@@ -27,7 +27,11 @@ small — see [ADR 005](adr/005-whole-files-for-review.md).
 2026-08-04 it does not by default**: a schema builds a grammar in LM Studio whose lexer dies at ~14k
 generated tokens and segfaults the model process, which cost ~38% of long requests and was
 misdiagnosed as server flakiness for four days (OAI-51). The ordinary path now asks for the shape in
-prose and parses leniently; `--structured-output` opts back in for a server known not to have that
+prose and parses leniently — a bare top-level array is the same reply as `{findings: […]}`, and the
+channel is an ordered attempt over a candidate list that is `[content]` alone without a schema, which
+is where that no-scratchpad guarantee is now written rather than inferred (the prose-to-JSON scan is
+not dialect and lives in `scripts/lib/json-scan.mjs`); `--structured-output` opts back in for a
+server known not to have that
 grammar engine — see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
 see [ADR 004](adr/004-bounding-the-review-reply.md).
