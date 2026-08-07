@@ -1,6 +1,7 @@
-// Asking an OpenAI-compatible server for JSON, and getting it back out again.
-// This is the one module that encodes structured-output dialect: see ADR 003.
-
+// Asking an OpenAI-compatible server for JSON, and reading what comes back as
+// findings. This is the one module that encodes structured-output dialect: see
+// ADR 003. Pulling JSON out of prose is NOT dialect and lives in `json-scan.mjs`.
+import { extractJson } from './json-scan.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
 
 const SEVERITIES = new Set(['high', 'medium', 'low']);
@@ -57,75 +58,6 @@ export function schemaInstruction(schema) {
     'Reply with JSON only — no prose, no markdown fence — matching this JSON Schema exactly:\n' +
     `${JSON.stringify(schema)}`
   );
-}
-
-const FENCE = /```(?:json)?\s*\n([\s\S]*?)```/;
-
-/**
- * Find the balanced object starting at or after `from`. String-aware, so a brace
- * inside a quoted value (`"summary": "the } case"`) does not close it early.
- */
-function balancedObject(text, from = 0) {
-  const start = text.indexOf('{', from);
-  if (start === -1) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = start; index < text.length; index += 1) {
-    const character = text[index];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (inString) {
-      if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') inString = true;
-    else if (character === '{') depth += 1;
-    else if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return { json: text.slice(start, index + 1), start };
-    }
-  }
-  return null;
-}
-
-/**
- * Parse JSON out of a reply that may be bare, fenced, or wrapped in prose.
- *
- * Every balanced object is tried, not just the first. The system prompt orders
- * the model to quote the offending source line, so a degraded reply routinely
- * opens with code — and anchoring on the first `{` meant a quoted `if (x) { … }`
- * swallowed the anchor and a perfectly good findings object was thrown away,
- * with the user told the *model* returned the wrong shape. That is this repo's
- * most-repeated defect class, reported against ourselves.
- */
-export function extractJson(text) {
-  for (const candidate of [text.trim(), text.match(FENCE)?.[1]]) {
-    if (!candidate) continue;
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // Try the next shape; an unparseable candidate is expected here.
-    }
-  }
-
-  let from = 0;
-  for (;;) {
-    const found = balancedObject(text, from);
-    if (!found) return null;
-    try {
-      return JSON.parse(found.json);
-    } catch {
-      // Not it — resume the scan past this object's opening brace, so a nested
-      // or adjacent object later in the reply still gets its turn.
-      from = found.start + 1;
-    }
-  }
 }
 
 /**
@@ -266,20 +198,27 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   if (!text?.trim()) return null;
 
   const parsed = extractJson(text);
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.findings)) return null;
+  // A bare top-level array is the SAME REPLY as `{findings: [...]}`, and asked
+  // in prose a model emits one about as readily as the other. It used to be
+  // discarded — not on the `typeof` test, which arrays pass, but on
+  // `parsed.findings` being undefined. Wrapped HERE, before anything downstream
+  // reads it, so the two spellings cannot diverge rather than merely agreeing
+  // about accept/reject. See ADR 003.
+  const shaped = Array.isArray(parsed) ? { findings: parsed } : parsed;
+  if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return null;
 
   // Under a schema, conformance is the whole proof. A server that accepts
   // `response_format` without enforcing it would otherwise let a scratchpad
   // draft — the first `{...}` in the reasoning text — be shipped as findings,
   // which is exactly what reading that channel is supposed to rule out.
   // Without a schema nothing was promised, so repair what is repairable.
-  if (structured && !matchesSchema(parsed, schema)) return null;
+  if (structured && !matchesSchema(shaped, schema)) return null;
 
-  const normalized = parsed.findings.map(normalizeFinding);
+  const normalized = shaped.findings.map(normalizeFinding);
   return {
     findings: normalized.filter(Boolean),
     dropped: normalized.filter((finding) => !finding).length,
-    ...capDiagnostics(parsed, { structured, schema }),
-    summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+    ...capDiagnostics(shaped, { structured, schema }),
+    summary: typeof shaped.summary === 'string' ? shaped.summary.trim() : '',
   };
 }

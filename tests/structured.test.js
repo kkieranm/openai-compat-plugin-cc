@@ -2,8 +2,8 @@
 // request valid in the first place.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { extractJson } from '../scripts/lib/json-scan.mjs';
 import {
-  extractJson,
   isFormatRejection,
   matchesSchema,
   parseFindings,
@@ -238,4 +238,50 @@ test('only a rejection of the format itself triggers the fallback', () => {
   // A server that fails while generating has already accepted the format.
   assert.equal(isFormatRejection(Object.assign(new Error('response_format failed'), { status: 500 })), false);
   assert.equal(isFormatRejection(new Error('connection refused')), false);
+});
+
+test('a bare top-level array is the same reply as {findings: [...]}, field for field', () => {
+  // It used to be discarded and reported as "no findings in the requested
+  // shape", so a review that found two defects said it had found nothing
+  // readable. Asked for findings in prose — the default since ADR 003's
+  // amendment — a model answers with a bare array about as readily as with the
+  // wrapper, so this was reachable on every ordinary review.
+  //
+  // Asserted as EQUIVALENCE rather than as "the array works", because the defect
+  // this repair must not reintroduce is the two spellings diverging somewhere
+  // downstream: `dropped`, the cap diagnostics and `summary` all have to come
+  // out identical, not merely both non-null.
+  const findings = [FINDING, { ...FINDING, line: 9, summary: 'second' }];
+  const asArray = parseFindings({ content: JSON.stringify(findings), reasoning: '' }, { structured: false });
+  const asObject = parseFindings({ content: JSON.stringify({ findings }), reasoning: '' }, { structured: false });
+
+  assert.deepEqual(asArray, asObject, 'one spelling of a reply must not score differently from the other');
+  assert.equal(asArray.findings.length, 2);
+  assert.equal(asArray.findings[1].summary, 'second');
+});
+
+test('a bare empty array is a CLEAN review, not an unreadable one', () => {
+  // The distinction the `--json` contract rests on, in its cheapest form: a
+  // model that genuinely found nothing says so with `[]`, and that is a result.
+  // `null` would report the run as unparseable and lose a real verdict.
+  const parsed = parseFindings({ content: '[]', reasoning: '' }, { structured: false });
+  assert.notEqual(parsed, null, 'an empty array is an answer, not a failure to answer');
+  assert.deepEqual(parsed.findings, []);
+  assert.equal(parsed.dropped, 0);
+});
+
+test('a fenced bare array parses, because the fence is the shape models actually emit', () => {
+  const fenced = '```json\n' + JSON.stringify([FINDING]) + '\n```';
+  const parsed = parseFindings({ content: fenced, reasoning: '' }, { structured: false });
+  assert.equal(parsed.findings.length, 1);
+  assert.equal(parsed.findings[0].summary, 'boom');
+});
+
+test('accepting arrays does NOT turn unreadable prose into a clean review', () => {
+  // The guard on the repair. `findings: null` means nothing could be read;
+  // `findings: []` means it was read and was empty. Widening what parses must
+  // not widen it to text carrying no JSON at all — that collapse is the exact
+  // failure `tests/review-json.test.js` pins at the report level.
+  assert.equal(parseFindings({ content: 'I could not comply.', reasoning: '' }, { structured: false }), null);
+  assert.equal(parseFindings({ content: '   ', reasoning: '' }, { structured: false }), null);
 });

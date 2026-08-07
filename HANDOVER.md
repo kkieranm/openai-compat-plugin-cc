@@ -4,15 +4,16 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-Nothing started yet. Tree clean at `77c1eab`, suite green at HEAD (660/0, measured in a committed
-clone, not just the working tree).
+**OAI-84 phases 1 and 1b are BUILT and committed; phases 2 and 3 are not started.** Suite green at
+664/0. The plan is `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and then
+re-challenged mid-build because the size budget forced a new file into the file list.
 
 ## Where to pick up
 
 ```sh
 cd /Users/kieran/Code/openai-compat-plugin-cc
 bash ~/Code/dotfiles/tests/check-unattended-run.sh --show      # this run's file and item states
-git log --oneline -1                                            # expect 77c1eab if nothing landed
+git log --oneline -3                                            # OAI-84 phase 1+1b sit on top of 77c1eab
 ```
 
 Then run `/feature` on the topmost `open` item. **OAI-84 must land before OAI-19 runs** — the arm
