@@ -12,7 +12,8 @@ import { insertJob, markSpawned } from './job-record.mjs';
 import { persistRequest } from './job-request.mjs';
 import { sweep } from './job-retention.mjs';
 import { spawnWorker } from './job-spawn.mjs';
-import { isBusy, openStore, requireDatabaseSync } from './job-store.mjs';
+import { isBusy, withBusyRetry } from './job-busy.mjs';
+import { openStore, requireDatabaseSync } from './job-store.mjs';
 import { prepareTask } from './task-execute.mjs';
 
 /** An hour, unless the caller says otherwise. */
@@ -99,6 +100,65 @@ function sweepQuietly(db) {
 }
 
 /**
+ * Launch the worker and record that it exists — the half of submission that runs
+ * with a live process already spending money.
+ *
+ * Extracted from `submitTask` when the exhaustion handling pushed it past this
+ * repo's function-size budget; it is also the only part of submission whose
+ * failure handling turns on a process existing, so it names something real.
+ */
+async function spawnAndStamp(db, seq, job) {
+  const pid = await spawnWorker(seq);
+  // Stamped only once the child is known to exist, because it is what bounds how
+  // long a job may sit with no worker registered before it is treated as one
+  // that never started. Stamping it before the spawn would start that clock
+  // against a process that does not exist yet.
+  //
+  // Retried, and the reason is the line above it: by here a DETACHED WORKER IS
+  // ALREADY RUNNING and will make a real model call. A busy that escapes this
+  // write rejects `submitTask`, so `cmd-task.mjs` never prints the id — leaving
+  // the user billed for a job they cannot name, poll or cancel. `insertJob`
+  // above is deliberately NOT wrapped: it precedes the spawn, so a busy there
+  // means no row and no worker, which is a clean failure with nothing running.
+  //
+  // And the retry NARROWS that window without closing it, so exhausting the
+  // budget must not reject the submission either. The id is the more valuable
+  // of the two facts by a wide margin: without the stamp `livenessOf` falls back
+  // to `created_at`, which only shortens a startup grace window, and once the
+  // worker registers itself the stamp stops being consulted at all — whereas
+  // without the id there is no way to poll or cancel a job that is spending
+  // money. Reported rather than swallowed, on stderr, where the submitting
+  // session can see it.
+  //
+  // What that report may SAY is narrower than what this function knows. A spawn
+  // happened — that is observed, and it is why the id is worth printing. Whether
+  // the worker is still alive thirty seconds later is not: the retry only
+  // exhausts after a budget long enough for the child to have registered, run,
+  // failed, or died, and this process watched none of it. So the warning states
+  // the spawn, states that the submitter cannot see what followed, and points at
+  // `/oai:status`, which reads the row rather than guessing. Claiming "the job is
+  // running" here turned a submission that may have failed into apparent success.
+  //
+  // Reported on stderr and NOWHERE ELSE, which is a known gap rather than an
+  // oversight: a machine caller reads `--json`, whose background envelope is the
+  // same `{id, background: true}` a recorded start produces, so nothing in that
+  // channel distinguishes them. A field carrying it was built during review and
+  // reverted — it changed a published contract this feature's plan never
+  // approved — and the gap is filed as **OAI-108** instead.
+  try {
+    withBusyRetry(() => markSpawned(db, seq, new Date().toISOString()));
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+    process.stderr.write(
+      `Warning: job ${job.id} was spawned, but its start time could not be recorded — the database stayed locked. `
+      + 'The id below is valid; this session cannot see what the worker did next. '
+      + 'Check it with /oai:status.\n',
+    );
+  }
+  return pid;
+}
+
+/**
  * Submit, spawn, and report the id — the whole foreground half of a background
  * job.
  */
@@ -128,12 +188,8 @@ export async function submitTask(args) {
   const job = buildJob(prep);
   const seq = insertJob(db, job);
 
-  const pid = await spawnWorker(seq);
-  // Stamped only once the child is known to exist, because it is what bounds how
-  // long a job may sit with no worker registered before it is treated as one
-  // that never started. Stamping it before the spawn would start that clock
-  // against a process that does not exist yet.
-  markSpawned(db, seq, new Date().toISOString());
+  const pid = await spawnAndStamp(db, seq, job);
+
   // Submission is the only place a row is ever created, so it is the only place
   // the table grows and the only place worth sweeping. Putting it in the readers
   // instead would make `/oai:status` delete history while someone was looking at

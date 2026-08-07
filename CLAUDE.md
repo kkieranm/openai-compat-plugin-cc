@@ -102,6 +102,15 @@ before its log so that a crash in between leaves an orphan the same sweep alread
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
 see [ADR 014](adr/014-async-jobs.md).
 
+`scripts/lib/job-busy.mjs` `withBusyRetry` bounds a `SQLITE_BUSY` by elapsed time at six enumerated sites,
+while skip-only callers keep a bare `isBusy` catch and the store's open takes the exclusive WAL lock only
+when the journal mode is not already set — and **where a retry sits decides what it can cost**: the
+completed write sits outside the catch that publishes `failed`, and the `failed` write inside a catch of
+its own that discards neither error, because a throw raised in a `catch` replaces the pending rethrow, while
+an exhausted completed write hands its outcome to `salvageOutcome` — one `SALVAGED_OUTCOME` line on the log
+the worker already owns, so the answer outlives the row that would not take it — see
+[ADR 020](adr/020-a-contended-database-must-not-kill-live-work.md).
+
 `job-store.mjs` `requireDatabaseSync()` gates `node:sqlite` as a **capability rather than a version** —
 one caught dynamic import classified at first use, so a runtime without that builtin loses background
 jobs alone instead of every command, and an unrecognised fault keeps its cause instead of being

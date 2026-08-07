@@ -11,6 +11,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { UserError } from './errors.mjs';
+import { withBusyRetry } from './job-busy.mjs';
 
 /**
  * `node:sqlite` is the one thing this plugin needs that a runtime it supports may
@@ -123,19 +124,6 @@ export function logPathFor(seq) {
   return join(logsPath(), `${seq}.log`);
 }
 
-/**
- * A contended database has told the caller nothing about any job.
- *
- * Lives here rather than beside any one caller because it is a fact about
- * SQLite, not about queueing or retention: after `busy_timeout` expires, a
- * writer has learned only that someone else held the lock. Treating that as a
- * verdict would kill live work because two processes happened to write at once,
- * so every caller retries or defers instead.
- */
-export function isBusy(error) {
-  return error?.errcode === 5 || /database is locked|SQLITE_BUSY/i.test(error?.message ?? '');
-}
-
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS jobs (
     seq            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +179,23 @@ function applySchema(db) {
 }
 
 /**
+ * How long ONE open attempt may sit inside SQLite waiting for a lock.
+ *
+ * Deliberately far below `OPEN_BUDGET_MS`, and that is what makes the budget a
+ * real bound rather than a wish. Measured: with the handle's `busy_timeout` left
+ * at the 10s the returned handle wants, a first-creation `CREATE TABLE` under a
+ * held write lock blocks 10755ms — after which `withBusyRetry` finds five
+ * seconds already spent and rethrows WITHOUT EVER RETRYING. At 250ms the same
+ * statement fails in 330ms, so the retry loop governs and the budget means what
+ * it says. (`PRAGMA journal_mode = WAL` consults no busy handler at any value,
+ * which is why the retry loop, not this number, is what covers it.)
+ */
+const OPEN_ATTEMPT_TIMEOUT_MS = 250;
+
+/** The wall-clock budget for opening, retries included. */
+const OPEN_BUDGET_MS = 5_000;
+
+/**
  * Open the store, creating it if this is the first background job ever run.
  *
  * WAL because readers must not block on the one writer — `/oai:status` is run
@@ -203,21 +208,61 @@ function applySchema(db) {
  * the full text of every attached file, which is the user's source code.
  */
 export function openStore() {
+  // Five seconds, not the helper's thirty. The race this covers is two processes
+  // CREATING the database at the same moment, which the loser resolves in
+  // milliseconds — and every command opens the store, so an over-generous budget
+  // turns a rare race into a long unexplained pause on an ordinary `/oai:status`.
+  // Failing fast after five seconds of genuine contention is the better report.
+  return withBusyRetry(openOnce, { budgetMs: OPEN_BUDGET_MS });
+}
+
+function openOnce() {
   const Database = requireDatabaseSync();
   const path = databasePath();
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   mkdirSync(join(statePath(), 'logs'), { recursive: true, mode: 0o700 });
 
   const db = new Database(path);
-  // FIRST, before anything that takes a lock. Setting the journal mode is
-  // itself a locking operation, and with no timeout in force yet a second
-  // process opening the store at the same moment fails outright with "database
-  // is locked" — which is how two concurrent submissions killed each other
-  // before either had a job. Every statement after this line waits instead.
-  db.exec('PRAGMA busy_timeout = 10000');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  applySchema(db);
+  try {
+    // FIRST, before anything that takes a lock — but SHORT, because this whole
+    // function is one attempt inside `openStore`'s retry loop.
+    //
+    // It does NOT make waiting universal, and the comment that used to stand
+    // here said it did. Converting the journal takes an exclusive lock, and the
+    // busy handler is not consulted for it AT ALL — measured: under a held write
+    // lock the pragma fails in 0ms at a 10s timeout and at a 250ms one alike.
+    // This line threw "database is locked" three times in the wild, at exactly
+    // the statement whose safety it was asserting.
+    //
+    // So the WAL set is now CONDITIONAL. The journal mode persists in the file,
+    // which means it is needed on the first open of a database and on no other
+    // — and reading the current mode is an ordinary read that takes no
+    // exclusive lock. The common path therefore stops taking the lock rather
+    // than waiting on it, and `openStore`'s retry covers the one case left: two
+    // processes genuinely creating the database at the same moment.
+    db.exec(`PRAGMA busy_timeout = ${OPEN_ATTEMPT_TIMEOUT_MS}`);
+    if (db.prepare('PRAGMA journal_mode').get()?.journal_mode !== 'wal') {
+      db.exec('PRAGMA journal_mode = WAL');
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+    applySchema(db);
+    // Raised only once the open has succeeded. Everything above is retried by
+    // `openStore`, so a short wait there costs nothing and keeps the budget
+    // honest; everything BELOW this line is a caller's own statement, which has
+    // no retry loop around it and wants the long wait.
+    db.exec('PRAGMA busy_timeout = 10000');
+  } catch (error) {
+    // Close before the error escapes, or a retried open leaks a handle per
+    // attempt. Guarded so that a throw from `close()` cannot REPLACE the busy
+    // error `withBusyRetry` is waiting to recognise — a cleanup failure masking
+    // the cause would silently defeat the retry this exists to enable.
+    try {
+      db.close();
+    } catch {
+      // The original error is the one that matters.
+    }
+    throw error;
+  }
   try {
     chmodSync(path, 0o600);
   } catch {

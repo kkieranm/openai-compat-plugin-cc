@@ -128,6 +128,23 @@ drift impossible has never once run. OAI-103 is the same shape one level out: a 
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
+misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
+**OAI-108**, **OAI-111**.
+**OAI-106 leads the tier because it is the reason OAI-62 reached its ten-pass cap without approval.**
+Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
+lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
+salvaged answer — a false terminal state produced by contention, which is one of the outcomes OAI-62
+set out to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict. Anything that
+closes OAI-62 has to start here.
+The rest are last because nothing is broken today: each fires only under contention that has never
+been observed outside an injected test. They are here at all because ADR 020 exists to remove a
+comment that claimed a property the code did not have, and each is a smaller instance of that shape —
+an exclusion resting on an untested argument (OAI-105), a rescue whose own guard has no witness and
+one unreachable-today hole (OAI-109), a count restated where nothing holds it to the code (OAI-110),
+a stop request with no contention policy at all (OAI-107), and a fact that reaches a human on stderr
+but no machine through `--json` (OAI-108). OAI-111 is housekeeping the review fan-outs generate.
+
 <!-- /tiers -->
 
 ### Absorbed IDs — where a merged or moved number now resolves
@@ -284,6 +301,20 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   It also means the suite carries a rare flake whose failure message is indistinguishable from a real
   regression — worth a targeted retry at this call site so a contended open waits rather than killing
   a submission.
+  **STATUS, 2026-08-07 — built, committed, and NOT closed: the ladder ran its full ten passes and
+  ended `cap-without-approval`.** (a), (b) and (c) are all fixed and shipped —
+  `scripts/lib/job-busy.mjs` with `withBusyRetry` at six enumerated sites, the heartbeat and the
+  queue's wait loop guarded, the `completed` write moved outside the catch that publishes `failed`,
+  and `salvageOutcome` writing the answer to the job log when that write's retry exhausts. Suite
+  660/0, verify skill green against a live server, and the design is [ADR 020].
+  **What stops this closing is OAI-106.** At the terminal verdict point the Claude approver approved
+  and **Codex refused**, on this ground: after an exhausted persistence retry the public lifecycle
+  still reports `worker-died` for work that completed, and no product reader can recover the salvaged
+  answer — a false terminal state produced by contention, which is one of the outcomes this item
+  exists to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict.
+  **The decision is the user's**: build OAI-106 (a `persistence-pending` state, or a recovery pass
+  that reads a salvaged line back into the row) and reopen this, or accept the artifact as shipped and
+  close this item over Codex's objection. Also left `unresolved at cap`: [OAI-109] and [OAI-110].
 
 - **OAI-67** — **A failed spawn blocks the whole queue; a post-spawn write failure reports failure while
   the worker runs on.** Raised independently by three lenses.
@@ -1841,3 +1872,88 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   either a real guard in `tests/` — the natural home, since `tests/structure.test.js` already guards
   file size and `tests/plugin.test.js` guards the command surface — or deleting the claim. Do not
   leave the sentence standing without one of the two.
+
+- **OAI-105** — **the reconciliation writes have no contention answer, only an argument.** ADR 020
+  retries six sites with `withBusyRetry`, skips three more with a bare `isBusy` catch, and
+  deliberately leaves `job-reconcile.mjs`'s four writes
+  unprotected, on the reasoning that the sweep re-runs on the next read so a `SQLITE_BUSY` costs one
+  deferred reconciliation rather than a lost fact. That reasoning is untested in both halves: nothing
+  bounds how long the deferral can last under sustained contention, and nothing establishes that a
+  later read always arrives — a database whose only reader has stopped running leaves a `worker-died`
+  row uncollected indefinitely. Raised in OAI-62's review ladder and filed rather than fixed there,
+  because widening that change to a fifth subsystem is how a batch stops converging. The fix is either
+  a witness that drives a busy through a reconciliation sweep and proves the next read corrects it, or
+  a `withBusyRetry` at those four writes and the deletion of the argument from ADR 020's exclusion
+  list. Do not leave the exclusion standing on reasoning alone.
+
+- **OAI-106** — **the ROW is still wrong about why a salvaged job ended.** Narrowed by OAI-62, which
+  originally filed this as the whole defect — a paid-for answer lost outright — and then had both
+  approvers reject that filing: losing the answer *was* contention killing live work, which is
+  precisely OAI-62's own ask, so it was fixed in the ladder rather than deferred. `salvageOutcome`
+  now writes the outcome to the job log under the fixed prefix `SALVAGED_OUTCOME` before the storage
+  error propagates, so the answer survives.
+  What remains is the state machine, not the data: the row stays `running` with a pid about to
+  vanish, and reconciliation later publishes `worker-died` — a misdiagnosis, because the worker
+  answered and SQLite refused the write. `/oai:result` still reports a dead worker for a job whose
+  answer is sitting in its own log, and nothing in the row points at it. The fix is an explicit
+  non-terminal `persistence-pending` state that `/oai:result` and reconciliation both understand, or
+  a recovery pass that reads a salvaged line back into the row — either needs a durable-channel
+  design OAI-62's plan did not cover, which is why the log write was the part built. Related:
+  [OAI-105].
+
+- **OAI-107** — **cancellation is the one lifecycle fact with no contention answer.** `runCancel`
+  calls `reconcileAll` before `requestCancel` and neither is retried, so a `SQLITE_BUSY` anywhere in
+  the sweep fails the command before the stop request is attempted at all — and what the user sees is
+  a raw `database is locked`, not a `UserError` with a hint, so even "run it again" is advice the
+  output does not give. The billable request they wanted stopped carries on. OAI-62 declined to build
+  this: a failed cancel is visible and nonzero, it kills nothing, and that item's ask is that
+  contention must not kill live work. But review called the enumeration lifecycle-biased with
+  justification — terminal facts get retries and a stop request does not. The fix is a cancellation
+  contention policy: reconciliation best-effort under busy, `requestCancel` retried on a short bounded
+  budget, and exhaustion converted to a `UserError` that states the cancellation was not recorded.
+  Needs a witness driving a busy through both halves.
+
+- **OAI-108** — **an unrecorded start reaches a human and no machine.** When the spawn stamp's retry
+  exhausts, `submitTask` warns on stderr that the job was spawned and that this session cannot see
+  what the worker did next — but `--json` still emits `{id, background: true}`, byte-identical to a
+  submission whose start was recorded. A harness therefore cannot distinguish them, and the one
+  channel it reads says everything is normal. A `spawnConfirmed` field was built during OAI-62's
+  ladder and **reverted**: it changed a published `--json` contract that item's approved plan never
+  covered, and `commands/task.md` documents that envelope literally. Whatever lands here must ship
+  with the doc, an end-to-end `--background --json` test, and a name describing what is actually
+  unknown — the spawn IS confirmed, `spawnWorker` returned a pid; it is the recorded start that is
+  missing, and a caller reading "unconfirmed spawn" could resubmit a billable request.
+
+- **OAI-109** — **the rescue's own guard is unwitnessed, and one narrow hole inside it is real.**
+  `salvageOutcome` guards its stderr write, and if `JSON.stringify` throws it writes a
+  "could not be written" line instead — at which point **the answer is lost**, which is the exact
+  outcome the rescue exists to prevent. That hole is unreachable today, and the reason is worth
+  keeping: `outcomeOf` builds only strings, numbers, nulls, `artifactFor`'s `{state, detail}` of
+  string literals, and `result.usage`, which came from a parsed JSON response and is acyclic by
+  construction — so no cycle and no BigInt can reach it. **A future field could open it**, and
+  nothing would notice, because neither the serialisation-failure path nor the log-write-failure path
+  has a witness — where `publishFailure`'s structurally identical guard has one in
+  `tests/job-busy-diagnosis.test.js`. Two things to do, and they are separable: witness both paths,
+  and serialise before entering the terminal-write path so a serialisation fault is discovered while
+  the row write is still available. Raised at high confidence by `codex-adversarial` in OAI-62's
+  terminal pass. Related: [OAI-106].
+
+- **OAI-110** — **the six-sites count is stated in a third document that nothing holds to the code.**
+  `tests/busy-site-count.test.js` derives both counts from `scripts/lib` and requires the sentence in
+  `adr/020` and `job-busy.mjs` — but CLAUDE.md states the same figure in its own words, outside that
+  `documents` array. Proved with a mutation and a positive control: a seventh `withBusyRetry` site was
+  added, the guard failed naming only the two documents, those two were corrected, the guard went
+  green — and CLAUDE.md still said "six". **Adding CLAUDE.md to the array does not fix it**: the
+  required sentence is the literal "six `withBusyRetry` call sites", and CLAUDE.md's "six enumerated
+  sites" collapses two different counts into one number, matching neither the required-sentence check
+  nor the wrong-number check. So the fix is to reword the CLAUDE.md line to carry both counts with
+  their nouns, *then* add it to `documents`. This is the same defect the guard was written three
+  review passes deep to eliminate, reproduced one document over. Raised and CONFIRMED by `lean-wide`
+  in OAI-62's terminal pass.
+
+- **OAI-111** — **~28 stale git worktrees are accumulating under `.claude/worktrees/`.** Left behind
+  by review fan-outs whose agents ran under `isolation: worktree`; each is a full checkout of this
+  repo, so the disk cost is real and grows with every wide review. Nothing reads them after the run
+  that made them. Needs a sweep that is safe against a worktree still in use — `git worktree list`
+  plus a liveness check, not a blind `rm -rf` — and, if the harness offers one, a cleanup hook rather
+  than a manual command nobody remembers to run.

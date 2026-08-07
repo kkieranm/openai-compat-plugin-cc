@@ -9,6 +9,7 @@
 //
 // It is also the only moment a running worker looks up from its request, so it
 // is where cancellation is noticed: there is no signal to catch, by design.
+import { isBusy } from './job-busy.mjs';
 import { beat, cancelRequested } from './job-record.mjs';
 
 /** How often a running worker records that it is still there. */
@@ -55,8 +56,43 @@ function exitOnCancel() {
  */
 export function startHeartbeat(db, seq, { intervalMs = BEAT_MS, onCancel = exitOnCancel } = {}) {
   const timer = setInterval(() => {
-    beat(db, seq, new Date().toISOString());
-    if (cancelRequested(db, seq)) onCancel();
+    // A throw from inside a timer callback has nowhere to go: it is an uncaught
+    // exception and it KILLS THE WORKER, mid-model-call, discarding a request
+    // already in flight. Proved by execution — a handle whose `prepare()` throws
+    // errcode 5 exits this process 1.
+    //
+    // So a contended database skips the tick. The next beat is five seconds
+    // away and the stale-beat → `stalled` path already represents a missed
+    // update correctly, which makes skipping the cheapest correct answer.
+    //
+    // The catch is narrowed to `isBusy` on purpose: any other error is a defect,
+    // not contention, and a blanket catch here would hide it forever inside a
+    // timer nobody is watching.
+    //
+    // TWO catches, not one. Sharing a try block let a busy *write* skip the
+    // cancellation *read* — and in WAL mode a reader does not block behind a
+    // writer, so that read would very often have succeeded. Since sustained
+    // write contention is exactly when a beat keeps failing, one try block made
+    // contention able to keep an expensive model request alive indefinitely
+    // after the user asked for it to stop. They are independent operations and
+    // are now attempted independently.
+    try {
+      beat(db, seq, new Date().toISOString());
+    } catch (error) {
+      if (!isBusy(error)) throw error;
+    }
+    let cancelled = false;
+    try {
+      cancelled = cancelRequested(db, seq);
+    } catch (error) {
+      if (!isBusy(error)) throw error;
+    }
+    // OUTSIDE both catches, and not by accident: a cancellation silently
+    // swallowed is worse than a callback defect made visible. `cancelled` stays
+    // false when the read itself was skipped, so a contended read never reads as
+    // "no cancel" — it reads as "not known this tick", and the next tick asks
+    // again.
+    if (cancelled) onCancel();
   }, intervalMs);
   timer.unref();
   return () => clearInterval(timer);

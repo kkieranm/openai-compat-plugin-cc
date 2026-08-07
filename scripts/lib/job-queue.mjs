@@ -12,7 +12,7 @@
 import { livenessOf } from './job-liveness.mjs';
 import { beat, claimJob, finish, isKnownVersion, jobBySeq, rowsInState } from './job-record.mjs';
 import { reconcile } from './job-reconcile.mjs';
-import { isBusy } from './job-store.mjs';
+import { isBusy, withBusyRetry } from './job-busy.mjs';
 import { errorReport } from './review-report.mjs';
 
 /** How often a waiting worker asks whether its turn has come. */
@@ -125,7 +125,14 @@ function timeOut(db, job, at) {
     message: `Job ${job.id} waited ${Math.round(job.max_wait_ms / 1000)}s for its turn and gave up.`,
     hint: 'Another background job was still running. Raise --max-wait, or run it again when the queue is clear.',
   });
-  return finish(db, job.seq, { state: 'queue-timeout', failure, at });
+  // The THIRD terminal write, and the one most likely to meet contention: this
+  // path is reached only when another background job is still running, so a
+  // competing worker is beating every BEAT_MS at the exact moment of this write.
+  // Unwrapped, a busy here escaped `awaitTurn` — which `cmd-task-worker.mjs`
+  // awaits OUTSIDE the try that guards `runJob` — killing the worker, losing the
+  // diagnosed `queue-timeout` and its actionable hint, and leaving reconciliation
+  // to report `worker-died` for a job that timed out for a reason it could name.
+  return withBusyRetry(() => finish(db, job.seq, { state: 'queue-timeout', failure, at }));
 }
 
 /**
@@ -148,7 +155,15 @@ export async function awaitTurn(db, job, pid, { pollMs = POLL_MS } = {}) {
   let verdict = attempt(db, job.seq, pid);
   while (verdict === 'blocked') {
     await sleep(pollMs);
-    beat(db, job.seq, new Date().toISOString());
+    // Skipped rather than retried on a contended database: this loop IS the
+    // retry, with its own deadline below, and an unguarded throw here escapes
+    // `awaitTurn` and kills a worker that is merely waiting its turn — the same
+    // defect the heartbeat carried one phase later in the lifecycle.
+    try {
+      beat(db, job.seq, new Date().toISOString());
+    } catch (error) {
+      if (!isBusy(error)) throw error;
+    }
     // Immediately before each subsequent attempt, and NOT after it. Checking
     // afterwards let a job that had waited well past its cap run anyway,
     // whenever the attempt itself was slow — a contended database can stall one
