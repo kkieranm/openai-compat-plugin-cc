@@ -10,9 +10,7 @@ import {
 } from '../scripts/lib/structured.mjs';
 import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
 
-const FINDING = { file: 'a.js', line: 3, severity: 'high', summary: 'boom', evidence: 'x()' };
-const payload = (findings = [FINDING], summary = 'one defect') =>
-  JSON.stringify({ analysis: 'checked each path', findings, summary });
+import { FINDING, payload } from './findings-fixtures.mjs';
 
 test('a strict schema declares every property required and forbids extras', () => {
   // OpenAI's strict mode rejects a schema with an optional property, so an

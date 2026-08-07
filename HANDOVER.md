@@ -4,8 +4,9 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Pass 1 is complete
-and non-clean; its between-pass batch is landing now. The plan is
+**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1 and 2 are
+complete and both were non-clean; pass 2's between-pass batch is landing now, and pass 3 is required
+because pass 2 raised a code defect. The plan is
 `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
 the size budget forced a new file into the file list. The ledger mirror lives in this session's
 scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
@@ -21,7 +22,7 @@ the state it describes changes.
 ```sh
 cd /Users/kieran/Code/openai-compat-plugin-cc
 bash ~/Code/dotfiles/tests/check-unattended-run.sh --show      # this run's file and item states
-git log --oneline -3                                            # OAI-84 phase 1+1b sit on top of 77c1eab
+git log --oneline 77c1eab..HEAD                                 # every OAI-84 commit, however many there are
 ```
 
 Then run `/feature` on the topmost `open` item. **OAI-84 must land before OAI-19 runs** — the arm
@@ -42,21 +43,24 @@ suspending that run, one layer down. That sequencing is the tracker's, not a pre
 - **Overrun: ask Codex, take the consensus, proceed.** Record decisions as ADRs. Do not wait for the
   user.
 
-## OAI-84 — what it is
+## OAI-84 — what it is, and what turned out to be filed wrong
 
-Two ways `/oai:review` throws an answer away on the **default** path and reports it as "no findings in
-the requested shape". Both in `scripts/lib/structured.mjs`:
+Two ways `/oai:review` threw an answer away and reported it as "no findings in the requested shape",
+both in `scripts/lib/structured.mjs`. **Do not work from the BACKLOG entry's line numbers — they
+refer to the pre-fix file and no longer resolve.**
 
-- **(a)** `:265` picks one of `content` / `reasoning_content` **before** the parse, with no fallback,
-  so one stray character in `content` discards a valid payload sitting in `reasoning`.
-- **(b)** `:269` rejects a bare top-level findings **array**, though the adjacent comment promises
-  repair — and under prose instructions (the default since OAI-51) a plain array is an ordinary thing
-  for a model to return.
+- **(a) The channel was picked before the parse, with no fallback**, so one stray character in
+  `content` discarded a valid payload in `reasoning`. **The item's claim that this applies
+  "regardless of `structuredOutput`" is FALSE and was refuted at the probe**: on the default path
+  `reasoning` was never read at all, deliberately, and the filed "try-the-other-channel fallback"
+  would have reversed `adr/003` by shipping the model's scratchpad as findings. The repair therefore
+  lands **only** under `--structured-output`.
+- **(b) A bare top-level findings array was discarded** — not by the `typeof` test, which arrays
+  pass, but by `parsed.findings` being undefined.
 
-The filed fix: accept an array and wrap it; add a try-the-other-channel fallback. Item says both are
-cheap. The `findings: null` vs `[]` distinction is intact and test-pinned at
-`tests/review-json.test.js:83` — do not disturb it; that distinction is what `adr/003` exists to
-protect.
+The `findings: null` vs `[]` distinction is intact and test-pinned at `tests/review-json.test.js:83`
+— do not disturb it; that distinction is what `adr/003` exists to protect, and two of the ladder's
+findings were that this feature had inverted it.
 
 ## OAI-19 — what it is, and what makes an arm publishable
 
@@ -91,7 +95,8 @@ hypothesis is not explaining the observation, and `adr/013`'s outcome table has 
 
 ## What has NOT started
 
-- OAI-84 — not started. No branch, no edits, no plan file.
+- OAI-84 — **built and committed**; in its review ladder. Not done: the ladder has not reached dual
+  approval, the tracker item is still live in BACKLOG.md, and the residue has not been filed.
 - OAI-19 — not started. No arm has been invoked under this run. The most recent bench records in
   `bench/results/` are from earlier sessions and are **not** this run's; in particular the
   2026-08-04 MoE record was invalid under the gate and the 2026-08-05 record is the task bench, not

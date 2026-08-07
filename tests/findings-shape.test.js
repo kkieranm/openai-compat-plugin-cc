@@ -7,9 +7,7 @@ import assert from 'node:assert/strict';
 import { parseFindings } from '../scripts/lib/structured.mjs';
 import { REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
 
-const FINDING = { file: 'a.js', line: 3, severity: 'high', summary: 'boom', evidence: 'x()' };
-const payload = (findings = [FINDING], summary = 'one defect') =>
-  JSON.stringify({ analysis: 'checked each path', findings, summary });
+import { FINDING, payload } from './findings-fixtures.mjs';
 
 test('under a schema, the reasoning channel carries the payload', () => {
   // The constrained grammar leaves the model unable to close its think block,
@@ -141,4 +139,52 @@ test('accepting arrays does NOT turn unreadable prose into a clean review', () =
   // failure `tests/review-json.test.js` pins at the report level.
   assert.equal(parseFindings({ content: 'I could not comply.', reasoning: '' }, { structured: false }), null);
   assert.equal(parseFindings({ content: '   ', reasoning: '' }, { structured: false }), null);
+});
+
+test('a conforming answer that is unreadable stops the search rather than falling through', () => {
+  // The regression the all-dropped rule itself introduced. `findingsIn` returned
+  // null both for "nothing here" and for "answered, and the answer is
+  // unreadable", so the loop treated the second as the first: a schema-CONFORMING
+  // `content` payload whose findings all normalize away handed the review over to
+  // whatever sat in `reasoning` — which, under a server that ignored the schema,
+  // is a draft. The primary answer must refuse, loudly, on its own behalf.
+  // Fully schema-conforming — every required key, valid enum — and every entry
+  // normalizes away. Anything less and this test would pass for the wrong
+  // reason: a non-conforming payload is a `NO_PAYLOAD`, which SHOULD fall through.
+  const empty = { file: '', line: 1, severity: 'low', summary: '', evidence: '' };
+  const unreadable = JSON.stringify({ analysis: 'a', findings: [empty], summary: 's' });
+  assert.equal(
+    parseFindings({ content: unreadable, reasoning: payload() }, { structured: true, schema: REVIEW_SCHEMA }),
+    null,
+  );
+
+  // And the fall-through still works when `content` genuinely carries nothing —
+  // otherwise this guard would have been a reversal of the feature.
+  const parsed = parseFindings({ content: '   ', reasoning: payload() }, { structured: true, schema: REVIEW_SCHEMA });
+  assert.equal(parsed.findings.length, 1);
+});
+
+test('an array wrapped in prose is the same reply as an object wrapped in prose', () => {
+  // The scan anchored on `{`, so this yielded the first ELEMENT — which has no
+  // `findings` key — and a recoverable reply was reported unreadable. The object
+  // spelling of the same reply always worked, so the two spellings agreed only
+  // for bare and fenced text.
+  const asArray = parseFindings({ content: `Here are the findings:\n${JSON.stringify([FINDING])}`, reasoning: '' }, { structured: false });
+  const asObject = parseFindings({ content: `Here are the findings:\n${JSON.stringify({ findings: [FINDING] })}`, reasoning: '' }, { structured: false });
+  assert.equal(asArray?.findings.length, 1);
+  assert.deepEqual(asArray, asObject, 'prose wrapping must not make one spelling unreadable');
+});
+
+test('quoted code with brackets does not outrank the real payload', () => {
+  // The safety case for scanning arrays at all. The system prompt asks the model
+  // to quote the offending source line, so a reply routinely opens with code —
+  // and `["a","b"]` inside it is a perfectly good JSON array. Objects are scanned
+  // to exhaustion FIRST, so this reply resolves exactly as it did before arrays
+  // were scanned at all.
+  const reply =
+    'The guard reads:\n\nconst names = ["alpha", "beta"];\nif (!names[0]) { return; }\n\nwhich is wrong.\n\n'
+    + JSON.stringify({ findings: [FINDING], summary: 'one defect' });
+  const parsed = parseFindings({ content: reply, reasoning: '' }, { structured: false });
+  assert.equal(parsed.findings.length, 1);
+  assert.equal(parsed.findings[0].file, 'a.js');
 });

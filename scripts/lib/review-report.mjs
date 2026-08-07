@@ -42,8 +42,21 @@ function unparsedReply(result, { structured, profile }) {
   // Either way an empty reply falls through to requireAnswer, which refuses —
   // returning an empty "verbatim" block would report a run that produced
   // nothing as one that merely said something odd.
-  const constrained = structured ? result.content.trim() || result.reasoning.trim() : '';
-  return constrained || requireAnswer(result, profile).trim();
+  //
+  // BOTH are shown, labelled, when both carry something. Preferring `content`
+  // was a silent choice about which text the reader gets to see, and it picked
+  // wrong in exactly the case the parser exists to refuse: stray prose in
+  // `content` with the rejected findings payload in `reasoning` printed the
+  // prose and dropped the payload — on the human path and, through the same
+  // helper, in `--json`'s `raw`. A claim that refusing preserves the evidence is
+  // only true if the evidence is what gets printed.
+  if (structured) {
+    const content = result.content.trim();
+    const reasoning = result.reasoning.trim();
+    if (content && reasoning) return `[content]\n${content}\n\n[reasoning]\n${reasoning}`;
+    if (content || reasoning) return content || reasoning;
+  }
+  return requireAnswer(result, profile).trim();
 }
 
 function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly }) {

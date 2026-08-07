@@ -151,11 +151,17 @@ wrapper. The array is wrapped before anything downstream reads it, so the two sp
 diverge on `dropped`, `summary` or the cap diagnostics — merely agreeing about accept/reject would
 leave two spellings of one reply producing two different results.
 
-The alternative considered and rejected was to accept `[]` but refuse a non-empty array whose
-elements all fail normalization. It makes the verdict depend on **spelling**: `["hello"]` would be
-unreadable while `{"findings":["hello"]}` already parses to `findings: [], dropped: 1` and reads as
-a clean review. That all-dropped-reads-as-clean hazard is real and is filed as its own item; it
-belongs to both spellings equally and is not repaired by making one of them worse.
+The alternative considered at the grill was to accept `[]` but refuse a non-empty array whose
+elements all fail normalization. It was rejected for making the verdict depend on **spelling**:
+`["hello"]` would be unreadable while `{"findings":["hello"]}` already parsed to
+`findings: [], dropped: 1` and read as a clean review. The all-dropped hazard was filed as its own
+item on the reasoning that it belonged to both spellings equally.
+
+**The review ladder overturned that, and the reversal is the useful part.** The reasoning was true
+and beside the point: for the BARE spelling this change *created* the false-clean where the old code
+failed loudly, so filing it deferred a defect this feature had just introduced. What was wrong with
+the rejected alternative was the asymmetry, not the rule — so the rule ships applied to **both**
+spellings, below, and the separate item is not filed.
 
 **Channel selection is no longer a guess made before the parse.** The old code picked `content`
 unless it was blank, so under a schema one stray character in `content` buried a conforming payload

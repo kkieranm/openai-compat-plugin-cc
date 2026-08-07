@@ -10,11 +10,12 @@
 const FENCE = /```(?:json)?\s*\n([\s\S]*?)```/;
 
 /**
- * Find the balanced object starting at or after `from`. String-aware, so a brace
- * inside a quoted value (`"summary": "the } case"`) does not close it early.
+ * Find the balanced `open`…`close` run starting at or after `from`. String-aware,
+ * so a bracket inside a quoted value (`"summary": "the } case"`) does not close
+ * it early.
  */
-function balancedObject(text, from = 0) {
-  const start = text.indexOf('{', from);
+function balanced(text, from, open, close) {
+  const start = text.indexOf(open, from);
   if (start === -1) return null;
 
   let depth = 0;
@@ -33,13 +34,34 @@ function balancedObject(text, from = 0) {
       continue;
     }
     if (character === '"') inString = true;
-    else if (character === '{') depth += 1;
-    else if (character === '}') {
+    else if (character === open) depth += 1;
+    else if (character === close) {
       depth -= 1;
       if (depth === 0) return { json: text.slice(start, index + 1), start };
     }
   }
   return null;
+}
+
+/**
+ * The first balanced `open`…`close` run in `text` that parses AND is accepted,
+ * with where it started — so two scans can be compared by position.
+ */
+function scanFor(text, open, close, accept) {
+  let from = 0;
+  for (;;) {
+    const found = balanced(text, from, open, close);
+    if (!found) return null;
+    try {
+      const value = JSON.parse(found.json);
+      if (accept(value)) return { value, start: found.start };
+    } catch {
+      // Not it — an unparseable candidate is expected here.
+    }
+    // Resume past this candidate's opening bracket, so a nested or adjacent one
+    // later in the reply still gets its turn.
+    from = found.start + 1;
+  }
 }
 
 /**
@@ -55,27 +77,38 @@ function balancedObject(text, from = 0) {
  * The bare and fenced candidates are tried with `JSON.parse` whole, so a reply
  * that IS a top-level array survives this function intact. What that array then
  * means is the caller's question, not this one's.
+ *
+ * Arrays are scanned for as well as objects, and `accept` is how the two are
+ * told apart WITHOUT this module learning what a finding is. A prose-wrapped
+ * array used to be lost here — the scan anchored on `{`, so
+ * `Here are the findings: [{…},{…}]` yielded the first ELEMENT, which has no
+ * `findings` key, and a recoverable reply was reported unreadable.
+ *
+ * Scanning objects to exhaustion first does NOT fix that, which is worth stating
+ * because it is the obvious fix and it fails: the object scan does not find
+ * nothing, it finds the array's first element. Nor does "earliest candidate
+ * wins" — a quoted source line is the shape this function exists for, and
+ * `["alpha","beta"]` inside one is a perfectly good JSON array sitting before
+ * the real payload.
+ *
+ * So the caller supplies `accept`, both openers are scanned, and the accepted
+ * candidate that starts EARLIER wins. Quoted brackets are rejected by the
+ * caller's predicate and the scan moves on; a prose-wrapped array is accepted
+ * and outranks the element object inside it, which starts one character later.
+ * Nothing here knows why a value is acceptable.
  */
-export function extractJson(text) {
+export function extractJson(text, accept = () => true) {
   for (const candidate of [text.trim(), text.match(FENCE)?.[1]]) {
     if (!candidate) continue;
     try {
-      return JSON.parse(candidate);
+      const value = JSON.parse(candidate);
+      if (accept(value)) return value;
     } catch {
       // Try the next shape; an unparseable candidate is expected here.
     }
   }
 
-  let from = 0;
-  for (;;) {
-    const found = balancedObject(text, from);
-    if (!found) return null;
-    try {
-      return JSON.parse(found.json);
-    } catch {
-      // Not it — resume the scan past this object's opening brace, so a nested
-      // or adjacent object later in the reply still gets its turn.
-      from = found.start + 1;
-    }
-  }
+  const found = [scanFor(text, '{', '}', accept), scanFor(text, '[', ']', accept)].filter(Boolean);
+  if (!found.length) return null;
+  return found.reduce((earliest, one) => (one.start < earliest.start ? one : earliest)).value;
 }

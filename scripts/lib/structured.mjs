@@ -208,15 +208,46 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   // parse like any other.
   for (const channel of channels) {
     if (!channel?.trim()) continue;
-    const found = findingsIn(channel, { structured, schema });
-    if (found) return found;
+    const attempt = findingsIn(channel, { structured, schema });
+    if (attempt.kind === 'findings') return attempt.report;
+    // A channel that ANSWERED and cannot be read ends the search. Letting it
+    // fall through was a defect this repo introduced fixing another one: an
+    // all-dropped `content` payload is not an absent channel, and treating the
+    // two alike let a conforming primary answer be replaced by whatever sat in
+    // `reasoning` — which under a server that ignored the schema is a draft.
+    if (attempt.kind === 'unreadable') return null;
   }
   return null;
 }
 
-/** One channel's text, read as findings — or null if it does not carry any. */
+/**
+ * The two spellings this module reads as findings, and nothing else.
+ *
+ * A bare array must contain OBJECTS — the check is not decoration. Accepting any
+ * array made `["alpha", "beta"]`, quoted from source in the model's own prose, a
+ * candidate that outranked the real payload behind it, and the all-dropped rule
+ * then reported the whole reply unreadable. An empty array passes, because an
+ * empty findings list is a clean review. A list of objects that turn out not to
+ * be findings is a question for `normalizeFinding`, not for this.
+ */
+function findingsShaped(value) {
+  const objects = (list) => list.every((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  if (Array.isArray(value)) return objects(value);
+  return Boolean(value) && typeof value === 'object' && Array.isArray(value.findings);
+}
+
+// Three outcomes, named. The whole of that defect was two of them sharing one
+// `null`: "nothing here, try the next channel" and "this channel answered and
+// the answer is unreadable" are opposite instructions to the caller.
+const NO_PAYLOAD = { kind: 'none' };
+const UNREADABLE = { kind: 'unreadable' };
+
+/** One channel's text, read as findings. */
 function findingsIn(text, { structured, schema }) {
-  const parsed = extractJson(text);
+  // What this module will accept as a candidate, handed to the scanner so the
+  // scanner never learns what a finding is. It is also what stops a bracketed
+  // expression in a quoted source line outranking the real payload.
+  const parsed = extractJson(text, findingsShaped);
   // A bare top-level array is the SAME REPLY as `{findings: [...]}`, and asked
   // in prose a model emits one about as readily as the other. It used to be
   // discarded — not on the `typeof` test, which arrays pass, but on
@@ -224,7 +255,7 @@ function findingsIn(text, { structured, schema }) {
   // reads it, so the two spellings cannot diverge rather than merely agreeing
   // about accept/reject. See ADR 003.
   const shaped = Array.isArray(parsed) ? { findings: parsed } : parsed;
-  if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return null;
+  if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return NO_PAYLOAD;
 
   // Under a schema, conformance is the whole proof. A server that accepts
   // `response_format` without enforcing it would otherwise let a scratchpad
@@ -232,7 +263,7 @@ function findingsIn(text, { structured, schema }) {
   // which is exactly what reading that channel is supposed to rule out. It is
   // also what keeps the fallback above from becoming a scratchpad channel.
   // Without a schema nothing was promised, so repair what is repairable.
-  if (structured && !matchesSchema(shaped, schema)) return null;
+  if (structured && !matchesSchema(shaped, schema)) return NO_PAYLOAD;
 
   const normalized = shaped.findings.map(normalizeFinding);
   const kept = normalized.filter(Boolean);
@@ -244,15 +275,21 @@ function findingsIn(text, { structured, schema }) {
   // `null` means. Applied to both spellings, so accepting bare arrays did not
   // widen the set of replies that reach the false-clean.
   //
-  // The count is not lost by returning null: the caller shows the model's reply
-  // verbatim (`review-report.mjs`), which contains the unusable findings
-  // themselves — strictly more than a tally of them.
-  if (shaped.findings.length > 0 && kept.length === 0) return null;
+  // Reported as UNREADABLE rather than as an empty channel, so the search stops
+  // here: this channel answered. `review-report.mjs` then prints every non-empty
+  // channel, labelled, so the unusable findings themselves reach the reader —
+  // which is more than a tally of them, and is the claim that used to be made
+  // and was false whenever the rejected text sat in the channel the renderer
+  // did not pick.
+  if (shaped.findings.length > 0 && kept.length === 0) return UNREADABLE;
 
   return {
-    findings: kept,
-    dropped: normalized.filter((finding) => !finding).length,
-    ...capDiagnostics(shaped, { structured, schema }),
-    summary: typeof shaped.summary === 'string' ? shaped.summary.trim() : '',
+    kind: 'findings',
+    report: {
+      findings: kept,
+      dropped: normalized.filter((finding) => !finding).length,
+      ...capDiagnostics(shaped, { structured, schema }),
+      summary: typeof shaped.summary === 'string' ? shaped.summary.trim() : '',
+    },
   };
 }
