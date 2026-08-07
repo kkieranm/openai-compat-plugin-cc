@@ -2,6 +2,7 @@
 // findings. This is the one module that encodes structured-output dialect: see
 // ADR 003. Pulling JSON out of prose is NOT dialect and lives in `json-scan.mjs`.
 import { extractJson } from './json-scan.mjs';
+import { findingsShaped } from './findings-candidate.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
 
 const SEVERITIES = new Set(['high', 'medium', 'low']);
@@ -218,22 +219,6 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
     if (attempt.kind === 'unreadable') return null;
   }
   return null;
-}
-
-/**
- * The two spellings this module reads as findings, and nothing else.
- *
- * A bare array must contain OBJECTS — the check is not decoration. Accepting any
- * array made `["alpha", "beta"]`, quoted from source in the model's own prose, a
- * candidate that outranked the real payload behind it, and the all-dropped rule
- * then reported the whole reply unreadable. An empty array passes, because an
- * empty findings list is a clean review. A list of objects that turn out not to
- * be findings is a question for `normalizeFinding`, not for this.
- */
-function findingsShaped(value) {
-  const objects = (list) => list.every((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
-  if (Array.isArray(value)) return objects(value);
-  return Boolean(value) && typeof value === 'object' && Array.isArray(value.findings);
 }
 
 // Three outcomes, named. The whole of that defect was two of them sharing one

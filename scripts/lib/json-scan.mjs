@@ -84,31 +84,37 @@ function scanFor(text, open, close, accept) {
  * `Here are the findings: [{…},{…}]` yielded the first ELEMENT, which has no
  * `findings` key, and a recoverable reply was reported unreadable.
  *
- * Scanning objects to exhaustion first does NOT fix that, which is worth stating
- * because it is the obvious fix and it fails: the object scan does not find
- * nothing, it finds the array's first element. Nor does "earliest candidate
- * wins" — a quoted source line is the shape this function exists for, and
- * `["alpha","beta"]` inside one is a perfectly good JSON array sitting before
- * the real payload.
+ * Scanning objects to exhaustion first does NOT fix that on its own, which is
+ * worth stating because it is the obvious fix: the object scan does not find
+ * nothing, it finds the array's first element — unless the caller's predicate
+ * rejects that element, which for a findings payload it does.
  *
- * So the caller supplies `accept`, both openers are scanned, and the accepted
- * candidate that starts EARLIER wins. Quoted brackets are rejected by the
- * caller's predicate and the scan moves on; a prose-wrapped array is accepted
- * and outranks the element object inside it, which starts one character later.
- * Nothing here knows why a value is acceptable.
+ * **An accepted OBJECT outranks an accepted ARRAY, and position decides only
+ * within one scan.** Earliest-across-both-scans was tried and was wrong: a
+ * quoted array of objects sitting before the real `{findings: […]}` wrapper beat
+ * it on position, and the reply came back either as a clean review or as
+ * unreadable, with real findings discarded either way. Ranking by shape fixes
+ * that wherever in the reply the wrapper sits, and it does not cost the
+ * prose-wrapped-array case anything: that reply has no acceptable object in it
+ * at all, its payload's first element being a bare finding with no wrapper key.
+ *
+ * Object-versus-array is structural, so knowing which won teaches this module
+ * nothing about findings. `whole` is passed to `accept` for the same reason —
+ * only this function knows whether a candidate was the entire reply or was dug
+ * out of prose, and only the caller knows what to do with that.
  */
 export function extractJson(text, accept = () => true) {
   for (const candidate of [text.trim(), text.match(FENCE)?.[1]]) {
     if (!candidate) continue;
     try {
       const value = JSON.parse(candidate);
-      if (accept(value)) return value;
+      if (accept(value, true)) return value;
     } catch {
       // Try the next shape; an unparseable candidate is expected here.
     }
   }
 
-  const found = [scanFor(text, '{', '}', accept), scanFor(text, '[', ']', accept)].filter(Boolean);
-  if (!found.length) return null;
-  return found.reduce((earliest, one) => (one.start < earliest.start ? one : earliest)).value;
+  const scanned = (open, close) => scanFor(text, open, close, (value) => accept(value, false));
+  const found = scanned('{', '}') ?? scanned('[', ']');
+  return found ? found.value : null;
 }

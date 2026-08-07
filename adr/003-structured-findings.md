@@ -209,3 +209,64 @@ distinguishes it from a final answer. The alternatives were both worse: proving 
 possible without per-provider probing, and refusing the fall-through restores exactly the defect
 OAI-84(a) was filed for. So this ships as a stated limit of the opt-in path. It does not touch the
 default path, where `reasoning` is not a candidate at all.
+
+## 2026-08-07, second amendment — which bracketed run in a reply is the answer
+
+The first amendment taught the scanner to look for `[` as well as `{`, so that a prose-wrapped bare
+array stopped being lost. Three review passes later that turned out to have opened a hole wider than
+the one it closed, and this section records what it was, because the shape recurs.
+
+**The reviewer's own system prompt orders the model to quote the offending source line.** So a reply
+routinely carries bracketed *code* before its real answer. The predicate accepted any array whose
+elements were objects, and the scanner picked whichever accepted candidate started earliest — and a
+quoted array therefore beat the payload behind it, three different ways, each reproduced against the
+module:
+
+| quoted before the payload | what the user got |
+|---|---|
+| `const names = [];` | a **clean review**. `[].every()` is vacuously true, so the empty array was accepted, and the real findings were discarded silently. |
+| `const rules = [{"id":1}];` | **unreadable**. Every element was dropped for naming no file and no defect, and the all-dropped rule then reported the whole reply unreadable while the payload sat intact further down. |
+| `const CASES = [{"file":"x.js","summary":"…"}];` | a **confident wrong answer** — the decoy reported as the review's sole finding. Checked against the pre-amendment module in a worktree at the base commit: it returned `null` there, a safe refusal. This one was a regression. |
+
+The wrapped spelling had the same gap from the other side: `{"findings": ["hello","world"]}` quoted
+as a sample won on position, because nothing ever checked the items *inside* a `findings` key.
+
+Two rules replace earliest-start-across-both-scans, and they divide cleanly:
+
+1. **An accepted object outranks an accepted array**; position decides only *within* one scan. This
+   is what saves every case where the payload is a `{findings: […]}` wrapper, wherever it sits. It
+   costs the prose-wrapped-array case nothing — that reply contains no acceptable object at all, its
+   payload's first element being a bare finding with no wrapper key. Object-versus-array is
+   structural, so `json-scan.mjs` still knows nothing about findings.
+2. **A candidate the scanner dug out of prose is held to more than one that IS the whole reply.** A
+   whole reply competes with nothing, so a bare array of objects is accepted there, empty included.
+   A *scanned* array must be non-empty and every element must name a file or a defect. The predicate
+   moved to `scripts/lib/findings-candidate.mjs` — the size budget again, and the seam holds: this
+   is neither dialect nor prose-scanning but the decision between them.
+
+Rule 2 is easy to believe redundant, and **the step 5 mutation is what proved it is not.** Relaxing
+the predicate to accept anything left the whole suite green, because every witness written for it had
+a `{findings: […]}` wrapper as its payload and rule 1 was quietly doing all the work. The predicate
+is load-bearing only when *both* candidates are arrays — no wrapper exists, so ranking cannot
+arbitrate — and nothing covered that. A witness for it was added and the mutation then failed as it
+should. A check that cannot fail is this repo's signature defect, and here it was hiding inside the
+fix for another one.
+
+**Accepted limit — a complete findings wrapper quoted as an example still wins.** Given
+`Return {"findings":[{"file":"x",…}]} like this:` ahead of the real wrapper, both candidates are
+objects and position decides. There is no positional rule that separates a schema-shaped example from
+a schema-shaped answer, and under `--structured-output` `matchesSchema` cannot help either, since
+both conform. This is recorded rather than fixed because **it is not a regression**: the module at
+the base commit behaves identically, verified in a worktree. It is also not reachable from our own
+prompt, which never asks the model to emit a findings wrapper as an example — unlike the quoted
+*source* cases above, which that prompt asks for directly. That difference is the whole reason one is
+a limit and the others were defects.
+
+**A note for the benchmark, since OAI-19 runs next.** The all-dropped rule above moves a class of
+reply from `scored` to `unreadable`: a reply whose findings all fail normalization used to parse as
+`findings: [], dropped: N` and be scored as a zero-recall clean run, and now returns `null`. That
+partition is exhaustive by construction in `bench/lib/run-buckets.mjs` — `unreadable` is the
+remainder — so such a run is counted and printed in its own column, not dropped. But OAI-19's
+predeclared G-B and G-C are counted over exactly that partition, so the shift is stated here rather
+than discovered mid-arm. The direction is worth being explicit about: the old behaviour was the
+miscount, and a gate that now sees fewer scored runs is the gate working.

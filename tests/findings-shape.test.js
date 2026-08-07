@@ -175,16 +175,48 @@ test('an array wrapped in prose is the same reply as an object wrapped in prose'
   assert.deepEqual(asArray, asObject, 'prose wrapping must not make one spelling unreadable');
 });
 
-test('quoted code with brackets does not outrank the real payload', () => {
-  // The safety case for scanning arrays at all. The system prompt asks the model
-  // to quote the offending source line, so a reply routinely opens with code —
-  // and `["a","b"]` inside it is a perfectly good JSON array. Objects are scanned
-  // to exhaustion FIRST, so this reply resolves exactly as it did before arrays
-  // were scanned at all.
-  const reply =
-    'The guard reads:\n\nconst names = ["alpha", "beta"];\nif (!names[0]) { return; }\n\nwhich is wrong.\n\n'
-    + JSON.stringify({ findings: [FINDING], summary: 'one defect' });
+// The system prompt orders the model to quote the offending source line, so a
+// reply routinely carries bracketed code BEFORE its real answer. Scanning arrays
+// as well as objects made four different quoted shapes outrank the payload, each
+// failing a different way. All four are pinned here because the single witness
+// that used to stand for the class quoted `["alpha","beta"]` — an array of
+// STRINGS, the one element type the predicate already rejected — so it passed
+// without ever reaching the case that mattered.
+const REAL = JSON.stringify({ analysis: 'a', findings: [FINDING], summary: 'one defect' });
+
+for (const [name, quoted, wrong] of [
+  ['an array of strings', 'const names = ["alpha", "beta"];', 'the original witness, kept'],
+  ['an EMPTY array', 'const names = [];', 'accepted vacuously, and reported a CLEAN REVIEW'],
+  ['an array of unnamed objects', 'const rules = [{"id":1},{"id":2}];', 'every element dropped, so the reply read as unreadable'],
+  ['an array of NAMED objects', 'const CASES = [{"file":"x.js","summary":"quoted from the test"}];', 'a confident wrong answer: the decoy was reported as the sole finding'],
+  ['a sample findings wrapper', 'reply like {"findings":["hello","world"]}', 'the wrapped spelling never checked its own items'],
+]) {
+  test(`quoted ${name} does not outrank the real payload`, () => {
+    const parsed = parseFindings({ content: `The code reads:\n\n${quoted}\n\nwhich is wrong.\n\n${REAL}`, reasoning: '' }, { structured: false });
+    assert.ok(parsed, `expected the real payload, not null — ${wrong}`);
+    assert.equal(parsed.findings.length, 1, `expected exactly the real finding — ${wrong}`);
+    assert.equal(parsed.findings[0].file, 'a.js', `expected the real finding, not the decoy — ${wrong}`);
+  });
+}
+
+test('a decoy array does not outrank a payload that is ALSO a bare array', () => {
+  // The case that proves the predicate is load-bearing, found by mutating it and
+  // watching nothing go red. Every witness above survives a generous predicate,
+  // because the real payload is a `{findings: […]}` wrapper and objects outrank
+  // arrays whatever the predicate says. Here there IS no wrapper — both
+  // candidates are arrays — so ranking cannot arbitrate and the predicate is the
+  // only thing standing between the reader and the decoy.
+  const reply = 'The code reads:\n\nconst rules = [{"id":1},{"id":2}];\n\nwhich is wrong.\n\n' + JSON.stringify([FINDING]);
   const parsed = parseFindings({ content: reply, reasoning: '' }, { structured: false });
-  assert.equal(parsed.findings.length, 1);
-  assert.equal(parsed.findings[0].file, 'a.js');
+  assert.equal(parsed?.findings.length, 1);
+  assert.equal(parsed.findings[0].file, 'a.js', 'the decoy array must not win when the payload is a bare array too');
+});
+
+test('a bare array that IS the whole reply keeps the generous rule', () => {
+  // The strict rule applies only to what the scanner digs out of prose. A whole
+  // reply competes with nothing, so an empty one stays a clean review and a list
+  // of unnamed objects stays an answer we cannot read — the distinction ADR 003
+  // exists to protect. Tightening the scanned case must not reach these.
+  assert.deepEqual(parseFindings({ content: '[]', reasoning: '' }, { structured: false }).findings, []);
+  assert.equal(parseFindings({ content: '[{"id":1}]', reasoning: '' }, { structured: false }), null);
 });
