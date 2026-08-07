@@ -4,9 +4,10 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1 and 2 are
-complete and both were non-clean; pass 2's between-pass batch is landing now, and pass 3 is required
-because pass 2 raised a code defect. The plan is
+**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1, 2 and 3 are
+complete and all three were non-clean; pass 3's between-pass batch has LANDED at `9a38a2a` with the
+suite at 680 pass / 0 fail, and **pass 4 is required** because pass 3 raised two code defects — both
+of them inside pass 2's own fixes. Pass 4 runs the full table against `9a38a2a`. The plan is
 `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
 the size budget forced a new file into the file list. The ledger mirror lives in this session's
 scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
