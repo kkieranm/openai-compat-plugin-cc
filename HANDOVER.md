@@ -4,9 +4,17 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 phases 1 and 1b are BUILT and committed; phases 2 and 3 are not started.** Suite green at
-664/0. The plan is `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and then
-re-challenged mid-build because the size budget forced a new file into the file list.
+**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Pass 1 is complete
+and non-clean; its between-pass batch is landing now. The plan is
+`plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
+the size budget forced a new file into the file list. The ledger mirror lives in this session's
+scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
+
+**This section is a live progress marker, not a run-start snapshot** — run-start facts are quarantined
+under "Environment recorded at run start" below. It was stale once already (it claimed phases 2 and 3
+unstarted at a HEAD where both were committed, quoted a suite count two commits out of date, and
+pointed `git log` at a commit five back), which the ladder caught as a finding. Re-write it whenever
+the state it describes changes.
 
 ## Where to pick up
 

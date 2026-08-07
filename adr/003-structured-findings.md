@@ -180,3 +180,26 @@ dialect, and `structured.mjs` is the module that owns dialect. `FENCE`, `balance
 `extractJson` now live in `scripts/lib/json-scan.mjs`. The trigger was the size budget rather than
 taste, and the move is behaviour-preserving — evidenced by its pre-existing cases passing unchanged
 either side of it, not by the suite count, which new witnesses also moved.
+
+**A list of things that are not findings is unreadable, not a clean review.** Accepting bare arrays
+would otherwise have *created* a false-clean for a spelling that previously failed loudly:
+`["some prose string"]` used to return `null` and be shown verbatim, and would now have parsed to
+`findings: [], dropped: 1` — a review reporting "no defects" that a harness reads as `parsed: true`
+with an empty list. So a **non-empty** raw findings array none of whose entries survives
+`normalizeFinding` is `null`, for the bare and the wrapped spelling alike; a non-empty list with at
+least one survivor is a review with `dropped` counted; `[]` remains a clean review. That also
+repairs the pre-existing hazard in the wrapped spelling, which was filed as out of scope and turned
+out to be cheaper to fix than to carry. The count is not lost by refusing: the caller prints the
+model's reply verbatim, which contains the unusable findings themselves.
+
+**Accepted limit — schema conformance is evidence, not proof, that a grammar was in force.** Under
+`--structured-output` the ordered attempt can fall through from unusable `content` to `reasoning`.
+`matchesSchema` is the control, and it is the control this ADR always intended for accept-but-ignore
+servers. It is not sufficient, and the rule above does not close it. Codex's concrete residual,
+recorded rather than argued away: a server that ignores `response_format` leaves a *substantive*
+draft in `reasoning` — `file` and `summary` non-empty, so normalization keeps it, schema satisfied,
+and text that says "Tentative: … TODO verify" — which ships as findings. Nothing on the wire
+distinguishes it from a final answer. The alternatives were both worse: proving enforcement is not
+possible without per-provider probing, and refusing the fall-through restores exactly the defect
+OAI-84(a) was filed for. So this ships as a stated limit of the opt-in path. It does not touch the
+default path, where `reasoning` is not a candidate at all.

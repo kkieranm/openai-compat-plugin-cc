@@ -235,8 +235,22 @@ function findingsIn(text, { structured, schema }) {
   if (structured && !matchesSchema(shaped, schema)) return null;
 
   const normalized = shaped.findings.map(normalizeFinding);
+  const kept = normalized.filter(Boolean);
+  // A list the model filled with things that are not findings is NOT a clean
+  // review, and reporting it as one is trap instance 14 — the `null` versus `[]`
+  // distinction ADR 003 exists to protect, inverted. `[]` means the model looked
+  // and found nothing; a non-empty list none of whose entries survives
+  // normalization means it answered and we cannot read the answer, which is what
+  // `null` means. Applied to both spellings, so accepting bare arrays did not
+  // widen the set of replies that reach the false-clean.
+  //
+  // The count is not lost by returning null: the caller shows the model's reply
+  // verbatim (`review-report.mjs`), which contains the unusable findings
+  // themselves — strictly more than a tally of them.
+  if (shaped.findings.length > 0 && kept.length === 0) return null;
+
   return {
-    findings: normalized.filter(Boolean),
+    findings: kept,
     dropped: normalized.filter((finding) => !finding).length,
     ...capDiagnostics(shaped, { structured, schema }),
     summary: typeof shaped.summary === 'string' ? shaped.summary.trim() : '',
