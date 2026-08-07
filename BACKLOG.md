@@ -61,7 +61,7 @@ should be decided together even though they close separately. OAI-77 and OAI-81 
 local write access or a mis-selection, and neither has a path-shaped fix.
 
 **Tier 3 — a result the plugin cannot understand is reported as an absence.** **OAI-84, OAI-59,
-OAI-70, OAI-68, OAI-60, OAI-57, OAI-80, OAI-82**. This is trap instance 14's family — `findings:
+OAI-70, OAI-68, OAI-60, OAI-57, OAI-80, OAI-82, OAI-112, OAI-113, OAI-114**. This is trap instance 14's family — `findings:
 null` against `[]` — appearing in four places. OAI-84 leads because it is the only one on the
 **shipped default path** of `/oai:review`; OAI-59 is the same shape on `/oai:result`. OAI-68 sorts
 after OAI-63 in tier 2, whose payload decision it collides with. OAI-57's `--json` is the natural home for
@@ -603,7 +603,18 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   protection this content is resting on.
 
 - **OAI-84** — **Two ways `/oai:review` throws away an answer the model gave it, on the default path,
-  and reports the throw-away as "no findings in the requested shape".** **Split out of OAI-13 on
+  and reports the throw-away as "no findings in the requested shape".**
+  **STATUS 2026-08-07 — BUILT AND SHIPPED, ladder ended WITHOUT approval, item stays LIVE and is
+  BLOCKED on the user.** Both repairs landed and were independently audited (commits through
+  `674cf49`, suite 692/0 verified in a committed copy, verify skill all three steps including a
+  CLI-level before/after control). The six-pass review ladder then ended at its terminal pass with
+  **both approvers returning `CHANGES-REQUIRED`**, and raised a partial plan withdrawal against the
+  candidate-selection design — filed as **OAI-112**, which the user must adjudicate part-versus-whole
+  before any replacement is planned. Two live defects the ladder found are filed separately and are
+  fixable without waiting for that decision: **OAI-113** (quadratic scan, measured 39s end-to-end) and
+  **OAI-114** (a primitive sibling discarding a whole findings list, a regression from base). Do NOT
+  mark this done: what it was filed for works, but the design it grew is withdrawn.
+  The register row is `84-two-ways-a-reply-is-thrown-away` (exit_mode `withdrawn`, 16 filed at exit). **Split out of OAI-13 on
   2026-08-05 by the backlog sweep**, which verified against disk that these two stopped being what
   they were filed as. They were filed 2026-07-27 from the OAI-4/OAI-10 built-in review as
   vendor-dependent behaviour of a *degraded* path — untestable here, waiting for a second server. OAI-51
@@ -750,6 +761,45 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   worth checking, the cheap form is a pre-publication attempt counter on the row rather than an
   idempotency key; note that Codex proposed the full transactional design and it is far more than this
   earns.
+
+- **OAI-112** — **The candidate-selection design is under a PARTIAL PLAN WITHDRAWAL, and the user
+  adjudicates part versus whole.** Filed 2026-08-07 from OAI-84's review ladder, which ran six passes
+  and ended WITHOUT dual approval (both approvers returned `CHANGES-REQUIRED`). What is withdrawn is
+  only the candidate-selection design that grew across passes 2-5 — **the two repairs OAI-84 was filed
+  for both stand and are audited**: the channel fallback under `--structured-output`, and the bare
+  top-level array. The defect is structural, not a bug list: `findingsShaped` (content) and
+  `extractJson` (position, last-outermost) each decide alone, neither knows what the other guarantees,
+  and **two signals the design never represents** are visible to neither — candidate MULTIPLICITY, and
+  whether a candidate has a valid extent. Carried evidence, all reproduced first-hand: several
+  outermost candidates are resolved silently by position; the "prose-wrapped clean review is
+  unreadable" trade rests on a false binary, since a lone scanned empty could be accepted while genuine
+  competitors are refused; a wrapper-shaped array element is kept in place of the payload it wraps; and
+  `extractJson` admits a candidate with `end: undefined`, which survives the containment filter (every
+  comparison against `undefined` is false) and wins the ranking — not live today only because the
+  single caller's predicate happens to reject it, which is a coincidence of the caller rather than a
+  property of the code. **Scope it as CANDIDATE SELECTION, not "ambiguity"** — scoped to multiplicity
+  alone, the extent defect survives the replacement. Replacement code is not eligible until a fresh
+  step-3 plan gate closes; the one-per-feature replacement-ladder budget is UNSPENT.
+
+- **OAI-113** — **The OAI-84 batch made prose scanning QUADRATIC on model-controlled input.** Filed
+  2026-08-07, live today. `scanFor` skips a start position whose bracket never closes, but re-scans the
+  entire remaining suffix before advancing ONE byte, so a reply carrying many unmatched openers costs
+  O(n²). Measured **through the real CLI**, not at component level: a 200KB reply of unmatched `[`
+  takes **39.15s**, against **0.13s** for a same-size clean reply and **0.14s** for the identical input
+  before the batch — ~280×, and nothing upstream bounds it (`--max-seconds` is a transport deadline;
+  this CPU is spent after the bytes arrive). Fix shape: enumerate bracket spans in one string-aware
+  linear pass with a stack, or cap scan work and fail unreadable past the cap. Wants a performance
+  regression test with a large malformed prefix. Independent of OAI-112 and fixable before it.
+
+- **OAI-114** — **One primitive sibling discards a whole findings list — a REGRESSION FROM BASE.**
+  Filed 2026-08-07, live today. `objects(list)` requires EVERY element to be an object, so
+  `{"findings":[{valid},"junk"]}` returns `null`. At base `4f6975a` the valid finding survived and the
+  junk was counted as `dropped: 1`. It contradicts a guarantee ADR 003 states in its own words — that
+  a bare array is the same reply as `{findings: […]}` and malformed siblings are counted rather than
+  fatal. **The guard that should have caught it is the tenth instance of this repo's signature defect**:
+  the test named `one malformed entry does not discard its siblings, in any spelling` uses an OBJECT
+  missing fields, which `objects()` accepts, so the primitive case its name promises was never covered.
+  Fix: admit a list with at least one normalizable finding and let normalization drop the rest.
 
 - **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
   invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is

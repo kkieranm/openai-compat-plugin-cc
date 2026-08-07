@@ -182,7 +182,7 @@ content an early return on empty text would satisfy the assertion without any ch
 the test would pass against the mutation it exists to catch.
 
 **A seam moved.** Pulling JSON out of text that was not promised to be JSON is not structured-output
-dialect, and `structured.mjs` is the module that owns dialect. `FENCE`, `balancedObject` and
+dialect, and `structured.mjs` is the module that owns dialect. `FENCE`, `balanced` (named `balancedObject` until b7549ed generalised it over both bracket types) and
 `extractJson` now live in `scripts/lib/json-scan.mjs`. The trigger was the size budget rather than
 taste, and the move is behaviour-preserving — evidenced by its pre-existing cases passing unchanged
 either side of it, not by the suite count, which new witnesses also moved.
@@ -363,8 +363,18 @@ which no prompt here asks for.
 
 **Accepted limit, and it is a CHOICE rather than an oversight — a prose-wrapped clean review is
 reported unreadable.** `Here are the findings: {"findings":[]}` returned a clean review before this
-feature and returns `null` now. It is byte-identical to a quoted empty-findings example; no content
-predicate can separate them. The alternative was weighed and refused: accepting scanned empties lets a
+feature and returns `null` now. It is byte-identical to a quoted empty-findings example, so no content
+predicate can separate them.
+
+**Correction, 2026-08-07, pass 6 — the trade above is real but the reasoning behind it was a FALSE
+BINARY, and this record shipped that error.** "No content predicate can separate them" is true and
+beside the point: a third option exists outside the content predicate. Decide by candidate
+MULTIPLICITY — accept a lone scanned empty as a clean review, and refuse only when it actually
+competes with another outermost candidate. An earlier consult was asked whether a third option existed
+*inside these two functions* and answered no; that scoping was the mistake, because multiplicity is
+known to neither half of the design. The pass-6 adversarial stage named it. The candidate-selection
+design is under a partial plan withdrawal for exactly this reason, and the behaviour described in this
+paragraph is what SHIPPED, not what should be kept. The alternative was weighed and refused: accepting scanned empties lets a
 **trailing** quoted empty beat real findings and report a **silent** clean review, and because
 `objects([])` is vacuously true it would promote every trailing bare `[]`, not merely the wrapped
 spelling. `unreadable` is visible and retryable; a false clean is neither. Note what this rule no
@@ -386,4 +396,22 @@ What did work is narrower and worth stating exactly: mutating **each fix alone, 
 at the moment it lands** catches a decorative witness for the fix in front of you. It says nothing
 about the fixes already in the file — those need an outside reviewer instructed to mutate them, which
 is how both of pass 5's were found. Two guards defeated by a single mutation are one guard, so the two
-resume paths in `scanFor` are deliberately separate statements and are mutated separately.
+resume paths in `scanFor` are written as separate statements.
+
+**Correction, 2026-08-07, pass 6 — that last sentence was false, and so was the reasoning that
+produced it.** The two statements are NOT two guards. Deleting the `run.json === null` branch outright
+leaves all 692 tests green, because the fall-through advance below does the same thing: `JSON.parse`
+of a null candidate yields `null`, `findingsShaped` rejects it, and `from` advances anyway. The branch
+buys no behaviour at the only call site. The mutation that "proved" it independent replaced the branch
+with `return found;` — an edit no maintainer would make.
+
+**The generalisable lesson, which is sharper than "the discipline is partial": mutate toward
+SIMPLIFICATION, not toward breakage.** Ask what someone tidying this file would delete or merge, and
+mutate that. Deletion is what happens to code that looks redundant, and deletion is what survived.
+The same shape defeated two witnesses written in that batch: their fixtures set both `file` and
+`summary` or neither, so every mutation imaginable *from those fixtures* failed, while dropping one
+operand of the conjunction — the edit that matters — stayed invisible and left the suite green.
+
+Ten instances across six passes, three of them in witnesses written to end an earlier instance. The
+per-fix discipline reduces the pattern; it does not close it. What closes an instance is an outside
+reviewer told to mutate the code, and what it finds is the mutation the author could not imagine.

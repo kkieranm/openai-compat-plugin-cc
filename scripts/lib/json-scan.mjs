@@ -70,10 +70,17 @@ function scanFor(text, open, close, accept) {
     const run = balanced(text, from, open, close);
     if (!run) return found;
     if (run.json === null) {
-      // One dead start position — skip past it and keep going. Deliberately its
-      // OWN advance rather than a fall-through to the one below: folding them
-      // into a single statement would leave two guards that one mutation
-      // defeats together, which is this feature's most repeated defect.
+      // One dead start position — skip past it and keep going.
+      //
+      // This branch is DEFENSIVE, not load-bearing, and the comment that used to
+      // stand here claimed otherwise. Deleting it leaves the whole suite green:
+      // the fall-through advance below does the same thing, because `JSON.parse`
+      // of a null candidate yields `null` and the caller's predicate rejects it.
+      // What the branch does buy is independence from that predicate — with the
+      // module's own default `accept`, a dead candidate would be pushed with no
+      // `end`, survive the containment filter (every comparison against
+      // `undefined` is false) and win the ranking. That is a real hole in
+      // `extractJson`'s public contract and it belongs in the push, not here.
       from = run.start + 1;
       continue;
     }
