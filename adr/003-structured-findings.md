@@ -330,3 +330,60 @@ six witnesses did not — the new ranking rule saved their fixtures regardless o
 both were rewritten to place the decoy AFTER the payload, which is the only position where the
 predicate is the thing deciding. That is the difference between a batch that holds and the three
 before it.
+
+## Amendment, 2026-08-07 — enumeration, and the limit that is a choice
+
+The fourth pass replaced the ranking rule. The fifth found three things wrong underneath it, and two
+of them were wrong before this feature began.
+
+**`scanFor`'s enumeration was not complete, so the ranking above it could not be sound.** `balanced`
+returned the same `null` for two different facts — *no opening bracket remains* and *this opening
+bracket never closes* — and `scanFor` read both as exhaustion of the bracket type and stopped. One
+stray `[` in quoted source therefore hid every real candidate after it. There are **two** ways to
+reach that dead end and only one was reported first:
+
+1. plain depth imbalance — `see line [42` never closes;
+2. a bracket **inside a quoted string** — `balanced` enters at its start position with quote-tracking
+   off, because nothing has read the text before it, so the string's *closing* quote turns tracking
+   ON and swallows the remainder of the reply.
+
+A reader given only the first would have patched the wrong line. Both are cured by the same change:
+a failure is one dead **start position**, so skip past it and continue. Its worst shape was not an
+unreadable reply but a **wrong reply that parses** — the object scan died, the array scan
+independently found the wrapper's own `findings` array, and `analysis` and `summary` vanished with no
+error at all. The witness for that case asserts the wrapper's fields survive, not merely that the
+result is non-null.
+
+**`findingsShaped` now requires a non-empty `file` AND `summary`.** Under OR, a wrapper sitting inside
+an array was named by its own `summary`; the array was accepted, containment absorbed the wrapper as a
+*part* of it, and the real findings inside were lost. This closes the **instance**, not the class: an
+array element that is a wrapper and *also* carries a non-empty `file` and `summary` still passes and
+is kept in place of the payload it wraps. That needs a model to emit a wrapper carrying finding keys,
+which no prompt here asks for.
+
+**Accepted limit, and it is a CHOICE rather than an oversight — a prose-wrapped clean review is
+reported unreadable.** `Here are the findings: {"findings":[]}` returned a clean review before this
+feature and returns `null` now. It is byte-identical to a quoted empty-findings example; no content
+predicate can separate them. The alternative was weighed and refused: accepting scanned empties lets a
+**trailing** quoted empty beat real findings and report a **silent** clean review, and because
+`objects([])` is vacuously true it would promote every trailing bare `[]`, not merely the wrapped
+spelling. `unreadable` is visible and retryable; a false clean is neither. Note what this rule no
+longer does: last-outermost already defeats every *leading* empty decoy, including the three that
+originally motivated the rule, so its live justification is trailing decoys **alone**. The code
+comment says so, because a rule that looks redundant gets tidied away.
+
+### What the pass actually taught, continued
+
+The fourth amendment reported that the per-fix mutation discipline was what made that batch hold. It
+was **partly** right, and the correction matters more than the claim. Pass 5 mutated pass 4's fixes
+and found **two more** checks that could not fail — `.trim?.()`, whose every fixture used `""` and so
+passed identically under plain truthiness, and `scanFor`'s same-type resume, whose only nesting test
+exercised the *cross*-type path the independent array scan handles anyway. Both guarded correct
+behaviour; neither could have told it from its negation. So six instances across five passes, and the
+discipline that was adopted to end the pattern reduced it rather than stopping it.
+
+What did work is narrower and worth stating exactly: mutating **each fix alone, against a named test,
+at the moment it lands** catches a decorative witness for the fix in front of you. It says nothing
+about the fixes already in the file — those need an outside reviewer instructed to mutate them, which
+is how both of pass 5's were found. Two guards defeated by a single mutation are one guard, so the two
+resume paths in `scanFor` are deliberately separate statements and are mutated separately.

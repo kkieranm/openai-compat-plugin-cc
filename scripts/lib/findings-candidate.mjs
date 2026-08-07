@@ -37,6 +37,22 @@
  * finding. That is a weaker test than `normalizeFinding` on purpose: this decides
  * which candidate to READ, and normalization still decides what survives.
  *
+ * **Read the three cases above as HISTORY, not as the live justification.** All
+ * three decoy BEFORE the payload, and `extractJson` now ranks by last-outermost,
+ * so position alone already defeats them — this rule no longer contributes
+ * anything there. What it still buys is the decoy that TRAILS the payload, where
+ * position argues for the decoy and only content can refuse it.
+ *
+ * That is worth stating because the rule looks redundant if you read only the
+ * cases that motivated it, and deleting it costs a REAL behaviour: a genuine
+ * prose-wrapped clean review `Here are the findings: {"findings":[]}` is
+ * reported unreadable, because it is byte-identical to a quoted empty-findings
+ * example. That is a deliberate choice between two failures, not an oversight —
+ * `unreadable` is visible and retryable, while accepting it would let a trailing
+ * quoted empty beat real findings and report a SILENT clean review. Note too
+ * that `objects([])` is vacuously true, so relaxing this would promote every
+ * trailing bare `[]`, not merely the wrapped spelling. See ADR 003.
+ *
  * **`some`, never `every`, and the same rule on BOTH spellings.** Both halves of
  * that sentence were learned the hard way and neither is safe to "tidy":
  *
@@ -58,10 +74,23 @@
  */
 export function findingsShaped(value, whole = false) {
   const objects = (list) => list.every((item) => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
-  // Non-empty, not merely present. `file: ""` is a string, so a decoy carrying
-  // empty keys passed selection, won, normalized to nothing, and took the real
-  // payload down with it through the all-dropped rule.
-  const named = (item) => Boolean(item.file?.trim?.() || item.summary?.trim?.());
+  // TWO decisions, and each has its own witness because one test cannot
+  // discriminate both — `"" || ""` and `"" && ""` are alike false.
+  //
+  //   - Non-empty, not merely present. `file: ""` is a string, so a decoy
+  //     carrying empty keys passed selection, won, normalized to nothing, and
+  //     took the real payload down with it through the all-dropped rule.
+  //   - AND, not OR, matching `normalizeFinding`'s minimum identity. Under OR a
+  //     WRAPPER `{analysis, findings: [...], summary}` sitting inside an array
+  //     was itself named — by its own `summary` — so the array was accepted,
+  //     containment absorbed the wrapper as a part of it, and the real payload
+  //     inside was lost.
+  //
+  // Known limit, not closed: an array element that IS a wrapper and ALSO
+  // carries a non-empty `file` and `summary` still passes, and is then kept as
+  // the finding in place of the payload it wraps. It needs a model to emit a
+  // wrapper carrying finding keys, which no prompt here asks for.
+  const named = (item) => Boolean(item.file?.trim?.() && item.summary?.trim?.());
   const usable = (list) => objects(list) && (whole || (list.length > 0 && list.some(named)));
   if (Array.isArray(value)) return usable(value);
   if (!value || typeof value !== 'object' || !Array.isArray(value.findings)) return false;

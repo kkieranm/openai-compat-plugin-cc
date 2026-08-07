@@ -29,15 +29,16 @@ generated tokens and segfaults the model process, which cost ~38% of long reques
 misdiagnosed as server flakiness for four days (OAI-51). The ordinary path now asks for the shape in
 prose and parses leniently — a bare top-level array is the same reply as `{findings: […]}`, and the
 channel is an ordered attempt over a candidate list that is `[content]` alone without a schema, which
-is where that no-scratchpad guarantee is now written rather than inferred (the prose-to-JSON scan is
-not dialect and lives in `scripts/lib/json-scan.mjs`, which takes the LAST of the outermost candidates
-`scripts/lib/findings-candidate.mjs` `findingsShaped` accepts — outermost because a wrapper contains
-its own findings array, and last because the prompt orders the model to quote source, so brackets
-precede the answer; a decoy that TRAILS the answer is what the predicate is for); `--structured-output`
+is where that no-scratchpad guarantee is now written rather than inferred; `--structured-output`
 opts back in for a server known not to have that
 grammar engine — see [ADR 003](adr/003-structured-findings.md). Every string and array in that schema carries a
 size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDINGS` cap is reported —
 see [ADR 004](adr/004-bounding-the-review-reply.md).
+
+`scripts/lib/json-scan.mjs` `extractJson` reads the LAST of the outermost bracketed runs that
+`scripts/lib/findings-candidate.mjs` `findingsShaped` accepts, skipping past a start position that
+never closes rather than treating it as the end of the scan — see
+[ADR 003](adr/003-structured-findings.md).
 
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as

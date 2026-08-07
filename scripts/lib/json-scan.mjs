@@ -17,6 +17,13 @@ const FENCE = /```(?:json)?\s*\n([\s\S]*?)```/;
 function balanced(text, from, open, close) {
   const start = text.indexOf(open, from);
   if (start === -1) return null;
+  // `start` is entered with `inString` false whatever the true document state,
+  // because nothing here has read the text before `from`. An `open` living
+  // inside a quoted string is therefore entered as if it were JSON, and the
+  // string's CLOSING quote then turns quote-tracking ON for the remainder — so
+  // this function reports failure on inputs that are not malformed at all. That
+  // is why a failure below is one dead START POSITION and never a verdict about
+  // the text; `scanFor` is what has to know the difference.
 
   let depth = 0;
   let inString = false;
@@ -40,7 +47,11 @@ function balanced(text, from, open, close) {
       if (depth === 0) return { json: text.slice(start, index + 1), start, end: index + 1 };
     }
   }
-  return null;
+  // An opener that never balances. Distinct from "no opener left", and the two
+  // were returned as the same `null` for four passes: `scanFor` read a dead
+  // start position as exhaustion of the whole bracket type and stopped, so one
+  // stray `[` in quoted source hid every real candidate after it.
+  return { json: null, start };
 }
 
 /**
@@ -58,6 +69,14 @@ function scanFor(text, open, close, accept) {
   for (;;) {
     const run = balanced(text, from, open, close);
     if (!run) return found;
+    if (run.json === null) {
+      // One dead start position — skip past it and keep going. Deliberately its
+      // OWN advance rather than a fall-through to the one below: folding them
+      // into a single statement would leave two guards that one mutation
+      // defeats together, which is this feature's most repeated defect.
+      from = run.start + 1;
+      continue;
+    }
     try {
       const value = JSON.parse(run.json);
       if (accept(value)) found.push({ value, start: run.start, end: run.end });
