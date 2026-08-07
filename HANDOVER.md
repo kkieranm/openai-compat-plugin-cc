@@ -4,7 +4,7 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1-4 are complete and all were non-clean; pass 4's batch has LANDED at `e5f5828` with the suite at 686 pass / 0 fail, and **pass 5 is required**. Pass 4 replaced the candidate-selection design outright on Codex consensus rather than patching it again. The plan is
+**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1-5 are complete and all were non-clean; pass 5's batch has LANDED at `674cf49` with the suite at 692 pass / 0 fail (verified in a committed copy), and **pass 6 is the TERMINAL pass** — see the closing rule below. Pass 4 replaced the candidate-selection design outright on Codex consensus rather than patching it again; pass 5 found the enumeration underneath that design was incomplete. The plan is
 `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
 the size budget forced a new file into the file list. The ledger mirror lives in this session's
 scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
@@ -15,11 +15,24 @@ unstarted at a HEAD where both were committed, quoted a suite count two commits 
 pointed `git log` at a commit five back), which the ladder caught as a finding. Re-write it whenever
 the state it describes changes.
 
-**Pass 5's closing rule, fixed in advance so it cannot be renegotiated under pressure:** if pass 5
-returns findings inside pass 4's own batch again, the ladder STOPS there and takes the verdict point
-with them open and honestly mapped. Five consecutive passes finding defects in the previous batch
-would mean the module needs a rewrite the ladder cannot supervise — that is a residue item for the
-user, not a pass 6.
+**Pass 5's pre-fixed closing rule was OVERRIDDEN, and the replacement is now the fixed rule.** The
+old rule said: if pass 5 finds defects inside pass 4's own batch again, STOP at the verdict point with
+them open. Its premise WAS met (E21 sits in pass 4's batch, E23 in pass 3's). It was overridden for a
+MECHANICAL reason, not a preference, and the reason is recorded here so the next session can check it
+rather than inherit it:
+
+> Approval is forbidden while any accepted in-scope fix is unapplied. The only exception is a
+> provenance stop, which requires **no new code or security defect in the pass**. E21 and E24 are code
+> defects, so the exception was unavailable. Stopping at pass 5 could therefore not produce approval —
+> only a rejection or a cap escalation, while shipping two known regressions. That is strictly worse
+> than one more pass.
+
+**The replacement rule, fixed in advance: PASS 6 IS TERMINAL.** It is the no-mutation pass — no batch
+follows it — and its verdict point ends the ladder whatever it finds. Six of a possible ten. Findings
+still open at its end map to `open at approval` (if dual approval lands) or `unresolved at cap`, and
+are filed as residue. **Do not schedule a pass 7.** If pass 6 finds further code defects, that is the
+outcome reported at step 8, not a reason to continue: two of pass 5's six findings were already
+test-coverage rather than behaviour, and the patch surface is closing, not growing.
 
 ## Where to pick up
 
