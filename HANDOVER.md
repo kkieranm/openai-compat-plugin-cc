@@ -4,7 +4,9 @@ Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **O
 
 ## State, one line
 
-**OAI-84 is BUILT — all three phases committed — and is in its review ladder.** Passes 1-5 are complete and all were non-clean; pass 5's batch has LANDED at `674cf49` with the suite at 692 pass / 0 fail (verified in a committed copy), and **pass 6 is the TERMINAL pass** — see the closing rule below. Pass 4 replaced the candidate-selection design outright on Codex consensus rather than patching it again; pass 5 found the enumeration underneath that design was incomplete. The plan is
+**OAI-84 is FINISHED AND `blocked`; OAI-19's measurement arms are RUNNING.** All six ladder passes are
+complete, the ladder ended without approval, and the residue is filed — the section below states it in
+full and is the authoritative one. The plan is
 `plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
 the size budget forced a new file into the file list. The ledger mirror lives in this session's
 scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
@@ -15,7 +17,7 @@ unstarted at a HEAD where both were committed, quoted a suite count two commits 
 pointed `git log` at a commit five back), which the ladder caught as a finding. Re-write it whenever
 the state it describes changes.
 
-**Pass 5's pre-fixed closing rule was OVERRIDDEN, and the replacement is now the fixed rule.** The
+**HISTORY, retained because the reasoning should stay checkable — NOT a live instruction.** The
 old rule said: if pass 5 finds defects inside pass 4's own batch again, STOP at the verdict point with
 them open. Its premise WAS met (E21 sits in pass 4's batch, E23 in pass 3's). It was overridden for a
 MECHANICAL reason, not a preference, and the reason is recorded here so the next session can check it
@@ -67,9 +69,13 @@ bash ~/Code/dotfiles/tests/check-unattended-run.sh --show      # this run's file
 git log --oneline 77c1eab..HEAD                                 # every OAI-84 commit, however many there are
 ```
 
-Then run `/feature` on the topmost `open` item. **OAI-84 must land before OAI-19 runs** — the arm
-would otherwise measure a parser that is about to change, which is the same argument OAI-51 made for
-suspending that run, one layer down. That sequencing is the tracker's, not a preference.
+**The sequencing constraint is DISCHARGED: OAI-84 has landed, so the parser it was going to change is
+the parser being measured.** Record with each arm that it measures the parser at `93c2063`, and that
+**OAI-112/113/114 will change it again** — that boundary is exactly what the harness SHA is recorded
+for, and a later arm must not be differenced across it without saying so.
+
+**OAI-19 takes no `/feature` workflow — it is a measurement.** Read its predeclared acceptance gate in
+BACKLOG.md in full before touching an arm; G-G in particular is mechanical and must not be renegotiated.
 
 ## The answers from the pre-flight — inherit these, do not re-ask
 
