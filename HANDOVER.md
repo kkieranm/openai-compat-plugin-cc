@@ -34,6 +34,31 @@ are filed as residue. **Do not schedule a pass 7.** If pass 6 finds further code
 outcome reported at step 8, not a reason to continue: two of pass 5's six findings were already
 test-coverage rather than behaviour, and the patch surface is closing, not growing.
 
+## OAI-84 IS SETTLED — do not reopen it, and do not mark it done
+
+The ladder ran **six passes** and ended at its terminal pass with **BOTH approvers returning
+`CHANGES-REQUIRED`** (`check-plan-gate.sh --dual-approved` exit 1). That is the correct outcome, not a
+failure of the run: a partial plan withdrawal was open and gate-blocking.
+
+- Both repairs the item was filed for **landed and were audited** — commits through `674cf49`, suite
+  692/0 verified in a committed copy, verify skill all three steps including a CLI before/after control.
+- What is **withdrawn** is the candidate-selection design that grew across passes 2-5. Filed as
+  **OAI-112**; the user adjudicates **part versus whole**, and the one-per-feature replacement-ladder
+  budget is UNSPENT. Replacement code is not eligible until a fresh step-3 plan gate closes.
+- Two live defects are filed separately and are fixable without that decision: **OAI-113** (quadratic
+  scan, measured 39.15s end-to-end against 0.13s/0.14s controls) and **OAI-114** (a primitive sibling
+  discards a whole findings list — a regression from base).
+- Register row appended: `84-two-ways-a-reply-is-thrown-away`, exit_mode `withdrawn`, 16 filed at exit.
+- Run item 84 is **`blocked`**, not done.
+
+**Three claims this repo had shipped were corrected at close-out** (commit `93c2063`): the ADR's
+"no content predicate can separate them" as a closing argument (multiplicity decides it from outside
+the predicate); the ADR's claim that `scanFor`'s two advance statements are independently mutated
+guards (deleting the branch leaves all 692 green); and the code comment asserting the same. The
+transferable lesson is recorded there: **mutate toward SIMPLIFICATION, not toward breakage** — ten
+instances of a check that could not fail across six passes, three of them in witnesses written to end
+an earlier instance.
+
 ## Where to pick up
 
 ```sh
