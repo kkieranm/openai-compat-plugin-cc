@@ -5,9 +5,69 @@ Started 2026-08-08. Tracker: `BACKLOG.md`. Queue, in **tracker order** (tier 1, 
 
 ## State, one line
 
-**OAI-62 is `blocked` on an owner decision (no build — it was already shipped); OAI-67 is IN PROGRESS
-at its probe.** Baseline at declaration: `npm test` 692 pass / 0 fail, working tree clean, HEAD
-`63564ae`.
+**THE RUN IS FINISHED. All four queue items are `blocked`, none is `done`, and no production code was
+changed.** What it produced instead: **three Codex-pre-reviewed plan drafts** in `plans/`, an
+already-shipped item correctly identified and stopped, and three routing observations filed.
+Baseline held throughout: `npm test` 692 pass / 0 fail, HEAD at declaration `63564ae`.
+
+## Read this first: WHY a four-item queue produced zero builds
+
+**It was structurally impossible for it to produce any, and the pre-flight question round did not say
+so.** `/feature` requires the plan-mode sign-off; `adr/045` forbids an unattended session entering
+plan mode, because `ExitPlanMode` prompts a user who has left. **Every `/feature` item in an
+unattended run therefore terminates at `blocked-on-plan` by construction.** The user chose "full
+ladder" review depth expecting builds; the ladder was never reachable. Filed as a routing observation
+at `~/Code/dotfiles/claude/routing-log/2026-08-08-unattended-plus-feature-yields-only-drafts.md`, for
+`/routing-review` to decide once — **not** as a `/feature` item, per the toolchain-defect doctrine.
+
+**This is not a reason to distrust the drafts.** They are the contract's intended artifact and they
+are substantially better than un-challenged plans: nine Codex rounds across three drafts found a real
+defect in **every** first draft, including two that would have shipped as plausible-looking bugs.
+
+## What each item did, and what it needs from you
+
+| Item | State | Needs |
+| --- | --- | --- |
+| **OAI-62** | `blocked` — **already shipped**, no build attempted | Owner decision: build OAI-106, or close over Codex's dissent |
+| **OAI-67** | `blocked-on-plan` | Plan-mode ratification; draft is Codex-**APPROVE** |
+| **OAI-66** | `blocked-on-plan` | Two design blockers answered; draft is **CHANGES-REQUIRED** and not implementable |
+| **OAI-64** | `blocked-on-plan` | One scope choice (relational vs narrowed); draft is Codex-**APPROVE**, closest to shippable |
+
+**Start with OAI-64.** It is the only one blocked purely on a scope choice rather than an unresolved
+design, and it gates OAI-69.
+
+### OAI-62 — blocked at the probe, correctly, and NOT because it is hard
+
+The pre-flight read the item's headline and queued it as evidence-complete. **That was wrong, and the
+item says so itself**: a `STATUS, 2026-08-07` block at the END of its body records that (a), (b) and
+(c) are **all built and committed at `77c1eab`** — `scripts/lib/job-busy.mjs`, `withBusyRetry` at six
+enumerated sites, the heartbeat's two narrowed `isBusy` catches, the `completed` write outside the
+`failed` catch, `salvageOutcome`, and [ADR 020]. Verified against disk this run at
+`job-heartbeat.mjs:82,88`, `cmd-task-worker.mjs:225`, `job-store.mjs:244`.
+
+What stops it closing is **OAI-106**: at the terminal verdict point the Claude approver approved and
+**Codex refused**, because after an exhausted persistence retry the lifecycle still reports
+`worker-died` for work that completed. **The item states the decision is the user's** — build OAI-106
+and reopen, or close over Codex's dissent. Codex cannot supply that consensus: it *is* the dissenter.
+So this is blocked on the owner, not `blocked-on-plan`.
+
+**Lesson for the next pre-flight: read each queued item's body to its END.** A late STATUS block
+supersedes the headline, and the tier index does not carry it.
+
+## The three defects the pre-review caught that a build would have shipped
+
+Recorded here because each is a *general* lesson, not a per-item detail:
+
+1. **OAI-67, first draft** — moving the retention sweep to between `insertJob` and the spawn would
+   have opened a **fresh 120-second queue blocker on exactly the path the item exists to fix**. The
+   sweep now moves *before* `insertJob`. A fix that reproduces its own bug one line over.
+2. **OAI-64, first draft** — its central premise was false. **Blocking is relational, not a row
+   property**: `queuedRole` returns `head` for an ordinary live queued row while `decide` still blocks
+   every caller behind it. A filter on `queuedRole === 'blocks'` would have passed a test written from
+   the item's own transcript and still hidden the commonest blocker.
+3. **OAI-66, phase 1a** — specified `withBusyRetry` inside a live model request, **after this same run
+   had quoted that helper's own prohibition against exactly that** in the OAI-67 draft. Its
+   synchronous `Atomics.wait` would freeze the request the user asked to cancel.
 
 ### OAI-62 — blocked at the probe, correctly, and NOT because it is hard
 
@@ -103,7 +163,11 @@ Next command if nothing has started: `/feature OAI-62`.
   what is hidden. This **voids the mitigation ADR 014 traded the recycled-pid wedge for**, which is why
   **OAI-69 is NOT an independent gap and must not be scheduled as one.** Do OAI-64 before OAI-69.
 
-## What has NOT started
+## What has NOT started, and what will never start from here
+
+**No production code was written this run.** Every commit touches `plans/`, `BACKLOG.md`,
+`HANDOVER.md`, or the dotfiles routing log. `scripts/` and `tests/` are untouched — verify with
+`git diff --stat 63564ae..HEAD`.
 
 - **OAI-62** — probed and `blocked`; see above. No build, and none is wanted until the owner decides.
 - **OAI-67** — **probe done, build NOT started.** What the probe established, so it is not re-derived:
@@ -115,10 +179,27 @@ Next command if nothing has started: `/feature OAI-62`.
   `task-submit.mjs:196` and **rethrows anything non-busy by deliberate design**, so a non-busy sweep
   failure still rejects `submitTask` and `cmd-task.mjs:90-95` never prints the id while the detached
   worker calls the model. Scope the build as **(a) plus the `sweepQuietly` half of (b)**.
-- **OAI-66** — not started.
-- **OAI-64** — not started.
+- **OAI-66** — draft written and blocked; **NOT implementable**, two open blockers named in the draft
+  and mirrored into the tracker entry. Do not build from it without answering both.
+- **OAI-64** — draft written and blocked; blocked on one scope choice only. **Do this one first.**
 
-No code commits have been made under this run — only handover commits.
+**What no draft covers, and is genuinely untouched:** OAI-69 (deliberately — re-read it only *after*
+OAI-64 lands, since deciding its fate now would rest on the very mitigation currently broken),
+OAI-106, and everything in tiers 2 and below.
+
+## Residue filed
+
+Walked all four sources. Filed:
+
+- **Tracker** — a `STATUS, 2026-08-08` block appended to each of OAI-67, OAI-66 and OAI-64 pointing at
+  its draft and naming what blocks it. **Two of those blocks correct the entry above them**: OAI-67's
+  claim that (b) is wholly live (it is half shipped), and OAI-64's closing sentence naming the
+  `display`/`liveness` predicate as correct (refuted — blocking is relational).
+- **Routing log** (dotfiles, committed `a78005e`, new file only — the other session's two modified
+  files were left untouched) — three observations: unattended runs over `/feature` yield only drafts;
+  the blind re-ask outperformed the threaded rounds twice; and a queue item was declared from a
+  headline its own body contradicted.
+- **Nothing was shipped narrowed**, because nothing was shipped.
 
 ## Environment recorded at run start
 

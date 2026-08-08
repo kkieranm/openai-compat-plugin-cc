@@ -1376,6 +1376,22 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Needs no second plugin build: one queued waiter whose pid was recycled or suspended suffices.
   The correct predicate is the derived `display`/`liveness` already in hand. **Do this before OAI-69**,
   which it partly mitigates.
+  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists and is NOT harness approved:**
+  `plans/oai-64-status-must-show-the-blocker-that-is-starving-you.md`. Codex pre-review reached
+  **APPROVE** on a blind round (digest `aa16e596d84c`, verdict parsed by the gate). **Of the three
+  drafts produced on 2026-08-08 this is the closest to shippable** — it is blocked on one scope
+  choice, not on an unresolved design.
+  **This entry's own last sentence is REFUTED and must not be built from.** "The correct predicate is
+  the derived `display`/`liveness`" is false: **blocking is RELATIONAL, not a property of a row.**
+  `queuedRole` returns `blocks` only for the *pathological* rows (`starting`, `malformed`,
+  live-but-unknown-version); an ordinary live known-version queued row returns **`head`**, and `decide`
+  still blocks every caller behind it via `row.seq !== seq`. So a filter on `queuedRole === 'blocks'`
+  would ship, pass a test written from this entry's transcript, and still hide the commonest blocker
+  there is. The choice the owner must make is therefore **relational** (show an off-workspace queued
+  row when it precedes a local one in `seq` order) versus **narrowed** (pathological blockers only,
+  stated plainly as reduced scope). Also in scope, found by the pre-review: `job-render.mjs` describes
+  every `malformed` row as "running with no worker pid", which is false for a malformed *queued* row —
+  and this fix is what starts showing those rows.
 
 - **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
   `0644`.** Four related defects in the state directory's posture, all observed with controls.
@@ -1428,6 +1444,21 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Reachable via any throw in the worker's pre-registration window (`cmd-task-worker.mjs:78-92`):
   `DatabaseTooNewError`, a swept row, an unhandled `SQLITE_BUSY`, OOM. "Submit it again" reproduces a
   systemic failure identically. The sibling `terminalizeDead` (`:37`) names the log; this one does not.
+  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists, is NOT harness approved, and is NOT
+  implementable as it stands:** `plans/oai-66-a-crash-must-not-be-published-as-a-clean-cancellation.md`.
+  Six Codex rounds, a real defect at every one, final verdict **CHANGES-REQUIRED**. The design reached
+  is: the worker terminalizes *itself* on cancel (no new column, no migration) and reconciliation
+  publishes a distinct `cancel-unconfirmed` outcome when no acknowledgement exists. **Two independent
+  blockers stop it, and both need the owner.** (1) How `cancel-unconfirmed` is represented — a new
+  terminal state carries a cross-version hazard, since the row stays a *known version* so an older
+  build reaches `reconcile()`, fails `isTerminal`, and may overwrite a finished row; the alternatives
+  are a `user_version` bump or carrying it as a `reason` inside the existing `failed` envelope.
+  (2) **The pre-stamp window has no evidence-safe reading**: the OS spawn precedes `markSpawned`, so
+  `spawned_at` NULL does *not* prove no worker existed, and `spawned_at` non-null proves only "never
+  registered by the grace deadline", not that anything died. **OAI-67's fix widens that window.**
+  The draft also found the cancel path has **two** exits, not one — a queued worker leaves via
+  `awaitTurn` and never reaches the heartbeat — and that the acknowledgement write **must not use
+  `withBusyRetry`**, whose synchronous sleep would freeze the very request the user asked to stop.
 
 - **OAI-67** — **A failed spawn blocks the whole queue; a post-spawn write failure reports failure while
   the worker runs on.** Raised independently by three lenses.
@@ -1443,6 +1474,13 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `/oai:status`, so it is not lost — but the user was told it failed, and a reasonable retry duplicates
   the work. Once the child is known to exist the submission is accepted; later housekeeping must not
   convert that into a reported failure.
+  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists and is NOT harness approved:**
+  `plans/oai-67-a-spawn-failure-must-not-hold-the-queue.md`. Codex pre-review reached **APPROVE**
+  (digest `4951873328aa`) after killing a real defect in the first draft. **Two corrections to this
+  entry, verified against disk:** (b) is **half closed already** — `markSpawned` is wrapped in
+  `withBusyRetry` and on exhaustion warns on stderr while still returning the id, so only the
+  `sweepQuietly` half is live; and the spawn-failure block is **bounded at the 120 s startup grace**,
+  not permanent. Resume by entering plan mode with the draft as input and re-running the plan gate.
 
 - **OAI-68** — **`PRAGMA user_version` is checked only when a connection opens, so an in-flight worker
   bypasses the newer-database refusal.** `applySchema` (`job-store.mjs:120-125`) reads it once inside
