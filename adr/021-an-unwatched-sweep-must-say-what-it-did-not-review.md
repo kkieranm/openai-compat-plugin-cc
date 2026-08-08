@@ -72,10 +72,22 @@ was simply never set.
 
 `outcomeFor` does a bare `JSON.parse` and **throws** on malformed input; `reasonFrom` is the helper
 that gates on `error === true`. Both take **raw stdout** and parse internally — handing either a
-parsed object returns `null` and silently loses every reason. So: capture stdout → classify
-unparseable output first → `reasonFrom` for failure envelopes → only a valid non-error report reaches
-`outcomeFor`. Reversed, one malformed reply overnight takes down the sweep instead of being recorded
-as one bad commit.
+parsed object returns `null` and silently loses every reason. So: **capture stdout and stderr, both
+bounded** → **`ENOBUFS` first**, which is this harness's own capture ceiling rather than anything the
+server did → classify unparseable output → `reasonFrom` for failure envelopes → only a valid non-error
+report reaches `outcomeFor`. Reversed, one malformed reply overnight takes down the sweep instead of
+being recorded as one bad commit.
+
+**The `ENOBUFS` step was added to the code and not to this list**, which left this ADR describing a
+four-step order the code no longer followed. It is spelled out because that gap — a decision record
+asserting a sequence its code has since changed — is the same defect class as the coverage claims
+above, and it was found only by auditing this document against its own earlier version rather than
+against the change that was intended.
+
+**A reason is only compared when it is a string.** The envelope is a document from another process and
+its `reason` can be any JSON value; an object there used to throw out of the classifier and take the
+whole sweep with it, erasing every commit not yet reached. An uninterpretable shape is recorded as no
+reason rather than trusted — and "no usable reason" is itself the signal a wrong `--model` produces.
 
 ### The deadline governs starting, not finishing
 
@@ -114,9 +126,27 @@ documentation, while reporting that it had reached its limit.
   the likeliest unattended misconfiguration there is.
   **The second group is the load-bearing one and the first version omitted it**: ADR 012 and OAI-20
   measure the completion shapes as this hardware's dominant failure at 27 of 72 runs, so the guard
-  could not fire on the exact outage it was written for. Starvation stays excluded — the model's
-  budget, not the server's health, and three large commits in a row must not read as an outage — as do
-  input refusals such as `oversize`.
+  could not fire on the exact outage it was written for.
+  **The third group is narrower than it first was, and the correction matters more than the original
+  fix.** A `*-timeout` suffix match also caught `first-byte-timeout`, which `http-errors.mjs`
+  documents as what a **large prompt** looks like while the server ingests it, advising a bigger
+  timeout rather than reporting a death. Three big commits in a row would then abort a healthy sweep
+  and mark the rest `skipped-abort` — the exact harm excluding starvation was meant to avoid,
+  reintroduced by the fix for it.
+  **Excluded, each for its own reason:** `token-exhaustion` and `first-byte-timeout` (what a big input
+  does, not what a broken server does); input refusals such as `oversize` (another commit may survive
+  it); and `output-too-large`, which is **this harness's own capture ceiling** — counting it would
+  have the sweep diagnose the server for its own limit and stop the night saying so.
+
+- **What the report renders is decided by what an entry CARRIES, never by what its outcome is called.**
+  Three defects came from keying on the outcome: a `truncated` review's real findings vanished from
+  the artifact because only `findings` entries were rendered; caveats were emitted only in that same
+  branch, so a `clean` entry reviewed diff-only read as a full review while the report claimed files
+  were seen whole; and a failed row rendered "answered by X" from `requestedModel`, which
+  `errorReport` emits **because nothing answered** — the requested-versus-served conflation `adr/011`
+  exists to prevent, reappearing one layer up. Findings are rendered wherever they exist, flagged
+  with the outcome that qualifies them; caveats are rendered on every row; and a completed review that
+  is nonetheless qualified gets its own section, because it never reaches coverage.
 - **Two artifacts per run**, `<stamp>.md` (the triage list) and `<stamp>.json` (the machine record
   that makes a later "since last sweep" mode and model-to-model comparison possible), written by a
   local writer rather than `bench/lib/record.mjs` `persist`, which hardcodes `<root>/bench/results`

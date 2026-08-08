@@ -46,41 +46,92 @@ export const MAX_RAW = 256_000;
  *    ADR 012 and OAI-20 measure it as the dominant failure at 27 of 72 runs, and
  *    omitting it meant the guard could not fire on the exact outage it was
  *    written for.
- * 3. Any `*-timeout`. There is no constant to import — `http-errors.mjs` mints
- *    these as `` `${budget}-timeout` `` — so this matches the idiom already used
- *    at `provider.mjs`, which tests the suffix.
+ * 3. `deadline-timeout` and `idle-timeout` ONLY — a run that got going and then
+ *    stopped producing.
  *
- * **Deliberately NOT here:** `token-exhaustion`, which is the model's budget
- * rather than the server's health — three large commits in a row must not read
- * as an outage — and input refusals such as `oversize`, which another commit may
- * well survive.
+ * **The suffix match this used to do was too wide, and it inverted the rule.**
+ * `http-errors.mjs` mints these as `` `${budget}-timeout` ``, so the suffix also
+ * caught `first-byte-timeout` — which that file documents as what a LARGE PROMPT
+ * looks like while the server ingests it, advising a bigger timeout rather than
+ * reporting a dead server. Three big commits in a row would then have aborted a
+ * perfectly healthy sweep and marked the rest `skipped-abort`: the exact harm
+ * that excluding starvation was meant to avoid, reintroduced by the fix for it.
+ *
+ * **Deliberately NOT here:** `token-exhaustion` and `first-byte-timeout`, which
+ * are what a big input does rather than what a broken server does; input
+ * refusals such as `oversize`, which another commit may well survive; and
+ * `output-too-large`, which is THIS HARNESS's own capture ceiling — ADR 021 calls
+ * it a sweep defect rather than a review failure, and counting it as an outage
+ * would have the sweep diagnose the server for its own limit.
  */
+const UNWELL_TIMEOUTS = new Set(['deadline-timeout', 'idle-timeout']);
+
 export function serverUnwell(reason) {
-  if (!reason) return false;
+  if (typeof reason !== 'string' || !reason) return false;
   if (reason === TRANSPORT || reason === NON_RETRYABLE_TRANSPORT) return true;
   if (COMPLETION_SHAPES.has(reason)) return true;
-  return reason.endsWith('-timeout');
-}
-
-function raw(stdout) {
-  const text = String(stdout ?? '');
-  if (text.length <= MAX_RAW) return { raw: text, rawTruncated: false };
-  return { raw: text.slice(0, MAX_RAW), rawTruncated: true };
+  return UNWELL_TIMEOUTS.has(reason);
 }
 
 /**
- * A failure envelope, or `null` when this is not one.
+ * Bound one captured stream, and say so when it was cut.
+ *
+ * Applied to `stderr` as well as `stdout`, which the first version missed: the
+ * child capture allows 64MB per stream, so a night of verbose failures wrote
+ * gigabytes into the record while `rawTruncated` stayed `false` because stdout
+ * happened to be small. A record that quietly shortens its own evidence is the
+ * same defect as a report that quietly shortens its own coverage.
+ */
+function bound(text) {
+  const s = String(text ?? '');
+  return s.length <= MAX_RAW ? { text: s, cut: false } : { text: s.slice(0, MAX_RAW), cut: true };
+}
+
+function captured(stdout, stderr) {
+  const out = bound(stdout);
+  const err = bound(stderr);
+  return {
+    raw: out.text,
+    rawTruncated: out.cut,
+    stderr: err.text,
+    stderrTruncated: err.cut,
+  };
+}
+
+/**
+ * A reason that is safe to compare, or `null`.
+ *
+ * The envelope is a document from another process, so `reason` can be any JSON
+ * value — and a non-string one used to throw out of `serverUnwell` and take the
+ * whole sweep with it, erasing every commit that had not yet been reached. A
+ * shape the harness cannot interpret is recorded as no reason rather than
+ * trusted, which is the same rule the rest of this module keeps.
+ */
+function usableReason(stdout) {
+  const reason = reasonFrom(stdout);
+  return typeof reason === 'string' ? reason : null;
+}
+
+/**
+ * What a failure envelope says.
  *
  * `reasonFrom` gates on `error === true` and never throws, so it is safe on
  * anything; it is asked before `outcomeFor`, which does a bare `JSON.parse`.
+ *
+ * **`requestedModel` is deliberately NOT carried as `model`.** `errorReport`
+ * emits that field precisely because a failed run produced no report — it is the
+ * model that was ASKED, and nothing answered. Carrying it as `model` made the
+ * report say "answered by X" about a model that never replied, which is the
+ * requested-versus-served conflation `adr/011` exists to stop this plugin
+ * making. It is kept under its own name so the record kkeeps the fact without
+ * the renderer being able to mistake it.
  */
 function failure(stdout, status) {
-  const reason = reasonFrom(stdout);
-  if (reason === null && !String(stdout ?? '').includes('"error"')) return null;
+  const reason = usableReason(stdout);
   return {
     outcome: reason === 'token-exhaustion' ? 'starved' : 'failed',
     reason,
-    model: requestedModelFrom(stdout),
+    requestedModel: requestedModelFrom(stdout),
     status,
   };
 }
@@ -118,23 +169,25 @@ function reported(report) {
  * helpers take RAW STDOUT and parse it themselves — handing either a parsed
  * object returns null and silently loses every reason.
  */
-export function classify({ status, stdout, stderr, code }) {
-  const kept = raw(stdout);
+export function classify({ status, stdout, stderr, code, signal }) {
+  // `signal` rides along on every branch: a child killed by a signal with no
+  // stderr and no envelope is otherwise indistinguishable from an ordinary
+  // crash, which defeats the diagnostic contract the rest of this adds.
+  const kept = { ...captured(stdout, stderr), signal: signal ?? null };
   // The harness's own capture ceiling, not the child dying. `execFileSync`
   // throws ENOBUFS with `status: null`, which an earlier version turned into 1
   // and then reported as "the review process died without recording an outcome".
-  if (code === 'ENOBUFS') return { outcome: 'output-too-large', stderr, ...kept };
+  if (code === 'ENOBUFS') return { outcome: 'output-too-large', ...kept };
   let parsed;
   try {
     parsed = JSON.parse(String(stdout ?? ''));
   } catch {
-    return { outcome: status === 0 ? 'unreadable' : 'crashed', stderr, ...kept };
+    return { outcome: status === 0 ? 'unreadable' : 'crashed', ...kept };
   }
   if (!parsed || typeof parsed !== 'object') {
-    return { outcome: status === 0 ? 'unreadable' : 'crashed', stderr, ...kept };
+    return { outcome: status === 0 ? 'unreadable' : 'crashed', ...kept };
   }
-  const failed = parsed.error === true ? failure(stdout, status) : null;
-  if (failed) return { ...failed, stderr, ...kept };
+  if (parsed.error === true) return { ...failure(stdout, status), ...kept };
   const settled = outcomeFor(stdout, false);
   if (settled.reason === 'model-substituted') {
     return { outcome: 'substituted', reason: settled.reason, model: settled.report?.model, ...kept };

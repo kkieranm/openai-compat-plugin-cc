@@ -145,12 +145,21 @@ function invoke(args) {
   }
 }
 
-/** Does this entry say the SERVER is unwell, rather than this commit being hard? */
+/**
+ * Does this entry say the SERVER is unwell, rather than this commit being hard
+ * or this harness being at its own limit?
+ *
+ * Three admissions, and the boundary is "would the next commit fare any better":
+ * a child that died; a failure envelope with **no usable reason**, which is what
+ * a wrong `--model` produces and the likeliest unattended misconfiguration
+ * there is; and a reason `serverUnwell` recognises.
+ *
+ * **`output-too-large` is NOT here.** It is this harness's 64MB capture ceiling —
+ * a sweep defect, in ADR 021's own words — and counting it would have the sweep
+ * blame the server for its own limit, then stop the night saying so.
+ */
 function isOutage(entry) {
-  if (entry.outcome === 'crashed' || entry.outcome === 'output-too-large') return true;
-  // A failure envelope carrying NO reason is what a wrong `--model` produces —
-  // the single likeliest unattended misconfiguration, and one that would
-  // otherwise run the whole queue against a server that will refuse every time.
+  if (entry.outcome === 'crashed') return true;
   if (entry.outcome === 'failed' && !entry.reason) return true;
   return entry.outcome === 'failed' && serverUnwell(entry.reason);
 }
@@ -177,12 +186,16 @@ export function runSweep(commits, options, { execute = invoke, now = Date.now } 
   let stoppedBecause = 'every enumerated commit was settled';
   let aborted = false;
   for (const commit of commits) {
-    if (aborted) {
-      entries.push({ ...commit, outcome: 'skipped-abort' });
-      continue;
-    }
+    // Eligibility is asked FIRST, and the order is the point: a docs-only commit
+    // was never going to be reviewed, so blaming an outage for it overstates
+    // what the outage cost. The deadline branch below was already ordered this
+    // way; the abort branch was not, which is a slip rather than a policy.
     if (!commit.eligible) {
       entries.push({ ...commit, outcome: 'skipped-no-code' });
+      continue;
+    }
+    if (aborted) {
+      entries.push({ ...commit, outcome: 'skipped-abort' });
       continue;
     }
     if (now() >= options.deadline) {

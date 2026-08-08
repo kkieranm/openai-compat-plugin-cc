@@ -61,10 +61,14 @@ test('the completion shapes count as the server being unwell', () => {
   }
 });
 
-test('any *-timeout counts, since those codes are minted per budget and have no constant', () => {
+// NARROWED at pass 2. This test previously asserted that ANY `*-timeout`
+// counts, which is what made the guard abort healthy sweeps: `first-byte-timeout`
+// is what a large prompt looks like while the server ingests it, and
+// `http-errors.mjs` advises raising the timeout rather than reporting a death.
+test('only the timeouts that mean the server stopped producing count', () => {
   assert.equal(serverUnwell('deadline-timeout'), true);
   assert.equal(serverUnwell('idle-timeout'), true);
-  assert.equal(serverUnwell('first-byte-timeout'), true);
+  assert.equal(serverUnwell('first-byte-timeout'), false);
 });
 
 // The control for the two above: starvation is the MODEL's budget, not the
@@ -112,3 +116,68 @@ test('the raw reply is retained for the machine record, and truncation is record
   assert.equal(classify(huge).raw.length, 256_000);
 });
 
+
+// --- pass 2 batch: what the entry CARRIES, not what its outcome is called ---
+
+// A truncated review is not a review of the commit — but the leads it did emit
+// are still leads, and the first fix dropped them from the morning artifact.
+test('a truncated review keeps the findings it produced', () => {
+  const entry = classify(ok([{ file: 'a.mjs', summary: 'real lead' }], { analysisCut: true }));
+  assert.equal(entry.outcome, 'truncated');
+  assert.equal(entry.findings.length, 1);
+});
+
+// The reproduced crash: a non-string reason threw out of runSweep and erased
+// every commit that had not been reached.
+test('a non-string reason cannot crash the sweep or erase later commits', () => {
+  assert.equal(serverUnwell({ kind: 'timeout' }), false);
+  const { entries } = runSweep(commits('a', 'b', 'c'), OPTIONS, {
+    execute: () => ({ status: 1, stdout: JSON.stringify({ error: true, reason: { kind: 'timeout' } }) }),
+  });
+  assert.equal(entries.length, 3);
+});
+
+// first-byte-timeout is what a LARGE PROMPT looks like, not a dead server —
+// http-errors.mjs says so and advises raising the timeout.
+test('a slow first byte is not the server being unwell', () => {
+  assert.equal(serverUnwell('first-byte-timeout'), false);
+  assert.equal(serverUnwell('deadline-timeout'), true);
+  assert.equal(serverUnwell('idle-timeout'), true);
+});
+
+test('stderr is bounded too, and its truncation is recorded separately', () => {
+  const entry = classify({ status: 1, stdout: '', stderr: 'x'.repeat(300_000) });
+  assert.equal(entry.stderrTruncated, true);
+  assert.equal(entry.stderr.length, 256_000);
+  assert.equal(entry.rawTruncated, false, 'a small stdout must not mask a truncated stderr');
+});
+
+test('a signal-killed child is distinguishable from an ordinary crash', () => {
+  assert.equal(classify({ status: null, stdout: '', signal: 'SIGKILL' }).signal, 'SIGKILL');
+  assert.equal(classify({ status: 1, stdout: '' }).signal, null);
+});
+
+// ADR 011's conflation, one layer up: nothing answered, so nothing may be
+// reported as having answered.
+test('a failed run reports no answering model, only the one it asked for', () => {
+  const entry = classify({ status: 1, stdout: JSON.stringify({ error: true, reason: 'transport', requestedModel: 'qwen/qwen3.6-27b' }) });
+  assert.equal(entry.model, undefined, 'a failed run had nothing answer it');
+  assert.equal(entry.requestedModel, 'qwen/qwen3.6-27b');
+});
+
+// The harness's own capture ceiling must not be diagnosed as the server dying.
+test('the capture limit never trips the outage abort', () => {
+  const { entries, stoppedBecause } = runSweep(commits('a', 'b', 'c', 'd'), OPTIONS, {
+    execute: () => ({ status: null, stdout: 'partial', code: 'ENOBUFS' }),
+  });
+  assert.equal(entries.length, 4);
+  assert.ok(entries.every((entry) => entry.outcome === 'output-too-large'));
+  assert.equal(stoppedBecause, 'every enumerated commit was settled');
+});
+
+test('an ineligible commit after an abort is skipped-no-code, not blamed on the outage', () => {
+  const mixed = [...commits('a', 'b', 'c'), { sha: 'd', subject: 'docs', eligible: false }, ...commits('e')];
+  const { entries } = runSweep(mixed, OPTIONS, { execute: () => envelope('transport') });
+  assert.equal(entries[3].outcome, 'skipped-no-code');
+  assert.equal(entries[4].outcome, 'skipped-abort');
+});
