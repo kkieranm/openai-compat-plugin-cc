@@ -241,11 +241,15 @@ Domain:
 
 ## Work tracker
 
-- `BACKLOG.md` — ordered, numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
-  **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**; the tier list's ID
-  sequence must equal the heading sequence, and every ID ever issued must resolve to exactly one live
-  heading, one done/parked heading, or one redirect hop. *(A single bolded `**OAI-n**` inside the tier
-  prose parses as a tier entry — refer to items in other tiers without bold.)*
+- `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
+  **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**. **Since 2026-08-08 the
+  tier list is the PRIORITY VIEW and the bodies below sit in ascending ID order** (`adr/025`); a
+  re-order rewrites only the index, and the close-out asserts that the index covers the live set
+  exactly, that no ID repeats in it, and that the bodies are in ID order. It is no longer true that
+  the index sequence equals the heading sequence — that was the pre-migration invariant. Every ID ever
+  issued must still resolve to exactly one live heading, one done/parked heading, or one redirect hop.
+  *(A single bolded `**OAI-n**` inside the tier prose parses as a tier entry — refer to items in other
+  tiers without bold.)*
 - `BACKLOG_DONE.md` — completed items, newest first.
 - `BACKLOG_PARKED.md` — items whose **framing** was disproved, not merely deprioritised. Each carries a
   **reopening bar**: what would have to be observed for it to become live again. An item still wanted
