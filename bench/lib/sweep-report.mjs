@@ -10,9 +10,7 @@
 // findings section or in coverage, and never in neither.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-/** Outcomes that mean a model actually read the commit and reported on it. */
-const REVIEWED = new Set(['findings', 'clean']);
+import { REVIEWED } from './sweep-outcome.mjs';
 
 /**
  * Why each non-reviewed outcome left no findings, in the reader's terms.
@@ -22,13 +20,37 @@ const REVIEWED = new Set(['findings', 'clean']);
  */
 const WHY = {
   starved: 'ran out of tokens before writing findings — the model reasoned until the budget was gone (OAI-115)',
+  truncated: 'the model\'s analysis was cut off before it finished looking, so whatever it managed to say is not a review of this commit',
   unreadable: 'the model answered, but the reply could not be parsed as findings',
   substituted: 'a DIFFERENT model answered than the one requested, so this is not a review by the model asked for',
   crashed: 'the review process died without emitting a report',
+  'output-too-large': 'the reply exceeded this harness\'s own capture limit — a sweep defect, not a failure of the review',
   failed: 'the review failed',
   'skipped-deadline': 'the wall-clock deadline passed before this commit was reached',
+  'skipped-abort': 'the sweep aborted on repeated server failures before reaching this commit',
   'skipped-no-code': 'the commit touched none of the included paths',
 };
+
+/** The model that answered, where one did — rendered on every row, not just findings. */
+function answeredBy(entry) {
+  return entry.model ? ` *(answered by \`${entry.model}\`)*` : '';
+}
+
+/**
+ * The caveats that ride along with a review that DID complete.
+ *
+ * `atCap` and `dropped` do not stop a review counting — findings were produced —
+ * but both mean the list is shorter than what the model had to say, and a reader
+ * comparing two commits' counts needs to know which.
+ */
+function incompleteness(entry) {
+  const notes = [];
+  if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
+  if (entry.dropped) notes.push(`${entry.dropped} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
+  if (entry.hunksOnly) notes.push('the changed files did not fit the window, so only the diff was reviewed — not the files whole');
+  if (entry.rawTruncated) notes.push('the raw reply was truncated in the machine record');
+  return notes;
+}
 
 function subjectLine(entry) {
   return `\`${entry.sha.slice(0, 9)}\` ${entry.subject ?? ''}`.trim();
@@ -51,7 +73,9 @@ function findingsSection(entries) {
     // The answering model per commit, never once in the header: it can differ
     // request to request, and a single header value would assert a uniformity
     // nothing enforces.
-    lines.push(`### ${subjectLine(entry)}`, '', `*answered by \`${entry.model ?? 'unknown'}\`*`, '', ...findingLines(entry), '');
+    lines.push(`### ${subjectLine(entry)}`, '', `*answered by \`${entry.model ?? 'unknown'}\`*`, '');
+    for (const note of incompleteness(entry)) lines.push(`> **Incomplete:** ${note}`, '');
+    lines.push(...findingLines(entry), '');
   }
   return lines;
 }
@@ -65,7 +89,11 @@ function coverageSection(entries) {
   }
   lines.push(`**${missed.length} of ${entries.length} enumerated commits produced no review.**`, '');
   for (const entry of missed) {
-    lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${WHY[entry.outcome] ?? 'no explanation recorded'}`);
+    // `entry.reason` is the code the classifier captured; without it every
+    // failure renders identically and a `bad-json` night is indistinguishable
+    // from a `deadline-timeout` one.
+    const why = entry.reason ? `${WHY[entry.outcome] ?? 'no explanation recorded'} (\`${entry.reason}\`)` : (WHY[entry.outcome] ?? 'no explanation recorded');
+    lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
   }
   lines.push('');
   return lines;
@@ -79,13 +107,17 @@ function tally(entries) {
 
 function header(record) {
   const reviewed = record.entries.filter((entry) => REVIEWED.has(entry.outcome)).length;
+  // From the enumeration, not from `entries.length`. They agree, and the count
+  // the reader is owed is how many commits were CONSIDERED — which must not
+  // become a function of how many happened to get recorded.
+  const enumerated = record.enumerated ?? record.entries.length;
   return [
     '# Overnight review sweep',
     '',
     `- **Started** ${record.startedAt} · **ended** ${record.endedAt}`,
     `- **Stopped because** ${record.stoppedBecause}`,
     `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
-    `- **Enumerated** ${record.entries.length} commits · **reviewed** ${reviewed} · **no review** ${record.entries.length - reviewed}`,
+    `- **Enumerated** ${enumerated} commits · **reviewed** ${reviewed} · **no review** ${enumerated - reviewed}`,
     `- **Per-commit cap** ${record.maxSeconds}s · **paths included** ${record.include.join(', ')}`,
     `- ${tally(record.entries)}`,
     '',

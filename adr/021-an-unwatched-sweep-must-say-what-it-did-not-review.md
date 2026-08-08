@@ -24,11 +24,25 @@ So the load-bearing output of this harness is not its findings. It is its **cove
 ## Decision
 
 **Every enumerated commit appears exactly once — in the findings section or in coverage, never in
-neither.** Seven outcomes are distinguished, and only two of them count as *reviewed*:
+neither.** Only two outcomes count as *reviewed*:
 
-`findings` and `clean` are reviewed. `starved`, `unreadable`, `substituted`, `crashed` and `failed`
-are **UNKNOWN** — the commit was not reviewed, and the report says which kind of not-reviewed it was.
-Two further outcomes, `skipped-deadline` and `skipped-no-code`, were never attempted.
+`findings` and `clean` are reviewed. `starved`, `truncated`, `unreadable`, `substituted`, `crashed`,
+`output-too-large` and `failed` are **UNKNOWN** — the commit was not reviewed, and the report says
+which kind of not-reviewed it was. Three further outcomes, `skipped-deadline`, `skipped-abort` and
+`skipped-no-code`, were never attempted.
+
+**The first version of this ADR claimed that invariant while the code broke it**, and the review that
+followed found three ways. Recorded here rather than quietly corrected, because the gap between what
+a decision record asserts and what its code does is the defect this repo keeps re-finding:
+
+- **Aborting `break`ed out of the loop**, so on an outage the remaining commits appeared in neither
+  section and the header's enumerated count silently shrank to match. They are now recorded
+  `skipped-abort`, and the count comes from the enumeration rather than from the entry list.
+- **A truncated analysis was reported `clean`.** `analysisCut` is the CLI's own caveat meaning the
+  model never finished looking, and reading only `findings` conflated it with a clean review — the
+  exact failure this ADR exists to prevent, one layer up. It is now the `truncated` outcome.
+- **The harness's own 64MB capture ceiling was reported as `crashed`**, i.e. as the child dying.
+  `ENOBUFS` is now `output-too-large`, which names it as a sweep defect rather than a review failure.
 
 Three of those exist because each is a distinct way the night could lie:
 
@@ -80,12 +94,29 @@ documentation, while reporting that it had reached its limit.
   (`adr/005`, verified — `git show <ref>:<path>` with `--root`), but nothing the commit did not touch.
   A defect living in the relationship between a change and an existing caller elsewhere is invisible
   by construction. The report says so, in those words.
+  **"Whole files" is conditional and the report now says when it did not hold**: the request ladder
+  falls back to the diff alone when the changed files do not fit the window, which the envelope
+  reports as `hunksOnly`. An entry carrying it is annotated, because otherwise this ADR's own
+  whole-files claim would be false for that commit with nothing saying so.
+- **A completed review can still be incomplete, and says which kind.** `atCap` means the findings list
+  hit the reporting ceiling; `dropped` counts findings the model emitted that normalization discarded
+  for naming no file or no defect. Neither demotes the review — findings were produced — but both mean
+  the list is shorter than what the model had to say, which a reader comparing two commits' counts
+  needs. The raw `--json` per commit is retained in the record (bounded, with truncation recorded)
+  rather than reduced to a classification.
 - **This does not fix OAI-115.** It makes starvation visible and counted. A night that starves on
   every large commit still produces almost no findings — the difference is that you can tell.
-- **`--abort-after` ends a sweep after N consecutive *transport* failures**, compared against the
-  exported `TRANSPORT` / `NON_RETRYABLE_TRANSPORT` constants rather than a local list. Starvation is
-  deliberately excluded: it is the model's budget, not the server's health, and three large commits in
-  a row must not look like an outage.
+- **`--abort-after` ends a sweep after N consecutive failures that mean the SERVER is unwell**, which
+  `serverUnwell` defines as three groups: `TRANSPORT` / `NON_RETRYABLE_TRANSPORT`; `COMPLETION_SHAPES`
+  (`empty-completion`, `stream-unfinished`, `blank-completion`); and any `*-timeout`, matched by
+  suffix because `http-errors.mjs` mints those per budget and there is no constant to import. A
+  failure envelope carrying **no reason at all** counts too — that is what a wrong `--model` produces,
+  the likeliest unattended misconfiguration there is.
+  **The second group is the load-bearing one and the first version omitted it**: ADR 012 and OAI-20
+  measure the completion shapes as this hardware's dominant failure at 27 of 72 runs, so the guard
+  could not fire on the exact outage it was written for. Starvation stays excluded — the model's
+  budget, not the server's health, and three large commits in a row must not read as an outage — as do
+  input refusals such as `oversize`.
 - **Two artifacts per run**, `<stamp>.md` (the triage list) and `<stamp>.json` (the machine record
   that makes a later "since last sweep" mode and model-to-model comparison possible), written by a
   local writer rather than `bench/lib/record.mjs` `persist`, which hardcodes `<root>/bench/results`

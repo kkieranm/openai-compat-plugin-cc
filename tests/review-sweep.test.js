@@ -10,7 +10,8 @@
 // those are the same thing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, enumerateCommits, resolveDeadline, runSweep } from '../bench/review-sweep.mjs';
+import { enumerateCommits, optionsFrom, resolveDeadline, runSweep } from '../bench/review-sweep.mjs';
+import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
 
 const ok = (findings, extra = {}) => ({
   status: 0,
@@ -106,11 +107,16 @@ test('a review already in flight when the deadline passes is not truncated', () 
 });
 
 test('consecutive transport failures abort the sweep rather than burning the night', () => {
+  const executed = [];
   const { entries, stoppedBecause } = runSweep(commits('a', 'b', 'c', 'd', 'e'), OPTIONS, {
-    execute: () => envelope('transport'),
+    execute: (args) => { executed.push(args); return envelope('transport'); },
   });
-  assert.equal(entries.length, 3);
-  assert.match(stoppedBecause, /consecutive transport failures/);
+  // Three reviews attempted, then no more — the point of aborting.
+  assert.equal(executed.length, 3);
+  // …but all five commits are still in the record. Asserting `entries.length`
+  // was 3 here is what let the truncating `break` look correct.
+  assert.equal(entries.length, 5);
+  assert.match(stoppedBecause, /server looks gone/);
 });
 
 // Without the reset a sweep that failed twice at 01:00 and then ran happily for
@@ -188,4 +194,26 @@ test('a sweep with no stop condition is refused', () => {
   assert.throws(() => resolveDeadline({}, 0), /stop condition is required/);
   assert.throws(() => resolveDeadline({ until: '06:00', minutes: '10' }, 0), /not both/);
   assert.throws(() => resolveDeadline({ until: '25:00' }, 0), /HH:MM/);
+});
+
+test("a crashed child keeps its stderr, the only text that says why", () => {
+  assert.equal(classify({ status: 1, stdout: '', stderr: 'ENOENT: no such model' }).stderr, 'ENOENT: no such model');
+});
+
+// --abort-after was documented in the plan and in ADR 021 and could not be
+// passed. Exercised through optionsFrom, NOT the injected OPTIONS — going
+// through the injection is exactly why the suite could not see the gap.
+test('--abort-after is a real flag, read through the option parser', () => {
+  assert.equal(optionsFrom({ minutes: '10', 'abort-after': '7' }, 0).abortAfter, 7);
+  assert.equal(optionsFrom({ minutes: '10' }, 0).abortAfter, 3);
+  assert.throws(() => optionsFrom({ minutes: '10', 'abort-after': 'x' }, 0), /--abort-after/);
+});
+
+// A fixed 24h and "the next local calendar date" differ by an hour across a DST
+// boundary, and the overnight run is precisely what crosses one.
+test('--until advances the local calendar date, not a fixed 24 hours', () => {
+  const start = new Date(2026, 2, 28, 23, 0, 0).getTime();
+  const deadline = new Date(resolveDeadline({ until: '06:00' }, start));
+  assert.equal(deadline.getHours(), 6, 'the requested local hour must survive a DST transition');
+  assert.equal(deadline.getDate(), 29);
 });

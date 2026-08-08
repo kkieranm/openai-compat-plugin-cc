@@ -13,20 +13,25 @@
 // `main()` at module scope, cannot be imported, and consequently has no test at
 // all. Here the executor, the git reader and the clock are all parameters, so
 // the whole loop runs in tests with no model, no child process and no waiting.
+//
+// What a reply MEANS lives in `lib/sweep-outcome.mjs`; this file decides what to
+// do next.
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
-import { NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../scripts/lib/failure-shape.mjs';
-import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom } from './lib/outcome.mjs';
+import { classify, serverUnwell } from './lib/sweep-outcome.mjs';
 import { writeSweep } from './lib/sweep-report.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['until', 'minutes', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts', 'model', 'provider', 'base-url', 'out-dir'],
+  valueFlags: [
+    'until', 'minutes', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
+    'abort-after', 'model', 'provider', 'base-url', 'out-dir',
+  ],
   booleanFlags: ['diff-only'],
   repeatableFlags: ['include'],
 };
@@ -40,9 +45,6 @@ const DEFAULTS = {
   abortAfter: 3,
 };
 
-/** Reason codes that mean the server, not the model, is the problem. */
-const TRANSPORT_REASONS = new Set([TRANSPORT, NON_RETRYABLE_TRANSPORT]);
-
 /**
  * When to stop STARTING work.
  *
@@ -51,6 +53,12 @@ const TRANSPORT_REASONS = new Set([TRANSPORT, NON_RETRYABLE_TRANSPORT]);
  * occurrence rather than to a deadline in the past, which would end the sweep
  * before it began. One of the two is required: a sweep with no stop condition is
  * not the thing that was asked for, so it must not be reachable by omission.
+ *
+ * The next occurrence is the next local CALENDAR DATE at the requested
+ * hour and minute, not "24 hours later". Across a DST boundary those differ by
+ * an hour, and it is precisely the overnight run that crosses one — in
+ * Europe/London, `--until 06:00` started at 23:00 on the spring transition
+ * resolved to 07:00 when this added a fixed 86,400,000 ms.
  */
 export function resolveDeadline({ until, minutes }, startMs) {
   if (until && minutes) throw new UserError('Pass --until or --minutes, not both.');
@@ -64,8 +72,9 @@ export function resolveDeadline({ until, minutes }, startMs) {
   if (!match) throw new UserError(`--until must be HH:MM in 24-hour local time, got "${until}".`);
   const at = new Date(startMs);
   at.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  const resolved = at.getTime();
-  return resolved > startMs ? resolved : resolved + 86_400_000;
+  if (at.getTime() > startMs) return at.getTime();
+  at.setDate(at.getDate() + 1);
+  return at.getTime();
 }
 
 /** Which of a commit's paths decide whether it is worth a review. */
@@ -101,44 +110,6 @@ export function enumerateCommits({ include, maxCommits, scanLimit }, git) {
   return out;
 }
 
-/**
- * What one finished child means.
- *
- * The ORDER is load-bearing, not stylistic. `outcomeFor` does a bare
- * `JSON.parse` and throws on anything malformed, so unreadable output is
- * classified and returned before it can reach it; `reasonFrom` is the helper
- * that gates on `error === true`. Both take RAW STDOUT and parse it themselves —
- * handing either a parsed object returns null and silently loses every reason.
- */
-export function classify({ status, stdout }) {
-  let parsed;
-  try {
-    parsed = JSON.parse(String(stdout ?? ''));
-  } catch {
-    return { outcome: status === 0 ? 'unreadable' : 'crashed' };
-  }
-  if (!parsed || typeof parsed !== 'object') return { outcome: status === 0 ? 'unreadable' : 'crashed' };
-  if (parsed.error === true) {
-    const reason = reasonFrom(stdout);
-    return {
-      outcome: reason === 'token-exhaustion' ? 'starved' : 'failed',
-      reason,
-      model: requestedModelFrom(stdout),
-      attempts: attemptsFrom(stdout),
-    };
-  }
-  const settled = outcomeFor(stdout, false);
-  if (settled.reason === 'model-substituted') {
-    return { outcome: 'substituted', reason: settled.reason, model: settled.report?.model };
-  }
-  const findings = settled.report?.findings;
-  // `null` is "could not be read" and `[]` is "read, nothing found" — a
-  // distinction ADR 003 exists to protect. Collapsing them is what turns an
-  // unreadable night into a clean one.
-  if (!Array.isArray(findings)) return { outcome: 'unreadable', model: settled.report?.model };
-  return { outcome: findings.length > 0 ? 'findings' : 'clean', findings, model: settled.report?.model };
-}
-
 function reviewArgs(sha, options) {
   const args = ['review', '--commit', sha, '--json', '--max-seconds', String(options.maxSeconds), '--max-attempts', String(options.maxAttempts)];
   if (options.diffOnly) args.push('--diff-only');
@@ -148,20 +119,40 @@ function reviewArgs(sha, options) {
   return args;
 }
 
-/** The real executor. Never used by tests, which pass their own. */
+/**
+ * The real executor. Never used by tests, which pass their own.
+ *
+ * Everything the failure carries is kept — `stderr`, `code` and `signal` — and
+ * that is not tidiness. Without `code` an `ENOBUFS` (this harness's own 64MB
+ * capture ceiling) is indistinguishable from the child dying, and without
+ * `stderr` a crashed commit reaches the morning with nothing saying why, on the
+ * one path where no envelope exists to say it.
+ */
 function invoke(args) {
   try {
     const stdout = execFileSync(process.execPath, [COMPANION, ...args], {
       cwd: ROOT, encoding: 'utf8', maxBuffer: 64e6, stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { status: 0, stdout };
+    return { status: 0, stdout, stderr: '' };
   } catch (error) {
-    return { status: error.status ?? 1, stdout: error.stdout ?? '' };
+    return {
+      status: error.status ?? 1,
+      stdout: error.stdout ?? '',
+      stderr: String(error.stderr ?? ''),
+      code: error.code,
+      signal: error.signal,
+    };
   }
 }
 
-function isTransport(entry) {
-  return entry.outcome === 'crashed' || (entry.outcome === 'failed' && TRANSPORT_REASONS.has(entry.reason));
+/** Does this entry say the SERVER is unwell, rather than this commit being hard? */
+function isOutage(entry) {
+  if (entry.outcome === 'crashed' || entry.outcome === 'output-too-large') return true;
+  // A failure envelope carrying NO reason is what a wrong `--model` produces —
+  // the single likeliest unattended misconfiguration, and one that would
+  // otherwise run the whole queue against a server that will refuse every time.
+  if (entry.outcome === 'failed' && !entry.reason) return true;
+  return entry.outcome === 'failed' && serverUnwell(entry.reason);
 }
 
 /**
@@ -172,12 +163,24 @@ function isTransport(entry) {
  * whether to begin, so it is read at the last moment before the thing it
  * authorises. A review already in flight is never truncated — overshoot is
  * bounded by the per-commit `--max-seconds` instead.
+ *
+ * **Aborting never shortens the record.** Every commit that was enumerated
+ * appears in `entries` whatever happens, because the coverage section's whole
+ * job is saying what was not reviewed — and an outage is exactly when a reader
+ * most needs the list. An earlier version `break`ed out of this loop, which
+ * dropped the remainder from both artifacts and left the header understating
+ * how much had been enumerated.
  */
 export function runSweep(commits, options, { execute = invoke, now = Date.now } = {}) {
   const entries = [];
-  let consecutiveTransport = 0;
+  let consecutiveOutage = 0;
   let stoppedBecause = 'every enumerated commit was settled';
+  let aborted = false;
   for (const commit of commits) {
+    if (aborted) {
+      entries.push({ ...commit, outcome: 'skipped-abort' });
+      continue;
+    }
     if (!commit.eligible) {
       entries.push({ ...commit, outcome: 'skipped-no-code' });
       continue;
@@ -190,10 +193,10 @@ export function runSweep(commits, options, { execute = invoke, now = Date.now } 
     const startedAt = now();
     const entry = { ...commit, ...classify(execute(reviewArgs(commit.sha, options))), seconds: Math.round((now() - startedAt) / 1000) };
     entries.push(entry);
-    consecutiveTransport = isTransport(entry) ? consecutiveTransport + 1 : 0;
-    if (consecutiveTransport >= options.abortAfter) {
-      stoppedBecause = `${consecutiveTransport} consecutive transport failures — the server looks gone`;
-      break;
+    consecutiveOutage = isOutage(entry) ? consecutiveOutage + 1 : 0;
+    if (consecutiveOutage >= options.abortAfter) {
+      stoppedBecause = `${consecutiveOutage} consecutive server failures — the server looks gone`;
+      aborted = true;
     }
   }
   return { entries, stoppedBecause };
@@ -206,7 +209,7 @@ function positive(value, flag, fallback) {
   return n;
 }
 
-function optionsFrom(parsed, startMs) {
+export function optionsFrom(parsed, startMs, root = ROOT) {
   return {
     deadline: resolveDeadline(parsed, startMs),
     include: parsed.include?.length ? parsed.include : DEFAULTS.include,
@@ -214,12 +217,12 @@ function optionsFrom(parsed, startMs) {
     scanLimit: positive(parsed['scan-limit'], '--scan-limit', DEFAULTS.scanLimit),
     maxSeconds: positive(parsed['max-seconds'], '--max-seconds', DEFAULTS.maxSeconds),
     maxAttempts: positive(parsed['max-attempts'], '--max-attempts', DEFAULTS.maxAttempts),
-    abortAfter: DEFAULTS.abortAfter,
+    abortAfter: positive(parsed['abort-after'], '--abort-after', DEFAULTS.abortAfter),
     diffOnly: Boolean(parsed['diff-only']),
     model: parsed.model,
     provider: parsed.provider,
     'base-url': parsed['base-url'],
-    outDir: parsed['out-dir'] ?? join(ROOT, 'bench', 'results'),
+    outDir: parsed['out-dir'] ?? join(root, 'bench', 'results'),
   };
 }
 
@@ -242,6 +245,9 @@ function main() {
     requestedModel: options.model ?? null,
     maxSeconds: options.maxSeconds,
     include: options.include,
+    // The enumeration's own count, never `entries.length`: they agree today and
+    // the report must not depend on them continuing to.
+    enumerated: commits.length,
     entries,
   });
   process.stderr.write(`\nReport: ${reportPath}\nRecord: ${recordPath}\n`);
