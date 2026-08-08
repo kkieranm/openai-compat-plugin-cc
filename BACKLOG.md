@@ -61,7 +61,8 @@ should be decided together even though they close separately. OAI-77 and OAI-81 
 local write access or a mis-selection, and neither has a path-shaped fix.
 
 **Tier 3 — a result the plugin cannot understand is reported as an absence.** **OAI-84, OAI-59,
-OAI-70, OAI-68, OAI-60, OAI-57, OAI-80, OAI-82, OAI-112, OAI-113, OAI-114**. This is trap instance 14's family — `findings:
+OAI-70, OAI-68, OAI-60, OAI-57, OAI-80, OAI-82, OAI-112, OAI-113, OAI-114, OAI-115, OAI-116,
+OAI-117**. This is trap instance 14's family — `findings:
 null` against `[]` — appearing in four places. OAI-84 leads because it is the only one on the
 **shipped default path** of `/oai:review`; OAI-59 is the same shape on `/oai:result`. OAI-68 sorts
 after OAI-63 in tier 2, whose payload decision it collides with. OAI-57's `--json` is the natural home for
@@ -804,6 +805,34 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   missing fields, which `objects()` accepts, so the primitive case its name promises was never covered.
   Fix: admit a list with at least one normalizable finding and let normalization drop the rest.
 
+- **OAI-115** — **The answer gets no reserved token budget, so the model spends it all reasoning.**
+  Filed 2026-08-08 from OAI-19's arms. `max_tokens` is a single pool shared by reasoning and the
+  reply, computed as ~(window − prompt) and capped at 32,768. qwen3.6 spends essentially all of it
+  thinking and emits no findings; the CLI then reports "ran out of tokens before it finished writing
+  its findings", which reads as a sizing problem and is an allocation problem. Evidence: four cases,
+  four budgets spanning 4.5×, reasoning terminating at 86–94% of each (table in the OAI-19 run log).
+  **Both easy fixes are already refuted**: a larger budget is simply consumed (T1 — 4.5× moved
+  `structured` from 0/3 to 1/3), and no reasoning control exists on this server (T3 — three parameters
+  accepted and silently ignored). The remaining shape is a floor reserved for the answer that
+  reasoning cannot consume, and failing loudly if the model crosses it. **Model-modulated**: the MoE
+  starves on 4–5 of 6 cases, dense on 1 of 6, and dense has the *smaller* window — so this is not
+  fixable by choosing a bigger model. **Blocks OAI-19.**
+
+- **OAI-116** — **The token-exhaustion failure path emits no `attempts[]`, making G-E unpassable.**
+  Filed 2026-08-08. A run lost to token exhaustion is recorded with `attempts: null`, so OAI-19's
+  gate criterion G-E — "a missing or self-inconsistent `attempts[]` on any run invalidates the
+  invocation" — fails for any arm containing one, whatever its recall. Since token exhaustion is now
+  the dominant failure mode, **no arm can pass the gate**. Not a general defect and not longstanding:
+  on 2026-08-04 all 4 failed runs carried ledgers, because those failures were transport failures,
+  whose path preserves the record. It also destroys the reliability evidence exactly where failures
+  are most interesting. **Blocks OAI-19**, and is likely small.
+
+- **OAI-117** — **`bench` cannot pass `--structured-output`, so the schema arm cannot be measured.**
+  Filed 2026-08-08. `bench/run.mjs`'s `SPEC` has no such flag, so the only cases that reliably starve
+  the model (the corpus's large ones) cannot be run under a schema. This is why OAI-19's T2 could
+  establish that the schema *causes* the transport drops but not whether it *fixes* token exhaustion —
+  the question had to be left open for want of a flag. Small, and it unblocks a real question.
+
 - **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
   invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is
   PRE-EXISTING** — `cmd-result.mjs` hardcodes `contextNote: null` at HEAD, and reverting OAI-83 leaves
@@ -1426,6 +1455,100 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Not a gate failure and not a result: the run was killed once the server log identified the cause of
   the failures it was about to re-measure. It had already produced one crash during `caps`. Reported
   here because G-G requires every invocation to be reported, aborted ones included.
+
+  ### Run log, 2026-08-07/08 — every invocation, as G-G requires
+
+  Harness `93c2063`, tree clean (`a053318` landed mid-arm and touches HANDOVER.md only — no harness,
+  case or corpus file, so the instrument is byte-identical). LM Studio CLI `71bd99c`, sole tenant
+  throughout; `lms ps` before and after every arm in
+  `bench/results/2026-08-07-oai19-arm-*-state-{BEFORE,AFTER}.log`. Model ids recorded by hand:
+  `qwen/qwen3.6-27b`, `qwen/qwen3.6-35b-a3b`.
+
+  **The G-G counter was reset for this run, and the reading was recorded before any number existed.**
+  The 2026-08-04 invocations ran against the crashing instrument — before OAI-51 removed the schema by
+  default and before OAI-84 repaired the parser. This file already says such records are reliability
+  evidence and not recall evidence; what cannot be differenced against a new arm cannot consume a new
+  arm's attempts. Stated in advance because deciding it afterwards is the optional stopping G-G exists
+  to prevent. **It turned out not to matter**: the MoE arm failed both invocations, so it publishes as
+  a failure under either reading.
+
+  **Parser boundary.** These arms measure the reply parser as of OAI-84. OAI-112, OAI-113 and OAI-114
+  will change it again; no later arm may be differenced across that boundary without saying so.
+
+  **Invocation A — MoE, full corpus, N=3.** Record `2026-08-07T17-55-12-678Z`, ~55 min. **INVALID**:
+  G-B (five of six cases below the floor — `caps` 0/3, `config-origin` 1/3, `model-info` 1/3,
+  `scaffold` 0/3, `structured` 0/3), G-C (13 of 18 unscored), G-E (the 10 failed runs carry
+  `attempts: null`). G-L passed on all 8 completed runs.
+
+  **Invocation B — MoE, identical configuration.** Record `2026-08-07T19-29-44-696Z`, ~95 min.
+  **INVALID**: G-B (`caps` 0/3, `model-info` 1/3, `scaffold` 1/3, `structured` 0/3), G-C (9 of 18
+  unscored), G-E (9 null ledgers). **Both invocations spent, so the MoE arm is PUBLISHED AS A
+  FAILURE**, as 2026-07-30 was.
+
+  **Invocation C — DENSE, full corpus, N=3.** Record `2026-08-08T00-01-31-181Z`, ~3h20m. **INVALID**:
+  G-B (`scaffold` 0/3) and G-E (3 null ledgers) — but every other case scored 3/3, `structured`
+  included. No second invocation was run; see the blocking defect below.
+
+  **The failure mechanism is this run's real deliverable, and it is NOT the one the OAI-20/24/34 line
+  was chasing.** Across all three arms there were **zero transport failures in 32 physical attempts**,
+  against 37.5% (2026-07-30) and 38.9% (2026-08-04). Every lost run died the same way: the model
+  reasoned until the token budget was exhausted and never emitted findings. Matching measured peak
+  reasoning against the `max_tokens` in the LM Studio server log — four cases, four budgets spanning
+  4.5x, reasoning stopping at 86–94% of each:
+
+  | case | peak reasoning | ~tokens | max_tokens | % of budget |
+  |---|---|---|---|---|
+  | `structured` | 27,305 chars | 6,826 | 7,331 | 93% |
+  | `scaffold` | 76,700 chars | 19,175 | 22,358 | 86% |
+  | `model-info` | 98,890 chars | 24,722 | 27,371 | 90% |
+  | `caps` | 122,885 chars | 30,721 | 32,768 | 94% |
+
+  The model does not reason a fixed amount and overflow — it reasons until the budget is gone, whatever
+  the budget is. **`max_tokens` is one pool shared by reasoning and the answer.** Two independent
+  terms: prompt size sets the budget, model verbosity sets the demand. `scaffold` has the largest
+  prompt so it starves on both models; everything else starves only on the MoE, which reasons about
+  twice as much per case. The dense arm has the *smaller* window (61,696 vs 71,936) and still failed
+  far less, which is what rules out an instrument-only explanation.
+
+  Note `structured` scored 0/3 on the MoE and 3/3 on dense **for a budget reason, not a quality one**:
+  dense sent it down ADR 005's diff-only rung (prompt 28,816, `hunksOnly: true`) while the MoE received
+  whole files. The gate predeclared exactly this confound.
+
+  ### Diagnostics, 2026-08-07/08 — not arms, carry no gate, never quotable as recall
+
+  - **T3 — no reasoning control exists. NEGATIVE.** `reasoning_effort`, `chat_template_kwargs.enable_thinking`
+    and `reasoning.max_tokens` are all accepted without error and all silently ignored. A single probe
+    of each *looked* like `reasoning.max_tokens` worked; the three-run control refuted it (control
+    OK/OK/OK, parameter OK/''/OK). The failure class cannot be fixed by asking the server to think less.
+  - **T1 — a bigger budget is not the fix. PREDICTION REFUTED.** MoE `structured` with `--diff-only`
+    raised the budget 4.5x (7,331 → 32,768) and moved the case only from 0/3 to 1/3. The MoE expands
+    to fill whatever it is given, up to the 32,768 cap.
+  - **T2 — THE SCHEMA CAUSES THE TRANSPORT DROPS. CONFIRMED, by a controlled A/B.** Same target
+    (`--base 4f6975a`, ~112,700 prompt chars), same model, minutes apart: **control (no schema) 3/3
+    completed on one attempt each, zero failures; `--structured-output` produced `empty-completion`
+    errors on 2 of 3 runs after three attempts each, and the survivor also needed three** — roughly 7
+    of 9 attempts failing against 0 of 3. `empty-completion` is precisely the 2026-07-30/08-04
+    signature. **This is the direct causal evidence OAI-51 asserted from the server log and that
+    OAI-20, OAI-24 and OAI-34 spent weeks failing to reach from the client side**, OAI-34's
+    intervention run included. It also explains the zero transport failures in all three arms today.
+    A first attempt at T2 was **discarded as inconclusive** and is reported here: its target let the
+    control succeed, and a test whose control does not fail cannot show the schema fixing anything.
+  - **Not established:** whether the schema fixes token exhaustion. The control never starved on the
+    T2 target, and `bench` cannot pass `--structured-output`, so the case that reliably starves could
+    not be tested under a schema. Open.
+
+  **The conclusion that matters: OAI-51 traded one failure class for another.** With a schema,
+  grammar-driven `empty-completion` transport drops. Without one, reasoning consumes the whole shared
+  budget and no findings are emitted. Both are now identified; neither is fixed.
+
+  **THIS ITEM IS BLOCKED ON INSTRUMENT DEFECTS, not on measurement effort.** The token-exhaustion error
+  path emits no `attempts[]` at all, so **G-E is structurally unpassable** for any arm containing one
+  such failure — and that is now the dominant failure mode. Verified against 2026-08-04, where all 4
+  failed runs *did* carry ledgers, so this is specific to the new path rather than general. No further
+  arm should be run until **OAI-115** and **OAI-116** land; a dense second invocation was deliberately
+  not run for this reason, and because `scaffold` fails deterministically (41,251 / 42,064 / 41,404
+  chars, a ±1% spread). The `--max-attempts 1` control arm is deferred with it.
+
 
   ~~**The measurement is SUSPENDED, and the reason is OAI-51: the drops are our own bug.**~~
   **Suspension DISCHARGED 2026-08-05 by the backlog sweep — OAI-51 is resolved and in
