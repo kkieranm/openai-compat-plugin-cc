@@ -161,6 +161,12 @@ historical commit re-staged as `before/`/`after/` trees with its known defects c
 the real CLI via `--json` and matched on a quoted anchor line — see
 [ADR 006](adr/006-benchmarking-the-reviewer.md).
 
+`bench/review-sweep.mjs` reviews recent commits newest-first until a wall clock stops it, and sorts
+each into one of seven outcomes of which only `findings` and `clean` count as reviewed — so a night
+lost to token starvation is reported as coverage rather than as silence; `classify` reads
+`reason: 'token-exhaustion'` off the failure envelope rather than matching prose — see
+[ADR 021](adr/021-an-unwatched-sweep-must-say-what-it-did-not-review.md).
+
 ## Commands
 
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns).

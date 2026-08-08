@@ -30,6 +30,13 @@ function unparsedReply(result, { structured, profile }) {
     // input `prepareRequest` may shrink the raised value straight back to the
     // window's leftovers. Reviewing less is the lever that moves both.
     throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
+      // Tagged so a caller can tell "the budget ran out" from "the server broke"
+      // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
+      // off the `--json` envelope and states the rule its own header keeps —
+      // never regex a cause out of prose — and an overnight sweep that cannot
+      // separate a starved run from a failed one reports a night that measured
+      // nothing as a night that found nothing.
+      reason: 'token-exhaustion',
       hint:
         'Review a smaller target — a single commit with --commit, or specific files with --file. '
         + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
