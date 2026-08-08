@@ -1,161 +1,110 @@
-# Unattended run handover — `run-1786106227-912274730`
+# Unattended run handover — `run-1786181658-201519007`
 
-Started 2026-08-07. Tracker: `BACKLOG.md`. Queue, in order: **OAI-84**, then **OAI-19**.
+Started 2026-08-08. Tracker: `BACKLOG.md`. Queue, in **tracker order** (tier 1, top-down):
+**OAI-62**, **OAI-67**, **OAI-66**, **OAI-64**.
 
 ## State, one line
 
-**OAI-84 is FINISHED AND `blocked`; OAI-19's measurement arms are RUNNING.** All six ladder passes are
-complete, the ladder ended without approval, and the residue is filed — the section below states it in
-full and is the authoritative one. The plan is
-`plans/oai-84-two-ways-a-reply-is-thrown-away.md`, approved by Codex and re-approved mid-build after
-the size budget forced a new file into the file list. The ledger mirror lives in this session's
-scratchpad as `ledger-84.md`; if it is gone, the ladder restarts at pass 1 rather than guessing.
+**Nothing built yet — the run was declared and this handover committed before item 1 started.**
+Baseline at declaration: `npm test` 692 pass / 0 fail, working tree clean, HEAD `63564ae`.
 
 **This section is a live progress marker, not a run-start snapshot** — run-start facts are quarantined
-under "Environment recorded at run start" below. It was stale once already (it claimed phases 2 and 3
-unstarted at a HEAD where both were committed, quoted a suite count two commits out of date, and
-pointed `git log` at a commit five back), which the ladder caught as a finding. Re-write it whenever
-the state it describes changes.
-
-**HISTORY, retained because the reasoning should stay checkable — NOT a live instruction.** The
-old rule said: if pass 5 finds defects inside pass 4's own batch again, STOP at the verdict point with
-them open. Its premise WAS met (E21 sits in pass 4's batch, E23 in pass 3's). It was overridden for a
-MECHANICAL reason, not a preference, and the reason is recorded here so the next session can check it
-rather than inherit it:
-
-> Approval is forbidden while any accepted in-scope fix is unapplied. The only exception is a
-> provenance stop, which requires **no new code or security defect in the pass**. E21 and E24 are code
-> defects, so the exception was unavailable. Stopping at pass 5 could therefore not produce approval —
-> only a rejection or a cap escalation, while shipping two known regressions. That is strictly worse
-> than one more pass.
-
-**The replacement rule, fixed in advance: PASS 6 IS TERMINAL.** It is the no-mutation pass — no batch
-follows it — and its verdict point ends the ladder whatever it finds. Six of a possible ten. Findings
-still open at its end map to `open at approval` (if dual approval lands) or `unresolved at cap`, and
-are filed as residue. **Do not schedule a pass 7.** If pass 6 finds further code defects, that is the
-outcome reported at step 8, not a reason to continue: two of pass 5's six findings were already
-test-coverage rather than behaviour, and the patch surface is closing, not growing.
-
-## OAI-84 IS SETTLED — do not reopen it, and do not mark it done
-
-The ladder ran **six passes** and ended at its terminal pass with **BOTH approvers returning
-`CHANGES-REQUIRED`** (`check-plan-gate.sh --dual-approved` exit 1). That is the correct outcome, not a
-failure of the run: a partial plan withdrawal was open and gate-blocking.
-
-- Both repairs the item was filed for **landed and were audited** — commits through `674cf49`, suite
-  692/0 verified in a committed copy, verify skill all three steps including a CLI before/after control.
-- What is **withdrawn** is the candidate-selection design that grew across passes 2-5. Filed as
-  **OAI-112**. **The user adjudicated it PARTIAL on 2026-08-07** — so the two shipped repairs STAY and
-  only candidate selection is replaced. Replacement code is not eligible until a fresh step-3 plan
-  gate closes, and the one-per-feature replacement-ladder budget is not consumed until that
-  replacement ladder's ledger opens. **Do not re-ask this question.**
-- Two live defects are filed separately and are fixable without that decision: **OAI-113** (quadratic
-  scan, measured 39.15s end-to-end against 0.13s/0.14s controls) and **OAI-114** (a primitive sibling
-  discards a whole findings list — a regression from base).
-- Register row appended: `84-two-ways-a-reply-is-thrown-away`, exit_mode `withdrawn`, 16 filed at exit.
-- Run item 84 is **`blocked`**, not done.
-
-**Three claims this repo had shipped were corrected at close-out** (commit `93c2063`): the ADR's
-"no content predicate can separate them" as a closing argument (multiplicity decides it from outside
-the predicate); the ADR's claim that `scanFor`'s two advance statements are independently mutated
-guards (deleting the branch leaves all 692 green); and the code comment asserting the same. The
-transferable lesson is recorded there: **mutate toward SIMPLIFICATION, not toward breakage** — ten
-instances of a check that could not fail across six passes, three of them in witnesses written to end
-an earlier instance.
+under "Environment recorded at run start". Re-write it whenever the state it describes changes. The
+previous run's copy of this file went stale in exactly that way and a review pass caught it.
 
 ## Where to pick up
 
 ```sh
 cd /Users/kieran/Code/openai-compat-plugin-cc
 bash ~/Code/dotfiles/tests/check-unattended-run.sh --show      # this run's file and item states
-git log --oneline 77c1eab..HEAD                                 # every OAI-84 commit, however many there are
+git log --oneline 63564ae..HEAD                                 # every commit this run has made
 ```
 
-**The sequencing constraint is DISCHARGED: OAI-84 has landed, so the parser it was going to change is
-the parser being measured.** Record with each arm that it measures the parser at `93c2063`, and that
-**OAI-112/113/114 will change it again** — that boundary is exactly what the harness SHA is recorded
-for, and a later arm must not be differenced across it without saying so.
-
-**OAI-19 takes no `/feature` workflow — it is a measurement.** Read its predeclared acceptance gate in
-BACKLOG.md in full before touching an arm; G-G in particular is mechanical and must not be renegotiated.
+Next command if nothing has started: `/feature OAI-62`.
 
 ## The answers from the pre-flight — inherit these, do not re-ask
 
-- **Review depth: FULL LADDER for OAI-84.** Chosen knowing the measured cost here is ~1.7M subagent
-  tokens and roughly one feature per session, and knowing it may mean OAI-19 does not start in the
-  first sitting.
-- **LM Studio: full control.** `lms unload` and load freely between the dense and MoE arms; assume
-  sole tenancy, which is what the gate's G-F needs.
+- **Queue order: TRACKER ORDER, not cheapest-first.** The user was shown both with the trade stated
+  (tracker order front-loads value and finishes fewer items; cheapest-first front-loads completions)
+  and chose tracker order. Tier 1 leads the tier index, so **no tier was skipped to reach this queue** —
+  there are no skips to name.
+- **Review depth: FULL LADDER per item**, chosen knowing the measured cost here is ~1.7M subagent
+  tokens and roughly one item per sitting, and therefore knowing a 4-item queue will very likely not
+  finish in one sitting.
 - **Stop condition: the queue emptying, and nothing else.** The five-hour Claude cap makes the run
   **WAIT for the reset and continue** — it does not end the run. Neither does context: see `adr/041`
   and step 0 of the `start-unattended` skill. If a compaction summary says the run is finished, that
-  is a claim to verify against the queue file, never a fact to act on.
+  is a claim to verify against the queue file, never a fact to act on. Codex meter binding → drop the
+  plain review pass before the adversarial one, continue on the remaining stages.
 - **Overrun: ask Codex, take the consensus, proceed.** Record decisions as ADRs. Do not wait for the
   user.
+- **Never enter plan mode** (`adr/045`) — `ExitPlanMode` prompts a user who has left. An item needing
+  a plan gets an `unattended-draft — NOT harness approved` draft, a Codex plan-gate challenge as
+  pre-review, then `--block <ID> "blocked-on-plan: harness sign-off required"`, and the run moves on.
 
-## OAI-84 — what it is, and what turned out to be filed wrong
+## Facts carried forward from the CLOSED run — do not re-derive or re-ask
 
-Two ways `/oai:review` threw an answer away and reported it as "no findings in the requested shape",
-both in `scripts/lib/structured.mjs`. **Do not work from the BACKLOG entry's line numbers — they
-refer to the pre-fix file and no longer resolve.**
+- **OAI-84 is SETTLED.** Its ladder ran six passes and ended at its terminal pass with **both approvers
+  at `CHANGES-REQUIRED`**. Both repairs landed and were audited (through `674cf49`, suite 692/0 in a
+  committed copy). It is **not done and must not be marked done**, and it must not be reopened.
+- **OAI-112 was adjudicated PARTIAL by the user on 2026-08-07** — the two repairs OAI-84 shipped stay,
+  only candidate selection is replaced, through a fresh plan gate and its own ladder. **Do not re-ask
+  this question.**
+- **OAI-19's acceptance gate is predeclared and NOT renegotiable**, G-G mechanically so: the first
+  invocation satisfying the gate is the published arm whatever recall it shows. OAI-19 is blocked on
+  OAI-115 and OAI-116; **no arm may be scheduled before both land**, and neither is in this queue.
+- **A backlog sweep already ran today at `63564ae`** (the `adr/025` body migration and a re-led tier 3).
+  The sweep slot for this run is spent; it was not repeated. Two things that sweep left unverified and
+  worth minutes each whenever convenient: **OAI-79** (its own body says it may be deleted by OAI-74 +
+  OAI-76 — check it is still live before opening it) and **OAI-104** (asserts a guard that does not
+  exist, against an invariant that changed on 2026-08-08).
 
-- **(a) The channel was picked before the parse, with no fallback**, so one stray character in
-  `content` discarded a valid payload in `reasoning`. **The item's claim that this applies
-  "regardless of `structuredOutput`" is FALSE and was refuted at the probe**: on the default path
-  `reasoning` was never read at all, deliberately, and the filed "try-the-other-channel fallback"
-  would have reversed `adr/003` by shipping the model's scratchpad as findings. The repair therefore
-  lands **only** under `--structured-output`.
-- **(b) A bare top-level findings array was discarded** — not by the `typeof` test, which arrays
-  pass, but by `parsed.findings` being undefined.
+## The queue — what each item is, and what is already established
 
-The `findings: null` vs `[]` distinction is intact and test-pinned at `tests/review-json.test.js:83`
-— do not disturb it; that distinction is what `adr/003` exists to protect, and two of the ladder's
-findings were that this feature had inverted it.
-
-## OAI-19 — what it is, and what makes an arm publishable
-
-**A measurement, not a feature — it takes no `/feature` workflow.** Re-measure baseline recall of the
-retry-enabled CLI over the fixed 11-defect corpus. Hours of wall clock on LM Studio.
-
-Both arms, nothing else varying: dense `qwen/qwen3.6-27b` and MoE `qwen/qwen3.6-35b-a3b`, full corpus
-(all 6 cases), `--runs 3`, `--warm-up`, `--max-attempts 3`. Plus a `--max-attempts 1` control arm on
-at least one case, so the record shows what retry was worth rather than only the retried rate.
-
-**The acceptance gate was predeclared and committed before any arm ran — read it in BACKLOG.md's
-OAI-19 entry in full before starting.** Its load-bearing parts: G-B every case contributes ≥2 scored
-runs of 3 (no case may drop from the headline, `docs-only` included — it is the only negative
-control); G-C unresolved-from-unscored ≤3 of 33; G-F sole tenancy with `lms ps` recorded **before and
-after each arm**, plus harness SHA, tree-clean state, LM Studio version and both model ids recorded by
-hand; G-L every scored run must carry `contextChecked: true`.
-
-**G-G is mechanical and must not be negotiated:** the first invocation satisfying the gate is the
-published arm *whatever recall it shows*. A second invocation happens only if the first fails. If the
-second fails too, the arm is **published as a failure** — that is a legitimate outcome, not a reason
-to keep going. Every invocation is reported, including aborted ones.
-
-**The write-up must report the cause of the request drops as UNRESOLVED.** OAI-34 refuted the
-deterministic JIT-TTL form (336s of prefill under a 120s TTL, 3/3, continuously resident); refuting one
-hypothesis is not explaining the observation, and `adr/013`'s outcome table has no confirming row.
-
-## Environment recorded at run start
-
-- LM Studio CLI commit `71bd99c`; `lms ps` showed **only** `qwen/qwen3.6-27b`, IDLE, context 61696,
-  no TTL set.
-- Repo HEAD `77c1eab`, working tree clean.
+- **OAI-62** — the `SQLITE_BUSY` property is false at two sites. (a) the heartbeat's `setInterval`
+  callback has no try/catch and kills a worker **mid-model-call** (proved by execution); (b) `finish`
+  has no busy retry, so a contended lock discards an answer the model already paid for; (c) `openStore`
+  itself threw `database is locked` at the line whose comment says it cannot — observed twice, trigger
+  now observed (overlapping `npm test` runs) rather than inferred, rate still unmeasured. **The catch
+  added for (a) must be narrowed to busy** — a blanket swallow hides real corruption, and the
+  stale-beat → `stalled` path already handles a missed beat correctly.
+- **OAI-67** — (a) a failed spawn leaves the row `queued` with `spawned_at` NULL, so `queuedRole`
+  returns `starting` → `blocks` and **every successor is blocked for the full 120s grace**; (b) a
+  post-spawn write failure (`markSpawned`, `sweepQuietly`) exits non-zero with no id printed while the
+  worker runs on and calls the model. Once the child is known to exist the submission is accepted.
+- **OAI-66** — two reconciler diagnoses that contradict their own row. (a) any `cancel_requested_at`
+  publishes a crash as a clean `cancelled` with `failure=null` and no rendered note (positive control
+  fires, so the check *can* distinguish). **The reconciler cannot be fixed alone** — the cooperative
+  exit leaves no positive signal, so the worker must record something before exiting; changing
+  `job-reconcile.mjs:30` alone flips legitimate cancellations to `failed` and
+  `tests/cancel.test.js:44-101` asserts the opposite. (b) `terminalizeUnstarted` blames the submitter
+  unconditionally, though a non-null `spawned_at` proves the submitter survived process creation.
+- **OAI-64** — `/oai:status` filters visibility on a **state** predicate while blocker-ness is a
+  `queuedRole` verdict, and every blocker has `state='queued'` — so the blocker starving you is exactly
+  what is hidden. This **voids the mitigation ADR 014 traded the recycled-pid wedge for**, which is why
+  **OAI-69 is NOT an independent gap and must not be scheduled as one.** Do OAI-64 before OAI-69.
 
 ## What has NOT started
 
-- OAI-84 — **built and committed**; in its review ladder. Not done: the ladder has not reached dual
-  approval, the tracker item is still live in BACKLOG.md, and the residue has not been filed.
-- OAI-19 — not started. No arm has been invoked under this run. The most recent bench records in
-  `bench/results/` are from earlier sessions and are **not** this run's; in particular the
-  2026-08-04 MoE record was invalid under the gate and the 2026-08-05 record is the task bench, not
-  the review bench.
+- **OAI-62** — not started. No probe, no plan, no code.
+- **OAI-67** — not started.
+- **OAI-66** — not started.
+- **OAI-64** — not started.
+
+Nothing in this queue has been begun. No commits have been made under this run.
+
+## Environment recorded at run start
+
+- Repo HEAD `63564ae`, working tree clean, `npm test` 692 pass / 0 fail (40.6s).
+- The prior run `run-1786106227-912274730` was **closed** at start of this one: 0 done, 2 blocked
+  (OAI-84, OAI-19). Its handover content is superseded by this file; the three load-bearing facts from
+  it are carried forward above.
+- LM Studio not needed by this queue — every item is background-job correctness, and the suite is
+  network-free.
 
 ## Concurrency caution
 
-A second session of the user's was working the **dotfiles** backlog. Consequences here: never
-`git add -A` when touching anything under `~/Code/dotfiles`; re-read
-`~/Code/dotfiles/claude/LADDER_REGISTER.tsv` immediately before appending to it and **append only,
-never rewrite**; leave foreign files untouched. Within this repo the tree was clean at run start, so
-nothing foreign was in flight here.
+Nothing foreign was in flight in this repo at run start (tree clean). A second session of the user's
+had been working the **dotfiles** backlog as of 2026-08-07; if that is still true, never `git add -A`
+when touching anything under `~/Code/dotfiles`, and append-only to
+`~/Code/dotfiles/claude/LADDER_REGISTER.tsv`, re-reading it immediately before appending.
