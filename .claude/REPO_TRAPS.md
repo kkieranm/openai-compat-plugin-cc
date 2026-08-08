@@ -1102,3 +1102,19 @@ that return sentinels where the real call throws" cannot be written so that it
 fails reliably, and a guard that cannot fail is the very defect this file exists
 to record. The guard here is per injection point — for each injected dependency,
 the test covering its failure path uses a stub that throws — plus this entry.
+
+## A test that asserts presence where the code guarantees presence
+
+`reported()` sets all five carried caveat fields with `?? null`, so **every key is always present**.
+The tests written to guard "every report-derived entry carries the caveats" assert `key in entry` —
+which that default satisfies unconditionally. Reading the wrong source field (`report?.hunksOnlyTypo`)
+leaves the key there holding `null` and the assertion still passes.
+
+**The assertion tests the SHAPE of the mapping, not that it read the right field.** Where a default
+guarantees presence, presence is not evidence; assert the VALUE, from a fixture where the right and
+wrong sources differ.
+
+Distinct from the stub-fidelity entry above, and filed separately for that reason: that one is about a
+double being kinder than its dependency, this one is about an assertion the production code makes
+unfalsifiable. Fifth confirmed instance of "a test that cannot fail" in a single feature, second
+distinct shape.

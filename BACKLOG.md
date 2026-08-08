@@ -175,6 +175,23 @@ drift impossible has never once run. OAI-103 is the same shape one level out: a 
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 12b — residue from the follow-on ladder, which also ended `cap-without-approval`.**
+**OAI-125, OAI-128, OAI-127, OAI-126, OAI-129, OAI-130, OAI-131**.
+**OAI-125 leads and is the sharpest item filed today**: the resolved-SHA guarantee — the one fact the
+whole pinning feature exists to provide — reaches the artifact by a single untested path, proved by a
+mutation that left the suite green. Its root cause is an unexported `main()`, i.e. the shape of
+`bench/run.mjs` that this harness's own header says it was written to avoid, so **the fix is a seam
+rather than another test**. Until it lands, benchmark arms must pass a full SHA.
+**OAI-128 is next because it is a NEW TRAP CLASS** — asserting presence where the code guarantees
+presence — and the fifth "test that cannot fail" found in one feature; filing it as its own entry is
+what stops the stub-fidelity entry added the same day from appearing to cover it.
+OAI-127 is the decision record promising a semantic rule the code cannot keep, which is OAI-122's
+class one level up. OAI-126 and OAI-129 are one-line fixes with named remedies. OAI-130 is low impact
+while arms pass `--model` explicitly.
+**OAI-131 is different in kind and should not be sorted with the defects**: two vendor assumptions with
+no artifact in the repo to check them against, one of which the `serverUnwell` rule depends on — and
+the overnight sweep is itself the instrument that can settle it.
+
 **Tier 12 — residue from the overnight review-sweep ladder, which ended `cap-without-approval`.**
 **OAI-120, OAI-121, OAI-119, OAI-118, OAI-124, OAI-122, OAI-123**. The harness ships and works — three
 full ladder passes, suite 747/0 — but its ladder ended without approval with two code defects open, so
@@ -2232,51 +2249,75 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   establish that the schema *causes* the transport drops but not whether it *fixes* token exhaustion —
   the question had to be left open for want of a flag. Small, and it unblocks a real question.
 
-- **OAI-118** — **The sweep report's "exactly one disposition section" invariant is both VIOLATED and
-  UNGUARDED.** Filed 2026-08-08 from the review-sweep ladder, `unresolved at cap`. A `truncated` entry
-  carrying findings renders in **both** the Findings section and Coverage, against `adr/021`'s claim
-  that each enumerated commit appears exactly once. And the only test that claims to guard it —
-  `tests/sweep-report.test.js` `every commit appears exactly once` — asserts only
-  `assert.match(out, /sha/)`, which one occurrence and ten both satisfy: it has failure power on
-  absence and **none on duplication**. A positive control run against the checked-out bytes rendered a
-  SHA twice with the assertion still green, and the fixture cannot exercise duplication at all (every
-  entry in it is either REVIEWED-only or non-REVIEWED-only). **Both halves must land together**: the
-  module header states the invariant confidently, so a future reader will believe it. Either dedupe the
-  rendering or state the two-role policy in `adr/021` — and make the test count occurrences.
+- **OAI-125** — **The resolved-SHA guarantee reaches the artifact by ONE UNTESTED PATH.** Filed
+  2026-08-08 from the follow-on ladder, `unresolved at cap`. **MUTATION-PROVED**: deleting just the
+  `options.from =` assignment in `bench/review-sweep.mjs` leaves the suite at 766/0, after which the
+  record and report print the caller's typed ref instead of the resolved commit. Two benchmark arms
+  invoked identically with `--from main` days apart would then review different histories while the
+  artifact claimed the same window — **the exact defect OAI-124 exists to prevent, reintroducible with
+  nothing going red.** Root cause: `main()` is unexported and runs only under the
+  `process.argv[1] === fileURLToPath(import.meta.url)` guard, so no test can invoke the composition.
+  **This is the shape of `bench/run.mjs`** — the file this harness's own header says it was
+  deliberately structured NOT to imitate, because an unguarded main is why `run.mjs` has no test at
+  all. `task-run.mjs`'s injectable seams were copied for the loop and not for the composition.
+  **The fix is a seam, not another test**: export the composition, or `runMain(deps)`.
+  **Until it lands, every benchmark arm must pass a full SHA and the pre-flight assertion is
+  load-bearing rather than belt-and-braces.**
 
-- **OAI-119** — **`deadline-timeout` is a caller-selected cap, and treating it as server death aborts
-  healthy sweeps.** Filed 2026-08-08 from the review-sweep ladder, `unresolved at cap`. **CODE
-  DEFECT.** `serverUnwell` admits `deadline-timeout`, but that reason is `--max-seconds` firing — the
-  harness's own cap — not evidence the server is unwell. Three slow large commits in a row therefore
-  trip `--abort-after` and mark every remaining commit `skipped-abort`. This is the **third** narrowing
-  of the same predicate (any `*-timeout` → `{deadline, idle}` → `{idle}`), each of which removed a real
-  false positive. Leaves `idle-timeout` alone in that group, which is correct: a stream that stalls
-  mid-generation is the server stopping. **Workaround until fixed: `--abort-after 99`.**
+- **OAI-126** — **A bare catch deletes the cause it was meant to report.** Filed 2026-08-08,
+  `unresolved at cap`. `resolvePin` in `bench/lib/sweep-window.mjs` wraps its only git call in
+  `catch { throw new UserError('--from did not resolve to a commit') }`, discarding the caught error —
+  so a git **spawn** failure is reported as the revision being bad. **Reproduced against the real
+  artifact at its real path**: with a PATH containing only node, `--from HEAD` printed
+  `--from did not resolve to a commit: "HEAD"`, and a positive control showed
+  `git rev-parse 'HEAD^{commit}'` resolves fine in the same tree. The harness's printer shows only
+  `error.message` for a `UserError`, so the `spawn git ENOENT` text that named the real cause is
+  deleted. One-line fix: carry the cause as the `hint`.
 
-- **OAI-120** — **A substituted model's findings are silently dropped from both artifacts.** Filed
-  2026-08-08 from the review-sweep ladder, `unresolved at cap`. **CODE DEFECT, reproduced.**
-  `classify`'s `substituted` branch returns without copying `settled.report.findings` or the caveat
-  fields, so when a server answers with a model other than the one requested, the real defects it found
-  never reach the report — the commit shows only in Coverage with "a different model answered".
-  **This is trap instance 11 verbatim** — fixing the branch in front of you leaves the adjacent one
-  wrong — committed in the very pass that fixed the identical omission for `truncated` and wrote the
-  rationale for not doing it. **Adjudicated a RECURRENCE of OAI-121's identity**, which is why that
-  item is also open. **This one blocks the model benchmark specifically**: substitution is the failure
-  `adr/011` exists for, and an affected arm would report as having found nothing.
+- **OAI-127** — **The decision record states a SEMANTIC rule the code cannot enforce.** Filed
+  2026-08-08, `unresolved at cap`. `adr/021` says a future timeout reason must be judged against the
+  CLI's own per-budget hint — the discriminator that finally ended five iterations — while
+  `serverUnwell` is a hardcoded `idle-timeout` string set that nothing derives from or checks against
+  `http-errors.mjs`. A sixth reason whose hint said "raising it will not help" would be silently
+  excluded; a semantic change to `idle` would silently persist. **This is OAI-122's class one level
+  up**: there the record contradicted the code, here they agree today and the record promises
+  something the code cannot keep. Writing the rule down was supposed to be the fix.
 
-- **OAI-121** — **`classify` must carry EVERY belief-changing envelope field on EVERY path.** Filed
-  2026-08-08 from the review-sweep ladder, `unresolved at cap` **by recurrence**. The identity is
-  *"`classify` does not carry onto the entry an envelope field that changes what a reader should
-  believe"*. It was fixed twice — `analysisCut`/`atCap`/`hunksOnly`, then `dropped` — and recurred as
-  OAI-120 on a branch the fix never reached. **The fix is the RULE, not another branch**: a single
-  place that maps a parsed report to an entry, used by every path, so a fourth path cannot be added
-  without it. A structural test belongs here: this class has now been confirmed three times, which is
-  past this repo's graduate-to-a-guard bar.
+- **OAI-128** — **A test that asserts presence where the code guarantees presence.** Filed
+  2026-08-08, `unresolved at cap`. **A NEW TRAP CLASS, distinct from the stub-fidelity entry added the
+  same day.** The OAI-121 caveat tests assert `key in entry` for all five carried fields, but
+  `reported()` sets every one with `?? null` — so reading the WRONG source field (`hunksOnlyTypo`)
+  leaves the key present with `null` and the assertion still passes. The test verifies the SHAPE of
+  the mapping, not that it read the right field. **Fifth instance of "a test that cannot fail" in one
+  feature**, and the second distinct shape; belongs in `.claude/REPO_TRAPS.md` as its own entry, since
+  the stub-fidelity entry would otherwise read as covering it.
 
-- **OAI-122** — **`adr/021` contradicts the shipped code on two superseded claims.** Filed 2026-08-08
-  from the review-sweep ladder, `unresolved at cap`. It still documents an any-`*-timeout` outage set
-  (narrowed twice since) and a two-section disposition claim (there are three sections). Both would
-  license reintroducing rejected behaviour during maintenance. Non-executable text only.
+- **OAI-129** — **The shortfall cause is still guessable at one boundary.** Filed 2026-08-08,
+  `unresolved at cap`. `walked >= scanLimit` is *also* true when exactly `scanLimit` commits are
+  reachable, so a repo with exactly 200 reachable commits and a 200 limit is told "the scan stopped at
+  its `--scan-limit`" when raising it would find nothing. Reproduced with a stub git. **The fix was
+  named by the reviewer**: request `scanLimit + 1` and record whether an extra existed — that
+  separates the two causes instead of inferring one. The docstring's claim "WHICH cause, not a guess"
+  is false in exactly this case.
+
+- **OAI-130** — **A successful substituted reply drops `requestedModel`.** Filed 2026-08-08,
+  `unresolved at cap`. `reported()` carries the served `model` and five caveats but not
+  `report.requestedModel`, so when a sweep ran on a provider default the artifact says a different
+  model answered without saying which model it was substituted FOR. The fact is in the raw JSON and
+  absent from the summary. Low impact while every arm passes `--model` explicitly, which the benchmark
+  does.
+
+- **OAI-131** — **Two vendor assumptions this repo has no artifact to check, and the sweep is the
+  instrument that could.** Filed 2026-08-08 from the `unverifiable` channel of a wide review.
+  **(a) Does a real LM Studio stall actually surface as `idle-timeout`**, rather than as
+  `stream-unfinished`, `empty-completion` or a dropped connection? The mechanism was verified in
+  `stream-collect.mjs` — the idle budget is armed only by a text-carrying frame, so the classification
+  is *possible*. Nothing recorded shows it is what the hardware produces. **The five-iteration
+  `serverUnwell` rule rests on this and it is unmeasured.**
+  **(b) Can `analysisCut` co-occur with `model-substituted` in a real reply?** Only a synthetic
+  fixture says so.
+  **Both are answerable by the overnight sweep itself** — its records carry every reason code and
+  every envelope field, so a night against a real server settles (a) directly.
 
 - **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
   review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
@@ -2284,11 +2325,3 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   wall-clock step (NTP correction, manual change) moves it. Deliberately **not** fixed in-ladder:
   replacing the clock is larger than the batch it arose in, and a step is far rarer than the DST
   boundary that was fixed. `job-busy.mjs` uses `performance.now()` for exactly this reason.
-
-- **OAI-124** — **`bench/review-sweep.mjs` cannot pin its enumeration, so benchmark arms are not
-  comparable.** Filed 2026-08-08. **This is a `widening` awaiting the user, not a defect**: nobody
-  raised it in review and it is not in the approved plan. Enumeration starts at `HEAD`, so any commit
-  landing between arms shifts the window and two arms review different commits. The model benchmark
-  the user asked for — 5 models x 2 executions x the same 10 commits — needs `--from <ref>`, or some
-  other way of pinning, before its arms mean anything.
-
