@@ -11,6 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { enumerateCommits, optionsFrom, resolveDeadline, runSweep } from '../bench/review-sweep.mjs';
+import { resolvePin } from '../bench/lib/sweep-window.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
 
 const ok = (findings, extra = {}) => ({
@@ -216,4 +217,76 @@ test('--until advances the local calendar date, not a fixed 24 hours', () => {
   const deadline = new Date(resolveDeadline({ until: '06:00' }, start));
   assert.equal(deadline.getHours(), 6, 'the requested local hour must survive a DST transition');
   assert.equal(deadline.getDate(), 29);
+});
+
+// OAI-124: without a pinned start, a commit landing between benchmark arms
+// shifts the window and two arms review different work.
+test('--from pins where enumeration starts, and defaults to HEAD', () => {
+  const seen = [];
+  const git = (args) => {
+    seen.push(args);
+    if (args[0] === 'log' && args.includes('--format=%H')) return 'c1';
+    if (args[0] === 'log') return 'subject';
+    return 'scripts/a.mjs';
+  };
+  enumerateCommits({ include: ['scripts'], maxCommits: 1, scanLimit: 10, from: 'deadbeef' }, git);
+  assert.ok(seen[0].includes('deadbeef'), 'the revision must reach git log');
+
+  seen.length = 0;
+  enumerateCommits({ include: ['scripts'], maxCommits: 1, scanLimit: 10 }, git);
+  assert.ok(seen[0].includes('HEAD'), 'and HEAD is the default');
+});
+
+test('--from is accepted by the option parser and recorded', () => {
+  assert.equal(optionsFrom({ minutes: '10', from: 'deadbeef' }, 0).from, 'deadbeef');
+  assert.equal(optionsFrom({ minutes: '10' }, 0).from, 'HEAD');
+});
+
+// --- pass-1 batch: an auditable window, and a run that admits it fell short ---
+
+// The stub CAPTURES what was asked for. The previous one returned its configured
+// SHA for any arguments at all, so hardcoding the call to `['rev-parse','HEAD']`
+// — dropping both the ref and the `^{commit}` peel — left the suite green. A
+// stub that cannot disagree with the code is not a test.
+const capturingGit = (resolved) => {
+  const seen = [];
+  const git = (args) => { seen.push(args); return resolved; };
+  git.seen = seen;
+  return git;
+};
+
+// …and the failure stub THROWS, because that is what git does: `rev-parse` on an
+// unknown revision exits 128, so `execFileSync` throws. A stub returning empty
+// string was gentler than reality and made the refusal below unreachable in
+// production while the test stayed green.
+const throwingGit = () => { throw new Error('Command failed: git rev-parse'); };
+
+test('the requested ref and the commit peel both reach git', () => {
+  const git = capturingGit('abc123def456\n');
+  assert.equal(resolvePin('main', git), 'abc123def456');
+  assert.deepEqual(git.seen[0], ['rev-parse', 'main^{commit}']);
+});
+
+// Without `^{commit}` an annotated tag resolves to the TAG object, and the
+// recorded window would be a SHA no `git log` walk starts at.
+test('the peel is what makes a tag resolve to its commit', () => {
+  const git = capturingGit('deadbeef\n');
+  resolvePin('v1.2.3', git);
+  assert.ok(git.seen[0][1].endsWith('^{commit}'), `no commit peel in ${git.seen[0][1]}`);
+});
+
+// A leading dash reaches git as an OPTION, not a revision.
+test('a revision that git would read as a flag is refused before it gets there', () => {
+  const git = capturingGit('x');
+  assert.throws(() => resolvePin('--all', git), /must be a revision/);
+  assert.equal(git.seen.length, 0, 'it must be refused BEFORE git is called');
+});
+
+test('a revision git rejects is reported as a refusal, not as a raw command failure', () => {
+  assert.throws(() => resolvePin('nosuchref', throwingGit), /did not resolve/);
+});
+
+// The other way to fail: a git that exits 0 with nothing to say.
+test('an empty resolution is refused too', () => {
+  assert.throws(() => resolvePin('weird', capturingGit('')), /did not resolve/);
 });

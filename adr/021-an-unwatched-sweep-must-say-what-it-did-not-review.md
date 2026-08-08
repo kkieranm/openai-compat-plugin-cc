@@ -23,8 +23,9 @@ So the load-bearing output of this harness is not its findings. It is its **cove
 
 ## Decision
 
-**Every enumerated commit appears exactly once — in the findings section or in coverage, never in
-neither.** Only two outcomes count as *reviewed*:
+**Every enumerated commit is disposed of exactly once, in one of THREE sections** — `Findings`,
+`Reviewed, nothing reported`, or `Coverage` — never absent from all three and never in two of them.
+Only two outcomes count as *reviewed*:
 
 `findings` and `clean` are reviewed. `starved`, `truncated`, `unreadable`, `substituted`, `crashed`,
 `output-too-large` and `failed` are **UNKNOWN** — the commit was not reviewed, and the report says
@@ -55,6 +56,19 @@ Three of those exist because each is a distinct way the night could lie:
 - **`unreadable`** — `findings: null` (the reply could not be read) is not `findings: []` (it was read
   and was empty). That distinction is what `adr/003` exists to protect; collapsing it here would
   reintroduce the same defect one layer up.
+
+### Two sections became three, and a commit stopped appearing twice
+
+The first version claimed exactly-once over **two** sections while the code had no home for a plain
+`clean` commit — it had no findings and was not a coverage row, so it appeared in **neither**. Adding
+`Reviewed, nothing reported` closed that.
+
+Then the opposite: a review that did **not** complete can still have reported something real, and
+rendering those leads put such a commit in the Findings section **and** in Coverage. The resolution is
+that **disposition and surfacing are the same act**: a disqualified review's findings render *under its
+coverage row*, with the same file, line, severity, summary, evidence, answering model and
+incompleteness notes a completed review's would get, flagged by the outcome that disqualifies them.
+One commit, one place, nothing lost.
 
 ### Classification reads a field, never prose
 
@@ -119,24 +133,49 @@ documentation, while reporting that it had reached its limit.
 - **This does not fix OAI-115.** It makes starvation visible and counted. A night that starves on
   every large commit still produces almost no findings — the difference is that you can tell.
 - **`--abort-after` ends a sweep after N consecutive failures that mean the SERVER is unwell**, which
-  `serverUnwell` defines as three groups: `TRANSPORT` / `NON_RETRYABLE_TRANSPORT`; `COMPLETION_SHAPES`
-  (`empty-completion`, `stream-unfinished`, `blank-completion`); and any `*-timeout`, matched by
-  suffix because `http-errors.mjs` mints those per budget and there is no constant to import. A
-  failure envelope carrying **no reason at all** counts too — that is what a wrong `--model` produces,
-  the likeliest unattended misconfiguration there is.
-  **The second group is the load-bearing one and the first version omitted it**: ADR 012 and OAI-20
-  measure the completion shapes as this hardware's dominant failure at 27 of 72 runs, so the guard
-  could not fire on the exact outage it was written for.
-  **The third group is narrower than it first was, and the correction matters more than the original
-  fix.** A `*-timeout` suffix match also caught `first-byte-timeout`, which `http-errors.mjs`
-  documents as what a **large prompt** looks like while the server ingests it, advising a bigger
-  timeout rather than reporting a death. Three big commits in a row would then abort a healthy sweep
-  and mark the rest `skipped-abort` — the exact harm excluding starvation was meant to avoid,
-  reintroduced by the fix for it.
-  **Excluded, each for its own reason:** `token-exhaustion` and `first-byte-timeout` (what a big input
-  does, not what a broken server does); input refusals such as `oversize` (another commit may survive
-  it); and `output-too-large`, which is **this harness's own capture ceiling** — counting it would
-  have the sweep diagnose the server for its own limit and stop the night saying so.
+  `serverUnwell` defines as the two transport reasons, the `COMPLETION_SHAPES`, and **`idle-timeout`
+  alone of the timeouts**. A failure envelope carrying **no reason at all** counts too — that is what a
+  wrong `--model` produces, the likeliest unattended misconfiguration there is.
+  **The axis that separates the timeouts is what the clock MEASURES, and the CLI already states it**
+  in the hint it writes per budget: `deadline` says *"raise `--max-seconds`"*, `first-token` says *"a
+  large prompt can take minutes to ingest — raise `--timeout`"*, and `idle` says *"the model began
+  answering and then stalled — check the server log; raising `--timeout` will not help"*. A budget
+  whose own hint says a bigger value fixes it measures the caller's patience; the one whose hint says
+  it will not help reports something the server did. `collectStream` confirms the mechanism: the idle
+  budget is armed only when a frame carried text.
+  **This predicate took FIVE iterations, and the fourth was a regression** — any `*-timeout`, then
+  `{deadline, idle}`, then `{idle}`, then none, now `{idle}`. Every wrong step generalised on a
+  property of the reason NAME; the rule that held reads the CLI's own hint, which is an artifact
+  rather than an inference. Recorded so a sixth reason is tested against the artifact.
+  Still excluded: `token-exhaustion` (the model's budget), `oversize` and other input refusals, and
+  `output-too-large` — this harness's own capture ceiling, which counting would have the sweep
+  diagnose the server for its own limit.
+
+- **A pinned window is a resolved SHA, not the text the caller typed.** `--from` accepts a ref for
+  convenience and `resolvePin` (`bench/lib/sweep-window.mjs`) resolves it with
+  `git rev-parse <ref>^{commit}`; the **resolved commit** is what is enumerated from, recorded, and
+  rendered in the report header. Recording the raw ref would let two benchmark arms walk different
+  histories from identical-looking input, which is the entire defect the flag exists to remove. A
+  value beginning with `-` is refused before it reaches `git log`, where git would read it as an
+  option rather than a revision.
+
+- **A run that fell short says so in the artifact, not in the operator's memory.** The record carries
+  the requested `--max-commits` beside the eligible count found, and the header states the shortfall
+  when they differ. Without it an arm that reached six of ten reads as a completed run — and for a
+  benchmark, arms are compared from the artifact, so a pre-flight check run by hand is not a property
+  of the thing being compared.
+
+- **One mapping builds every report-derived entry, and a differing verdict is an override on top.**
+  `classify` no longer constructs entries itself: every parsed non-error report goes through
+  `reported()`, and `substituted` is that entry with its outcome replaced. The rule it enforces:
+  *every report-derived entry retains `model`, `analysisCut`, `atCap`, `hunksOnly` and `dropped`, and
+  retains `findings` whenever it is an array* — `unreadable` legitimately has no array to carry.
+  **This exists because the identity recurred.** "`classify` does not carry a belief-changing envelope
+  field onto the entry" was fixed for `analysisCut`/`atCap`/`hunksOnly`, then for `dropped`, and then
+  reappeared on the `substituted` branch, which the two fixes never reached. Fixing a third branch
+  would have left a fourth possible; one construction site does not. A behavioural test asserts the
+  rule across every outcome, and a source scan that the parsed report is read in exactly one place is
+  a **tripwire only** — an alias would satisfy the count — so the semantics live in the tests.
 
 - **What the report renders is decided by what an entry CARRIES, never by what its outcome is called.**
   Three defects came from keying on the outcome: a `truncated` review's real findings vanished from

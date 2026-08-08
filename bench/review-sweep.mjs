@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { classify, serverUnwell } from './lib/sweep-outcome.mjs';
+import { resolvePin } from './lib/sweep-window.mjs';
 import { writeSweep } from './lib/sweep-report.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,7 +30,7 @@ const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
 
 const SPEC = {
   valueFlags: [
-    'until', 'minutes', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
+    'until', 'minutes', 'from', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
     'abort-after', 'model', 'provider', 'base-url', 'out-dir',
   ],
   booleanFlags: ['diff-only'],
@@ -87,7 +88,13 @@ function readGit(args, git) {
 }
 
 /**
- * Commits newest-first, each tagged with whether it is eligible.
+ * Commits newest-first from `from` (default `HEAD`), each tagged with whether it
+ * is eligible.
+ *
+ * **Pass a full SHA, never a movable ref, when arms must be comparable.** The
+ * benchmark runs the same ten commits against several models; enumerating from
+ * `HEAD` meant a commit landing between arms silently shifted the window, so two
+ * arms reviewed different work and the comparison meant nothing.
  *
  * Ineligible commits are RETURNED rather than dropped, so the report can say
  * "this one was passed over, and why". Enumeration stops as soon as enough
@@ -95,8 +102,8 @@ function readGit(args, git) {
  * walked past, or a run whose recent history is all documentation would review
  * nothing while reporting that it had reached its limit.
  */
-export function enumerateCommits({ include, maxCommits, scanLimit }, git) {
-  const shas = readGit(['log', '--no-merges', '--format=%H', '-n', String(scanLimit)], git);
+export function enumerateCommits({ include, maxCommits, scanLimit, from = 'HEAD' }, git) {
+  const shas = readGit(['log', '--no-merges', '--format=%H', '-n', String(scanLimit), from], git);
   const out = [];
   let eligible = 0;
   for (const sha of shas) {
@@ -231,6 +238,7 @@ export function optionsFrom(parsed, startMs, root = ROOT) {
     maxSeconds: positive(parsed['max-seconds'], '--max-seconds', DEFAULTS.maxSeconds),
     maxAttempts: positive(parsed['max-attempts'], '--max-attempts', DEFAULTS.maxAttempts),
     abortAfter: positive(parsed['abort-after'], '--abort-after', DEFAULTS.abortAfter),
+    from: parsed.from ?? 'HEAD',
     diffOnly: Boolean(parsed['diff-only']),
     model: parsed.model,
     provider: parsed.provider,
@@ -247,6 +255,9 @@ function main() {
   const { options: parsed } = parseArgs(process.argv.slice(2), SPEC);
   const startMs = Date.now();
   const options = optionsFrom(parsed, startMs);
+  // Pin first, then enumerate from the resolved SHA, so the record and the
+  // report name the revision that was actually walked.
+  options.from = resolvePin(options.from, git);
   const commits = enumerateCommits(options, git);
   process.stderr.write(`Sweeping ${commits.filter((c) => c.eligible).length} eligible of ${commits.length} enumerated commits.\n`);
   const { entries, stoppedBecause } = runSweep(commits, options);
@@ -258,6 +269,17 @@ function main() {
     requestedModel: options.model ?? null,
     maxSeconds: options.maxSeconds,
     include: options.include,
+    // Which window was enumerated. A report that cannot say this cannot be
+    // compared with another one, which is the whole reason the flag exists.
+    from: options.from,
+    // Requested versus found. Without both, an arm that reached six of the ten
+    // commits it was asked for reads as a completed run.
+    requestedCommits: options.maxCommits,
+    eligible: commits.filter((commit) => commit.eligible).length,
+    // Both, because the shortfall sentence must name WHICH cause applied: the
+    // scan limit stopping the walk, or the pinned history simply running out.
+    scanLimit: options.scanLimit,
+    walked: commits.length,
     // The enumeration's own count, never `entries.length`: they agree today and
     // the report must not depend on them continuing to.
     enumerated: commits.length,

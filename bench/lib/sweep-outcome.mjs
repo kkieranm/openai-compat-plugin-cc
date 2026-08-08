@@ -38,33 +38,43 @@ export const MAX_RAW = 256_000;
 /**
  * Reasons that mean the SERVER is unwell, for the fail-fast counter.
  *
- * Three groups, and the boundary is "would another commit fare any better":
+ * Three groups:
  *
  * 1. `TRANSPORT` / `NON_RETRYABLE_TRANSPORT` — the connection itself.
  * 2. `COMPLETION_SHAPES` — `empty-completion`, `stream-unfinished`,
- *    `blank-completion`. **This group is the load-bearing one on this hardware**:
- *    ADR 012 and OAI-20 measure it as the dominant failure at 27 of 72 runs, and
- *    omitting it meant the guard could not fire on the exact outage it was
- *    written for.
- * 3. `deadline-timeout` and `idle-timeout` ONLY — a run that got going and then
- *    stopped producing.
+ *    `blank-completion`. The load-bearing group on this hardware: ADR 012 and
+ *    OAI-20 measure it as the dominant failure at 27 of 72 runs.
+ * 3. **`idle-timeout` alone of the timeouts.**
  *
- * **The suffix match this used to do was too wide, and it inverted the rule.**
- * `http-errors.mjs` mints these as `` `${budget}-timeout` ``, so the suffix also
- * caught `first-byte-timeout` — which that file documents as what a LARGE PROMPT
- * looks like while the server ingests it, advising a bigger timeout rather than
- * reporting a dead server. Three big commits in a row would then have aborted a
- * perfectly healthy sweep and marked the rest `skipped-abort`: the exact harm
- * that excluding starvation was meant to avoid, reintroduced by the fix for it.
+ * **The axis that separates the timeouts is what the clock MEASURES, not who
+ * configured it** — and `http-errors.mjs` already says which is which, in the
+ * hint it writes for each budget:
  *
- * **Deliberately NOT here:** `token-exhaustion` and `first-byte-timeout`, which
- * are what a big input does rather than what a broken server does; input
- * refusals such as `oversize`, which another commit may well survive; and
- * `output-too-large`, which is THIS HARNESS's own capture ceiling — ADR 021 calls
- * it a sweep defect rather than a review failure, and counting it as an outage
- * would have the sweep diagnose the server for its own limit.
+ * - `deadline` — *"Raise `--max-seconds`, or send a smaller request."*
+ * - `first-token` — *"A large prompt can take minutes to ingest before the first
+ *   token — raise `--timeout`."*
+ * - `idle` — *"The model began answering and then **stalled** — check the server
+ *   log; **raising `--timeout` will not help**."*
+ *
+ * A budget whose own hint says a bigger value fixes it is measuring the caller's
+ * patience. The one whose hint says a bigger value will NOT help is reporting
+ * something the server did. `collectStream` confirms the mechanism: the idle
+ * budget is armed only by `deadline.progress()`, called when a frame carried
+ * text, so only a server that began generating and then went silent can emit it.
+ *
+ * **This predicate took FIVE iterations** — any `*-timeout`, then
+ * `{deadline, idle}`, then `{idle}`, then none, now `{idle}` again — and the
+ * fourth was a regression caught one pass later. Every wrong step generalised on
+ * some property of the reason NAME. The rule above reads the CLI's own hint
+ * instead, which is an artifact rather than an inference, and is why it is
+ * written here rather than just the resulting set.
+ *
+ * **Still excluded, each for its own reason:** `token-exhaustion` (the model's
+ * budget), `oversize` and other input refusals (another commit may survive
+ * them), and `output-too-large`, which is THIS HARNESS's own capture ceiling —
+ * counting it would have the sweep diagnose the server for its own limit.
  */
-const UNWELL_TIMEOUTS = new Set(['deadline-timeout', 'idle-timeout']);
+const UNWELL_TIMEOUTS = new Set(['idle-timeout']);
 
 export function serverUnwell(reason) {
   if (typeof reason !== 'string' || !reason) return false;
@@ -189,8 +199,22 @@ export function classify({ status, stdout, stderr, code, signal }) {
   }
   if (parsed.error === true) return { ...failure(stdout, status), ...kept };
   const settled = outcomeFor(stdout, false);
+  // EVERY report-derived entry is built by `reported`, and a differing verdict is
+  // an override on top of it — never a second construction site.
+  //
+  // The substituted branch used to build its own object, and dropped the findings
+  // and all four caveats doing so: a substituted model's real leads vanished from
+  // both artifacts. That was the THIRD instance of one identity — `classify` not
+  // carrying a belief-changing envelope field onto the entry — after
+  // `analysisCut`/`atCap`/`hunksOnly` and then `dropped`, each fixed on the path
+  // it was found on while a sibling path kept the defect. One mapping is what
+  // makes a fourth path impossible rather than merely unlikely.
+  const entry = reported(settled.report);
   if (settled.reason === 'model-substituted') {
-    return { outcome: 'substituted', reason: settled.reason, model: settled.report?.model, ...kept };
+    // The verdict is replaced; the FACTS are not. `analysisCut` in particular
+    // reached the artifact only through the `truncated` outcome name, so an
+    // override erased it — the renderer now reads it from the entry instead.
+    return { ...entry, outcome: 'substituted', reason: settled.reason, ...kept };
   }
-  return { ...reported(settled.report), ...kept };
+  return { ...entry, ...kept };
 }

@@ -1074,3 +1074,31 @@ trust, so the mitigation and the exploit share a mechanism.
     it to "used by nothing at all, tests included" catches only one of the four. So reachability here
     is not syntactically decidable, and the honest control is the review question: **for each new
     export, name the production call site.** If you cannot, it is not shipped.
+
+## A stub gentler than the dependency it stands for
+
+Confirmed twice in one sitting, in the same three tests, so it is a class rather
+than a slip.
+
+- `resolvePin`'s failure test used a stub that **returned `''`** where the real
+  `git` **throws** — `git rev-parse <unknown>^{commit}` exits 128, so
+  `execFileSync` raises. The refusal being tested was therefore dead code in
+  production while the test stayed green, and a user with a typo'd `--from` got a
+  raw `Command failed:` instead of the crafted message.
+- The same file's happy-path stub **ignored `args[1]` entirely**, returning its
+  configured SHA whatever revision was requested. A reviewer mutation-proved it:
+  replacing the call with a hardcoded `['rev-parse','HEAD']` — dropping both the
+  ref and the `^{commit}` peel — left the whole suite passing.
+
+**The test is not "does the stub return the right value" but "does the stub FAIL
+the way the real thing fails".** A dependency that throws must be stubbed by
+something that throws; a call whose ARGUMENTS carry the meaning must be stubbed by
+something that records them. Both stubs were written in one sitting beside a
+sibling test that does capture its arguments — proximity to a correct example is
+not protection.
+
+**No repo-wide scanner is proposed for this**, deliberately: a grep for "stubs
+that return sentinels where the real call throws" cannot be written so that it
+fails reliably, and a guard that cannot fail is the very defect this file exists
+to record. The guard here is per injection point — for each injected dependency,
+the test covering its failure path uses a stub that throws — plus this entry.

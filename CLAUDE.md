@@ -161,11 +161,11 @@ historical commit re-staged as `before/`/`after/` trees with its known defects c
 the real CLI via `--json` and matched on a quoted anchor line — see
 [ADR 006](adr/006-benchmarking-the-reviewer.md).
 
-`bench/review-sweep.mjs` reviews recent commits newest-first until a wall clock stops it, and
-`bench/lib/sweep-outcome.mjs` `classify` sorts each into an outcome of which only `findings` and
-`clean` count as reviewed — reading every envelope field that changes what a reader should believe
-(`analysisCut`, `atCap`, `hunksOnly`, `dropped`, and `reason`) so a night lost to starvation or a
-truncated analysis is reported as coverage rather than as silence — see
+`bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it, and
+`bench/lib/sweep-outcome.mjs` `classify` builds every report-derived entry through one mapping so each
+carries the envelope fields that change what a reader should believe (`analysisCut`, `atCap`,
+`hunksOnly`, `dropped`, `reason`) — leaving each commit disposed of exactly once across the report's
+three sections, so a night lost to starvation reads as coverage rather than as silence — see
 [ADR 021](adr/021-an-unwatched-sweep-must-say-what-it-did-not-review.md).
 
 ## Commands

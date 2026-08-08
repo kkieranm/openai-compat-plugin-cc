@@ -11,6 +11,7 @@
 // analysis as `clean`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { runSweep } from '../bench/review-sweep.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
 
@@ -61,14 +62,26 @@ test('the completion shapes count as the server being unwell', () => {
   }
 });
 
-// NARROWED at pass 2. This test previously asserted that ANY `*-timeout`
-// counts, which is what made the guard abort healthy sweeps: `first-byte-timeout`
-// is what a large prompt looks like while the server ingests it, and
-// `http-errors.mjs` advises raising the timeout rather than reporting a death.
-test('only the timeouts that mean the server stopped producing count', () => {
-  assert.equal(serverUnwell('deadline-timeout'), true);
-  assert.equal(serverUnwell('idle-timeout'), true);
-  assert.equal(serverUnwell('first-byte-timeout'), false);
+// NARROWED TWICE. It first asserted that ANY `*-timeout` counts, then that
+// `deadline-timeout` did. Both were wrong for the same reason: `http-errors.mjs`
+// mints these per BUDGET, and `first-byte` is a large prompt being ingested while
+// `deadline` is the caller's own --max-seconds cap. Only `idle` — a stream that
+// started and then stopped — says the server did anything.
+// FIVE iterations, and the fourth — removing every timeout — was a regression
+// this test used to encode. The axis is what the clock MEASURES, and the CLI's
+// own hints say which is which: deadline and first-token say "raise the
+// timeout", idle says raising it "will not help" because the model stalled.
+test('a stalled stream is the server; a caller cap is not', () => {
+  assert.equal(serverUnwell('idle-timeout'), true, 'armed only after generation began, so only a stall emits it');
+  assert.equal(serverUnwell('deadline-timeout'), false, "the caller's whole-run cap");
+  assert.equal(serverUnwell('first-byte-timeout'), false, 'a large prompt being ingested');
+});
+
+// The control: what remains is exactly what the SERVER did.
+test('a dropped connection or an unusable reply shape still counts', () => {
+  assert.equal(serverUnwell('transport'), true);
+  assert.equal(serverUnwell('non-retryable-transport'), true);
+  assert.equal(serverUnwell('empty-completion'), true);
 });
 
 // The control for the two above: starvation is the MODEL's budget, not the
@@ -137,12 +150,35 @@ test('a non-string reason cannot crash the sweep or erase later commits', () => 
   assert.equal(entries.length, 3);
 });
 
-// first-byte-timeout is what a LARGE PROMPT looks like, not a dead server —
-// http-errors.mjs says so and advises raising the timeout.
-test('a slow first byte is not the server being unwell', () => {
-  assert.equal(serverUnwell('first-byte-timeout'), false);
-  assert.equal(serverUnwell('deadline-timeout'), true);
-  assert.equal(serverUnwell('idle-timeout'), true);
+// The caller's own cap is not the server failing. Three large commits capping out
+// in a row must not read as an outage — that is the sweep aborting itself.
+test("the harness's own --max-seconds cap does not abort a healthy sweep", () => {
+  const { entries, stoppedBecause } = runSweep(commits('a', 'b', 'c', 'd'), OPTIONS, {
+    execute: () => envelope('deadline-timeout'),
+  });
+  assert.equal(entries.length, 4);
+  assert.ok(entries.every((entry) => entry.outcome === 'failed'));
+  assert.equal(stoppedBecause, 'every enumerated commit was settled');
+});
+
+// The control, and the regression this pair exists to prevent: a server that
+// begins answering and then goes silent MUST trip the fail-fast. Removing
+// idle-timeout made a hung-but-connected server invisible for a whole night.
+test('a server that starts answering and then stalls DOES abort the sweep', () => {
+  const { stoppedBecause } = runSweep(commits('a', 'b', 'c', 'd'), OPTIONS, {
+    execute: () => envelope('idle-timeout'),
+  });
+  assert.match(stoppedBecause, /server looks gone/);
+});
+
+// analysisCut must survive an overridden verdict: a substituted model whose
+// analysis was ALSO cut used to lose that fact entirely.
+test('a substituted reply keeps analysisCut even though its verdict was replaced', () => {
+  const entry = classify(ok([{ file: 'a.mjs', summary: 'x' }], {
+    model: 'other', requestedModel: 'asked', analysisCut: true,
+  }));
+  assert.equal(entry.outcome, 'substituted');
+  assert.equal(entry.analysisCut, true);
 });
 
 test('stderr is bounded too, and its truncation is recorded separately', () => {
@@ -180,4 +216,43 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
   const { entries } = runSweep(mixed, OPTIONS, { execute: () => envelope('transport') });
   assert.equal(entries[3].outcome, 'skipped-no-code');
   assert.equal(entries[4].outcome, 'skipped-abort');
+});
+
+// --- OAI-121: the rule, and the two shapes that prove it holds ---
+
+// The five carried report fields survive on EVERY report-derived path. `findings`
+// is separate on purpose: `unreadable` has no array to carry, which is why the
+// first draft of this invariant contradicted the code it describes.
+const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'dropped'];
+
+test('a substituted model keeps the findings it produced, and every caveat', () => {
+  const entry = classify(ok([{ file: 'a.mjs', line: 3, summary: 'a real defect' }], {
+    model: 'other-model', requestedModel: 'test-model', atCap: true, dropped: 2, hunksOnly: true,
+  }));
+  assert.equal(entry.outcome, 'substituted');
+  assert.equal(entry.findings.length, 1, 'a different model still found a real defect');
+  for (const key of CARRIED) assert.ok(key in entry, `substituted dropped ${key}`);
+  assert.equal(entry.atCap, true);
+  assert.equal(entry.dropped, 2);
+});
+
+// The other half of the invariant: caveats survive, findings legitimately does
+// not, because there was no array to carry.
+test('an unreadable reply keeps the caveats without inventing a findings list', () => {
+  const entry = classify(ok(null, { parsed: false, hunksOnly: true }));
+  assert.equal(entry.outcome, 'unreadable');
+  for (const key of CARRIED) assert.ok(key in entry, `unreadable dropped ${key}`);
+  assert.equal(entry.findings, undefined, 'there was no array to carry');
+});
+
+// A tripwire, and no more than that: an alias or a destructure would satisfy this
+// count while bypassing the rule, so the behavioural tests above carry the
+// semantics. What it does catch is the exact regression that happened — a second
+// branch reading the report directly to build its own entry.
+test('only one place in the classifier reads the parsed report', async () => {
+  const source = await readFile(new URL('../bench/lib/sweep-outcome.mjs', import.meta.url), 'utf8');
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  const hits = code.match(/settled\.report/g) ?? [];
+  assert.equal(hits.length, 1, `expected exactly one settled.report read, found ${hits.length}`);
+  assert.match(code, /reported\(settled\.report\)/);
 });

@@ -8,11 +8,12 @@
 // a night that found almost nothing, and the reader draws the opposite
 // conclusion from the truth.
 //
-// **Every enumerated commit is accounted for in exactly one disposition
-// section** — `Findings`, `Reviewed, nothing reported`, or `Coverage` — and
-// never absent from all three. The findings section additionally surfaces leads
-// from a review that did NOT complete, flagged as such, because a lead is worth
-// reading even when the review that produced it does not count.
+// **Every enumerated commit is disposed of in EXACTLY ONE section** — `Findings`,
+// `Reviewed, nothing reported`, or `Coverage` — never absent from all three and
+// never in two of them. A review that did not complete can still have reported
+// something real, and those leads render UNDER ITS COVERAGE ROW with the same
+// detail a completed review's would get: disposition and surfacing are the same
+// act, so a lead is never lost and a commit is never counted twice.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REVIEWED } from './sweep-outcome.mjs';
@@ -58,6 +59,11 @@ function answeredBy(entry) {
  */
 function incompleteness(entry) {
   const notes = [];
+  // Read from the entry, never inferred from the outcome name. `analysisCut`
+  // used to reach the artifact only by surviving as the `truncated` verdict, so
+  // an entry whose outcome was overridden — a substituted model whose analysis
+  // was ALSO cut — lost the fact entirely.
+  if (entry.analysisCut) notes.push('the analysis was cut off before the model finished looking, so this is not a complete review of the commit');
   if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
   if (entry.dropped) notes.push(`${entry.dropped} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
   if (entry.hunksOnly) notes.push('the changed files did not fit the window, so only the diff was reviewed — not the files whole');
@@ -107,31 +113,49 @@ function findingLines(entry) {
 }
 
 /**
- * Every commit whose review produced findings, WHATEVER its outcome.
+ * Did this review report anything, whatever became of the review itself?
  *
- * Keyed on the findings the entry carries, not on `outcome === 'findings'`. A
- * `truncated` review is not a review of the commit — that is why it does not
- * count as reviewed — but whatever leads it did emit are still leads, and the
- * first version of this filter dropped them from the morning artifact entirely,
- * leaving them only in the raw JSON. Incompleteness belongs in the heading of
- * such a section, not in the decision to print it.
+ * Keyed on the findings the entry CARRIES, never on `outcome === 'findings'`. A
+ * `truncated` or `substituted` review is not a review of the commit — that is why
+ * neither counts as reviewed — but whatever leads it emitted are still leads, and
+ * an earlier version dropped them from the morning artifact entirely, leaving
+ * them only in the raw JSON.
  */
-function withFindings(entries) {
-  return entries.filter((entry) => Array.isArray(entry.findings) && entry.findings.length > 0);
+function hasFindings(entry) {
+  return Array.isArray(entry.findings) && entry.findings.length > 0;
+}
+
+/**
+ * Everything a reader needs about one commit's findings, in one place.
+ *
+ * Shared by the Findings section and by a Coverage row that carries findings, so
+ * the two cannot drift: a lead surfaced from a review that did NOT complete gets
+ * the same file, line, severity, summary and evidence, the same answering model
+ * and the same incompleteness notes as one from a review that did. Rendering the
+ * second more thinly would trade one reporting defect for another.
+ */
+function findingsBlock(entry, indent = '', { attribute = true } = {}) {
+  // The caller may already have named the answering model on its own row — a
+  // coverage row does. Naming it twice for one commit is noise the tests could
+  // not see, since they assert the string is PRESENT.
+  const lines = attribute ? [`${indent}*answered by \`${entry.model ?? 'unknown'}\`*`, ''] : [];
+  for (const note of incompleteness(entry)) lines.push(`${indent}> **Incomplete:** ${note}`, '');
+  for (const line of findingLines(entry)) lines.push(`${indent}${line}`);
+  lines.push('');
+  return lines;
 }
 
 function findingsSection(entries) {
-  const found = withFindings(entries);
-  if (found.length === 0) return ['## Findings', '', 'None reported. **Read the coverage section before concluding anything from that.**'];
+  // REVIEWED only. A non-reviewed entry's findings are rendered under its
+  // coverage row instead, so that each commit is disposed of exactly once.
+  const found = entries.filter((entry) => REVIEWED.has(entry.outcome) && hasFindings(entry));
+  if (found.length === 0) return ['## Findings', '', 'None reported by a completed review. **Read the coverage section before concluding anything from that** — a commit whose review did not complete can still have reported something, and it is listed there.', ''];
   const lines = ['## Findings', ''];
   for (const entry of found) {
     // The answering model per commit, never once in the header: it can differ
     // request to request, and a single header value would assert a uniformity
     // nothing enforces.
-    const caveat = REVIEWED.has(entry.outcome) ? '' : ` — **${entry.outcome}**, so this is NOT a completed review of the commit`;
-    lines.push(`### ${subjectLine(entry)}${caveat}`, '', `*answered by \`${entry.model ?? 'unknown'}\`*`, '');
-    for (const note of incompleteness(entry)) lines.push(`> **Incomplete:** ${note}`, '');
-    lines.push(...findingLines(entry), '');
+    lines.push(`### ${subjectLine(entry)}`, '', ...findingsBlock(entry));
   }
   return lines;
 }
@@ -150,11 +174,20 @@ function coverageSection(entries) {
     // from a `deadline-timeout` one.
     const why = entry.reason ? `${WHY[entry.outcome] ?? 'no explanation recorded'} (\`${entry.reason}\`)` : (WHY[entry.outcome] ?? 'no explanation recorded');
     lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
-    // Caveats are rendered from what the entry CARRIES, for every row — not only
-    // where the outcome happened to be `findings`. A `clean` entry with
-    // `hunksOnly` is a completed review of a diff, not of the files whole, and
-    // the report's permanent caveat claims otherwise unless this says so.
-    for (const note of incompleteness(entry)) lines.push(`  - *${note}*`);
+    if (hasFindings(entry)) {
+      // A review that did not complete can still have reported something real,
+      // and those leads are why OAI-120 mattered. They are rendered HERE rather
+      // than in the Findings section so the commit is disposed of exactly once —
+      // with the same detail, flagged by the outcome that disqualifies it.
+      lines.push('', `  **It reported the following before it was disqualified — treat as leads only:**`, '');
+      lines.push(...findingsBlock(entry, '  ', { attribute: false }));
+    } else {
+      // Caveats are rendered from what the entry CARRIES, for every row — not
+      // only where the outcome happened to be `findings`. A `clean` entry with
+      // `hunksOnly` is a completed review of a diff, not of the files whole, and
+      // the report's permanent caveat claims otherwise unless this says so.
+      for (const note of incompleteness(entry)) lines.push(`  - *${note}*`);
+    }
   }
   lines.push('');
   return lines;
@@ -164,6 +197,29 @@ function tally(entries) {
   const counts = new Map();
   for (const entry of entries) counts.set(entry.outcome, (counts.get(entry.outcome) ?? 0) + 1);
   return [...counts].sort((a, b) => b[1] - a[1]).map(([outcome, n]) => `${outcome}: ${n}`).join(' · ');
+}
+
+/**
+ * Say so when a run found fewer eligible commits than it was asked for.
+ *
+ * A short arm otherwise reads as a completed one: the counts a reader sees are
+ * enumerated and reviewed, neither of which reveals that ten were requested and
+ * six were reachable. For a benchmark comparing arms, that is the difference
+ * between a result and an artefact of where the scan stopped.
+ */
+function shortfall(record) {
+  const asked = record.requestedCommits;
+  const found = record.eligible;
+  if (asked === undefined || found === undefined || found >= asked) return '';
+  // WHICH cause, not a guess. The walk either stopped because the scan limit was
+  // reached, or because the history reachable from the pinned start ran out —
+  // and a pinned start makes the second routine. Naming the scan limit either
+  // way sent a reader to tune a knob that was never the constraint.
+  const hitLimit = record.scanLimit !== undefined && record.walked !== undefined && record.walked >= record.scanLimit;
+  const cause = hitLimit
+    ? `the scan stopped at its \`--scan-limit\` of ${record.scanLimit} commits`
+    : `only ${record.walked ?? 'those'} commits are reachable from that revision`;
+  return ` — **only ${found} of the ${asked} requested commits were eligible**: ${cause}`;
 }
 
 function header(record) {
@@ -180,6 +236,10 @@ function header(record) {
     `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
     `- **Enumerated** ${enumerated} commits · **reviewed** ${reviewed} · **no review** ${enumerated - reviewed}`,
     `- **Per-commit cap** ${record.maxSeconds}s · **paths included** ${record.include.join(', ')}`,
+    // The window this run walked. Without it the artifact cannot say what it
+    // enumerated FROM, and two arms of a benchmark cannot be shown to have
+    // reviewed the same commits.
+    `- **Enumerated from** \`${record.from ?? 'HEAD'}\`${shortfall(record)}`,
     `- ${tally(record.entries)}`,
     '',
   ];
