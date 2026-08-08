@@ -6,8 +6,20 @@ OAI-67, OAI-66 and OAI-64). Nothing below reopens it.
 
 ## State, one line
 
-**The `/feature` run for `bench/review-sweep.mjs` is in its review ladder, mid-PASS 2 of a computed
-cap of 3.** Suite 730/0 at `e56e836`. The work is committed; the ladder is not finished.
+**The `/feature` run for `bench/review-sweep.mjs` is COMPLETE and its ladder ended
+`cap-without-approval` at the computed cap of 3.** Suite 747/0 at `2d5a0f9`. Residue filed as
+**OAI-118 to OAI-124** (tier 12). Register row validated (`--exit-row-valid` exit 0).
+
+**What is NOT done, and why:** two code defects were open at the terminal pass with no boundary batch
+left to fix them — **OAI-120** (a substituted model's findings dropped from both artifacts) and
+**OAI-119** (`deadline-timeout` treated as server death). Approval is forbidden while an accepted
+in-scope fix is unapplied, and the provenance stop that would otherwise permit it requires a pass with
+no code defect. So the exit is correct rather than a failure.
+
+**Before the benchmark runs, OAI-120 + OAI-121 must land.** `--abort-after 99` works around OAI-119,
+but nothing works around OAI-120: a substituted reply's findings vanish, so an affected arm reads as
+"found nothing" in a five-model comparison where substitution is the exact failure `adr/011` exists
+for. An arm showing zero findings could not be distinguished from a substituted one.
 
 ## Where the durable state lives
 
