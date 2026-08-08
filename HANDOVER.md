@@ -5,8 +5,27 @@ Started 2026-08-08. Tracker: `BACKLOG.md`. Queue, in **tracker order** (tier 1, 
 
 ## State, one line
 
-**Nothing built yet — the run was declared and this handover committed before item 1 started.**
-Baseline at declaration: `npm test` 692 pass / 0 fail, working tree clean, HEAD `63564ae`.
+**OAI-62 is `blocked` on an owner decision (no build — it was already shipped); OAI-67 is IN PROGRESS
+at its probe.** Baseline at declaration: `npm test` 692 pass / 0 fail, working tree clean, HEAD
+`63564ae`.
+
+### OAI-62 — blocked at the probe, correctly, and NOT because it is hard
+
+The pre-flight read the item's headline and queued it as evidence-complete. **That was wrong, and the
+item says so itself**: a `STATUS, 2026-08-07` block at the END of its body records that (a), (b) and
+(c) are **all built and committed at `77c1eab`** — `scripts/lib/job-busy.mjs`, `withBusyRetry` at six
+enumerated sites, the heartbeat's two narrowed `isBusy` catches, the `completed` write outside the
+`failed` catch, `salvageOutcome`, and [ADR 020]. Verified against disk this run at
+`job-heartbeat.mjs:82,88`, `cmd-task-worker.mjs:225`, `job-store.mjs:244`.
+
+What stops it closing is **OAI-106**: at the terminal verdict point the Claude approver approved and
+**Codex refused**, because after an exhausted persistence retry the lifecycle still reports
+`worker-died` for work that completed. **The item states the decision is the user's** — build OAI-106
+and reopen, or close over Codex's dissent. Codex cannot supply that consensus: it *is* the dissenter.
+So this is blocked on the owner, not `blocked-on-plan`.
+
+**Lesson for the next pre-flight: read each queued item's body to its END.** A late STATUS block
+supersedes the headline, and the tier index does not carry it.
 
 **This section is a live progress marker, not a run-start snapshot** — run-start facts are quarantined
 under "Environment recorded at run start". Re-write it whenever the state it describes changes. The
@@ -86,12 +105,20 @@ Next command if nothing has started: `/feature OAI-62`.
 
 ## What has NOT started
 
-- **OAI-62** — not started. No probe, no plan, no code.
-- **OAI-67** — not started.
+- **OAI-62** — probed and `blocked`; see above. No build, and none is wanted until the owner decides.
+- **OAI-67** — **probe done, build NOT started.** What the probe established, so it is not re-derived:
+  **(a) is fully live** — `spawnAndStamp` (`task-submit.mjs:109`) calls `await spawnWorker(seq)` with
+  no try/catch, so a spawn `'error'` still leaves the row `queued` with `spawned_at` NULL and blocks
+  every successor for the 120s grace. **(b) is HALF closed** — `markSpawned` is now wrapped in
+  `withBusyRetry` and, on exhaustion, warns on stderr and still returns the id (`task-submit.mjs:149`),
+  which is exactly what (b) asked for; but `sweepQuietly(db)` runs **after** `spawnAndStamp` at
+  `task-submit.mjs:196` and **rethrows anything non-busy by deliberate design**, so a non-busy sweep
+  failure still rejects `submitTask` and `cmd-task.mjs:90-95` never prints the id while the detached
+  worker calls the model. Scope the build as **(a) plus the `sweepQuietly` half of (b)**.
 - **OAI-66** — not started.
 - **OAI-64** — not started.
 
-Nothing in this queue has been begun. No commits have been made under this run.
+No code commits have been made under this run — only handover commits.
 
 ## Environment recorded at run start
 
