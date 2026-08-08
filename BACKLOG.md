@@ -48,8 +48,11 @@ to be "the index sequence equals the heading sequence", which is why OAI-104 des
 never ran — re-read that item against this convention before working it.
 
 **Tier 1 — a background job kills, loses or misreports live work.** **OAI-62, OAI-67, OAI-66, OAI-64,
-OAI-69**. One subsystem, five independent closes, so they sit adjacent rather than merged. OAI-62
-leads: it kills a worker mid-model-call and discards an answer the model already paid for. OAI-67 and
+OAI-69**. One subsystem, five independent closes, so they sit adjacent rather than merged.
+**OAI-62 leads by position only and is NOT live work — corrected 2026-08-08.** Its three defects (a
+worker killed mid-model-call, a paid-for answer discarded, a locked `openStore`) all **shipped at
+`77c1eab`** and were verified against disk; what remains is an owner decision, because its ladder
+ended `cap-without-approval` over **OAI-106**. It is not a build and must not be queued as one. OAI-67 and
 OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash published as a clean
 `cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
