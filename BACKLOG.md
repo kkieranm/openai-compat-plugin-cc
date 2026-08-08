@@ -175,6 +175,21 @@ drift impossible has never once run. OAI-103 is the same shape one level out: a 
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 12 — residue from the overnight review-sweep ladder, which ended `cap-without-approval`.**
+**OAI-120, OAI-121, OAI-119, OAI-118, OAI-124, OAI-122, OAI-123**. The harness ships and works — three
+full ladder passes, suite 747/0 — but its ladder ended without approval with two code defects open, so
+this tier is what it ships knowing.
+**OAI-120 leads, and it is the one that blocks the model benchmark rather than merely annoying it**: a
+substituted model's findings are dropped from both artifacts, so an affected arm reports as having
+found nothing, in a comparison whose whole point is running five models against each other.
+**OAI-121 is OAI-120's rule** and is the item that actually stops a fourth instance — the same identity
+was fixed twice and recurred on a branch neither fix reached, which is past this repo's bar for
+graduating a class to a structural guard. Do them together.
+OAI-119 is a one-line narrowing with a stated workaround (`--abort-after 99`); OAI-118 pairs a violated
+invariant with the test that cannot catch it; OAI-124 is a **`widening` awaiting the user**, not a
+defect, and the benchmark's arms are not comparable without it. OAI-122 and OAI-123 trail: a
+contradictory decision record, and a deadline with no monotonic guard that a wall-clock step could move.
+
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
 **OAI-108**, **OAI-111**.
@@ -2216,4 +2231,64 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the model (the corpus's large ones) cannot be run under a schema. This is why OAI-19's T2 could
   establish that the schema *causes* the transport drops but not whether it *fixes* token exhaustion —
   the question had to be left open for want of a flag. Small, and it unblocks a real question.
+
+- **OAI-118** — **The sweep report's "exactly one disposition section" invariant is both VIOLATED and
+  UNGUARDED.** Filed 2026-08-08 from the review-sweep ladder, `unresolved at cap`. A `truncated` entry
+  carrying findings renders in **both** the Findings section and Coverage, against `adr/021`'s claim
+  that each enumerated commit appears exactly once. And the only test that claims to guard it —
+  `tests/sweep-report.test.js` `every commit appears exactly once` — asserts only
+  `assert.match(out, /sha/)`, which one occurrence and ten both satisfy: it has failure power on
+  absence and **none on duplication**. A positive control run against the checked-out bytes rendered a
+  SHA twice with the assertion still green, and the fixture cannot exercise duplication at all (every
+  entry in it is either REVIEWED-only or non-REVIEWED-only). **Both halves must land together**: the
+  module header states the invariant confidently, so a future reader will believe it. Either dedupe the
+  rendering or state the two-role policy in `adr/021` — and make the test count occurrences.
+
+- **OAI-119** — **`deadline-timeout` is a caller-selected cap, and treating it as server death aborts
+  healthy sweeps.** Filed 2026-08-08 from the review-sweep ladder, `unresolved at cap`. **CODE
+  DEFECT.** `serverUnwell` admits `deadline-timeout`, but that reason is `--max-seconds` firing — the
+  harness's own cap — not evidence the server is unwell. Three slow large commits in a row therefore
+  trip `--abort-after` and mark every remaining commit `skipped-abort`. This is the **third** narrowing
+  of the same predicate (any `*-timeout` → `{deadline, idle}` → `{idle}`), each of which removed a real
+  false positive. Leaves `idle-timeout` alone in that group, which is correct: a stream that stalls
+  mid-generation is the server stopping. **Workaround until fixed: `--abort-after 99`.**
+
+- **OAI-120** — **A substituted model's findings are silently dropped from both artifacts.** Filed
+  2026-08-08 from the review-sweep ladder, `unresolved at cap`. **CODE DEFECT, reproduced.**
+  `classify`'s `substituted` branch returns without copying `settled.report.findings` or the caveat
+  fields, so when a server answers with a model other than the one requested, the real defects it found
+  never reach the report — the commit shows only in Coverage with "a different model answered".
+  **This is trap instance 11 verbatim** — fixing the branch in front of you leaves the adjacent one
+  wrong — committed in the very pass that fixed the identical omission for `truncated` and wrote the
+  rationale for not doing it. **Adjudicated a RECURRENCE of OAI-121's identity**, which is why that
+  item is also open. **This one blocks the model benchmark specifically**: substitution is the failure
+  `adr/011` exists for, and an affected arm would report as having found nothing.
+
+- **OAI-121** — **`classify` must carry EVERY belief-changing envelope field on EVERY path.** Filed
+  2026-08-08 from the review-sweep ladder, `unresolved at cap` **by recurrence**. The identity is
+  *"`classify` does not carry onto the entry an envelope field that changes what a reader should
+  believe"*. It was fixed twice — `analysisCut`/`atCap`/`hunksOnly`, then `dropped` — and recurred as
+  OAI-120 on a branch the fix never reached. **The fix is the RULE, not another branch**: a single
+  place that maps a parsed report to an entry, used by every path, so a fourth path cannot be added
+  without it. A structural test belongs here: this class has now been confirmed three times, which is
+  past this repo's graduate-to-a-guard bar.
+
+- **OAI-122** — **`adr/021` contradicts the shipped code on two superseded claims.** Filed 2026-08-08
+  from the review-sweep ladder, `unresolved at cap`. It still documents an any-`*-timeout` outage set
+  (narrowed twice since) and a two-section disposition claim (there are three sections). Both would
+  license reintroducing rejected behaviour during maintenance. Non-executable text only.
+
+- **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
+  review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
+  local calendar date correctly across DST, but the deadline is compared with `Date.now()`, so a
+  wall-clock step (NTP correction, manual change) moves it. Deliberately **not** fixed in-ladder:
+  replacing the clock is larger than the batch it arose in, and a step is far rarer than the DST
+  boundary that was fixed. `job-busy.mjs` uses `performance.now()` for exactly this reason.
+
+- **OAI-124** — **`bench/review-sweep.mjs` cannot pin its enumeration, so benchmark arms are not
+  comparable.** Filed 2026-08-08. **This is a `widening` awaiting the user, not a defect**: nobody
+  raised it in review and it is not in the approved plan. Enumeration starts at `HEAD`, so any commit
+  landing between arms shifts the window and two arms review different commits. The model benchmark
+  the user asked for — 5 models x 2 executions x the same 10 commits — needs `--from <ref>`, or some
+  other way of pinning, before its arms mean anything.
 
