@@ -1,3 +1,46 @@
+## 2026-08-09 — the load hints stop predicting an outcome the plugin cannot control (OAI-134)
+
+- **OAI-134** — **SHIPPED as `d2dd70e`, with its filed mechanism refuted and its proposed fix refuted
+  too.** What shipped is two hint strings and a README paragraph. What it cost was a full `/feature`
+  run plus a light review pass, and the value was almost entirely in the refutations, not the diff.
+  **Refuted #1 — the mechanism.** The item said the plugin sizes a JIT load by `max_context_length`.
+  It does not, because **it has no load channel at all**: `client.mjs:40` is the only completion body
+  and carries no `ttl`/`context_length`/load parameter, `/chat/completions` is the only POST, the model
+  endpoints are GET probes, and no `lms` subprocess exists. Confirmed independently by a Codex consult
+  reading the same files. The symptom was real and reproduced; the cause is the **server's own** JIT
+  configuration, which this plugin neither sets nor sees.
+  **Refuted #2 — the fix.** The plan's next candidate was a pre-emptive "model is not loaded" warning,
+  and a blanket refusal behind it. Both died on a live check against a **second** server: oMLX 0.5.7
+  JIT-loads successfully (`loaded_count` 0 → 1 inside a 7s prefill), so *not loaded* is its **normal
+  successful path** and the warning would have fired on runs that work. LM Studio 0.4.20 attempts the
+  load and may refuse for memory (a 7.15 GB model sized at 44.87 GB) — and, observed the same day,
+  succeeds on a model that fits. Two servers at two versions support no claim about servers in general.
+  **Also rejected: shelling out to `lms load` or a vendor REST load call** — `adr/001`'s "providers are
+  config data, never code paths".
+  **What actually shipped.** Both hints used to end *"to have it loaded on demand"*. Neither predicts
+  an outcome now. The none-loaded hint (`:199`) names only the decider; the no-candidates hint (`:171`)
+  says nothing about outcomes at all, because that branch fires when the server offers **no** chat model
+  and "an id it has not loaded" would presuppose it knows the id. README.md is the single home for the
+  dated per-server pair, and says explicitly that two observations are not an account of every server.
+  **Three drafts of one string were caught, each a weaker version of the same defect** — "to have it
+  loaded on demand" (promises the load) → "the server will try" (promises the attempt; caught at the
+  plan gate) → "the server's to do or refuse" (names a two-outcome set; caught by `codex-plain` in the
+  review pass). The third excluded the **third** thing a server does: answer from whatever else it has
+  loaded — the substitution `unservedProblem` catches before the fact and `model-identity.mjs` after.
+  The working test, recorded because it is reusable: **does the sentence permit silent substitution?**
+  **Verified by running the changed path, not by the suite.** No test pins either string
+  (`grep -rn "loaded on demand" tests/` returns nothing), so a green suite here **could not have
+  failed** — this repo's dominant defect class, arriving inside its own fix. With LM Studio serving 5
+  unloaded chat models, the none-loaded hint printed the old wording before the edit and the new
+  wording after.
+  **Process, recorded honestly:** the review ladder ran **one light pass** and ended
+  `exit_mode: terminated` without a verdict point — the window closed. Pass 1 raised 5 findings, all
+  accepted and all fixed in the one authorised batch; one of them (the docstring claiming the hints
+  "name who decides, never what will happen") was an `adr/083` adjudicated falsehood, which is why
+  pass 1 could not be terminal. Four **pre-existing** defects the pass surfaced went to **OAI-136**
+  rather than into the batch. The process cost far exceeded the change; that observation goes to
+  `ROUTING_LOG`.
+
 ## 2026-08-09 — the schema arm becomes measurable, and `bench/run.mjs` stops running on import (OAI-117)
 
 - **OAI-117** — **`bench` could not pass `--structured-output`, so the schema arm could not be measured.**

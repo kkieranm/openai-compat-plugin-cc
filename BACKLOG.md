@@ -179,12 +179,17 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-134**, **OAI-131**,
+**Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-136**, **OAI-131**,
 **OAI-133**, **OAI-132**, **OAI-135**.
-**OAI-134 leads and is the only defect of the four**: `--model` cannot JIT-load an unloaded model,
-because the plugin sizes it by `max_context_length` — the exact field CLAUDE.md warns against — so
-`/oai:task` and `/oai:review` are both silently restricted to whatever was loaded by hand. It surfaced
-only because the benchmark was the first thing to ask for a model that was not already resident.
+**OAI-134 shipped 2026-08-09 and its framing did not survive contact**: the filed mechanism — the
+plugin sizing a JIT load by `max_context_length` — was **refuted** (the plugin has no load channel at
+all), and the live check that settled it also refuted the proposed blanket refusal, because oMLX 0.5.7
+JIT-loads successfully where LM Studio 0.4.20 may refuse for memory. What shipped was the honest
+remainder: two hints that predict no outcome. See BACKLOG_DONE.md.
+**OAI-136 now leads, and it is a real defect the OAI-134 ladder found in passing**: `--model` bypasses
+the embedding-model rejection that `defaultModel` enforces, so a chat request can be sent to an
+embedder — and `README.md` currently claims the opposite. It is here rather than in tier 12b because
+it was found by looking at this code, not by the benchmark.
 OAI-131 is **answered, not open**: `idle-timeout` was never observed across 22 failures, so the five
 iterations spent admitting it bought no measured coverage. OAI-133 records that the gemma arms measured
 nothing and carries the sized contexts for a future attempt, including that **`gemma-4-31b` will not
@@ -2360,44 +2365,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   model per session, with `sysctl vm.swapusage` watched, and never size a context that leaves only
   ~1.5 GB of headroom.
 
-- **OAI-134** — **PREMISE CORRECTED 2026-08-09. `--model` advertises on-demand loading that the plugin
-  neither performs nor controls.** The original filing said the plugin *sizes* an unloaded model by
-  `max_context_length`. **That mechanism is refuted** — independently, by me and by a Codex consult,
-  both reading the code rather than arguing from the symptom:
-  `client.mjs:40` builds the only completion body (`model, messages, stream, stream_options`, plus
-  optional `temperature`/`max_tokens`/`response_format`) and carries **no `ttl`, no `context_length`,
-  no load parameter**; `chat.mjs:145` shows `/chat/completions` is the only POST; `model-info.mjs:121,124`
-  are GET probes; `http.mjs:242` defaults to GET; and there is **no `lms` subprocess anywhere**.
-  **The plugin has no channel through which to size any load**, so the proposed fix — "choose a
-  load-time context rather than inheriting the ceiling" — is **not implementable through the
-  OpenAI-compatible API**. `model-info.mjs:71` keeps `ceiling` and `window` distinct and correctly gives
-  an unloaded model no window; `delegate.mjs:140` never substitutes one for the other.
-  **The symptom is real and reproduced; the cause is the server's own JIT-load configuration.**
-  **The plugin's actual defect is a promise it cannot keep**, and nobody had filed it:
-  `model-selection.mjs:158` says *"Load a chat model in the server, or pass `--model <id>` to have it
-  loaded on demand"* and `:183` repeats it — **unconditionally**, on a path where it is known to fail.
-  This repo's dominant class, user-facing.
-  **Fix decided (Codex consulted, option (a)):** keep the request path provider-agnostic; make the two
-  hints conditional instead of promissory; warn when the selected model is not `loaded`, naming the
-  real remedy (load it in the server, or set its load-time context there). **Rejected: shelling out to
-  `lms load`, or a vendor REST load call** — both violate ADR 001's "providers are config data, never
-  code paths" (`adr/001:21`, CLAUDE.md:7), and `adr/002:31` establishes the probes are reads, not
-  mutations. **Also rejected: a blanket refusal**, because the repo has no evidence about which
-  providers *do* support on-demand loading — which is exactly what the oMLX validation is for.
-  **ORIGINAL FILING BELOW, kept because the measurement in it is sound and only its mechanism was wrong:** Filed 2026-08-09. Every model on this LM Studio reports
-  `max_context_length: 262144` and `loaded_context_length: null` while unloaded. `model-info.mjs`
-  correctly prefers `loaded_context_length` **for a model that is already resident** — the rule this
-  repo's CLAUDE.md states — and has no answer for the JIT path, where that field does not exist yet.
-  The load is then attempted at 262k and refused for want of memory: 44.87 GB for a 7.15 GB 12B model.
-  **Reproduced with nothing resident**, so it is not contention.
-  **Blast radius is the whole plugin, not the sweep**: `/oai:task` and `/oai:review` both accept
-  `--model`, and both are silently restricted to whatever happens to be loaded by hand — the opposite
-  of what the flag implies. The benchmark's gemma arms are the first place it surfaced only because
-  nothing else had ever asked for an unloaded model.
-  **Fix shape (not decided here)**: choose a load-time context rather than inheriting the ceiling —
-  e.g. a configured `contextLength` for the profile, or a fraction of the ceiling, or the smaller of
-  the ceiling and what the reply budget actually needs. **Whatever it is, it must be a stated choice
-  with a reason**, since `max_context_length` is exactly the value CLAUDE.md warns against trusting.
 - **OAI-135** — **The benchmark's caveat layer reports success where it cannot fail: four defects, none
   of them reachable by a diff-scoped review.** Filed 2026-08-09 from the OAI-104/OAI-117 review
   ladder's **confirmation pass** (`adr/032`), which exists precisely to look at code the ladder has not
@@ -2464,3 +2431,30 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **The unifying class is this repo's own** — a check or claim that reports success while structurally
   unable to fail — and (1), (3) and (4) each additionally **cannot fail under the only configuration
   the tests exercise**. Fix (3) and (1) with tests at `runsPerCase > 1`, which no test currently uses.
+- **OAI-136** — **`--model` bypasses the embedding-model rejection that `defaultModel` enforces, and
+  three smaller inconsistencies around the same split.** Filed 2026-08-09 from the OAI-134 ladder's
+  `codex-plain` stage. All four are **pre-existing**: OAI-134 changed two hint strings and a README
+  paragraph, and touched none of this behaviour. Verified by reading the function, not inferred:
+  `model-selection.mjs:224` is `if (explicitModel) return unservedProblem(explicitModel, described) ??
+  { modelId: explicitModel };` — it returns **before** the embeddings check, which lives in the
+  `defaultModel` branch alone.
+  1. **The bypass itself.** `--model <an id typed `embeddings`>` is selected and a chat request is sent
+     to it. The `defaultModel` path rejects exactly this case with a specific message; the explicit path
+     has no equivalent. Whether it *should* is **not obvious and needs its own grill**: an explicit
+     `--model` is the caller's instruction, and `planSelection` deliberately lets a named model outrank
+     our inference (`chatCandidates` is a denylist for the same reason — the verification machine's chat
+     model reports type `vlm`). The choice is between refusing, warning, and documenting.
+  2. **`README.md:74` says "embedding models are never chosen", which (1) makes FALSE.** Pre-existing
+     prose. It sits in the paragraph OAI-134 extended but is not a sentence OAI-134 wrote, so it was
+     dispositioned out of scope rather than fixed in that batch — fixing it is `widening` under
+     `adr/056` and belongs to whichever option (1) settles on, since the honest sentence depends on it.
+  3. **`:98-101`** — embedders are filtered out of `described.models` when building the offered list,
+     but the offered set also unions `catalogueIds`, which is **not** filtered. So a refusal can suggest
+     an embedder that the very next call then rejects — the failure mode that comment exists to prevent,
+     surviving through the other half of the union.
+  4. **`:159-170`** — the "this provider offers no model that can answer a chat request" conclusion
+     reads only `described.models`, while catalogue-only ids count as served in `unservedProblem`. So it
+     can assert "every id it lists is an embedding model" while a catalogue chat model is namable.
+  **(3) and (4) are the same shape as each other and probably one fix**: two lists are treated as one
+  for membership and as one-and-a-half for enumeration. **(1) is the only one with user-visible wrong
+  behaviour**; (2) is a claim that is currently false; (3) and (4) are advice that can be wrong.
