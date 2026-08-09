@@ -30,10 +30,10 @@ export function listModelIds(ids) {
  * Whether an unlisted id would be refused here at all.
  *
  * Exported to `autoSelect`'s hint rather than re-tested there, because the hint
- * DESCRIBES this rule: with no catalogue, "pass --model <id> to have it loaded
- * on demand" is true and useful; with one, the same sentence sends the operator
- * into a refusal. Two copies of the condition is how the advice and the
- * behaviour come to disagree, which is what happened.
+ * DESCRIBES this rule: with no catalogue, "pass --model <id> to request one" is
+ * worth saying; with one, the same sentence sends the operator into a refusal.
+ * Two copies of the condition is how the advice and the behaviour come to
+ * disagree, which is what happened.
  */
 function refusesUnlisted(described) {
   return described?.models?.length > 0 && (described?.catalogueIds?.length ?? 0) > 0;
@@ -141,6 +141,17 @@ function statesUsable(candidates) {
  * signature defect class — output that reads as something the run did not
  * establish — and the remediation differs too: one needs a download, the other
  * needs a load.
+ *
+ * NEITHER HINT PROMISES THE LOAD (OAI-134). Both used to end "to have it loaded
+ * on demand" — an outcome this plugin does not control and cannot predict, and
+ * one that observably differs between servers. So neither hint predicts an
+ * outcome: the no-candidates hint says nothing about outcomes at all, and the
+ * none-loaded hint names only the decider. Naming an outcome SET is the same
+ * defect one notch weaker — "to do or refuse" excludes the third thing a server
+ * does, which is to answer from whatever else it has loaded, the substitution
+ * `unservedProblem` above catches before the fact and `model-identity.mjs` after
+ * it. This was an instance of the very class this docstring warns about, sitting
+ * in its own remedy. The dated per-server observations live in README.md, once.
  */
 function autoSelect(described) {
   const candidates = chatCandidates(described);
@@ -150,12 +161,15 @@ function autoSelect(described) {
         message: 'This provider offers no model that can answer a chat request.',
         // The remedy depends on whether a named id would itself be refused, so
         // it is read off `refusesUnlisted` rather than stated once and hoped for.
-        // With no catalogue, `--model <id>` genuinely works and JIT loading is
-        // real advice. With one, the same sentence walks the operator into
-        // `unservedProblem` — the tool instructing the user into its own refusal.
+        // With no catalogue, naming an id is worth suggesting. With one, the same
+        // sentence walks the operator into `unservedProblem` — the tool
+        // instructing the user into its own refusal.
         hint: refusesUnlisted(described)
           ? 'Download a chat model in the server — every id it lists is an embedding model.'
-          : 'Load a chat model in the server, or pass --model <id> to have it loaded on demand.',
+          // No trailing clause here, unlike the none-loaded hint below: this
+          // branch fires when the server offers no chat model at all, where
+          // "an id it has not loaded" would presuppose it knows the id.
+          : 'Load a chat model in the server, or pass --model <id> to request one.',
       },
     };
   }
@@ -182,7 +196,8 @@ function autoSelect(described) {
         // second command. It is also the only branch here that withheld it.
         message: `This provider offers ${candidates.length} chat models, but none of them is loaded: `
           + `${listModelIds(candidates.map((model) => model.id))}.`,
-        hint: 'Load one in the server, or name one of those with --model <id> to have it loaded on demand.',
+        hint: 'Load one in the server, or name one of those with --model <id> to request it — what a '
+          + 'server does with an id it has not loaded is its own decision.',
       },
     };
   }

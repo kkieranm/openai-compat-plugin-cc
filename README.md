@@ -71,7 +71,14 @@ elsewhere.
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
 `--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several
 chat models and none is named, the plugin lists them and asks rather than picking one for you;
-embedding models are never chosen. A named provider must
+embedding models are never chosen. **`--model` selects which model is requested; it does not
+configure how the server loads it.** Whether an id that is downloaded but not resident gets loaded on
+demand is the server's decision, and observed behaviour differs — observed 2026-08-09 on LM Studio
+0.4.20, which attempts the load, sizes it by its own settings, and may refuse for want of memory
+(a 7.15 GB model it sized at 44.87 GB), and on oMLX 0.5.7, which loads on demand successfully. Those
+are two observations at two versions, not an account of every server: if yours is neither, nothing
+here predicts what it will do — including whether it refuses at all, since a server may instead answer
+from whatever it already has loaded. A named provider must
 exist even when `--base-url` overrides its endpoint, and if that URL points at a different host the
 profile's API key is **not** sent with it.
 
