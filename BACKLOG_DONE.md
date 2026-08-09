@@ -1,3 +1,31 @@
+## 2026-08-09 — the tracker's own invariant gets a guard (OAI-104)
+
+- **OAI-104** — **this file's structural invariant was enforced by a script that did not exist.**
+  Closed by `tests/backlog-structure.test.js`, which asserts on every `npm test` that the tier index
+  covers the live set exactly, that no id is indexed under two tiers, that the bodies are in ascending
+  ID order (`adr/025`), that nothing is live and closed out at once, and that every absorbed-ID
+  redirect lands on something live. Suite 766/0 → **771/0**.
+
+  **The claim was false and the drift was already there.** On its first run the guard failed three
+  ways: tier 12 still indexed **six ids closed the previous day** (OAI-118, 119, 120, 121, 122, 124),
+  **OAI-131 and OAI-106 were each indexed under two tiers**, and **OAI-123's body sat out of order
+  behind OAI-134**. All three are fixed in the same commit, so the guard passes on a tracker it
+  actually corrected rather than on one written to suit it.
+
+  **Proved by mutation, in the shape this repo requires** — control fires, fix catches, and each
+  assertion is independently falsifiable. Re-indexing a closed id trips only *covers the live set*;
+  indexing one id under two tiers trips only *listed twice*; swapping two bodies trips only *ascending
+  order*. `BACKLOG.md` was restored byte-identically (md5 `f3d7cf4d…`) after each mutation.
+
+  **One false positive was caught and removed before shipping**: matching any bolded id in
+  `BACKLOG_DONE.md` reported five live items (OAI-11, 45, 74, 84, 95) as closed, because a done
+  entry's prose legitimately names live work. The extractor is pinned to the same `- **OAI-n**`
+  heading shape `bodyIds` uses.
+
+  The prose promising the absent script is replaced in both `BACKLOG.md` and `CLAUDE.md` by a sentence
+  naming the guard — OAI-104's own instruction was to do one or the other and not leave the sentence
+  standing.
+
 ## 2026-08-08 — the review-sweep follow-on (OAI-118, 119, 120, 121, 122, 124)
 
 Shipped in `10b29cb`. All six filed defects are fixed and were audited 18/18 by the ladder's

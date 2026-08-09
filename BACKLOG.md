@@ -42,8 +42,11 @@ Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 Impact is blast radius × whether the thing is wrong *today* ÷ cost to resolve. Ties break on what has
 to be decided or measured first. **This list is the priority view; the bodies below sit in ascending
 ID order and a re-order rewrites only this index** (`adr/025` — the one-time migration was performed
-2026-08-08). The close-out asserts the index covers the live set exactly and that the bodies are in ID
-order, so the two cannot drift apart silently. **Note the invariant CHANGED on 2026-08-08**: it used
+2026-08-08). **`tests/backlog-structure.test.js` asserts this on every `npm test`** — the index covers
+the live set exactly, no id is indexed twice, the bodies are in ID order, and nothing is live and
+closed out at once. Until 2026-08-09 that guarantee was prose naming a close-out script that did not
+exist (OAI-104), and the guard's first run found six closed ids still indexed, two ids indexed under
+two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-08-08**: it used
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
@@ -52,7 +55,7 @@ OAI-69**. One subsystem, five independent closes, so they sit adjacent rather th
 **OAI-62 leads by position only and is NOT live work — corrected 2026-08-08.** Its three defects (a
 worker killed mid-model-call, a paid-for answer discarded, a locked `openStore`) all **shipped at
 `77c1eab`** and were verified against disk; what remains is an owner decision, because its ladder
-ended `cap-without-approval` over **OAI-106**. It is not a build and must not be queued as one. OAI-67 and
+ended `cap-without-approval` over OAI-106 (tier 11). It is not a build and must not be queued as one. OAI-67 and
 OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash published as a clean
 `cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
@@ -167,11 +170,11 @@ the only one touching code that just landed. They are recorded rather than carri
 because they belong to the capability gate, not to the withdrawn mechanisms — filing them separately is
 what stops the withdrawal from becoming a place unrelated findings go to be forgotten.
 
-**Tier 10 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-103, OAI-104**.
-Both are the same class rather than the same subsystem: a statement this repo makes about itself that
-nothing checks. OAI-104 is the sharper one and is nearly free — this file's own tier/heading invariant
-is asserted to be enforced by a script that does not exist, so the guard that was supposed to make
-drift impossible has never once run. OAI-103 is the same shape one level out: a machine-readable
+**Tier 10 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-103**.
+The class is a statement this repo makes about itself that nothing checks. **OAI-104 closed
+2026-08-09** — it was the sharper of the two, and closing it removed the instance in this very file:
+`tests/backlog-structure.test.js` now enforces the tier/heading invariant that was previously
+promised by a script which did not exist. OAI-103 is the same shape one level out: a machine-readable
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
@@ -189,7 +192,8 @@ fit this machine at a fair context**. OAI-132 is the harness emitting no signal 
 reviewed in both runs, against 3-5 for the MoE, which starved exactly as OAI-115 predicted.
 
 **Tier 12b — residue from the follow-on ladder, which also ended `cap-without-approval`.**
-**OAI-125, OAI-128, OAI-127, OAI-126, OAI-129, OAI-130, OAI-131**.
+**OAI-125, OAI-128, OAI-127, OAI-126, OAI-129, OAI-130**. (OAI-131 was filed by this ladder but is
+indexed under tier 12c, where the benchmark answered it — one id, one tier entry.)
 **OAI-125 leads and is the sharpest item filed today**: the resolved-SHA guarantee — the one fact the
 whole pinning feature exists to provide — reaches the artifact by a single untested path, proved by a
 mutation that left the suite green. Its root cause is an unexported `main()`, i.e. the shape of
@@ -205,20 +209,14 @@ while arms pass `--model` explicitly.
 no artifact in the repo to check them against, one of which the `serverUnwell` rule depends on — and
 the overnight sweep is itself the instrument that can settle it.
 
-**Tier 12 — residue from the overnight review-sweep ladder, which ended `cap-without-approval`.**
-**OAI-120, OAI-121, OAI-119, OAI-118, OAI-124, OAI-122, OAI-123**. The harness ships and works — three
-full ladder passes, suite 747/0 — but its ladder ended without approval with two code defects open, so
-this tier is what it ships knowing.
-**OAI-120 leads, and it is the one that blocks the model benchmark rather than merely annoying it**: a
-substituted model's findings are dropped from both artifacts, so an affected arm reports as having
-found nothing, in a comparison whose whole point is running five models against each other.
-**OAI-121 is OAI-120's rule** and is the item that actually stops a fourth instance — the same identity
-was fixed twice and recurred on a branch neither fix reached, which is past this repo's bar for
-graduating a class to a structural guard. Do them together.
-OAI-119 is a one-line narrowing with a stated workaround (`--abort-after 99`); OAI-118 pairs a violated
-invariant with the test that cannot catch it; OAI-124 is a **`widening` awaiting the user**, not a
-defect, and the benchmark's arms are not comparable without it. OAI-122 and OAI-123 trail: a
-contradictory decision record, and a deadline with no monotonic guard that a wall-clock step could move.
+**Tier 12 — what is LEFT of the overnight review-sweep ladder's residue.** **OAI-123**.
+Filed with seven items; **six closed on 2026-08-08** by the follow-on (OAI-118, OAI-119, OAI-120,
+OAI-121, OAI-122, OAI-124 — see `BACKLOG_DONE.md`), including the two that blocked the model
+benchmark. This index went on naming all seven for a day, which is the drift
+`tests/backlog-structure.test.js` now exists to make impossible (OAI-104).
+OAI-123 alone remains, and it trails the whole file deliberately: the sweep's deadline is compared
+with `Date.now()`, so a wall-clock step could move it — rarer than the DST boundary already fixed,
+and larger to fix properly than the batch it arose in, since it means replacing the clock.
 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
@@ -2095,19 +2093,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   during OAI-94's ladder and filed rather than folded in, because the fix is a payload decision that
   collides with OAI-57's, not a change to the notice.
 
-- **OAI-104** — **this file's structural invariant is enforced by a script that does not exist.**
-  `BACKLOG.md` states that the tier list "is asserted against the heading order below by the
-  sweep's close-out script; the two cannot drift apart silently." There is no such script anywhere in
-  the repo, and no test in `tests/` checks the invariant either — so the two *can* drift apart
-  silently, and the sentence promising otherwise is the reason nobody would look. Verified by search
-  during OAI-94's residue step, after a `scout` had to check the invariant by hand (66 IDs, exact
-  match) precisely because nothing automated does — and then, minutes later, a scripted edit to this
-  very file deleted 28 headings and nothing but a manual count noticed. This is the repo's own
-  "a check that reports success may be one that cannot fail" class, applied to its tracker: the fix is
-  either a real guard in `tests/` — the natural home, since `tests/structure.test.js` already guards
-  file size and `tests/plugin.test.js` guards the command surface — or deleting the claim. Do not
-  leave the sentence standing without one of the two.
-
 - **OAI-105** — **the reconciliation writes have no contention answer, only an argument.** ADR 020
   retries six sites with `withBusyRetry`, skips three more with a bare `isBusy` catch, and
   deliberately leaves `job-reconcile.mjs`'s four writes
@@ -2262,6 +2247,13 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   establish that the schema *causes* the transport drops but not whether it *fixes* token exhaustion —
   the question had to be left open for want of a flag. Small, and it unblocks a real question.
 
+- **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
+  review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
+  local calendar date correctly across DST, but the deadline is compared with `Date.now()`, so a
+  wall-clock step (NTP correction, manual change) moves it. Deliberately **not** fixed in-ladder:
+  replacing the clock is larger than the batch it arose in, and a step is far rarer than the DST
+  boundary that was fixed. `job-busy.mjs` uses `performance.now()` for exactly this reason.
+
 - **OAI-125** — **The resolved-SHA guarantee reaches the artifact by ONE UNTESTED PATH.** Filed
   2026-08-08 from the follow-on ladder, `unresolved at cap`. **MUTATION-PROVED**: deleting just the
   `options.from =` assignment in `bench/review-sweep.mjs` leaves the suite at 766/0, after which the
@@ -2380,9 +2372,3 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   e.g. a configured `contextLength` for the profile, or a fraction of the ceiling, or the smaller of
   the ceiling and what the reply budget actually needs. **Whatever it is, it must be a stated choice
   with a reason**, since `max_context_length` is exactly the value CLAUDE.md warns against trusting.
-- **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
-  review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
-  local calendar date correctly across DST, but the deadline is compared with `Date.now()`, so a
-  wall-clock step (NTP correction, manual change) moves it. Deliberately **not** fixed in-ladder:
-  replacing the clock is larger than the batch it arose in, and a step is far rarer than the DST
-  boundary that was fixed. `job-busy.mjs` uses `performance.now()` for exactly this reason.

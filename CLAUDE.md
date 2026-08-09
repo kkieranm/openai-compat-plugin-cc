@@ -251,8 +251,11 @@ Domain:
 - `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
   **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**. **Since 2026-08-08 the
   tier list is the PRIORITY VIEW and the bodies below sit in ascending ID order** (`adr/025`); a
-  re-order rewrites only the index, and the close-out asserts that the index covers the live set
-  exactly, that no ID repeats in it, and that the bodies are in ID order. It is no longer true that
+  re-order rewrites only the index. **`tests/backlog-structure.test.js` enforces this on every
+  `npm test`** (OAI-104, 2026-08-09 — before it, the same guarantee was prose naming a script that
+  did not exist, and it found three classes of live drift on its first run): the index covers the
+  live set exactly, no ID repeats in it, the bodies are in ID order, and nothing is live and closed
+  out at once. It is no longer true that
   the index sequence equals the heading sequence — that was the pre-migration invariant. Every ID ever
   issued must still resolve to exactly one live heading, one done/parked heading, or one redirect hop.
   *(A single bolded `**OAI-n**` inside the tier prose parses as a tier entry — refer to items in other
