@@ -180,7 +180,7 @@ payload that omits the caveats its human-readable sibling prints, so a harness r
 as a clean one.
 
 **Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-134**, **OAI-131**,
-**OAI-133**, **OAI-132**.
+**OAI-133**, **OAI-132**, **OAI-135**.
 **OAI-134 leads and is the only defect of the four**: `--model` cannot JIT-load an unloaded model,
 because the plugin sizes it by `max_context_length` — the exact field CLAUDE.md warns against — so
 `/oai:task` and `/oai:review` are both silently restricted to whatever was loaded by hand. It surfaced
@@ -2375,3 +2375,62 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   e.g. a configured `contextLength` for the profile, or a fraction of the ceiling, or the smaller of
   the ceiling and what the reply budget actually needs. **Whatever it is, it must be a stated choice
   with a reason**, since `max_context_length` is exactly the value CLAUDE.md warns against trusting.
+- **OAI-135** — **The benchmark's caveat layer reports success where it cannot fail: four defects, none
+  of them reachable by a diff-scoped review.** Filed 2026-08-09 from the OAI-104/OAI-117 review
+  ladder's **confirmation pass** (`adr/032`), which exists precisely to look at code the ladder has not
+  touched. Passes 1 and 2 read only the diff and found five and three defects, **all in the ladder's own
+  fixes**; the confirmation pass read the surrounding module and found these, all **pre-existing**.
+  Each is reproduced, three of them by executing the real unmodified code.
+  1. **The prompt-cache caveat cannot print on the default invocation.** `caveats.mjs:87` `cacheNote`
+     gates two paragraphs on a ratio needing **two prefill samples in one case**, but the default is
+     `runsPerCase = 1` (`run.mjs:219`). Executed with a positive control: 1 sample → **0 of 2**
+     paragraphs; 2 samples → **2 of 2**; at `--runs 3` with 1 surviving sample → **0 of 2**, so the
+     gate is **sample count, not run count** — a run the server degraded (this repo measured LM Studio
+     dropping ~1/3 of long requests) loses the warning exactly when it needs it. The second paragraph
+     ("Generation is what the cache does not touch") **needs no ratio at all** and is bundled behind the
+     same gate. `case-rows.mjs:74` justifies its `--cold`-only exclusion on the premise that "the caveats
+     say so" — false on the default path, so a **behaviour is reasoned from a claim that does not hold**.
+  2. **A truncated-but-parsed run is discarded, and the caveat asserts it could not exist.**
+     `run-buckets.mjs:35` `truncatedRuns` filters on `finishReason === 'length'` with **no parse check**;
+     `case-rows.mjs:197` then drops those runs from `scored`, and `caveats.mjs:38` explains the exclusion
+     with *"the JSON never parsed, so there is nothing in them to score"* — which nothing enforces.
+     **Reachable because ADR 003 removed the default schema on 2026-08-04**: without a grammar the model
+     completes its JSON and keeps talking, so hitting the ceiling *after* a complete reply is the
+     ordinary case now. The `cut` vs `truncated` split was sound while a schema guaranteed the JSON came
+     last; **removing the schema invalidated the premise and this bucket was never revisited.**
+  3. **The dropped-defects caveat mixes two units and inverts its own sentence.** `caveats.mjs:261` sums
+     `listed` (distinct defects, **per case**) beside `scoreable` (`case-rows.mjs:236`:
+     `listed * scored.length`, **defect-slots per case × scored runs**) and prints them as a subset:
+     *"N scoreable of M listed defect(s)"*. Executed output at 3 scored runs: **"6 scoreable of 2 listed
+     defect(s)"**. It has never failed a test because **every caveats test passes `runsPerCase: 1`**,
+     where the two units coincide by coincidence. Reachable on any full-corpus run — `dropped` is
+     non-empty for `config-origin`, `scaffold` and `model-info` — and **the sibling caveat two
+     paragraphs above tells the reader to raise `--runs`**, so the report instructs you to do the thing
+     that breaks it. *(Narrowed by its verifier: the trailing "smaller than the truth twice over" clause
+     SURVIVES — in slot units the honest denominator is `(listed+dropped)*scored = 10 > 6`. The defect is
+     purely the unit mismatch, plus understating the dropped gap by a factor of `scored.length`.)*
+  4. **The schema arm is captioned by what was ASKED FOR, not what happened.** `caveats.mjs:165` asserts
+     *"the reply shape was enforced by a `response_format` schema"* gated on the **flag**.
+     `review-request.mjs:224-232` **falls back to unconstrained** when a server rejects `response_format`
+     and says so on stderr; `cmd-review.mjs:156-167` emits both facts and its own comment names the
+     distinction — *"What was ASKED for, beside `structured` which is what was obtained."* **`bench`
+     never reads `structured`** (`grep -rn structured bench/` returns only `structuredOutput`). Against
+     oMLX, vLLM without the feature, or an older LM Studio, **both arms of the comparison are the same
+     arm, labelled as different ones** — while the report instructs the reader to read one against the
+     other. **Not pre-existing in the way the other three are**: the note and the flag forwarding are
+     OAI-117's own. **Deferred out of the ladder deliberately, not missed** — the fix needs a new row
+     field, a reduce across runs and a threaded argument (`caseRows` projects a fixed field set;
+     `caveats` takes `structuredOutput` from the CLI options, never from `rows`), and it **cannot be a
+     boolean**: with N runs a case can degrade on some and not others, so the caption must read
+     *"requested; obtained on 2 of 3"* or it replaces one blind caption with another. Landing that in the
+     ladder's **final** batch would have shipped it unreviewed, since `adr/089`'s verification pass opens
+     no finding lenses.
+  **Also here, same file, lower value:** `run.mjs:81-84` — an empty `--model=` suppresses the manifest
+  fallback via `??` and is then discarded, so the harness **silently benchmarks the configured default
+  and overrides a case-level model pin**, measuring a different target than the operator named; and
+  `run.mjs:219` — an empty `--runs=` is truthiness-tested before conversion, so it reads as absent and
+  runs 1 instead of rejecting the value. Plus one weak test: the `--cold` case never asserts `second`
+  *has* a `--cache-buster`, so a `second` that dropped the flag entirely still satisfies `notEqual`.
+  **The unifying class is this repo's own** — a check or claim that reports success while structurally
+  unable to fail — and (1), (3) and (4) each additionally **cannot fail under the only configuration
+  the tests exercise**. Fix (3) and (1) with tests at `runsPerCase > 1`, which no test currently uses.

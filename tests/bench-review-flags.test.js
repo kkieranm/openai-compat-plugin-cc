@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { reviewFlags } from '../bench/run.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
@@ -44,11 +45,15 @@ test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // export what this file imports. Absence of the progress line is evidence only alongside presence of
   // the sentinel, exit code 0 and no signal. The dead `Reviewing commit` alternative is gone — it
   // appears nowhere in `bench/` and could never have matched.
+  // `fileURLToPath`, not `.pathname` — a checkout under a path containing a space yields `%20` in
+  // the pathname, `spawn` cannot enter that directory, and the test fails ENOENT **while the guard
+  // it tests is correct**. A false red is this ladder's own class inverted: a check that fails for a
+  // reason unrelated to what it checks. Latent in this checkout, which is why it took a reviewer.
   const child = spawn(process.execPath, [
     '-e',
     "import('../bench/run.mjs').then((m) => { if (typeof m.reviewFlags !== 'function') "
     + "throw new Error('reviewFlags missing'); console.log('IMPORTED-OK'); })",
-  ], { cwd: new URL('.', import.meta.url).pathname });
+  ], { cwd: fileURLToPath(new URL('.', import.meta.url)) });
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { out += d; });

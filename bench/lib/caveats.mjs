@@ -172,7 +172,8 @@ function schemaNote(structuredOutput) {
     + 'observations about that one server, and neither is inferred for whichever provider this run '
     + 'measured** — `bench` accepts any OpenAI-compatible provider, and the flag exists for a server '
     + 'whose schema enforcement has *not been measured* to fail this way. Whether a given provider has '
-    + 'either failure is unmeasured here, in both directions. **Read this arm against an unconstrained '
+    + 'either failure is unmeasured *by this benchmark run*, in both directions — it scores review '
+    + 'recall, not grammar or budget failures. **Read this arm against an unconstrained '
     + 'one as one failure class versus the other**, never as a clean run against a dirty one.',
   ];
 }
