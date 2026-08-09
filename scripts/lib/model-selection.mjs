@@ -148,9 +148,13 @@ function statesUsable(candidates) {
  * outcome: the no-candidates hint says nothing about outcomes at all, and the
  * none-loaded hint names only the decider. Naming an outcome SET is the same
  * defect one notch weaker — "to do or refuse" excludes the third thing a server
- * does, which is to answer from whatever else it has loaded, the substitution
- * `unservedProblem` above catches before the fact and `model-identity.mjs` after
- * it. This was an instance of the very class this docstring warns about, sitting
+ * does, which is to answer from whatever else it has loaded, and `model-identity.mjs`
+ * `substitution()` is the only mechanism that catches that, after the fact.
+ * NOT `unservedProblem` above: this branch fires when the candidates ARE served
+ * and merely unloaded, so `served.has(id)` is true and it returns undefined. It
+ * sees an id the server does not have; known-but-not-loaded is the case it
+ * cannot see, and the case these hints are about.
+ * This was an instance of the very class this docstring warns about, sitting
  * in its own remedy. The dated per-server observations live in README.md, once.
  */
 function autoSelect(described) {
