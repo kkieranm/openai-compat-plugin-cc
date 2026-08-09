@@ -1,8 +1,32 @@
 # Handover — 2026-08-09, session end
 
-**Everything is committed and the tree is clean. Nothing is running.** No unattended run is open, no
-background process of mine survives, no ladder pass marker or batch token exists, and LM Studio has
-nothing resident.
+**Everything is committed and the tree is clean. ONE THING IS RUNNING — see below.** No ladder pass
+marker or batch token exists.
+
+## RUNNING: the overnight review sweep
+
+Launched **2026-08-09 20:39 BST**, detached (`nohup`, pid was `51101` — **re-check it, pids are
+reused**). It holds LM Studio and will run until it finishes or its 10-hour bound expires at about
+**06:39 BST on 2026-08-10**.
+
+```
+node bench/review-sweep.mjs --from 2f170b28871e910bbad8697b2e6037eadafe0bb9 \
+  --minutes 600 --provider lmstudio --model qwen/qwen3.6-27b \
+  --out-dir bench/results/sweep-2026-08-09-overnight
+```
+
+- **40 eligible of 76 enumerated commits.** Confirmed progressing: `qwen/qwen3.6-27b` resident at
+  61696 context, `GENERATING`, ~2 minutes in.
+- **`--from` is a full SHA on purpose** — OAI-125 is open, and until it lands the resolved-SHA
+  guarantee reaches the artifact by one untested path, so short revs must not be used here.
+- **Log and records**: `bench/results/sweep-2026-08-09-overnight/`. **`bench/results/` is
+  gitignored** — copy anything worth keeping into the tracker before a clean.
+- **It is detached, so nothing will notify anyone when it ends.** Read the log; do not infer from
+  process liveness alone, and per `adr/021` the report itself says what it did **not** review — read
+  that section before treating coverage as complete.
+- **To stop it**: kill the pid, then `~/.lmstudio/bin/lms unload --all`.
+
+Everything below describes the state as of launch.
 
 ## The one-line answer to what this session was for
 
