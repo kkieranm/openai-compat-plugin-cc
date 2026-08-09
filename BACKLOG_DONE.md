@@ -1,3 +1,39 @@
+## 2026-08-09 — the schema arm becomes measurable, and `bench/run.mjs` stops running on import (OAI-117)
+
+- **OAI-117** — **`bench` could not pass `--structured-output`, so the schema arm could not be measured.**
+  `bench/run.mjs`'s `SPEC` now carries the flag, `reviewFlags` forwards it, and the artifact records
+  it in **two** places — the report header, where two files are compared, and a caveat naming the
+  trade. Suite 771/0 → **776/0**.
+
+  **The caveat states a trade, not a flag**, because the reading to prevent is "same measurement,
+  tidier reply": a schema was measured to *cause* the transport drops (OAI-19 T2, controlled A/B) and
+  the unconstrained default was measured to spend its whole shared budget reasoning (OAI-115). An arm
+  run under a schema compares one failure class against the other. **This does not answer OAI-115** —
+  it makes the question askable, and taking the measurement belongs to OAI-19's arm work.
+
+  **A second, larger defect was found while building the seam, and it is the reason this entry is not
+  a one-liner.** `reviewFlags` was unreachable, so exporting it was the obvious move — and the first
+  import from `tests/` **ran a full six-case benchmark and wrote a report and a record into
+  `bench/results/`**, because `main()` was called unconditionally at module scope rather than under a
+  `process.argv[1]` guard. Every `npm test` would have done it. Fixed with the guard
+  `bench/review-sweep.mjs:291` already had; proved both ways — import writes nothing (61 artifacts
+  before, 61 after), and `node bench/run.mjs --runs 0` still reaches `main()`'s validation.
+  **I asserted that guard existed before checking**, and the check is what disproved it; the comment
+  claiming it has been replaced by one recording what actually happened. OAI-125's body is updated,
+  and this does **not** close it.
+
+  **Every assertion shipped with its negative twin, and the twins were mutation-checked.** Forcing the
+  header marker unconditionally makes the `doesNotMatch` halves fail — without that, a marker that is
+  always present would distinguish nothing, and a schema arm could be differenced against an
+  unconstrained one as though the only change were parsing. `tests/bench-review-flags.test.js` covers
+  the command line (including that `--structured-output` is **absent** by default, per ADR 003), and
+  `tests/bench-report.test.js` covers the artifact.
+
+  Two structural guards fired during the work and were satisfied rather than silenced: `flagNotes`
+  crossed the 60-line function budget (split into `schemaNote`), and the first split left a doc
+  comment documenting nothing — briefly "fixed" by downgrading it to a plain comment, which was
+  dodging the guard, then fixed properly by reordering.
+
 ## 2026-08-09 — the tracker's own invariant gets a guard (OAI-104)
 
 - **OAI-104** — **this file's structural invariant was enforced by a script that did not exist.**

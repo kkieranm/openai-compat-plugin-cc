@@ -244,3 +244,22 @@ test('the control case is not reported as a recall failure', () => {
   assert.match(report, /— \(control\)/, 'zero defects found out of zero is not 0%');
 });
 
+
+// OAI-117. The flag is worth nothing to a reader who cannot tell which arm they
+// are holding, so the artifact carries it twice: in the header, where two report
+// files are compared, and as a caveat naming the trade. Both halves are asserted
+// with their negative twin — a marker that is always present distinguishes
+// nothing, which is the failure mode that would let a schema arm be differenced
+// against an unconstrained one as though the only change were tidier parsing.
+test('a schema arm says so in its header and its caveats, and an unconstrained one does not', () => {
+  const base = { runsPerCase: 1, model: 'm', provider: 'p' };
+  const results = [{ caseDef: CASE, runs: [goodRun()] }];
+  const on = renderReport(results, { ...base, structuredOutput: true });
+  const off = renderReport(results, base);
+
+  assert.match(on.split('\n')[0], /\(--structured-output\)/);
+  assert.doesNotMatch(off.split('\n')[0], /--structured-output/);
+  assert.match(on, /was on: the reply shape was enforced by a `response_format` schema/);
+  assert.match(on, /one failure class\s+versus the other/, 'the note must name the trade, not just the flag');
+  assert.doesNotMatch(off, /the reply shape was enforced/);
+});

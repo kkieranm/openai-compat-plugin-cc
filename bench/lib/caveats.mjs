@@ -149,6 +149,31 @@ function capNote(rows, maxSeconds) {
 }
 
 /**
+ * The schema arm's note (OAI-117), split out at the function size budget.
+ *
+ * The sharpest thing a reader can get wrong here is to treat a schema arm as the
+ * same measurement with a tidier reply, so the note names the TRADE rather than
+ * the flag: a schema was measured to CAUSE the transport drops (OAI-19 T2,
+ * controlled A/B), while the unconstrained default was measured to spend the
+ * whole shared budget reasoning and emit nothing (OAI-115). An arm run this way
+ * compares one failure class against the other; its failures are expected to move
+ * between columns rather than disappear.
+ */
+function schemaNote(structuredOutput) {
+  if (!structuredOutput) return [];
+  return [
+    '**`--structured-output` was on: the reply shape was enforced by a `response_format` schema**, not '
+    + 'described in prose and parsed leniently. This is NOT the default path, and it is not a better '
+    + 'one — on this backend the grammar built from the schema exhausts its lexer after roughly 14,000 '
+    + 'generated tokens and takes the model process down, which is the measured cause of the '
+    + 'empty-completion and stream-drop failures (ADR 003). What it buys is the other side of the '
+    + 'trade: the unconstrained default can spend its entire shared `max_tokens` budget reasoning and '
+    + 'emit no findings at all. **Read this arm against an unconstrained one as one failure class '
+    + 'versus the other**, never as a clean run against a dirty one.',
+  ];
+}
+
+/**
  * What was switched on for this run, stated whenever it was.
  *
  * Split from `caveats` at the function size budget, and the seam holds: these
@@ -157,8 +182,8 @@ function capNote(rows, maxSeconds) {
  * report files would otherwise credit a difference to the reviewer that belongs
  * to a flag.
  */
-function flagNotes(rows, { diffOnly, cold, timeoutSeconds, maxSeconds }) {
-  const notes = [];
+function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds }) {
+  const notes = [...schemaNote(structuredOutput)];
   // Stated whenever set, for the same reason --cold is: a reader comparing two
   // report files has to know that one of them was run under a wall-clock cap,
   // or a row with fewer completed runs reads as a worse model rather than a

@@ -117,17 +117,18 @@ function table(rows) {
   return lines;
 }
 
-export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, timeoutSeconds, maxSeconds }) {
+export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds }) {
   const rows = caseRows(results, { cold });
   const lines = [
-    `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`,
+    `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`
+    + `${structuredOutput ? ' (--structured-output)' : ''}`,
     '',
     `${results.length} case(s), ${runsPerCase} run(s) each.`,
     '',
     ...table(rows),
     '',
   ];
-  for (const note of caveats(rows, runsPerCase, { diffOnly, cold, timeoutSeconds, maxSeconds })) lines.push(note, '');
+  for (const note of caveats(rows, runsPerCase, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds })) lines.push(note, '');
 
   lines.push(...supplements(results));
   return lines.join('\n');

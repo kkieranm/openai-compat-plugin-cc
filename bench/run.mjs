@@ -31,7 +31,7 @@ const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
   valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts'],
-  booleanFlags: ['diff-only', 'cold', 'warm-up'],
+  booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
   repeatableFlags: ['case'],
 };
 
@@ -54,9 +54,23 @@ const INVOCATION = randomUUID();
  * with the answer — including how to record a failure, which is the half that
  * kept growing.
  */
-function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
+// EXPORTED for `tests/bench-review-flags.test.js`. `main()` here is unexported and
+// runs only under the `process.argv[1]` guard, so nothing could reach the command
+// line this builds — which is how `--structured-output` came to be missing from
+// SPEC for as long as it was (OAI-117), and is the shape OAI-125 names as the one
+// to stop copying. Exporting the composition is the seam, not another end-to-end test.
+export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
   const flags = ['review', ...materializedArgs, '--json'];
   if (diffOnly) flags.push('--diff-only');
+  // OAI-117. Without this the corpus's large cases — the only ones that reliably
+  // starve the model (OAI-115) — could not be run under a schema at all, so
+  // OAI-19's T2 could establish that the schema CAUSES the transport drops but
+  // not whether it fixes token exhaustion. The flag exists to ask that question,
+  // NOT because a schema is a fix: `commands/review.md` records that on this
+  // backend the grammar exhausts its lexer after ~14k generated tokens and takes
+  // the model process with it. An arm run with this on is measuring one failure
+  // class against the other, and its report says so.
+  if (options['structured-output']) flags.push('--structured-output');
   // Unique per run *and* per invocation. Without the run index every run of a
   // case would share a prefix and only the first would be cold — the exact
   // thing --cold exists to prevent, reintroduced by the fix.
@@ -253,6 +267,10 @@ async function main() {
     ...reportIdentity(results, options),
     diffOnly: Boolean(options['diff-only']),
     cold: Boolean(options.cold),
+    // In the ARTIFACT, not just the command line: two arms differing only in
+    // whether a schema was enforced are not comparable, and a reader who cannot
+    // tell them apart will difference them anyway. Same reasoning as OAI-124.
+    structuredOutput: Boolean(options['structured-output']),
     timeoutSeconds: options.timeout,
     maxSeconds: options['max-seconds'],
   });
@@ -262,10 +280,18 @@ async function main() {
   process.stderr.write(`\nPer-run records: ${recordPath}\nRendered report: ${reportPath}\n`);
 }
 
-main().catch((error) => {
-  if (error instanceof UserError) {
-    process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);
-    process.exit(1);
-  }
-  throw error;
-});
+// GUARDED, and it was not until 2026-08-09 (OAI-117's seam found it). `main()` ran
+// on IMPORT, so the moment anything in `tests/` imported this file to exercise a
+// pure function, `node --test` launched a full six-case benchmark against whatever
+// server was or was not up and wrote a report and a record into `bench/results/` —
+// artifacts indistinguishable from a real arm. `review-sweep.mjs:291` already had
+// this guard; this file is the one its header says it was written not to imitate.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    if (error instanceof UserError) {
+      process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);
+      process.exit(1);
+    }
+    throw error;
+  });
+}

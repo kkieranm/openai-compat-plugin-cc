@@ -71,7 +71,7 @@ should be decided together even though they close separately. OAI-77 and OAI-81 
 local write access or a mis-selection, and neither has a path-shaped fix.
 
 **Tier 3 — `/oai:review` returns no answer at all, or throws away the one the model gave.**
-**OAI-115, OAI-116, OAI-113, OAI-114, OAI-117, OAI-112, OAI-59, OAI-70, OAI-68, OAI-60, OAI-57,
+**OAI-115, OAI-116, OAI-113, OAI-114, OAI-112, OAI-59, OAI-70, OAI-68, OAI-60, OAI-57,
 OAI-80, OAI-82, OAI-84**. Re-led on 2026-08-08 by measurement: the tier used to be trap instance 14's
 family (`findings: null` against `[]`), and it still contains it, but a *worse* class now sits on top
 of it and is wrong on the shipped default path today.
@@ -93,9 +93,10 @@ not move up despite being unblocked in every other sense.
 **OAI-113 and OAI-114 are self-contained and evidence-complete**, both filed from OAI-84's review
 ladder and both wrong today: a quadratic scan measured at 39.15s of CPU against 0.13s controls on
 model-controlled input, and a regression from base where one primitive sibling discards an entire
-findings list. Either can be done in an afternoon without waiting on anything. **OAI-117 is smaller
-still** and buys a real answer: `bench` cannot pass `--structured-output`, which is the only reason it
-is still unknown whether a schema fixes the OAI-115 starvation.
+findings list. Either can be done in an afternoon without waiting on anything.
+**OAI-117 closed 2026-08-09** — `bench` can now pass `--structured-output`, so whether a schema fixes
+the OAI-115 starvation is a measurement someone can take rather than a question blocked on a flag.
+Taking it is part of OAI-19's arm work in tier 6, not a separate item.
 
 **OAI-112 is the design job and sorts after the cheap wins deliberately.** It is the candidate-selection
 withdrawal from OAI-84's ladder, **adjudicated PARTIAL by the user on 2026-08-07** — the two repairs
@@ -2241,12 +2242,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   whose path preserves the record. It also destroys the reliability evidence exactly where failures
   are most interesting. **Blocks OAI-19**, and is likely small.
 
-- **OAI-117** — **`bench` cannot pass `--structured-output`, so the schema arm cannot be measured.**
-  Filed 2026-08-08. `bench/run.mjs`'s `SPEC` has no such flag, so the only cases that reliably starve
-  the model (the corpus's large ones) cannot be run under a schema. This is why OAI-19's T2 could
-  establish that the schema *causes* the transport drops but not whether it *fixes* token exhaustion —
-  the question had to be left open for want of a flag. Small, and it unblocks a real question.
-
 - **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
   review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
   local calendar date correctly across DST, but the deadline is compared with `Date.now()`, so a
@@ -2266,6 +2261,14 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   deliberately structured NOT to imitate, because an unguarded main is why `run.mjs` has no test at
   all. `task-run.mjs`'s injectable seams were copied for the loop and not for the composition.
   **The fix is a seam, not another test**: export the composition, or `runMain(deps)`.
+  **Update 2026-08-09 — `bench/run.mjs` was worse than this item said, and is now partly fixed.**
+  Its `main()` was not merely unexported: it was called **unconditionally at module scope**, so the
+  first `tests/` import of that module ran a whole six-case benchmark and wrote a report and a record
+  into `bench/results/`, indistinguishable from a real arm. Found by OAI-117's seam and fixed there —
+  `run.mjs` now has the `process.argv[1]` guard `review-sweep.mjs:291` always had, plus one exported
+  function under test. **This does NOT close OAI-125**, whose defect is `review-sweep.mjs`'s
+  `options.from =` assignment reaching the artifact untested; it removes the excuse that `run.mjs` is
+  the shape to copy.
   **Until it lands, every benchmark arm must pass a full SHA and the pre-flight assertion is
   load-bearing rather than belt-and-braces.**
 
