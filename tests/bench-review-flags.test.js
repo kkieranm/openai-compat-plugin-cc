@@ -16,7 +16,35 @@
 // is the failure mode that would silently invalidate every unconstrained arm.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { reviewFlags } from '../bench/run.mjs';
+
+test('importing bench/run.mjs does NOT run the benchmark', async () => {
+  // THE GUARD THAT GUARDS THE GUARD (F4), SECOND ATTEMPT — the first one could not fail.
+  //
+  // It imported the module inside the test body and compared `bench/results/` before and after. But
+  // this file already imports `run.mjs` at the top for `reviewFlags`, so the module had executed long
+  // before the window opened: with the guard mutated to `if (true)`, the test still passed. An
+  // absence assertion whose firing path never runs.
+  //
+  // A FRESH PROCESS is the only place the question exists. The discriminator is stdout, not artifacts:
+  // an unguarded `main()` prints its per-case progress immediately but only persists a report at the
+  // END of six cases, so waiting for files means waiting minutes for a signal that arrives in
+  // milliseconds.
+  // ASYNC spawn, never `spawnSync` — `tests/structure.test.js` forbids the sync forms outright and
+  // caught this test's first draft. The ban is a confirmed defect class here: a sync spawn blocks the
+  // event loop, so any test that also needs an in-process server deadlocks until the client timeout.
+  const child = spawn(process.execPath, ['-e', "import('../bench/run.mjs')"], {
+    cwd: new URL('.', import.meta.url).pathname,
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { out += d; });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+  await new Promise((resolve) => child.on('close', resolve));
+  clearTimeout(timer);
+  assert.doesNotMatch(out, /run \d+\/\d+|Reviewing commit/, `main() ran on import — output was:\n${out.slice(0, 400)}`);
+});
 
 const CASE = { id: 'demo', mode: 'commit' };
 const ARGS = ['--commit', 'abc123'];

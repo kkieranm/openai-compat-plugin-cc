@@ -38,9 +38,35 @@ export function indexEntries(backlog) {
   const tiers = backlog.split('<!-- tiers -->')[1]?.split('<!-- /tiers -->')[0];
   assert.ok(tiers, 'BACKLOG.md has no <!-- tiers -->...<!-- /tiers --> section');
   const ids = [];
-  for (const [, run] of tiers.matchAll(/\*\*([^*]+)\*\*/g)) {
-    const t = run.trim();
-    if (/^OAI-\d+(\s*,\s*OAI-\d+)*,?$/.test(t)) ids.push(...t.match(/OAI-\d+/g));
+  // PER TIER, and only the CONTIGUOUS LEADING run of entry-shaped bold after each tier heading.
+  //
+  // Shape alone is not enough, and that was mutation-proved: with a global shape test, deleting an id
+  // from tier 12c's entry list and leaving a bare `**OAI-133**` inside an ordinary sentence left the
+  // guard GREEN — prose silently satisfied the index requirement, so the priority view could lose an
+  // item with nothing going red. This is the ambiguity CLAUDE.md documents as a convention humans must
+  // remember ("refer to items in other tiers without bold"); a convention a human must remember is
+  // precisely what a guard is for.
+  //
+  // Position is what disambiguates: entries lead the tier, prose follows. Once a bold run containing
+  // WORDS appears, the tier's entry list is over and every later bold id is prose.
+  //
+  // The leading run is a SEQUENCE, not one bold: tier 1 writes `**OAI-62, OAI-67**` while tiers 11 and
+  // 12c write `**OAI-106**, **OAI-105**`. Both are accepted deliberately — requiring a single form
+  // would force a rewrite of BACKLOG.md, which is a format migration nobody asked for.
+  // Split on the WHOLE bold heading. Splitting on just `**Tier ` leaves the heading's closing `**` in
+  // the chunk, so the first "bold run" found is the whitespace between heading and entries — which
+  // fails the shape test and ends the entry list before it starts. That mistake reported 89 live
+  // items as unindexed rather than passing quietly, which is the failure direction to prefer.
+  for (const tier of tiers.split(/\*\*Tier [^*]*\*\*/).slice(1)) {
+    // Consume bold runs from the START of the chunk, accepting ONLY commas and whitespace between
+    // them. The first time anything else intervenes, the entry list is over.
+    //
+    // TESTING THE RUN'S SHAPE IS NOT ENOUGH AND THAT WAS MUTATION-PROVED TWICE. A bare `**OAI-133**`
+    // sitting in an ordinary sentence has exactly the shape of an entry, so a shape-only rule counts
+    // it and the guard stays green while the id has been dropped from its tier. Position is the only
+    // thing that separates them, so position is what this reads.
+    const entries = /^(?:\s*\*\*(OAI-\d+(?:\s*,\s*OAI-\d+)*,?)\*\*\s*,?)+/.exec(tier);
+    if (entries) for (const id of entries[0].match(/OAI-\d+/g)) ids.push(id);
   }
   return ids;
 }
@@ -74,6 +100,21 @@ test('no id is listed twice in the tier index', () => {
     seen.add(id);
   }
   assert.deepEqual(repeated, [], `indexed under more than one tier: ${repeated.join(', ')}`);
+});
+
+test('no id appears twice among the live bodies', () => {
+  // Its own assertion, because NOTHING ELSE HERE CAN SEE A DUPLICATE BODY — mutation-proved: every
+  // other body-side check funnels through `new Set(BODIES)`, and the ascending-order comparison is
+  // strictly less-than, so equal adjacent ids are not an ordering break. Duplicating a body left all
+  // five original assertions green. CLAUDE.md requires every id to resolve to exactly ONE live
+  // heading, and until this line nothing enforced the "one" half.
+  const seen = new Set();
+  const repeated = [];
+  for (const id of BODIES) {
+    if (seen.has(id) && !repeated.includes(id)) repeated.push(id);
+    seen.add(id);
+  }
+  assert.deepEqual(repeated, [], `more than one live body for: ${repeated.join(', ')}`);
 });
 
 test('the tier index covers the live set exactly', () => {

@@ -163,10 +163,13 @@ function schemaNote(structuredOutput) {
   if (!structuredOutput) return [];
   return [
     '**`--structured-output` was on: the reply shape was enforced by a `response_format` schema**, not '
-    + 'described in prose and parsed leniently. This is NOT the default path, and it is not a better '
-    + 'one — on this backend the grammar built from the schema exhausts its lexer after roughly 14,000 '
-    + 'generated tokens and takes the model process down, which is the measured cause of the '
-    + 'empty-completion and stream-drop failures (ADR 003). What it buys is the other side of the '
+    + 'described in prose and parsed leniently. This is NOT the default path. **Measured on LM '
+    + "Studio's MLX backend, 2026-08-04**: the grammar built from the schema exhausted its lexer at "
+    + '13,956–14,744 generated tokens and segfaulted the model process, which is the cause of the '
+    + 'empty-completion and stream-drop failures recorded there (ADR 003). **That is an observation '
+    + 'about that server, not about whichever provider this run measured** — `bench` accepts any '
+    + 'OpenAI-compatible provider, and the flag exists for one *without* that grammar engine, which is '
+    + 'exactly the case where the finding does not transfer. What a schema buys is the other side of the '
     + 'trade: the unconstrained default can spend its entire shared `max_tokens` budget reasoning and '
     + 'emit no findings at all. **Read this arm against an unconstrained one as one failure class '
     + 'versus the other**, never as a clean run against a dirty one.',

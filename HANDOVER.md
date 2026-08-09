@@ -11,7 +11,9 @@ see OAI-133/134.
 
 ## State
 
-- **HEAD** carries the review-sweep harness and its follow-on. Suite **766/0**.
+- **HEAD** carries the review-sweep harness and its follow-on, plus OAI-104 (`c542e34`) and OAI-117
+  (`d2396ce`). Suite **777/0** — this line said 766/0 until 2026-08-09, which those two commits made
+  false; corrected in a review-ladder batch, not by the sessions that wrote them.
 - **Benchmark records**: `bench/results/model-matrix-2026-08-08/` — 10 arms, ~364 KB.
   **`bench/results/` is gitignored**, so quote figures from the tracker rather than assuming these
   files survive a clean.

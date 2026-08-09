@@ -3,7 +3,7 @@
 - **OAI-117** — **`bench` could not pass `--structured-output`, so the schema arm could not be measured.**
   `bench/run.mjs`'s `SPEC` now carries the flag, `reviewFlags` forwards it, and the artifact records
   it in **two** places — the report header, where two files are compared, and a caveat naming the
-  trade. Suite 771/0 → **776/0**.
+  trade. Suite 771/0 → **777/0**.
 
   **The caveat states a trade, not a flag**, because the reading to prevent is "same measurement,
   tidier reply": a schema was measured to *cause* the transport drops (OAI-19 T2, controlled A/B) and
