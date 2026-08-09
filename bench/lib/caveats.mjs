@@ -10,6 +10,8 @@
 // rate, a censored run read as a clean pass), and one definition sitting next to
 // its own caveats is harder to quote out of context than one sitting alone.
 
+import { degradedNote } from './schema-degrade.mjs';
+
 function pct(found, total) {
   if (total === 0) return 'n/a';
   return `${Math.round((found / total) * 100)}%`;
@@ -148,20 +150,22 @@ function capNote(rows, maxSeconds) {
   ];
 }
 
+
 /**
  * The schema arm's note (OAI-117), split out at the function size budget.
  *
- * The sharpest thing a reader can get wrong here is to treat a schema arm as the
- * same measurement with a tidier reply, so the note names the TRADE rather than
- * the flag: a schema was measured to CAUSE the transport drops (OAI-19 T2,
- * controlled A/B), while the unconstrained default was measured to spend the
- * whole shared budget reasoning and emit nothing (OAI-115). An arm run this way
- * compares one failure class against the other; its failures are expected to move
- * between columns rather than disappear.
+ * It names the TRADE rather than the flag, because the sharpest misreading is to
+ * treat a schema arm as the same measurement with a tidier reply: a schema was
+ * measured to CAUSE the transport drops (OAI-19 T2), while the unconstrained
+ * default was measured to reason through its whole budget and emit nothing
+ * (OAI-115). Failures are expected to move between columns, not disappear.
  */
-function schemaNote(structuredOutput) {
+function schemaNote(structuredOutput, rows) {
   if (!structuredOutput) return [];
+  const reported = rows.reduce((total, row) => total + row.reported, 0);
+  const degraded = rows.reduce((total, row) => total + row.degraded, 0);
   return [
+    ...degradedNote(degraded, reported),
     '**`--structured-output` was on: the reply shape was enforced by a `response_format` schema**, not '
     + 'described in prose and parsed leniently. This is NOT the default path. **Measured on LM '
     + "Studio's MLX backend, 2026-08-04**: the grammar built from the schema exhausted its lexer at "
@@ -188,7 +192,7 @@ function schemaNote(structuredOutput) {
  * to a flag.
  */
 function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds }) {
-  const notes = [...schemaNote(structuredOutput)];
+  const notes = [...schemaNote(structuredOutput, rows)];
   // Stated whenever set, for the same reason --cold is: a reader comparing two
   // report files has to know that one of them was run under a wall-clock cap,
   // or a row with fewer completed runs reads as a worse model rather than a

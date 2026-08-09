@@ -65,7 +65,18 @@ export function indexEntries(backlog) {
     // sitting in an ordinary sentence has exactly the shape of an entry, so a shape-only rule counts
     // it and the guard stays green while the id has been dropped from its tier. Position is the only
     // thing that separates them, so position is what this reads.
-    const entries = /^(?:\s*\*\*(OAI-\d+(?:\s*,\s*OAI-\d+)*,?)\*\*\s*,?)+/.exec(tier);
+    // AND THE RUN MUST END IN A PERIOD. Position alone was still not enough, and an adversarial
+    // re-review found the hole after this file shipped: de-index OAI-133 and open the following
+    // SENTENCE with it — `**OAI-135**, **OAI-133** is discussed here.` — and the leading run swallows
+    // the prose subject, because a bold id starting a sentence is shape-identical to a trailing entry
+    // and position cannot separate them either.
+    //
+    // Every tier in BACKLOG.md terminates its entry list with `**.` — checked across all twelve. So
+    // the terminator is what disambiguates. A tier whose leading run is NOT period-terminated parses
+    // as having NO entry list, and every id in it reports unindexed: a LOUD failure on an unrecognised
+    // format, which is the direction a guard should fail in. The alternative was the explicit tier
+    // grammar this repo declined twice as a format migration nobody asked for.
+    const entries = /^(?:\s*\*\*(OAI-\d+(?:\s*,\s*OAI-\d+)*,?)\*\*\s*,?)+\./.exec(tier);
     if (entries) for (const id of entries[0].match(/OAI-\d+/g)) ids.push(id);
   }
   return ids;

@@ -2409,7 +2409,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
      that breaks it. *(Narrowed by its verifier: the trailing "smaller than the truth twice over" clause
      SURVIVES — in slot units the honest denominator is `(listed+dropped)*scored = 10 > 6`. The defect is
      purely the unit mismatch, plus understating the dropped gap by a factor of `scored.length`.)*
-  4. **The schema arm is captioned by what was ASKED FOR, not what happened.** `caveats.mjs:165` asserts
+  4. **DONE 2026-08-09 (see below). The schema arm is captioned by what was ASKED FOR, not what happened.** `caveats.mjs:165` asserts
      *"the reply shape was enforced by a `response_format` schema"* gated on the **flag**.
      `review-request.mjs:224-232` **falls back to unconstrained** when a server rejects `response_format`
      and says so on stderr; `cmd-review.mjs:156-167` emits both facts and its own comment names the
@@ -2425,6 +2425,13 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
      *"requested; obtained on 2 of 3"* or it replaces one blind caption with another. Landing that in the
      ladder's **final** batch would have shipped it unreviewed, since `adr/089`'s verification pass opens
      no finding lenses.
+  **ITEM 4 SHIPPED 2026-08-09**, once its cost turned out to be a tenth of the estimate: the CLI
+  already emits `degraded` ("asked for, and not obtained") in the `--json` envelope, so no new fact had
+  to be computed — `case-rows.mjs` counts it per run beside a `reported` denominator and
+  `bench/lib/schema-degrade.mjs` prints it. **Per run, never a boolean**: a case can degrade on some
+  runs and not others, and a wholly degraded arm now says **"THIS ARM DID NOT MEASURE A SCHEMA"** while
+  a mixed one says it only partly did. Four mutations prove it, including the one that reinstates the
+  original bug. **Items 1-3 and everything below remain open.**
   **Also here, same file, lower value:** `run.mjs:81-84` — an empty `--model=` suppresses the manifest
   fallback via `??` and is then discarded, so the harness **silently benchmarks the configured default
   and overrides a case-level model pin**, measuring a different target than the operator named; and

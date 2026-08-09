@@ -206,6 +206,23 @@ function buckets(runs) {
   return { truncated, scored, scoredSet, cut: analysisCutRuns(runs).filter((run) => scoredSet.has(run)) };
 }
 
+/**
+ * WHAT THE SERVER DID ABOUT THE SCHEMA, not what the operator asked for (OAI-135).
+ *
+ * `--structured-output` is a REQUEST. `review-request.mjs` falls back to the unconstrained path when a
+ * server rejects `response_format`, and the CLI already reports that as `degraded` — "asked for, and
+ * not obtained", the pair `cmd-review.mjs` emits precisely so a harness can tell "fell back after a
+ * refusal" from "never wanted a schema". The benchmark read only the flag, so an arm that degraded on
+ * every request was captioned as a schema arm and compared against an unconstrained one: two names for
+ * the same measurement.
+ *
+ * Counted per RUN, not collapsed to a boolean — a case can degrade on some runs and not others, and a
+ * boolean would replace one caption that cannot see the failure with another. `reported` is the
+ * denominator (runs that came back with an envelope at all), so the count is read against what was
+ * actually observed rather than against runs that never answered.
+ *
+ * 
+ */
 export function caseRows(results, { cold = false } = {}) {
   return results.map((result) => {
     const { caseDef, runs } = result;
@@ -246,6 +263,9 @@ export function caseRows(results, { cold = false } = {}) {
       scored: scored.length,
       runs: runs.length,
       diffOnly: runs.some((run) => run.diffOnly),
+      // See `schemaDegrade` above. Per RUN, never a boolean.
+      reported: runs.filter((run) => run.report).length,
+      degraded: runs.filter((run) => run.report?.degraded).length,
       tokens: promptSamples(runs),
       prefill,
       generation,
