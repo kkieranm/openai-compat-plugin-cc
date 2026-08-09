@@ -175,6 +175,19 @@ drift impossible has never once run. OAI-103 is the same shape one level out: a 
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-134**, **OAI-131**,
+**OAI-133**, **OAI-132**.
+**OAI-134 leads and is the only defect of the four**: `--model` cannot JIT-load an unloaded model,
+because the plugin sizes it by `max_context_length` — the exact field CLAUDE.md warns against — so
+`/oai:task` and `/oai:review` are both silently restricted to whatever was loaded by hand. It surfaced
+only because the benchmark was the first thing to ask for a model that was not already resident.
+OAI-131 is **answered, not open**: `idle-timeout` was never observed across 22 failures, so the five
+iterations spent admitting it bought no measured coverage. OAI-133 records that the gemma arms measured
+nothing and carries the sized contexts for a future attempt, including that **`gemma-4-31b` will not
+fit this machine at a fair context**. OAI-132 is the harness emitting no signal for hours at a time.
+**The usable result of the whole exercise is one line: use `qwen/qwen3.6-27b`** — 7 of 10 commits
+reviewed in both runs, against 3-5 for the MoE, which starved exactly as OAI-115 predicted.
+
 **Tier 12b — residue from the follow-on ladder, which also ended `cap-without-approval`.**
 **OAI-125, OAI-128, OAI-127, OAI-126, OAI-129, OAI-130, OAI-131**.
 **OAI-125 leads and is the sharpest item filed today**: the resolved-SHA guarantee — the one fact the
@@ -2307,18 +2320,66 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   absent from the summary. Low impact while every arm passes `--model` explicitly, which the benchmark
   does.
 
-- **OAI-131** — **Two vendor assumptions this repo has no artifact to check, and the sweep is the
-  instrument that could.** Filed 2026-08-08 from the `unverifiable` channel of a wide review.
-  **(a) Does a real LM Studio stall actually surface as `idle-timeout`**, rather than as
-  `stream-unfinished`, `empty-completion` or a dropped connection? The mechanism was verified in
-  `stream-collect.mjs` — the idle budget is armed only by a text-carrying frame, so the classification
-  is *possible*. Nothing recorded shows it is what the hardware produces. **The five-iteration
-  `serverUnwell` rule rests on this and it is unmeasured.**
-  **(b) Can `analysisCut` co-occur with `model-substituted` in a real reply?** Only a synthetic
-  fixture says so.
-  **Both are answerable by the overnight sweep itself** — its records carry every reason code and
-  every envelope field, so a night against a real server settles (a) directly.
+- **OAI-131** — **ANSWERED 2026-08-09 by the model matrix: `idle-timeout` was never observed.**
+  Filed 2026-08-08 as two unverifiable vendor assumptions; **(a) is now measured**, (b) is not.
+  **The measurement**: 5 models x 2 executions x the same 10 pinned commits (`--from f092405`), 1200s
+  per commit, whole files. Records at `bench/results/model-matrix-2026-08-08/` — **gitignored, so quote
+  these figures rather than assuming the files survive.**
+  **Reason codes across 22 recorded failures**: `token-exhaustion` x14, `deadline-timeout` x5,
+  `empty-completion` x2, **`idle-timeout` x0**.
+  **What it means for `serverUnwell`.** The rule stands — the CLI's own per-budget hint is still the
+  right discriminator, and `empty-completion`, which did fire, is correctly admitted. But **the five
+  iterations spent getting `idle-timeout` into the set bought no observed coverage**, while the shape
+  that dominates real failures (`token-exhaustion`) is deliberately excluded as the model's budget.
+  The reasoning was sound and the yield was nil — worth knowing before the next argument of that kind.
+  **(b) remains unmeasured**: no reply carried both `analysisCut` and a substituted model, so that
+  pairing is still only a synthetic fixture's claim.
 
+- **OAI-132** — **A two-hour sweep arm emits NO signal until it ends.** Filed 2026-08-09 from running
+  the matrix. `writeSweep` runs once, after the loop, so an arm in progress is observable only as a
+  live pid and a SHA in `ps`; a healthy run and a doomed one look identical from outside for hours.
+  The fail-fast covers an outage, not "is this producing anything useful". Observed directly: arm 1 ran
+  2h13m with no readable output, and the four aborted gemma arms were only diagnosable afterwards.
+  **For a harness whose whole purpose is running unattended, that is the wrong end of the trade.**
+  Fix shape: append each entry to the record as it settles, or emit one progress line per commit.
+
+- **OAI-133** — **The gemma arms measured NOTHING about the gemma models. CORRECTED 2026-08-09.**
+  The first filing guessed the cause was "something else resident"; that was **wrong and is recorded
+  here rather than quietly replaced.** Measured with `lms ps` reporting **no models loaded at all**,
+  `gemma-4-12b-qat` still failed: `HTTP 400 … requires approximately 44.87 GB`. The real cause is
+  **OAI-134** — the plugin JIT-loads at `max_context_length` (262144 for every model on this server).
+  **Sized contexts, measured by actually loading each one** (36 GB machine):
+  | model | weights | verdict |
+  |---|---|---|
+  | `gemma-4-12b-qat` | 7.15 GB | **loads at 61,696** — the same context the qwen arms used |
+  | `gemma-4-26b-a4b-qat` | 15.64 GB | loads, but **LM Studio ignores `-c`** and pins 116,736 |
+  | `gemma-4-31b-qat` | 18.85 GB | **refused at 61,696** (needs 34.45 GB of 36); loads at 32,768 |
+  KV cost derived from the error and confirmed by loading: ~0.144 MB/token for the 12b.
+  **`gemma-4-31b` cannot be benchmarked on this machine at a context comparable to the qwens** — that
+  is a fact about the machine, and it is the finding. `gemma-4-26b-a4b` gets nearly double the qwens'
+  context, so its earlier `unreadable` replies (8 of 10, then 4 of 10 — it emitted `findings` and
+  `analysis` as prose rather than the requested shape) are **not** explicable as a context handicap.
+  **The re-run was STOPPED BY THE USER after ~1 minute: SSD usage spiked.** Cause was almost certainly
+  swap thrash, not writes — the whole first matrix wrote 364 KB. Loading and unloading 7-19 GB models
+  back to back on a 36 GB machine pages heavily. **Do not re-run three models in one sitting**; one
+  model per session, with `sysctl vm.swapusage` watched, and never size a context that leaves only
+  ~1.5 GB of headroom.
+
+- **OAI-134** — **`--model` cannot JIT-load anything on this server, because the plugin sizes an
+  unloaded model by `max_context_length`.** Filed 2026-08-09. Every model on this LM Studio reports
+  `max_context_length: 262144` and `loaded_context_length: null` while unloaded. `model-info.mjs`
+  correctly prefers `loaded_context_length` **for a model that is already resident** — the rule this
+  repo's CLAUDE.md states — and has no answer for the JIT path, where that field does not exist yet.
+  The load is then attempted at 262k and refused for want of memory: 44.87 GB for a 7.15 GB 12B model.
+  **Reproduced with nothing resident**, so it is not contention.
+  **Blast radius is the whole plugin, not the sweep**: `/oai:task` and `/oai:review` both accept
+  `--model`, and both are silently restricted to whatever happens to be loaded by hand — the opposite
+  of what the flag implies. The benchmark's gemma arms are the first place it surfaced only because
+  nothing else had ever asked for an unloaded model.
+  **Fix shape (not decided here)**: choose a load-time context rather than inheriting the ceiling —
+  e.g. a configured `contextLength` for the profile, or a fraction of the ceiling, or the smaller of
+  the ceiling and what the reply budget actually needs. **Whatever it is, it must be a stated choice
+  with a reason**, since `max_context_length` is exactly the value CLAUDE.md warns against trusting.
 - **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
   review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
   local calendar date correctly across DST, but the deadline is compared with `Date.now()`, so a
