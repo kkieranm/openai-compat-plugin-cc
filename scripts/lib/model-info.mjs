@@ -65,7 +65,16 @@ function readVllm(payload) {
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_model_len))
     .map((entry) => ({ id: entry.id, window: entry.max_model_len }));
-  return models.length > 0 ? { models, source: 'vLLM /v1/models max_model_len' } : null;
+  // NAMES THE FIELD, NOT A VENDOR (corrected 2026-08-09, against a running oMLX).
+  //
+  // This said "vLLM /v1/models max_model_len". `max_model_len` is a convention
+  // vLLM popularised, not a fingerprint — oMLX 0.5.7 publishes it too — and this
+  // reader runs FIRST, so the plugin reported "detected via vLLM" for a server
+  // that is not vLLM. A correct number under a wrong provenance is exactly what
+  // this repo's "a fact names its source" rule exists against; here the source
+  // line was itself the guess. The order stays (a window already in hand costs no
+  // round trip); what it buys is the window, not a claim about the product.
+  return models.length > 0 ? { models, source: '/v1/models max_model_len' } : null;
 }
 
 /**
@@ -103,16 +112,26 @@ function readTgi(payload) {
 }
 
 /**
- * oMLX. UNVERIFIED: this shape comes from documentation, not from a running
- * server, and it reportedly advertises a global default rather than the model's
- * real window — which is why every detected window is reported with its source.
+ * oMLX. **VERIFIED 2026-08-09 against a running oMLX 0.5.7.** This said
+ * "UNVERIFIED: from documentation, not a running server", and the doubt was
+ * earned: the documented shape was HALF wrong. Per-entry `max_context_window` is
+ * right; the ENVELOPE is not — oMLX returns `{final_ceiling, model_count,
+ * loaded_count, models: [...]}`, so entries sit under `models`, never `data`, and
+ * reading only `data` made this return null against every real oMLX there has
+ * been. The failure was INVISIBLE because the cheaper `max_model_len` lens above
+ * detects the same window, so the plugin printed a right number with a wrong
+ * source. The unit test could not catch it either: it was written from the same
+ * documentation as the code and asserted the same mistake.
+ *
+ * `data` is still accepted — dropping it would swap a verified shape for an
+ * unverified assumption pointing the other way.
  */
 function readOmlx(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+  const entries = [payload?.models, payload?.data, payload].find(Array.isArray) ?? [];
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_context_window))
     .map((entry) => ({ id: entry.id, window: entry.max_context_window }));
-  return models.length > 0 ? { models, source: 'oMLX /v1/models/status (unverified)' } : null;
+  return models.length > 0 ? { models, source: 'oMLX /v1/models/status' } : null;
 }
 
 // Tried in order; the first recognisable shape wins. Each entry is a path

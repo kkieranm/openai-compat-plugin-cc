@@ -2360,8 +2360,31 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   model per session, with `sysctl vm.swapusage` watched, and never size a context that leaves only
   ~1.5 GB of headroom.
 
-- **OAI-134** — **`--model` cannot JIT-load anything on this server, because the plugin sizes an
-  unloaded model by `max_context_length`.** Filed 2026-08-09. Every model on this LM Studio reports
+- **OAI-134** — **PREMISE CORRECTED 2026-08-09. `--model` advertises on-demand loading that the plugin
+  neither performs nor controls.** The original filing said the plugin *sizes* an unloaded model by
+  `max_context_length`. **That mechanism is refuted** — independently, by me and by a Codex consult,
+  both reading the code rather than arguing from the symptom:
+  `client.mjs:40` builds the only completion body (`model, messages, stream, stream_options`, plus
+  optional `temperature`/`max_tokens`/`response_format`) and carries **no `ttl`, no `context_length`,
+  no load parameter**; `chat.mjs:145` shows `/chat/completions` is the only POST; `model-info.mjs:121,124`
+  are GET probes; `http.mjs:242` defaults to GET; and there is **no `lms` subprocess anywhere**.
+  **The plugin has no channel through which to size any load**, so the proposed fix — "choose a
+  load-time context rather than inheriting the ceiling" — is **not implementable through the
+  OpenAI-compatible API**. `model-info.mjs:71` keeps `ceiling` and `window` distinct and correctly gives
+  an unloaded model no window; `delegate.mjs:140` never substitutes one for the other.
+  **The symptom is real and reproduced; the cause is the server's own JIT-load configuration.**
+  **The plugin's actual defect is a promise it cannot keep**, and nobody had filed it:
+  `model-selection.mjs:158` says *"Load a chat model in the server, or pass `--model <id>` to have it
+  loaded on demand"* and `:183` repeats it — **unconditionally**, on a path where it is known to fail.
+  This repo's dominant class, user-facing.
+  **Fix decided (Codex consulted, option (a)):** keep the request path provider-agnostic; make the two
+  hints conditional instead of promissory; warn when the selected model is not `loaded`, naming the
+  real remedy (load it in the server, or set its load-time context there). **Rejected: shelling out to
+  `lms load`, or a vendor REST load call** — both violate ADR 001's "providers are config data, never
+  code paths" (`adr/001:21`, CLAUDE.md:7), and `adr/002:31` establishes the probes are reads, not
+  mutations. **Also rejected: a blanket refusal**, because the repo has no evidence about which
+  providers *do* support on-demand loading — which is exactly what the oMLX validation is for.
+  **ORIGINAL FILING BELOW, kept because the measurement in it is sound and only its mechanism was wrong:** Filed 2026-08-09. Every model on this LM Studio reports
   `max_context_length: 262144` and `loaded_context_length: null` while unloaded. `model-info.mjs`
   correctly prefers `loaded_context_length` **for a model that is already resident** — the rule this
   repo's CLAUDE.md states — and has no answer for the JIT path, where that field does not exist yet.

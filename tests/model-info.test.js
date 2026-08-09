@@ -86,7 +86,10 @@ test('vLLM is read from the models payload we already fetched, with no extra req
   );
   await server.close();
 
-  assert.equal(described.source, 'vLLM /v1/models max_model_len');
+  // NOT "vLLM ..." — corrected 2026-08-09. `max_model_len` is a field convention,
+  // not a fingerprint: oMLX publishes it too, and this reader runs first, so the
+  // old label named the wrong product for every server that is not vLLM.
+  assert.equal(described.source, '/v1/models max_model_len');
   assert.equal(windowFor(described, 'chat-a'), 8192);
   assert.equal(server.requests.length, 0, 'the free path must not probe native endpoints');
 });
@@ -107,13 +110,81 @@ test('TGI /info reports its configured total', async () => {
   assert.equal(windowFor(described, 'chat-a'), 16384);
 });
 
-test('oMLX is read, and its source says the shape is unverified', async () => {
+// CAPTURED FROM A RUNNING oMLX 0.5.7 ON 2026-08-09, trimmed to the fields this
+// reader touches plus enough envelope to be recognisable. The previous test used
+// `{data: [...]}` — the DOCUMENTED shape — and so asserted the same mistake the
+// code made, which is why a reader that never worked against a real oMLX passed
+// for months. A fixture written from the same source as the implementation
+// cannot falsify it.
+const OMLX_STATUS = {
+  final_ceiling: 30111512115,
+  model_count: 1,
+  loaded_count: 0,
+  models: [{
+    id: 'mlx-community--Qwen3-14B-4bit',
+    loaded: false,
+    is_loading: false,
+    estimated_size: 8723293439,
+    model_context_length: 40960,
+    max_context_window: 40960,
+    max_tokens: 32768,
+    model_type: 'llm',
+    source_repo_id: 'mlx-community/Qwen3-14B-4bit',
+  }],
+};
+
+// The real `/v1/models` beside it, captured in the same session. oMLX puts
+// `max_model_len` here too, which is exactly how the broken reader stayed hidden:
+// the vLLM lens detected the same window and the plugin reported a correct number
+// under the provenance "detected via vLLM" — for a server that is not vLLM.
+const OMLX_MODELS = {
+  object: 'list',
+  data: [{
+    id: 'mlx-community--Qwen3-14B-4bit', object: 'model', owned_by: 'omlx', max_model_len: 40960,
+  }],
+};
+
+test('oMLX is read from the REAL envelope, whose entries are under `models`', async () => {
+  const described = await describeAgainst({ '/v1/models/status': OMLX_STATUS }, OMLX_MODELS);
+
+  assert.equal(windowFor(described, 'mlx-community--Qwen3-14B-4bit'), 40960);
+  // The window is right, and BOTH lenses agree on it — which is precisely why the
+  // broken reader hid for so long. What must never come back is the provenance
+  // claim: this server is oMLX, and nothing here may call it vLLM.
+  assert.doesNotMatch(described.source, /vLLM/);
+  assert.doesNotMatch(described.source, /unverified/);
+});
+
+test('the oMLX envelope is read when nothing cheaper answers', async () => {
+  // Same status payload, but /v1/models carries no max_model_len — so the native
+  // probe is reached and its own source is what gets reported.
+  const described = await describeAgainst(
+    { '/v1/models/status': OMLX_STATUS },
+    { object: 'list', data: [{ id: 'mlx-community--Qwen3-14B-4bit', object: 'model' }] },
+  );
+
+  assert.equal(windowFor(described, 'mlx-community--Qwen3-14B-4bit'), 40960);
+  assert.equal(described.source, 'oMLX /v1/models/status');
+});
+
+test('THE NEGATIVE TWIN: `data` is still accepted, so the fix did not just swap one guess for another', async () => {
   const described = await describeAgainst({
     '/v1/models/status': { data: [{ id: 'chat-a', max_context_window: 32768 }] },
   });
 
   assert.equal(windowFor(described, 'chat-a'), 32768);
-  assert.match(described.source, /unverified/);
+});
+
+test('an oMLX envelope carrying no window is DECLINED, not reported as zero', async () => {
+  // The empty-but-successful probe: mlx_lm.server returns HTTP 200 with
+  // `{object: 'list', data: []}` on this path. Observed 2026-08-09. A reader that
+  // treated that as an answer would shadow the working /v1/models.
+  const described = await describeAgainst({
+    '/v1/models/status': { object: 'list', data: [] },
+  });
+
+  assert.equal(windowFor(described, 'chat-a'), undefined);
+  assert.doesNotMatch(described.source ?? '', /oMLX/);
 });
 
 test('an unrecognised server still lists its models, with no window', async () => {
