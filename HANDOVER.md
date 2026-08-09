@@ -12,8 +12,11 @@ see OAI-133/134.
 ## State
 
 - **HEAD** carries the review-sweep harness and its follow-on, plus OAI-104 (`c542e34`) and OAI-117
-  (`d2396ce`). Suite **777/0** — this line said 766/0 until 2026-08-09, which those two commits made
-  false; corrected in a review-ladder batch, not by the sessions that wrote them.
+  (`d2396ce`). **Suite green at HEAD; run `npm test` for the count.** No figure is quoted here on
+  purpose: this line described *HEAD*, which moves, and the number was hand-copied from a run taken
+  before the commits it described. It was false as 766/0, then corrected to 777/0 in a review-ladder
+  batch that itself added two tests and made it false again. A dated figure against a named commit is
+  a record and belongs in `BACKLOG_DONE.md`; a figure against a moving HEAD is a claim that rots.
 - **Benchmark records**: `bench/results/model-matrix-2026-08-08/` — 10 arms, ~364 KB.
   **`bench/results/` is gitignored**, so quote figures from the tracker rather than assuming these
   files survive a clean.

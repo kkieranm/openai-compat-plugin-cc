@@ -34,16 +34,32 @@ test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // ASYNC spawn, never `spawnSync` — `tests/structure.test.js` forbids the sync forms outright and
   // caught this test's first draft. The ban is a confirmed defect class here: a sync spawn blocks the
   // event loop, so any test that also needs an in-process server deadlocks until the client timeout.
-  const child = spawn(process.execPath, ['-e', "import('../bench/run.mjs')"], {
-    cwd: new URL('.', import.meta.url).pathname,
-  });
+  //
+  // THIRD ATTEMPT, and the second one could not fail EITHER — this is the level the defect recurred at.
+  // A bare `doesNotMatch` on child output is satisfied by a child that never imported anything: pointing
+  // it at `../bench/NOPE-does-not-exist.mjs` left the test GREEN, because a module-not-found error also
+  // fails to match. The absence was real and meant nothing.
+  //
+  // So the child now emits a SENTINEL, and only after the import resolves AND the module is confirmed to
+  // export what this file imports. Absence of the progress line is evidence only alongside presence of
+  // the sentinel, exit code 0 and no signal. The dead `Reviewing commit` alternative is gone — it
+  // appears nowhere in `bench/` and could never have matched.
+  const child = spawn(process.execPath, [
+    '-e',
+    "import('../bench/run.mjs').then((m) => { if (typeof m.reviewFlags !== 'function') "
+    + "throw new Error('reviewFlags missing'); console.log('IMPORTED-OK'); })",
+  ], { cwd: new URL('.', import.meta.url).pathname });
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { out += d; });
   const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
-  await new Promise((resolve) => child.on('close', resolve));
+  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
   clearTimeout(timer);
-  assert.doesNotMatch(out, /run \d+\/\d+|Reviewing commit/, `main() ran on import — output was:\n${out.slice(0, 400)}`);
+  const tail = `output was:\n${out.slice(0, 400)}`;
+  assert.equal(signal, null, `child was killed (${signal}) — it proved nothing. ${tail}`);
+  assert.equal(code, 0, `child exited ${code} — it proved nothing. ${tail}`);
+  assert.match(out, /IMPORTED-OK/, `the import never completed — the absence below proves nothing. ${tail}`);
+  assert.doesNotMatch(out, /run \d+\/\d+/, `main() ran on import — ${tail}`);
 });
 
 const CASE = { id: 'demo', mode: 'commit' };
