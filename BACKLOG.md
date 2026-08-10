@@ -179,6 +179,19 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 12d — what the first completed overnight sweep found, 2026-08-10.** **OAI-138**, **OAI-137**.
+**OAI-138 leads because it is the difference between a sweep and half a sweep**: 20 of 40 eligible
+commits died on `--max-seconds 900`, a cap inherited from the harness's first commit whose documented
+job is bounding *overshoot past the stop time*, never *fitting a review*. It also inverts OAI-115's
+standing expectation — starvation happened once, wall-clock exhaustion twenty times — so the next
+sweep should set the cap from the recorded `generationMs` distribution rather than by doubling it.
+Read it against OAI-132, which the same run priced: a higher cap lengthens an already unobservable
+window, and there is still no incremental record to survive a crash.
+OAI-137 is small, real and reproduced — `readOmlx` silently ignores `data` when `models` is an empty
+array, contradicting the comment that says it does not. It is in this tier because the sweep found it
+in the commit that introduced it, which is the first time this harness has caught a defect in code
+written the same day.
+
 **Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-136**, **OAI-131**,
 **OAI-133**, **OAI-132**, **OAI-135**.
 **OAI-134 shipped 2026-08-09 and its framing did not survive contact**: the filed mechanism — the
@@ -2342,6 +2355,17 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   2h13m with no readable output, and the four aborted gemma arms were only diagnosable afterwards.
   **For a harness whose whole purpose is running unattended, that is the wrong end of the trade.**
   Fix shape: append each entry to the record as it settles, or emit one progress line per commit.
+  **PRICED 2026-08-10 by a full overnight run**, which is why this is no longer a nuisance item.
+  `sweep-2026-08-09-overnight` ran **8h22m** (2026-08-09 20:39 → 2026-08-10 05:01 BST) and wrote its
+  first and only byte of result at the very end. Confirmed by reading the code, not inferred from the
+  silence: `review-sweep.mjs` has **exactly three** `stderr.write` sites — the opening enumeration
+  line, the closing report paths, and the error handler. **Nothing per commit.** So for 8h22m the
+  only observable was a live pid and `lms ps` reporting `GENERATING`, and **had the machine slept or
+  the process died at hour eight, all 40 eligible commits would have been lost with no partial
+  record** — not degraded, gone. Two sessions have now had to reason about liveness from `ps` alone,
+  and one of them (2026-08-09) misread a stalled log tail as a dead job. The append-as-settled fix
+  shape is the one to take: a progress line helps a watcher, but only an incremental record survives
+  the crash that makes the silence expensive.
 
 - **OAI-133** — **The gemma arms measured NOTHING about the gemma models. CORRECTED 2026-08-09.**
   The first filing guessed the cause was "something else resident"; that was **wrong and is recorded
@@ -2458,3 +2482,62 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **(3) and (4) are the same shape as each other and probably one fix**: two lists are treated as one
   for membership and as one-and-a-half for enumeration. **(1) is the only one with user-visible wrong
   behaviour**; (2) is a claim that is currently false; (3) and (4) are advice that can be wrong.
+- **OAI-137** — **`readOmlx` does not accept `data` when `models` is present but empty, though the
+  comment four lines above says it does.** Filed 2026-08-10 from the overnight sweep, which reviewed
+  the very commit (`1139d97`) that introduced the line. **Reproduced directly against the real
+  predicate**, not argued:
+  ```
+  {models: [], data: [2 entries]}  ->  []          # data never reached
+  {data: [1 entry]}                ->  [1 entry]   # data reached only when models is absent
+  ```
+  `model-info.mjs:130` is `[payload?.models, payload?.data, payload].find(Array.isArray) ?? []`, and
+  `Array.isArray([])` is **true**, so an empty `models` array wins the `find` and short-circuits the
+  fallback. The docstring at `:126` states *"`data` is still accepted — dropping it would swap a
+  verified shape for an unverified assumption pointing the other way."* For the `{models: [], data:
+  […]}` envelope that sentence is **false**.
+  **Narrow envelope, and that is the argument for fixing it rather than against.** No observed server
+  returns that shape today; the whole point of keeping `data` was to cover a server nobody has run
+  this against. A fallback that silently does not fall back is worth less than no fallback, because
+  the comment tells the next reader it is covered. **This repo's signature class** — a claim the code
+  does not support — arriving inside the fix whose entire subject was vendor-shape assumptions.
+  **Fix shape**: prefer the first **non-empty** array, or take the first array and fall through when
+  it is empty. Either way the test must use `{models: [], data: […]}`, which no current test does —
+  which is why the unit suite was green through the whole review.
+- **OAI-138** — **Half the eligible corpus is lost to a per-commit cap that was never calibrated for
+  it: 20 of 40 commits died on `deadline-timeout`.** Filed 2026-08-10 from
+  `sweep-2026-08-09-overnight`, the first sweep run to completion against a decided model
+  (`qwen/qwen3.6-27b`, chosen by the OAI-121 benchmark). Full disposition, and every commit is
+  accounted for exactly once, per `adr/021`:
+  | outcome | n |
+  |---|---|
+  | skipped-no-code | 36 |
+  | **failed — all `deadline-timeout`** | **20** |
+  | findings | 11 |
+  | clean | 7 |
+  | unreadable | 1 |
+  | starved | 1 |
+  76 enumerated, 40 eligible, **18 reviewed**. The 36 skips are legitimate (docs, tracker and plan
+  commits touching none of `scripts`/`bench`/`tests`).
+  **`--max-seconds 900` was inherited, not chosen.** It is the `DEFAULTS` value from the sweep's first
+  commit (`e467be0`) and carries no comment justifying the number. Its *documented* purpose is not
+  "a review fits in 15 minutes" — `adr/021` says **the deadline governs starting, not finishing**, and
+  the per-commit cap exists to bound **overshoot past the stop time**. It has never been calibrated as
+  a sufficient review budget, and last night is the first run to ask.
+  **The result inverts the standing expectation.** OAI-115 predicted **starvation** — the model
+  reasoning until its token budget is gone. That happened **once**. The binding constraint at 61696
+  context is **wall clock**: every one of the 20 failures is `deadline-timeout` and **not one** is a
+  transport drop. The survivors were degraded too — many carry *"the changed files did not fit the
+  window, so only the diff was reviewed"*.
+  **The artifacts** are `bench/results/sweep-2026-08-09-overnight/review-sweep-2026-08-10T04-01-56-336Z.{md,json}`
+  (18 KB / 172 KB). **`bench/results/` is gitignored**, so the table above is the durable copy and the
+  JSON is the only place the per-attempt timings survive — read it before any clean, or the
+  calibration below has to be re-measured over another night.
+  **What to do is a measurement, not a guess**: the record holds per-attempt `prefillMs` and
+  `generationMs` (`adr/009`), so the honest next step is to read the distribution of what the 18
+  completions actually took and set the cap from it, rather than doubling 900 and re-running a night.
+  Note the interaction before raising it: a higher cap multiplies the **unwatched** window, which is
+  OAI-132 — and with no incremental record, a longer run risks more.
+  **One thing that WORKED, recorded so it is not re-litigated:** 20 `deadline-timeout`s produced
+  **zero aborts**. That reason is minted from the caller's own budget, and OAI-119 was filed because
+  it counted toward `--abort-after 3` — *"three slow commits abort a healthy sweep."* The OAI-120 fix
+  held in the field.
