@@ -2613,6 +2613,43 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   900s-censored distribution are the sound data, and probe 1's 1,518s is a **throttled upper bound** —
   good for the one thing it settled, that the commit needs materially more than 900s, and for nothing
   finer. The probe was stopped after result 1 rather than finishing on battery.
+  **RAISING THE CAP DOES NOT RECOVER THE LOST REVIEWS — measured 2026-08-10, and this is the item's
+  central result.** Commit `e1cc17dc9` re-run on mains with the cap raised to **3600s** did **not**
+  complete: it ran **1,307s** and failed with `token-exhaustion` — *"ran out of tokens before it
+  finished writing its findings"*. The same commit at cap 2400s completed at 1,518s with one finding.
+  So the outcome is **nondeterministic**, and where the cap does not bind, **the reply token reserve
+  does**.
+  **Confirmed by Codex against the code, not inferred from the two runs.** The reserve is an
+  independent ceiling: `review-request.mjs:37,67` compute a default of
+  `min(32,768, floor(window / 2))` — 30,848 for this window — possibly shrunk further for a large
+  input, and that value goes on the wire verbatim as `max_tokens` (`:123,167`), while the wall-clock
+  expiry is minted separately from `maxMs` (`:183,197`). **Extra time cannot enlarge `max_tokens`**, so
+  that generation would have exhausted its tokens at a 7,200s deadline too. And with structured output
+  off by default (`:174,204`), **nothing constrains the reasoning that consumes the reserve**.
+  **The honest phrasing, as Codex put it:** *raising the wall-clock cap alone does not reliably recover
+  deadline-limited reviews; with the request unchanged it can simply move the binding constraint to the
+  fixed reply-token reserve, and both failure paths currently yield no scored findings.*
+  **Two loss shapes, not one — which the salvage candidate must handle separately.** On token
+  exhaustion a response HAS arrived and is judged unusable: `finishAnswer` throws and only the error
+  escapes (`answer-attempts.mjs:76,114`), and `adr/008:94` says a `length` reply is never parsed. On
+  deadline expiry the path throws before any answer reaches `finishAnswer` (`:51,125`). **One outcome
+  today, two salvage entry points**: recover a returned length-limited completion, versus retain and
+  interpret an interrupted stream.
+  **Codex's ranking, and it matches the user's instinct: salvage-on-loss is the highest-value change.**
+  Raising only the wall cap exposes token exhaustion; raising only the reserve moves the run back into
+  the wall cap; bounding reasoning explicitly is the right idea but the only mechanism that can enforce
+  it is the grammar `adr/003` disabled because it crashes this server. **Salvage must accept only
+  complete, independently parseable findings and label the run unresolved** — `adr/008:73`'s rule
+  exactly, positives are usable and absences are unknown — and its carried failure mode is censored or
+  malformed partial output: it will recover *some* lost reviews, never guarantee recovery.
+  **An open thread the records cannot settle:** whether the two runs of `e1cc17dc9` used the same
+  reserve. The completed run's envelope carries `estimatedTokens: 47798`; the starved run's error
+  envelope carries **no reserve or prompt size at all**. Codex flagged this and it is a real
+  observability gap — the attempt record should carry the reserve actually sent.
+  **A measurement trap, recorded because I fell into it:** commits were ranked as worst-case
+  candidates by **changed lines**, and that is the wrong proxy. `e1cc17dc9` has **86 changed lines**
+  yet a **165,115-character prompt** — the largest input of all 20 failures — because whole files are
+  sent alongside the diff (`adr/005`). Rank by built prompt size, never by diff size.
   **THE OBJECTIVE, restated by the user and it supersedes the quantile framing above: find the WORST
   CASE, then verify a cap above it lets the sweep complete.** Not "fit a distribution" — the censored
   sample cannot support that and does not need to. The experiment that answers it is **one overnight
