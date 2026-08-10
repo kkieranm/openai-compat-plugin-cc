@@ -2874,6 +2874,23 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   threshold chosen against this 61,696-token machine may age badly across providers.
   Note the interaction with OAI-134: that item established the plugin has **no channel to influence a
   load**, so it cannot ensure residency — it can only notice.
+  **PRE-REGISTERED EXPERIMENT, launched 2026-08-10 21:35, thresholds fixed BEFORE the result exists.**
+  A `--diff-only` sweep over the same pinned SHA, window, model and 1800s cap as that night's
+  whole-file run — `bench/results/oai139-diff-only-2026-08-10/`. Diff-only **is** the rung this item's
+  enrichment ceiling would force, so this prices the fix's stated risk (under-enrichment reviving the
+  false positives `adr/005` exists to address) before a line of it is written.
+  Read against the whole-file baseline of **17 finding-bearing commits of 40 eligible**:
+  - **CHANGES THE DESIGN** if diff-only loses **5 or more** of those 17 (~30%) with no credible
+    replacement findings. A low blanket ceiling would then be wrong, and the fix needs a higher or
+    selective threshold, or a different cold-start sizing mechanism entirely.
+  - **CHANGES NOTHING** if **15 or more** of the 17 still produce credible findings with no material
+    rise in false positives.
+  - **Between those: INCONCLUSIVE, and explicitly not evidence for changing the design.**
+  - **A better completion rate on its own changes nothing** — the ceiling is *expected* to improve
+    fit, so that result is not informative about the risk being measured.
+  **It is a CONSERVATIVE test and its asymmetry is stated:** `--diff-only` strips enrichment from
+  every commit, where the ceiling would strip it only above the threshold. So a good result strongly
+  de-risks the fix, while a bad one identifies the risk but likely overstates its incidence.
 - **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
   with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
   OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
