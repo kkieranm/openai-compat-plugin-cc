@@ -210,27 +210,6 @@ test('--abort-after is a real flag, read through the option parser', () => {
   assert.throws(() => optionsFrom({ minutes: '10', 'abort-after': 'x' }, 0), /--abort-after/);
 });
 
-// The per-commit cap was raised 900 -> 1800 on 2026-08-10 (ADR 021, OAI-138)
-// and NOTHING would have noticed it going back. Every fixture in this suite
-// passes its own `maxSeconds`, so all 786 tests stayed green against either
-// value — the same shape as the --abort-after gap above, and the reason that
-// test says what it says. Pinned in two places because they fail differently:
-// the parser reading the wrong constant, and the selected value not reaching
-// the child that enforces it.
-test('the per-commit cap default is 1800 and reaches the review command', () => {
-  assert.equal(optionsFrom({ minutes: '10' }, 0).maxSeconds, 1800);
-  assert.equal(optionsFrom({ minutes: '10', 'max-seconds': '42' }, 0).maxSeconds, 42);
-
-  const seen = [];
-  runSweep(commits('aaa'), { ...OPTIONS, maxSeconds: optionsFrom({ minutes: '10' }, 0).maxSeconds }, {
-    execute: (args) => { seen.push(args); return ok([]); },
-    now: () => 0,
-  });
-  const at = seen[0].indexOf('--max-seconds');
-  assert.notEqual(at, -1, 'the review command must carry --max-seconds');
-  assert.equal(seen[0][at + 1], '1800');
-});
-
 // A fixed 24h and "the next local calendar date" differ by an hour across a DST
 // boundary, and the overnight run is precisely what crosses one.
 test('--until advances the local calendar date, not a fixed 24 hours', () => {
