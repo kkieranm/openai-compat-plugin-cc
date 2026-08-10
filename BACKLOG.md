@@ -180,7 +180,7 @@ payload that omits the caveats its human-readable sibling prints, so a harness r
 as a clean one.
 
 **Tier 12d — what the first completed overnight sweep found, 2026-08-10.** **OAI-139**, **OAI-138**,
-**OAI-137**.
+**OAI-140**, **OAI-137**.
 **OAI-139 leads the tier and was found by probing OAI-138, not by the sweep**: when nothing is
 resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
 fallback therefore cannot fire — so a cold start ships untrimmed input and the failure arrives wearing
@@ -193,6 +193,10 @@ standing expectation — starvation happened once, wall-clock exhaustion twenty 
 sweep should set the cap from the recorded `generationMs` distribution rather than by doubling it.
 Read it against OAI-132, which the same run priced: a higher cap lengthens an already unobservable
 window, and there is still no incremental record to survive a crash.
+OAI-140 sits between them because it is live at today's cap and **OAI-138's cap rise makes it worse**:
+a slow commit zeroes the consecutive-outage counter, so a genuine outage interleaved with slow commits
+never trips `--abort-after`, and last night's data cannot rule that out because nothing records the
+counter's history. Do the recording half of it whichever way the rest is decided.
 OAI-137 is small, real and reproduced — `readOmlx` silently ignores `data` when `models` is an empty
 array, contradicting the comment that says it does not. It is in this tier because the sweep found it
 in the commit that introduced it, which is the first time this harness has caught a defect in code
@@ -2853,3 +2857,27 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   threshold chosen against this 61,696-token machine may age badly across providers.
   Note the interaction with OAI-134: that item established the plugin has **no channel to influence a
   load**, so it cannot ensure residency — it can only notice.
+- **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
+  with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
+  OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
+  live at today's 900s cap, and folding it into a cap change would hide it.
+  `review-sweep.mjs:216` is `consecutiveOutage = isOutage(entry) ? consecutiveOutage + 1 : 0;` — the
+  counter is a run of **strictly consecutive** outages, and **any** non-outage zeroes it. A
+  `deadline-timeout` is deliberately not an outage: that is exactly what OAI-119 asked for and OAI-120
+  delivered, and it was the right fix — three slow commits must not abort a healthy sweep. **The
+  overcorrection is the reset.** A server that is genuinely failing every other commit, with a slow
+  commit in between, produces `outage, timeout, outage, timeout, …` and the counter never reaches 3.
+  The sweep runs to its full wall clock against a dead server and reports the result as coverage.
+  **Evidence it is live, not theoretical:** last night's run recorded **20 deadline-timeouts and zero
+  aborts**. That was read at the time as "the OAI-120 fix held in the field" and it did — but the same
+  data cannot distinguish *"no outage occurred"* from *"outages occurred and were repeatedly reset"*,
+  because **nothing records the counter's history**. This is the repo's own class again: a check that
+  reported success without the evidence to fail.
+  **OAI-138's cap rise makes it worse and is the reason it surfaced now.** At 1,800s a single
+  pathological commit can burn 30 minutes without advancing the counter, so the interval over which a
+  genuine outage stays undetected roughly doubles.
+  **Fix shape (not decided, and it must not simply re-admit `deadline-timeout` as an outage — that
+  reverts OAI-120).** Candidates: count outages in a sliding window rather than requiring them to be
+  consecutive; decay the counter instead of zeroing it; or keep the streak but record every outage so
+  the report can say how many occurred and how often the streak reset. **The last one is worth doing
+  regardless**, since it is what would have let last night's record answer the question at all.
