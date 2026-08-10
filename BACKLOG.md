@@ -2580,9 +2580,23 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **The data is RIGHT-CENSORED and one number must not be read off it.** All 20 failures sit at
   exactly 900s: that says they need `>900`, **never how much more**. "Raise it to ~1900 and most will
   complete" is an assumption. **Probe launched 2026-08-10 08:35** — three of the timed-out commits
-  re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`. If they land
-  near 1400-1600s the derivation holds; **if one runs to 2400 the ceiling is not what bounds
-  generation and this whole framing needs revisiting.**
+  re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`.
+  **PROBE RESULT 1 of 3 — `e1cc17dc9`: 1,518s, uncensored, outcome `findings` (1 high).** It completed
+  well inside the 2,400s cap, so this is a real duration and not another `>N`. Last night the same
+  commit burned 900s and returned nothing.
+  **It also corrects two claims made higher up in this item.** The split was **prefill 441s +
+  generation 1,076s** on a **43,340-token** prompt:
+  - **"Prefill is nearly irrelevant" is FALSE for large commits.** It was 24-261s last night only
+    because no *completed* run exceeded 37.8k prompt tokens — the sample was truncated by the very cap
+    under investigation. Here prefill is **29% of the run**.
+  - **The generation rate is not a constant 15.82 tok/s.** This run managed **10.6 tok/s**: a longer
+    context slows generation as well as lengthening prefill. A cap derived from the 15.82 figure would
+    be **~50% short** on exactly the commits that need it most.
+  So `r(prompt_tokens, completion_tokens) = 0.072` still holds — the model reasons ~11k tokens
+  regardless of input, and this run's 11,417 sits squarely in last night's 9,960-12,548 band. But
+  **time is not token count**: prompt size drives duration through *prefill* and *generation rate*,
+  which is what `r(prompt_tokens, seconds) = 0.379` was showing. **Any derived cap must be a function
+  of prompt size, not a single number** — the deeper reason a tuned constant cannot be right here.
   **The analysis cap is INERT, not redundant, and the difference decides whether it may be deleted.**
   Asked directly 2026-08-10 and answered from every record on disk (132 `analysisLength` samples), not
   from the docstrings. Two things share the name:
@@ -2613,6 +2627,43 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   900 came to be wrong.** A reasoning-token budget is machine-independent, and a `--max-seconds` should
   be *derived from it* at a measured rate for the overshoot job `adr/021` actually assigns it, rather
   than being the primary bound it accidentally became.
+  **FOURTH FIX CANDIDATE, and it may supersede the cap question: cap the time but KEEP THE WORK.**
+  Raised by the user 2026-08-10. Today a `deadline-timeout` discards everything the run produced —
+  ~14k tokens paid for, **zero bytes kept**. The plumbing is already almost there, and this is read
+  off the code, not assumed: `stream-collect.mjs` accumulates into `answer` (`.content` and
+  `.reasoning`), and its `onExpire` already reads `answer.content.length + answer.reasoning.length` to
+  build the error message. **It knows how much text it holds and throws the text away while keeping
+  the count.** Carrying `answer` out on the failure is the same move the file already makes for
+  `timings`, whose comment defends exactly this reasoning ("a stream that died 50,000 characters into
+  reasoning observed a real prefill and a real partial generation; throwing them away leaves the
+  attempt record unable to say...").
+  **The catch that ranks the options: findings come LAST.** 97-98% of tokens are `reasoning_content`,
+  and the findings JSON is emitted in `content` only after reasoning completes. So a mid-reasoning
+  timeout holds a large `reasoning` and an **empty `content`** — raw salvage yields the model's
+  thinking and none of its conclusions, landing in the existing `unreadable` bucket rather than
+  `findings`. Hence, in increasing cost:
+  1. **Keep the partial in the record.** Attach `answer` to the failure and store it on the entry.
+     Near-zero cost, strictly better than discarding, and a human can read what the reviewer was
+     noticing. **Produces no findings.**
+  2. **A salvage second pass** — the interesting one. On expiry send a short follow-up: *"here is your
+     analysis so far, emit findings from it now."* The economics work **because prefill is cheap here
+     and generation is not**: 3.9k-37.8k prompt tokens cost 24-261s, while generation costs 79-770s.
+     Feeding ~12k tokens of reasoning back and asking for findings only (~500-1,500 tokens) should
+     cost ~2-4 minutes, converting a wholly wasted 900s into real findings. **Precedent in this repo**:
+     `adr/020`'s `salvageOutcome`, "so the answer outlives the row that would not take it".
+  3. **Restructure so findings stream first — NO.** `adr/003` measured it: findings-first produced 112
+     output tokens and one vague non-defect, because a grammar constrains generation from the first
+     token. That ordering is why the reviewer finds real bugs. Recorded so it is not re-proposed.
+  **Two constraints on (2), neither optional.** It is **not** findings-first — the reasoning already
+  happened and the model is being asked to conclude — but that reasoning was cut *mid-thought*, so its
+  conclusions may be partial and the entry **must be labelled**. `sweep-outcome.mjs` `classify`
+  already carries the envelope fields that change what a reader should believe (`analysisCut`,
+  `atCap`, `hunksOnly`, `dropped`, `reason`) and a `salvaged` flag belongs beside them, or `adr/021`'s
+  guarantee breaks and a truncated review reads as a complete one.
+  **Why this may supersede the tuning question entirely:** with salvage, `--max-seconds` stops meaning
+  *"throw this away"* and starts meaning *"stop thinking and conclude"*. That is a defensible bound at
+  almost any value, and — unlike a number calibrated to one model on one machine — **it does not rot
+  when the model changes**, which is the failure mode every other candidate here shares.
   Note the interaction before raising anything: a higher cap multiplies the **unwatched** window,
   which is OAI-132 — and with no incremental record, a longer run risks more.
   **One thing that WORKED, recorded so it is not re-litigated:** 20 `deadline-timeout`s produced
