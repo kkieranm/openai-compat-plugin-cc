@@ -2589,14 +2589,32 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   - **"Prefill is nearly irrelevant" is FALSE for large commits.** It was 24-261s last night only
     because no *completed* run exceeded 37.8k prompt tokens — the sample was truncated by the very cap
     under investigation. Here prefill is **29% of the run**.
-  - **The generation rate is not a constant 15.82 tok/s.** This run managed **10.6 tok/s**: a longer
-    context slows generation as well as lengthening prefill. A cap derived from the 15.82 figure would
-    be **~50% short** on exactly the commits that need it most.
+  - **The generation-rate claim is WITHDRAWN — the probe was run on a throttled machine.** This run
+    measured **10.6 tok/s** against last night's 15.82, and that was first written up here as
+    *"a longer context slows generation"*. **That attribution is unsupported and is retracted.**
+    Checked after the user flagged it: `pmset` reported **battery power, 46%, and `powermode 1` — Low
+    Power Mode ON**. The variable that actually differed between the two measurements is **the power
+    state, not the context length**, and no run varied context length with power held constant. This
+    is the failure the `a-dismissal-must-name-its-axis` note exists for: naming a mechanism without
+    varying it. **The 10.6 figure is not evidence about context, and 1,518s is an upper bound under
+    throttling rather than a duration this machine needs.** Whether context length affects the rate is
+    now an **open question with no measurement behind it either way**.
   So `r(prompt_tokens, completion_tokens) = 0.072` still holds — the model reasons ~11k tokens
-  regardless of input, and this run's 11,417 sits squarely in last night's 9,960-12,548 band. But
-  **time is not token count**: prompt size drives duration through *prefill* and *generation rate*,
-  which is what `r(prompt_tokens, seconds) = 0.379` was showing. **Any derived cap must be a function
-  of prompt size, not a single number** — the deeper reason a tuned constant cannot be right here.
+  regardless of input, and this run's 11,417 sits squarely in last night's 9,960-12,548 band, which is
+  the one claim here **not** disturbed by the power state.
+  **Which numbers to trust (user, 2026-08-10): the overnight run was on mains and its figures stand;
+  the probe was on battery (`powermode 1`) and its durations are the outlier.** So 15.82 tok/s and the
+  900s-censored distribution are the sound data, and probe 1's 1,518s is a **throttled upper bound** —
+  good for the one thing it settled, that the commit needs materially more than 900s, and for nothing
+  finer. The probe was stopped after result 1 rather than finishing on battery.
+  **THE OBJECTIVE, restated by the user and it supersedes the quantile framing above: find the WORST
+  CASE, then verify a cap above it lets the sweep complete.** Not "fit a distribution" — the censored
+  sample cannot support that and does not need to. The experiment that answers it is **one overnight
+  run on mains at a deliberately generous `--max-seconds` (~3600) over the same window**, which yields
+  both halves at once: the slowest commit's real duration, and whether the corpus finishes when the cap
+  is not the binding constraint. **A cap is then set above the observed worst case**, with the margin
+  stated. If a commit still hits 3600 the tail is longer than assumed and the salvage candidate below
+  becomes the answer rather than a bigger number.
   **The analysis cap is INERT, not redundant, and the difference decides whether it may be deleted.**
   Asked directly 2026-08-10 and answered from every record on disk (132 `analysisLength` samples), not
   from the docstrings. Two things share the name:
