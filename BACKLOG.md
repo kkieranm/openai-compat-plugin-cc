@@ -2591,9 +2591,26 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   exactly 900s: that says they need `>900`, **never how much more**. "Raise it to ~1900 and most will
   complete" is an assumption. **Probe launched 2026-08-10 08:35** — three of the timed-out commits
   re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`.
-  **PROBE RESULT 1 of 3 — `e1cc17dc9`: 1,518s, uncensored, outcome `findings` (1 high).** It completed
-  well inside the 2,400s cap, so this is a real duration and not another `>N`. Last night the same
-  commit burned 900s and returned nothing.
+  **PROBE COMPLETE 2026-08-10, four commits at a 2,400-3,600s cap. The 1,800s choice is VALIDATED with
+  margin, and nothing came near it.** Records in `bench/results/oai138-worstcase-2026-08-10/`.
+  | commit | outcome | seconds | prompt tokens |
+  |---|---|---|---|
+  | `3e7d42965` | **findings** | 1,163 | ~40,979 |
+  | `f6a471fa7` | **findings** | 1,192 | ~32,499 |
+  | `e1cc17dc9` | starved (`token-exhaustion`) | 1,307 | — |
+  | `77c1eab97` | failed (`empty-completion`) | 14 | ~144,721 |
+  **Two commits that returned NOTHING at 900s produced findings at ~1,170-1,190s on mains.** That is
+  the claim the cap rise rests on, measured rather than assumed. **The slowest thing ever observed to
+  complete is 1,518s** (and that was throttled; on mains the same corpus runs ~1,190s), so 1,800
+  carries **at least 18% margin over the worst observed completion** and no run approached it.
+  **What this does NOT establish**, stated because the sample is four: the 20 failures remain
+  right-censored as a set — these are three of them, plus one unmeasurable. **`77c1eab97` cannot be
+  measured at all until OAI-139 is fixed**: on a cold process it builds a ~145k-token prompt against a
+  61,696 window and dies in 14s, so the true worst case of this corpus is still unknown, and it is
+  unknown for a *sizing* reason rather than a timing one.
+  **One in four still lost to `token-exhaustion` at a cap that was not binding** — which is the
+  measurement behind "raise the cap AND salvage": the cap rise converts some losses into findings and
+  leaves others exactly where they were.
   **It also corrects two claims made higher up in this item.** The split was **prefill 441s +
   generation 1,076s** on a **43,340-token** prompt:
   - **"Prefill is nearly irrelevant" is FALSE for large commits.** It was 24-261s last night only

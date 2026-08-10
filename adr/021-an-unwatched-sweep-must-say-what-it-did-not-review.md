@@ -127,6 +127,13 @@ independent ceiling a longer deadline cannot relieve**: a run given 3600s exhaus
 1307s instead. **Nothing distinguishes 1800 from 2400** — the 2400s experiment finished at 1518s, so
 it shows only that some cap above 1518 sufficed.
 
+Validated after the fact rather than argued: four of the timed-out commits were re-run at a 2,400–
+3,600s cap. **Two that returned nothing at 900s produced findings at 1,163s and 1,192s.** One starved
+on tokens at 1,307s with the clock not binding, and one could not be measured at all — on a cold
+process it builds a prompt far larger than the window, which is a sizing defect tracked separately.
+So **no observed run approached 1800**, and the slowest completion ever recorded is 1,518s. The true
+worst case of the corpus is still unknown, and the sample is four.
+
 The trade is explicit: worst-case attempts in a ten-hour night halve, 40 → 20. That is right **only
 while a cut run returns nothing at all**, which makes breadth bought at 900s breadth in the form of
 unknown coverage. When salvage-on-loss lands and a cut run yields something, this should be
