@@ -179,7 +179,13 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12d — what the first completed overnight sweep found, 2026-08-10.** **OAI-138**, **OAI-137**.
+**Tier 12d — what the first completed overnight sweep found, 2026-08-10.** **OAI-139**, **OAI-138**,
+**OAI-137**.
+**OAI-139 leads the tier and was found by probing OAI-138, not by the sweep**: when nothing is
+resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
+fallback therefore cannot fire — so a cold start ships untrimmed input and the failure arrives wearing
+a known LM Studio symptom. It leads because it is a live correctness defect on every cold invocation,
+where OAI-138 is a tuning question, and because nothing in OAI-138's fix can reach it.
 **OAI-138 leads because it is the difference between a sweep and half a sweep**: 20 of 40 eligible
 commits died on `--max-seconds 900`, a cap inherited from the harness's first commit whose documented
 job is bounding *overshoot past the stop time*, never *fitting a review*. It also inverts OAI-115's
@@ -2688,3 +2694,37 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **zero aborts**. That reason is minted from the caller's own budget, and OAI-119 was filed because
   it counted toward `--abort-after 3` — *"three slow commits abort a healthy sweep."* The OAI-120 fix
   held in the field.
+- **OAI-139** — **When nothing is resident the window is unknown, so the size guard is DISABLED and
+  the drop-to-hunks fallback can never fire — a cold start sends untrimmed input.** Filed 2026-08-10,
+  found while probing OAI-138 and **distinct from it**: this is a window-detection defect, not a
+  wall-clock one, and raising `--max-seconds` cannot touch it.
+  **Reproduced by accident, then confirmed in code.** Commit `77c1eab97` was re-run alone on a fresh
+  process with `lms ps` empty. It failed in **14 seconds** with `empty-completion` on all three
+  attempts, at **`promptChars: 492053`** — roughly **145k tokens against a 61,696 window**. The same
+  commit in the overnight sweep, reviewed mid-run with the model already resident, built a prompt of
+  **150,056 chars** — **3.3x smaller** — and failed as `deadline-timeout` instead. Same commit, same
+  code, same machine; the only difference is whether a model was loaded when the process started.
+  **The mechanism, read off the code rather than inferred.** `context-guard.mjs:46-51`:
+  `if (!contextLength) return { checked: false, note: 'Context window unknown for …' }`. The guard
+  **returns without checking**, so the oversize refusal below it never throws. That refusal is the one
+  carrying `reason: 'oversize'` — its own comment calls it *"the one refusal that sending less input
+  can fix, so the one a caller may retry smaller"* — and it is what makes a caller drop `changed`
+  files and fall back to the hunks. **No refusal, no retry, no dropping.** `contextLength` comes from
+  `loaded_context_length` (CLAUDE.md: never `max_context_length`), which is **null for a model that is
+  not resident**, so the whole chain is disarmed exactly when a run starts cold.
+  **Why it matters beyond one commit.** Every sweep starts with nothing loaded, so its **first**
+  review runs unguarded, and any single-commit invocation does too. `adr/005`'s guarantee — *"the reply
+  falls back to the diff alone when the window is too small"* — is **unavailable in precisely the
+  situation it was written for**. The failure is then attributed to the server (`empty-completion` is
+  a documented LM Studio drop shape), which is how it stayed invisible: a client-side sizing bug
+  wearing a known server-side symptom.
+  **A hypothesis this DISPROVED, recorded so it is not re-run.** The obvious next thought was that
+  last night's 20 timeouts were also over-window. **They were not**: measured across all eligible
+  entries, the failures' inputs run 7,253-48,583 tokens with **zero above 61,696**. They are 2-3x
+  larger than the completions (median 33,071 vs 9,213-15,669) and that is why they are slow, but they
+  fit. **OAI-138 remains a time problem; this is a separate size problem.**
+  **Fix shape (not decided).** Options are to treat an unknown window as a *small* one rather than an
+  unbounded one (fail safe, not fail open); to re-probe once a model becomes resident instead of
+  binding the window at process start; or to make the drop-to-hunks path trigger on an estimate rather
+  than only on the guard's refusal. Note the interaction with OAI-134: that item established the
+  plugin has **no channel to influence a load**, so it cannot ensure residency — it can only notice.
