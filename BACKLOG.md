@@ -2688,6 +2688,55 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   900 came to be wrong.** A reasoning-token budget is machine-independent, and a `--max-seconds` should
   be *derived from it* at a measured rate for the overshoot job `adr/021` actually assigns it, rather
   than being the primary bound it accidentally became.
+  **DECIDED 2026-08-10 (user, with Claude and Codex agreeing): SALVAGE-ON-LOSS, *AND* RAISE THE CAP.
+  They are complementary, not alternatives.** An earlier draft of this line said "not raising the
+  cap", and **that was too absolute — corrected on the user's challenge.** The measurement says
+  raising the cap does not **reliably** recover a lost review; it does not say it recovers none.
+  `e1cc17dc9` completed at **1,518s**, which no 900s cap could ever have reached. So:
+  - **A higher cap recovers the runs that merely need more time.** Cheap, one constant, available
+    immediately.
+  - **Salvage recovers the runs that die anyway** — on either bound, since raising the cap exposes
+    `token-exhaustion` as the next ceiling. It is the part that does not rot when the model changes.
+  Ruled out and kept as rejected alternatives with their evidence: raising the *reserve* alone (moves
+  the run back into the wall cap) and treating a tuned constant as the whole fix. **Not yet built**:
+  this session's feature budget was spent on OAI-134.
+  **CAP VALUE: 1,800s, PROVISIONALLY — Claude and Codex agreeing, and the provisionality is the
+  point.** The evidence bounds it and does not identify it:
+  - **900s is too low** — 20 of 40 hit it exactly and the slowest *completion* was already 884s.
+  - **~1,518s is needed** by at least one useful review (and that was on a throttled machine).
+  - **More time cures nothing beyond that** — the 3,600s run exhausted tokens at 1,307s.
+  **There is NO evidence distinguishing 1,800 from 2,400.** The 2,400s experiment completed at 1,518s,
+  so it demonstrates only that *some* cap above 1,518 sufficed. 1,800 clears the one observed useful
+  duration by 282s (19%) while doubling rather than tripling worst-case exposure. **It is a
+  conservative operating decision, not an identified optimum**, and is to be revisited once salvage
+  produces uncensored timings.
+  **The coverage trade, computed rather than asserted.** The sweep is strictly sequential and checks
+  the overall deadline immediately before each review (`review-sweep.mjs:190`), so worst-case attempts
+  in a 10-hour night go **40 → 20 → 15** for 900 → 1,800 → 2,400. Those are ceilings, not expected
+  counts. The trade is worth taking because an extra commit attempted after a timeout does not
+  compensate for the timed-out commit returning nothing: the current setting buys breadth *in the form
+  of unknown coverage*.
+  **An interaction NEITHER of us had considered, found by Codex: a wall-clock deadline failure does
+  not count toward `--abort-after`, and it RESETS the consecutive-outage streak**, because every
+  non-outage sets the counter back to zero. So a hard commit can burn 1,800s without advancing the
+  outage counter, and **a higher cap can delay discovering a genuine server outage**. Worth checking
+  against OAI-119/OAI-120's territory before the value lands.
+  Confirmed safe: retries do **not** each get a fresh cap — `requestFindings` mints one absolute
+  expiry shared across attempts and the schema fallback (`review-request.mjs:187`), specifically to
+  prevent cap multiplication.
+  **A per-commit derived cap is the right eventual shape but is NOT buildable now.** The sweep knows
+  only the SHA and fixed options when it builds the child command (`review-sweep.mjs:120`), and the
+  request layer mints one immutable `expiresAt` before building the final ladder request (`:183`).
+  Prompt size alone cannot predict duration: cached vs cold prefill differs enormously (**11.5s vs
+  421.7s for the same prompt**, from the records), generation is 97-98% reasoning whose token count is
+  unknown before sending, and predicting from the whole reserve would be absurdly pessimistic. An
+  adaptive design needs persisted per-model/per-machine throughput observations or a progress-sensitive
+  deadline with a hard ceiling.
+  **The carried failure mode of 1,800s, stated: long-tail head-of-line blocking.** One pathological
+  commit can monopolise 30 minutes, cut nightly coverage, and overshoot the stop time by that much —
+  and anything needing more than 1,800s stays right-censored.
+  What remains open is the **design of salvage** — two loss shapes, the labelling rule, and where the
+  partial is captured — which needs its own grill.
   **FOURTH FIX CANDIDATE, and it may supersede the cap question: cap the time but KEEP THE WORK.**
   Raised by the user 2026-08-10. Today a `deadline-timeout` discards everything the run produced —
   ~14k tokens paid for, **zero bytes kept**. The plumbing is already almost there, and this is read
@@ -2760,6 +2809,14 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   entries, the failures' inputs run 7,253-48,583 tokens with **zero above 61,696**. They are 2-3x
   larger than the completions (median 33,071 vs 9,213-15,669) and that is why they are slow, but they
   fit. **OAI-138 remains a time problem; this is a separate size problem.**
+  **DECIDED 2026-08-10 (user, Claude and Codex agreeing): do NOT set a per-provider `contextLength`
+  as an interim mitigation.** It was proposed and rejected on Codex's reasoning: `delegate.mjs:149`
+  lets a configured value override per-model detection **unconditionally**, this profile serves six
+  models whose windows were never measured, and `adr/002` records the author removing exactly such an
+  override from their own config. Decisively, it would **mask this defect while making the guard look
+  armed** — removing the runtime symptom OAI-139 needs to stay observable and preventing an ordinary
+  run from ever testing the fallback. **The accepted risk of leaving it unset** is that a cold-start
+  first review stays fail-open; that risk is visible and attributable, which the alternative is not.
   **CODEX REVIEW 2026-08-10 — two of the three claims above were overstated. Corrected here.**
   - **Claim A (the guard returns early) — TRUE**, `context-guard.mjs:46`.
   - **Claim B — FALSE AS WRITTEN, narrower version true.** I cited the wrong files: the caller is
