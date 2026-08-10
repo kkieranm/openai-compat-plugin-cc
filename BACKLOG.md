@@ -2583,6 +2583,36 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`. If they land
   near 1400-1600s the derivation holds; **if one runs to 2400 the ceiling is not what bounds
   generation and this whole framing needs revisiting.**
+  **The analysis cap is INERT, not redundant, and the difference decides whether it may be deleted.**
+  Asked directly 2026-08-10 and answered from every record on disk (132 `analysisLength` samples), not
+  from the docstrings. Two things share the name:
+  - **The reserve-derived cap (`analysisCapFor`) has earned its keep**: 25 truncations, every one at a
+    reserve-derived value — 28,000 (x10), 30,683 (x5), 47,724 (x2), 14,407 (x1), 7 unrecorded. That is
+    `adr/008`'s real point, a schema advertising more reasoning room than the reply budget could pay
+    for.
+  - **`ANALYSIS_CEILING = 74,000` has NEVER bound anything.** High-water mark across all 132 samples is
+    **49,316 characters**, 66% of it. Introduced at that value on 2026-07-28 (`b66a3d5`, OAI-15) and
+    never reached since; the 28,000 cuts predate it and belong to the fixed cap it replaced. Its
+    docstring calls it a wall-clock bound stopping a review that "would stop being worth waiting for".
+    **Nothing is doing that job.**
+  - **Both are dormant on the path that runs.** All 25 truncations fall between 2026-07-27 and 07-30;
+    since `adr/003` (2026-08-04) `analysisCap` is `null`.
+  **Inert is not redundant**: the mechanism sleeps because of a *separate* decision that OAI-117 built
+  `--structured-output` to reverse, and never-fired is not this repo's cannot-fire — 74,000 is
+  reachable given a reserve above ~22,700 tokens and a verbose enough model. `adr/009` wanted three
+  zero-yield runs before deleting a stage. **Do not read this as licence to delete it**; read it as
+  "it is not the thing to derive a cap from".
+  **COST IS NOT PREDICTABLE FROM THE COMMIT, so there is no per-commit budget to derive.** Measured
+  over the 18 completions: **r(prompt_tokens, completion_tokens) = 0.072** — essentially zero. A
+  3,933-token prompt drew 4,375 completion tokens; a 37,863-token prompt drew 5,945. Completions span
+  1,282-12,548 with no relation to input size. **r(completion_tokens, seconds) = 0.940.** So a cap is
+  a **quantile choice on an unpredictable, right-censored distribution**, never a sizing calculation.
+  **That r = 0.940 is the relation the fix should express.** Wall clock is a *proxy for tokens*, and it
+  is the worse of the two to store: seconds move with the model, the machine and its load, while tokens
+  do not. **A seconds cap calibrated today rots the moment any of those change — which is exactly how
+  900 came to be wrong.** A reasoning-token budget is machine-independent, and a `--max-seconds` should
+  be *derived from it* at a measured rate for the overshoot job `adr/021` actually assigns it, rather
+  than being the primary bound it accidentally became.
   Note the interaction before raising anything: a higher cap multiplies the **unwatched** window,
   which is OAI-132 — and with no incremental record, a longer run risks more.
   **One thing that WORKED, recorded so it is not re-litigated:** 20 `deadline-timeout`s produced
