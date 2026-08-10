@@ -2532,11 +2532,59 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   (18 KB / 172 KB). **`bench/results/` is gitignored**, so the table above is the durable copy and the
   JSON is the only place the per-attempt timings survive — read it before any clean, or the
   calibration below has to be re-measured over another night.
-  **What to do is a measurement, not a guess**: the record holds per-attempt `prefillMs` and
-  `generationMs` (`adr/009`), so the honest next step is to read the distribution of what the 18
-  completions actually took and set the cap from it, rather than doubling 900 and re-running a night.
-  Note the interaction before raising it: a higher cap multiplies the **unwatched** window, which is
-  OAI-132 — and with no incremental record, a longer run risks more.
+  **FRAMING CORRECTED 2026-08-10, same day, by reading the record this item was filed from.** The
+  filing above says the next step is to read the timing distribution and set the cap from it. **That
+  is not the defect and not the fix**, and the original wording is kept because the numbers in it are
+  sound and only its conclusion was wrong.
+  **What the record actually shows.** Generation dominates and prefill is nearly irrelevant: prefill
+  24-261s (p50 68), generation 79-770s. Pooled rate **15.82 tok/s** over the 18 completions
+  (per-run 13.7-16.9). So 900s buys ~14k completion tokens, and the completions cluster at
+  11.2k-12.5k — **against the ceiling the cap imposes**, not against anything the design chose.
+  **THE ACTUAL DEFECT: nothing bounds the reviewer's reasoning on the path it actually runs.**
+  A first attempt at this paragraph claimed `ANALYSIS_CEILING` is a rival wall-clock bound
+  disagreeing with `--max-seconds` by 2x. **That is WRONG and is recorded rather than quietly
+  replaced**, because it is the more tempting reading and the next person will reach for it too.
+  `ANALYSIS_CEILING` bounds the schema's `analysis` **string**, and:
+  1. **No schema was sent.** `review-sweep.mjs` never passes `--structured-output`, and per `adr/003`
+     the default path has sent no schema since **2026-08-04** (the grammar segfaults LM Studio at
+     ~14k generated tokens). Proved from the record, not assumed: every entry carries
+     `analysisCap: null`, which `structured.mjs:133` emits precisely when `structured` is false.
+  2. **Even with a schema it would not have bound this.** Measured across the completions,
+     `analysisLength` is **359-685 characters** while `completion_tokens` is **9,960-12,548**, of
+     which `completion_tokens_details.reasoning_tokens` is **97-98%** (e.g. 12,326 of 12,548). The
+     cost is native reasoning in `reasoning_content`, and the `analysis` field is three orders of
+     magnitude below the 74,000-char ceiling.
+  **So `--max-seconds` is not competing with a designed bound — it is the ONLY bound**, together with
+  the reply reserve that `token-exhaustion` reports (which fired once in 40). `adr/003`'s
+  default-off decision on 2026-08-04 was taken to stop a segfault and, as a side effect nobody
+  costed, **left the wall clock as the sole governor of how long a review may think** — a role it was
+  never sized for, its documented job being to bound *overshoot past the stop time* (`adr/021`).
+  **The `review-schema.mjs:70-77` comment is not wrong, it is unreachable**: *"~6-9 minutes on the
+  MoE and ~28 minutes on a dense 27B"* still describes the schema path faithfully. It is simply dead
+  on the default path, and a reader costing the reviewer from it would conclude the reasoning is
+  bounded when it is not.
+  **A correction to the throughput argument**, which was also wrong in the filing above: raising the
+  cap does **not** halve coverage. The 8h22m run was not cap-bound — it stopped because every commit
+  was settled. Each of the 20 timeouts burned a **full 900s and returned nothing**, so ~5 hours of the
+  8h22m bought zero output. A higher cap reallocates time from *guaranteed waste* to *possible
+  completion*; it does not trade commits for depth in the way "40 at 900s vs 20 at 1800s" suggests.
+  **Fix shape LEANING (user, 2026-08-10): express the relation in code, rather than tuning a
+  constant** — chosen before the correction above, and it survives it, because the defect it targets
+  is the *absence of any relation between the bounds*, which is now more clearly the problem, not
+  less. What it can no longer mean is "derive the cap from `ANALYSIS_CEILING`", since that ceiling
+  does not govern the tokens being spent. The candidates it can mean:
+  a **reasoning-token budget** the default path actually enforces (there is none today);
+  a **derived** `--max-seconds` from a target token count and a measured rate;
+  or a **startup check** refusing a cap that cannot reach the work it authorises.
+  Not decided — this is the leaning carried into the grill.
+  **The data is RIGHT-CENSORED and one number must not be read off it.** All 20 failures sit at
+  exactly 900s: that says they need `>900`, **never how much more**. "Raise it to ~1900 and most will
+  complete" is an assumption. **Probe launched 2026-08-10 08:35** — three of the timed-out commits
+  re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`. If they land
+  near 1400-1600s the derivation holds; **if one runs to 2400 the ceiling is not what bounds
+  generation and this whole framing needs revisiting.**
+  Note the interaction before raising anything: a higher cap multiplies the **unwatched** window,
+  which is OAI-132 — and with no incremental record, a longer run risks more.
   **One thing that WORKED, recorded so it is not re-litigated:** 20 `deadline-timeout`s produced
   **zero aborts**. That reason is minted from the caller's own budget, and OAI-119 was filed because
   it counted toward `--abort-after 3` — *"three slow commits abort a healthy sweep."* The OAI-120 fix
