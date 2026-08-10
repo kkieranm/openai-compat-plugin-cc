@@ -2723,8 +2723,39 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   entries, the failures' inputs run 7,253-48,583 tokens with **zero above 61,696**. They are 2-3x
   larger than the completions (median 33,071 vs 9,213-15,669) and that is why they are slow, but they
   fit. **OAI-138 remains a time problem; this is a separate size problem.**
-  **Fix shape (not decided).** Options are to treat an unknown window as a *small* one rather than an
-  unbounded one (fail safe, not fail open); to re-probe once a model becomes resident instead of
-  binding the window at process start; or to make the drop-to-hunks path trigger on an estimate rather
-  than only on the guard's refusal. Note the interaction with OAI-134: that item established the
-  plugin has **no channel to influence a load**, so it cannot ensure residency — it can only notice.
+  **CODEX REVIEW 2026-08-10 — two of the three claims above were overstated. Corrected here.**
+  - **Claim A (the guard returns early) — TRUE**, `context-guard.mjs:46`.
+  - **Claim B — FALSE AS WRITTEN, narrower version true.** I cited the wrong files: the caller is
+    `review-ladder.mjs:47`, not `review.mjs` or `git-diff.mjs`, and the drop happens there via
+    `if (error.reason !== 'oversize') throw error;` then a rebuild with whole files off. Other paths
+    DO reach the hunks rung independently — explicit `--diff-only` (`git-diff.mjs:219`), and changes
+    with no readable body (deletions, binaries, vanished files) — but **none of them drops a populated
+    `changed` collection.** So "the fallback is reached only via that refusal" is false; **"an
+    oversized whole-file review with an unknown window never drops those files" is true**, and that is
+    the defect.
+  - **Claim C — FALSE AS UNCONDITIONAL, true for unconfigured LM Studio.** `delegate.mjs:149` resolves
+    `contextLength: profile.contextLength ?? windowFor(described, model)`, so **a configured
+    `contextLength` still arms the guard** — which is why the note tells the user to set one, and it
+    is a real mitigation available today. Detection is also stricter than I said: `model-info.mjs:87`
+    requires `state === 'loaded'` **and** a positive integer, not merely a non-null field. And it does
+    not generalise: llama.cpp `/props`, TGI `/info` and oMLX report a served window **without**
+    residency, so this is an LM-Studio-shaped hole, not a universal one.
+  **FIX RECOMMENDED BY CODEX: option 3, as a cap on optional whole-file ENRICHMENT — not option 1.**
+  I had favoured assuming a small window; Codex argued the better seam is `target.changed`, which is
+  already explicitly droppable, where `target.files` may be the only copy of untracked or `--file`
+  content. In `prepareLadder`, build and measure the whole-file candidate and choose the hunks rung
+  when it exceeds a named enrichment ceiling **even when `contextLength` is unknown**, keeping the
+  existing guard for authoritative refusal when a real window IS available. **This invents no window
+  number**, which is the objection to option 1.
+  Its stated constraints: never silently truncate an individual file; never apply the cap to
+  `target.files`; never turn an oversized irreducible diff into a fabricated context-window refusal;
+  set `hunksOnly: true` exactly as the existing fallback does; and **give the ceiling its own name and
+  rationale** — `REVIEW_UNKNOWN_WINDOW_TOKENS` is a *reply* budget and must not be reused as an input
+  threshold.
+  Its risks, as stated rather than as reassurance: on a large but undetectable window it may discard
+  whole-file context that would have fit, reducing precision and possibly reviving the false positives
+  `adr/005` exists to address; the threshold is a heuristic, not proof of fit; a huge diff or a pinned
+  `--file` can still overload an unknown window because those inputs cannot honestly be dropped; and a
+  threshold chosen against this 61,696-token machine may age badly across providers.
+  Note the interaction with OAI-134: that item established the plugin has **no channel to influence a
+  load**, so it cannot ensure residency — it can only notice.
