@@ -1,13 +1,9 @@
-# Handover — 2026-08-09, session end
+# Handover — 2026-08-10
 
-**Everything is committed and the tree is clean. ONE THING IS RUNNING — see below.** No ladder pass
-marker or batch token exists.
+**Everything is committed and both trees are clean. Nothing is running.** The overnight sweep
+finished on its own; no ladder pass marker or batch token exists; LM Studio holds nothing.
 
-## RUNNING: the overnight review sweep
-
-Launched **2026-08-09 20:39 BST**, detached (`nohup`, pid was `51101` — **re-check it, pids are
-reused**). It holds LM Studio and will run until it finishes or its 10-hour bound expires at about
-**06:39 BST on 2026-08-10**.
+## FINISHED: the overnight review sweep
 
 ```
 node bench/review-sweep.mjs --from 2f170b28871e910bbad8697b2e6037eadafe0bb9 \
@@ -15,18 +11,26 @@ node bench/review-sweep.mjs --from 2f170b28871e910bbad8697b2e6037eadafe0bb9 \
   --out-dir bench/results/sweep-2026-08-09-overnight
 ```
 
-- **40 eligible of 76 enumerated commits.** Confirmed progressing: `qwen/qwen3.6-27b` resident at
-  61696 context, `GENERATING`, ~2 minutes in.
-- **`--from` is a full SHA on purpose** — OAI-125 is open, and until it lands the resolved-SHA
-  guarantee reaches the artifact by one untested path, so short revs must not be used here.
-- **Log and records**: `bench/results/sweep-2026-08-09-overnight/`. **`bench/results/` is
-  gitignored** — copy anything worth keeping into the tracker before a clean.
-- **It is detached, so nothing will notify anyone when it ends.** Read the log; do not infer from
-  process liveness alone, and per `adr/021` the report itself says what it did **not** review — read
-  that section before treating coverage as complete.
-- **To stop it**: kill the pid, then `~/.lmstudio/bin/lms unload --all`.
+Ran **2026-08-09 20:39 → 2026-08-10 05:01 BST (8h22m)** and stopped because **every enumerated commit
+was settled** — not on its 10-hour bound. **The first sweep ever run to completion here.**
 
-Everything below describes the state as of launch.
+**76 enumerated · 40 eligible · 18 reviewed.** skipped-no-code 36 · **failed 20, every one
+`deadline-timeout`** · findings 11 · clean 7 · unreadable 1 · starved 1.
+
+- **The result is OAI-138**: half the eligible corpus was lost to `--max-seconds 900`, a cap
+  *inherited* from the harness's first commit rather than chosen. It also inverted OAI-115 —
+  starvation once, wall-clock exhaustion twenty times, zero transport drops.
+- **Two findings were verified by hand**; the rest are unverified small-model claims. `readOmlx`'s
+  empty-`models` fallback is **real** and is now OAI-137. The `caveats.mjs:167` "high" syntax-error
+  claim is **false** — the string is single-quoted and those backticks are literal markdown; the file
+  parses and the suite never went red.
+- **Artifacts**: `bench/results/sweep-2026-08-09-overnight/review-sweep-2026-08-10T04-01-56-336Z.{md,json}`.
+  **`bench/results/` is gitignored.** The disposition table lives in OAI-138, but the **JSON is the
+  only copy of the per-attempt timings** the cap calibration needs — read it before any clean.
+- **`--from` took a full SHA on purpose** — OAI-125 is open, so until that seam lands the resolved-SHA
+  guarantee reaches the artifact by one untested path and short revs must not be used here.
+
+Everything below describes the 2026-08-09 session that preceded it.
 
 ## The one-line answer to what this session was for
 
@@ -52,13 +56,14 @@ right call.
 - **Benchmark records**: `bench/results/model-matrix-2026-08-08/` — 10 arms, ~364 KB.
   **`bench/results/` is gitignored**, so quote figures from the tracker rather than assuming these
   files survive a clean.
-- **Tracker**: **tier 12c now leads with OAI-136** (OAI-134 shipped and moved to `BACKLOG_DONE.md`);
-  tier 12b is the follow-on ladder's residue.
+- **Tracker**: **tier 12d leads (OAI-138, OAI-137)**, filed 2026-08-10 from the completed sweep;
+  tier 12c holds OAI-136 and what the benchmark found; tier 12b is the follow-on ladder's residue.
 
 ## Servers, as left
 
-- **LM Studio** on `:1234`, app **0.4.20+1**, CLI commit `71bd99c`. Nothing resident (`lms unload
-  --all` was run). Current ids are `qwen/qwen3.6-27b` and `qwen/qwen3.6-35b-a3b` plus three gemmas.
+- **LM Studio** on `:1234`, app **0.4.20+1**, CLI commit `71bd99c`. **Nothing resident** — the sweep
+  ended and the model aged out on its 10-minute TTL; `lms ps` is empty. Current ids are
+  `qwen/qwen3.6-27b` and `qwen/qwen3.6-35b-a3b` plus three gemmas.
 - **oMLX 0.5.7** on `:8000`, served by the **DMG menu-bar app**. It was installed **twice** — once via
   CLI, once via DMG — and the user flagged the possible conflict; the DMG app is what answered. Its
   key is wired through **`apiKeyEnv: OMLX_API_KEY`**, not a config file, so a fresh shell must export
@@ -104,6 +109,9 @@ worth reusing: **does this sentence permit silent substitution?**
 
 ## Open, in priority order
 
+**OAI-138** — half the eligible sweep corpus is lost to an uncalibrated per-commit cap; the
+numbers are in the tracker and the timings are in a gitignored JSON.
+**OAI-137** — `readOmlx` ignores `data` when `models` is an empty array.
 **OAI-136** — `--model` bypasses the embedding-model rejection that `defaultModel` enforces, so a chat
 request can be sent to an embedder; `README.md:74` currently claims the opposite. Pre-existing, found
 by `codex-plain` while reviewing OAI-134. Fixing it is a **behaviour change needing its own grill** —
