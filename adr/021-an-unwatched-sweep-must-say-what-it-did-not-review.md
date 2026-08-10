@@ -113,6 +113,31 @@ already in flight is never truncated; overshoot is bounded by the per-commit `--
 have made a sweep of this repo review nothing at all on some nights, its recent history being
 documentation, while reporting that it had reached its limit.
 
+#### The per-commit cap acquired a second job by accident, and 900s could not do it
+
+Amended 2026-08-10. The paragraph above gives `--max-seconds` one job: bounding **overshoot** past
+the stop time. It silently acquired a second — *deciding how long a review may take* — and nothing
+ever calibrated it for that. The first sweep run to completion lost **half its eligible corpus** to
+it: 20 of 40 commits, every one `deadline-timeout`, **not one** a transport drop.
+
+The default is now **1800**, and the wording matters: it is **bounded by evidence, not identified by
+it**. 900 is too low — the slowest *completion* was already 884s. At least one useful review needed
+**1518s**. Beyond that more time cures nothing, because the reply-token reserve is a **second,
+independent ceiling a longer deadline cannot relieve**: a run given 3600s exhausted its tokens at
+1307s instead. **Nothing distinguishes 1800 from 2400** — the 2400s experiment finished at 1518s, so
+it shows only that some cap above 1518 sufficed.
+
+The trade is explicit: worst-case attempts in a ten-hour night halve, 40 → 20. That is right **only
+while a cut run returns nothing at all**, which makes breadth bought at 900s breadth in the form of
+unknown coverage. When salvage-on-loss lands and a cut run yields something, this should be
+revisited — and revisited against **uncensored** timings, which no run has yet produced, since every
+recorded failure sits exactly on whatever cap it was given.
+
+One interaction to keep in view: a wall-clock failure is deliberately **not** an outage, so it does
+not advance `--abort-after` — and it **resets** the consecutive counter. Doubling the cap therefore
+doubles the window in which a genuine outage can hide behind slow commits. That is tracked
+separately; it is not a reason to keep 900.
+
 ## Consequences
 
 - **The report states its own weakness.** Findings are unverified claims from a small model, and they

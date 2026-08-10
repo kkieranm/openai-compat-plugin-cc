@@ -41,7 +41,7 @@ const DEFAULTS = {
   include: ['scripts', 'bench', 'tests'],
   maxCommits: 40,
   scanLimit: 200,
-  maxSeconds: 900,
+  maxSeconds: 1800, // raised from 900, which lost half the corpus to deadline-timeout — see ADR 021
   maxAttempts: 3,
   abortAfter: 3,
 };
