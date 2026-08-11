@@ -2891,6 +2891,32 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **It is a CONSERVATIVE test and its asymmetry is stated:** `--diff-only` strips enrichment from
   every commit, where the ceiling would strip it only above the threshold. So a good result strongly
   de-risks the fix, while a bad one identifies the risk but likely overstates its incidence.
+  **RESULT 2026-08-11: INCONCLUSIVE by the letter, and the letter is what counts.** Diff-only kept
+  **12** of the 17, **lost 5** (all five going to `clean`, not to fewer findings), and made **7** new
+  commits finding-bearing; totals 19 finding-bearing and 35 findings against 17 and 23. Neither branch
+  fires: the design-change branch needed 5+ lost **with no credible replacements** and replacements
+  exist; the changes-nothing branch needed 15+ kept and only 12 were. Recorded as inconclusive rather
+  than argued either way.
+  **The result NOT in the thresholds is the one that matters: all five losses became `clean`.** A
+  false-clean is this repo's worst outcome shape, and it is exactly the under-enrichment risk. Also as
+  pre-registered, diff-only's better completion (39 of 40 vs 36) is **uninformative** here.
+  **REPLICATION LAUNCHED 2026-08-11 08:26, design challenged and changed by Codex.** My proposal was
+  two more whole-file runs to bound variance; Codex rejected it — that leaves the **diff-only** arm,
+  the one whose effect must actually be identified, as a single draw. Running instead **one more of
+  each arm**, both at 1800s on the same pinned SHA, **diff-only FIRST** so that any drift with time or
+  machine state no longer lines up with the arm as it did before. `lms unload --all` between arms for
+  the same cold-start state. Records in `bench/results/oai139-replication-2026-08-11/`.
+  **The decision statistic, fixed in advance: EXCESS NON-REPRODUCTION `E`.** Over the original 17
+  whole-file finding-bearing commits, let `L` be how many have their credible original finding absent
+  in a run; `E = mean(L_diffonly_1, L_diffonly_2) - L_wholefile_2`. **`E >= 5`: reject a blanket low
+  enrichment ceiling. `E <= 2`: the loss is ordinary run variation, proceed with the ceiling design.
+  Between: inconclusive.** Match **substantive findings**, not merely whether a commit produced any.
+  **Total findings and finding-bearing counts are explicitly NOT the decision statistic** — extra
+  findings may be false positives and cannot automatically offset lost established ones.
+  **Codex's stated failure mode for this design: nonstationary pseudo-replication.** Two sequential
+  samples per arm can look stable while power state, thermal load, residency or rare decoding paths
+  shift together, and `E` also rests on a human judging whether findings substantively match. A
+  decisive-looking answer may reflect one machine-day and one adjudicator.
 - **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
   with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
   OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
