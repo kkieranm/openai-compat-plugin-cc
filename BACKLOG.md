@@ -50,12 +50,10 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-62, OAI-67, OAI-66, OAI-64,
-OAI-69**. One subsystem, five independent closes, so they sit adjacent rather than merged.
-**OAI-62 leads by position only and is NOT live work — corrected 2026-08-08.** Its three defects (a
-worker killed mid-model-call, a paid-for answer discarded, a locked `openStore`) all **shipped at
-`77c1eab`** and were verified against disk; what remains is an owner decision, because its ladder
-ended `cap-without-approval` over OAI-106 (tier 11). It is not a build and must not be queued as one. OAI-67 and
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-67, OAI-66, OAI-64,
+OAI-69**. One subsystem, four independent closes, so they sit adjacent rather than merged.
+**OAI-62 closed 2026-08-12** — its three shipped fixes were accepted and its residual re-scoped into
+OAI-106; see BACKLOG_DONE. **OAI-67 now leads**, and it and
 OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash published as a clean
 `cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
@@ -255,12 +253,16 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
 **OAI-108**, **OAI-111**.
-**OAI-106 leads the tier because it is the reason OAI-62 reached its ten-pass cap without approval.**
+**OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
 salvaged answer — a false terminal state produced by contention, which is one of the outcomes OAI-62
-set out to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict. Anything that
-closes OAI-62 has to start here.
+set out to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict.
+**That sentence no longer gates anything: OAI-62 was CLOSED over the objection on 2026-08-12**, and
+the same day Codex reversed its own refusal when asked as a scheduling question rather than at a
+verdict point. What survives is the defect itself, and OAI-106 was re-scoped so its cheap half — the
+message stops asserting something false, with no new lifecycle state — is separable from the
+`persistence-pending` state that may never be worth building.
 The rest are last because nothing is broken today: each fires only under contention that has never
 been observed outside an injected test. They are here at all because ADR 020 exists to remove a
 comment that claimed a property the code did not have, and each is a smaller instance of that shape —
@@ -1338,71 +1340,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
   because the alternative is generating prose from a constant, which is worse than the problem.
 
-- **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
-  OAI-52 item (3) recorded "a `SQLITE_BUSY` expiry is retried, never terminalized" as an untested
-  property. It is not merely untested; it is **false in two places**, and this item supersedes that
-  sub-item.
-  **(a) The heartbeat kills the worker outright.** `job-heartbeat.mjs:57-60` calls `beat` and
-  `cancelRequested` inside a `setInterval` callback with **no try/catch**, and `job-record.mjs:176` and
-  `:207-209` are bare `db.prepare(...).run(...)` with no busy retry. **Proved by execution**:
-  `startHeartbeat` with a handle whose `prepare()` throws "database is locked" (errcode 5) kills the
-  process — exit 1, the probe's "SURVIVED" line never printed. So a contended database kills a running
-  worker **mid-model-call**. ADR 014 (~296) itself notes a suspended process holds the writer lock
-  until other writes fail past the timeout, so the contention it needs is a case the design already
-  anticipated.
-  **(b) `finish` discards a completed answer.** `cmd-task-worker.mjs:74` calls `finish` with no busy
-  retry, unlike queue acquisition which has one (`job-queue.mjs:111`). If the lock is held past the
-  10s timeout **after the model has already answered**, the outer catch files a storage error as a task
-  failure and the expensive answer is gone.
-  The catch added for (a) must be **narrowed to busy** — a blanket swallow would hide real corruption,
-  and the stale-beat → `stalled` → non-terminal path already handles a missed beat correctly.
-  **(c) `openStore` itself can throw `database is locked`, at the line whose comment says it cannot.**
-  Observed **once, live**, during the OAI-58 commit gate: `tests/queue.test.js:23` ("two jobs submitted
-  at once run one after the other, never together") failed with
-  `Error: database is locked at openStore (job-store.mjs:151)` — which is
-  `db.exec('PRAGMA journal_mode = WAL')`, the statement immediately after `busy_timeout` is set. The
-  comment at `:145-149` argues that setting `busy_timeout` **first** is what stops exactly this ("with
-  no timeout in force yet a second process opening the store at the same moment fails outright…
-  Every statement after this line waits instead"). It does not, at least not always: converting to WAL
-  needs an exclusive lock, and the busy handler is not honoured for every such case.
-  **Rate and trigger, stated honestly rather than inflated.** It did not reproduce: 8/8 green running
-  `tests/queue.test.js` alone and 3/3 green on the full suite afterwards. The one occurrence was
-  almost certainly two full `npm test` runs overlapping on this machine, which widens the window — a
-  real contention scenario (two plugin commands at once produce the same thing), but not one the suite
-  normally creates. **So this is a genuine intermittent whose rate is unmeasured**, and the value here
-  is the located line plus a comment that overstates its guarantee, not a frequency.
-  **Second occurrence, 2026-08-05, and it confirms the hypothesised trigger.** Seen during OAI-5's
-  mutation testing, at the same line: `Unexpected failure: Error: database is locked at openStore
-  (job-store.mjs:151)`, this time surfacing through `submitTask` (`task-submit.mjs:93`) rather than
-  the queue test. It happened while two `npm test` invocations genuinely were overlapping — which is
-  exactly the condition the paragraph above guessed at, so **the trigger is now observed rather than
-  inferred**. Still unmeasured as a rate, and still indistinguishable from a real regression when it
-  fires.
-  **Third occurrence, 2026-08-05, during OAI-5's pass 8 audit — and it lands back on the ORIGINAL
-  site.** `tests/queue.test.js:23`, the same test as the first sighting, again `database is locked`,
-  again under concurrent runs, and green on the two runs either side of it. Three sightings, two
-  distinct call sites (`openStore` via the queue test, and via `submitTask`), one trigger. That is
-  enough to stop calling it unexplained: **the mechanism is contention on `PRAGMA journal_mode = WAL`
-  during open, exactly where the comment at `job-store.mjs:145-149` claims the preceding
-  `busy_timeout` makes waiting universal.** What remains unmeasured is the rate.
-  It also means the suite carries a rare flake whose failure message is indistinguishable from a real
-  regression — worth a targeted retry at this call site so a contended open waits rather than killing
-  a submission.
-  **STATUS, 2026-08-07 — built, committed, and NOT closed: the ladder ran its full ten passes and
-  ended `cap-without-approval`.** (a), (b) and (c) are all fixed and shipped —
-  `scripts/lib/job-busy.mjs` with `withBusyRetry` at six enumerated sites, the heartbeat and the
-  queue's wait loop guarded, the `completed` write moved outside the catch that publishes `failed`,
-  and `salvageOutcome` writing the answer to the job log when that write's retry exhausts. Suite
-  660/0, verify skill green against a live server, and the design is [ADR 020].
-  **What stops this closing is OAI-106.** At the terminal verdict point the Claude approver approved
-  and **Codex refused**, on this ground: after an exhausted persistence retry the public lifecycle
-  still reports `worker-died` for work that completed, and no product reader can recover the salvaged
-  answer — a false terminal state produced by contention, which is one of the outcomes this item
-  exists to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict.
-  **The decision is the user's**: build OAI-106 (a `persistence-pending` state, or a recovery pass
-  that reads a salvaged line back into the row) and reopen this, or accept the artifact as shipped and
-  close this item over Codex's objection. Also left `unresolved at cap`: [OAI-109] and [OAI-110].
-
 - **OAI-63** — **The credential model authorises by ORIGIN while every request is by FULL URL, and the
   leak is proved on the wire.** `job-auth.mjs:28` stores `originOf(baseUrl)`, discarding path and
   query; `:45,:59` compare origins only; `cmd-task-worker.mjs:38-45` then builds the profile from the
@@ -2140,20 +2077,34 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   a `withBusyRetry` at those four writes and the deletion of the argument from ADR 020's exclusion
   list. Do not leave the exclusion standing on reasoning alone.
 
-- **OAI-106** — **the ROW is still wrong about why a salvaged job ended.** Narrowed by OAI-62, which
-  originally filed this as the whole defect — a paid-for answer lost outright — and then had both
-  approvers reject that filing: losing the answer *was* contention killing live work, which is
-  precisely OAI-62's own ask, so it was fixed in the ladder rather than deferred. `salvageOutcome`
-  now writes the outcome to the job log under the fixed prefix `SALVAGED_OUTCOME` before the storage
-  error propagates, so the answer survives.
-  What remains is the state machine, not the data: the row stays `running` with a pid about to
-  vanish, and reconciliation later publishes `worker-died` — a misdiagnosis, because the worker
-  answered and SQLite refused the write. `/oai:result` still reports a dead worker for a job whose
-  answer is sitting in its own log, and nothing in the row points at it. The fix is an explicit
-  non-terminal `persistence-pending` state that `/oai:result` and reconciliation both understand, or
-  a recovery pass that reads a salvaged line back into the row — either needs a durable-channel
-  design OAI-62's plan did not cover, which is why the log write was the part built. Related:
-  [OAI-105].
+- **OAI-106** — **the row is still wrong about why a salvaged job ended, and the CHEAP HALF is separable
+  from the expensive one.** Narrowed by OAI-62, which originally filed this as the whole defect — a
+  paid-for answer lost outright — and then had both approvers reject that filing: losing the answer
+  *was* contention killing live work, which is precisely OAI-62's own ask, so it was fixed in the
+  ladder rather than deferred. `salvageOutcome` now writes the outcome to the job log under the fixed
+  prefix `SALVAGED_OUTCOME` before the storage error propagates, so the answer survives
+  (`cmd-task-worker.mjs:175`).
+  **RE-SCOPED 2026-08-12, when OAI-62 was closed over the objection this item carries.** It was framed
+  as "a `persistence-pending` state **or** a recovery pass" — both structural, and that framing is what
+  kept it expensive enough to defer indefinitely. The thing that actually made the approver refuse is
+  narrower than either, and it is a **sentence**:
+  **(a) THE CHEAP HALF — stop asserting something false.** `job-reconcile.mjs:34-39` publishes
+  *"The worker for job X exited without recording an outcome."* That is **false** whenever a salvage
+  line exists: the worker recorded its outcome and SQLite refused the write. `terminalizeDead` can
+  check the log for the marker and say so — *the worker recorded its outcome to the log but could not
+  persist it, see `<path>`* — in the failure message and hint. **This touches no lifecycle state**,
+  adds nothing to `TERMINAL_STATES` (`job-record.mjs:17`, four values, no SQL `CHECK`), and removes the
+  actual falsehood. Do this one.
+  **(b) THE EXPENSIVE HALF — a state that can express it.** An explicit non-terminal
+  `persistence-pending` that `/oai:result` and reconciliation both understand, or a recovery pass that
+  reads the salvaged line back into the row. This is a state-machine change in the subsystem whose
+  entire tier is about lifecycle misreporting, so a new state is itself a plausible source of the class
+  it is meant to fix. **It may never be worth building**, and (a) does not depend on it.
+  **A witness is missing for BOTH halves and is worth having regardless.**
+  `tests/job-busy-placement.test.js` asserts the salvage line is written and that the row is still
+  `running` immediately after — it **never drives reconciliation**, so nothing observes the row
+  becoming `failed`/`worker-died`. The false terminal state has no test that can fail on it, which is
+  this repo's most-repeated shape. Related: [OAI-105].
 
 - **OAI-107** — **cancellation is the one lifecycle fact with no contention answer.** `runCancel`
   calls `reconcileAll` before `requestCancel` and neither is retried, so a `SQLITE_BUSY` anywhere in

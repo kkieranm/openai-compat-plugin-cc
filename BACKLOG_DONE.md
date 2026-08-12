@@ -1,5 +1,91 @@
 ## 2026-08-09 — the load hints stop predicting an outcome the plugin cannot control (OAI-134)
 
+- **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
+  OAI-52 item (3) recorded "a `SQLITE_BUSY` expiry is retried, never terminalized" as an untested
+  property. It is not merely untested; it is **false in two places**, and this item supersedes that
+  sub-item.
+  **(a) The heartbeat kills the worker outright.** `job-heartbeat.mjs:57-60` calls `beat` and
+  `cancelRequested` inside a `setInterval` callback with **no try/catch**, and `job-record.mjs:176` and
+  `:207-209` are bare `db.prepare(...).run(...)` with no busy retry. **Proved by execution**:
+  `startHeartbeat` with a handle whose `prepare()` throws "database is locked" (errcode 5) kills the
+  process — exit 1, the probe's "SURVIVED" line never printed. So a contended database kills a running
+  worker **mid-model-call**. ADR 014 (~296) itself notes a suspended process holds the writer lock
+  until other writes fail past the timeout, so the contention it needs is a case the design already
+  anticipated.
+  **(b) `finish` discards a completed answer.** `cmd-task-worker.mjs:74` calls `finish` with no busy
+  retry, unlike queue acquisition which has one (`job-queue.mjs:111`). If the lock is held past the
+  10s timeout **after the model has already answered**, the outer catch files a storage error as a task
+  failure and the expensive answer is gone.
+  The catch added for (a) must be **narrowed to busy** — a blanket swallow would hide real corruption,
+  and the stale-beat → `stalled` → non-terminal path already handles a missed beat correctly.
+  **(c) `openStore` itself can throw `database is locked`, at the line whose comment says it cannot.**
+  Observed **once, live**, during the OAI-58 commit gate: `tests/queue.test.js:23` ("two jobs submitted
+  at once run one after the other, never together") failed with
+  `Error: database is locked at openStore (job-store.mjs:151)` — which is
+  `db.exec('PRAGMA journal_mode = WAL')`, the statement immediately after `busy_timeout` is set. The
+  comment at `:145-149` argues that setting `busy_timeout` **first** is what stops exactly this ("with
+  no timeout in force yet a second process opening the store at the same moment fails outright…
+  Every statement after this line waits instead"). It does not, at least not always: converting to WAL
+  needs an exclusive lock, and the busy handler is not honoured for every such case.
+  **Rate and trigger, stated honestly rather than inflated.** It did not reproduce: 8/8 green running
+  `tests/queue.test.js` alone and 3/3 green on the full suite afterwards. The one occurrence was
+  almost certainly two full `npm test` runs overlapping on this machine, which widens the window — a
+  real contention scenario (two plugin commands at once produce the same thing), but not one the suite
+  normally creates. **So this is a genuine intermittent whose rate is unmeasured**, and the value here
+  is the located line plus a comment that overstates its guarantee, not a frequency.
+  **Second occurrence, 2026-08-05, and it confirms the hypothesised trigger.** Seen during OAI-5's
+  mutation testing, at the same line: `Unexpected failure: Error: database is locked at openStore
+  (job-store.mjs:151)`, this time surfacing through `submitTask` (`task-submit.mjs:93`) rather than
+  the queue test. It happened while two `npm test` invocations genuinely were overlapping — which is
+  exactly the condition the paragraph above guessed at, so **the trigger is now observed rather than
+  inferred**. Still unmeasured as a rate, and still indistinguishable from a real regression when it
+  fires.
+  **Third occurrence, 2026-08-05, during OAI-5's pass 8 audit — and it lands back on the ORIGINAL
+  site.** `tests/queue.test.js:23`, the same test as the first sighting, again `database is locked`,
+  again under concurrent runs, and green on the two runs either side of it. Three sightings, two
+  distinct call sites (`openStore` via the queue test, and via `submitTask`), one trigger. That is
+  enough to stop calling it unexplained: **the mechanism is contention on `PRAGMA journal_mode = WAL`
+  during open, exactly where the comment at `job-store.mjs:145-149` claims the preceding
+  `busy_timeout` makes waiting universal.** What remains unmeasured is the rate.
+  It also means the suite carries a rare flake whose failure message is indistinguishable from a real
+  regression — worth a targeted retry at this call site so a contended open waits rather than killing
+  a submission.
+  **STATUS, 2026-08-07 — built, committed, and NOT closed: the ladder ran its full ten passes and
+  ended `cap-without-approval`.** (a), (b) and (c) are all fixed and shipped —
+  `scripts/lib/job-busy.mjs` with `withBusyRetry` at six enumerated sites, the heartbeat and the
+  queue's wait loop guarded, the `completed` write moved outside the catch that publishes `failed`,
+  and `salvageOutcome` writing the answer to the job log when that write's retry exhausts. Suite
+  660/0, verify skill green against a live server, and the design is [ADR 020].
+  **What stops this closing is OAI-106.** At the terminal verdict point the Claude approver approved
+  and **Codex refused**, on this ground: after an exhausted persistence retry the public lifecycle
+  still reports `worker-died` for work that completed, and no product reader can recover the salvaged
+  answer — a false terminal state produced by contention, which is one of the outcomes this item
+  exists to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict.
+  **The decision is the user's**: build OAI-106 (a `persistence-pending` state, or a recovery pass
+  that reads a salvaged line back into the row) and reopen this, or accept the artifact as shipped and
+  close this item over Codex's objection. Also left `unresolved at cap`: [OAI-109] and [OAI-110].
+  **CLOSED 2026-08-12 — over the reviewer's objection, deliberately and with both verdicts recorded.**
+  The three shipped defects are the ones that destroyed work and they are fixed. What blocked closure
+  was the residual: on retry exhaustion the row is never corrected, so reconciliation later publishes
+  `failed`/`worker-died` for a job that answered (`job-reconcile.mjs:34-39`), and no command renders
+  the salvaged line.
+  **Verified before deciding, not taken on the backlog's word**: the answer is NOT unreachable — both
+  `/oai:status` and `/oai:result` print the job log path literally and the failure hint already says
+  the output is in the log; what is missing is that nothing names the `SALVAGED_OUTCOME` marker or
+  renders it. The trigger is `SQLITE_BUSY` past a 10s timeout **after** the model answered, and that
+  path's rate is **unmeasured and never observed in the wild** (the three recorded sightings are
+  `openStore` contention at a different site, under two overlapping test runs).
+  **Both verdicts, unresolved rather than merged.** Codex, asked as an owner-level scheduling
+  question, reversed its own ladder refusal: *"A loses because it expands a rare, unmeasured residual
+  into a state-machine change that risks creating broader lifecycle defects"* — RECOMMEND B (close).
+  Claude agreed on B and added the narrowing that made it defensible: the defect Codex named is a
+  **false sentence**, not a missing state, so OAI-106 was re-scoped to separate its cheap half (stop
+  asserting "exited without recording an outcome" when a salvage line exists — no new state) from its
+  expensive half (a `persistence-pending` state). The user decided.
+  **Left open and tracked, not silently dropped**: OAI-106 (both halves, plus the missing test that
+  would let the false terminal state fail), [OAI-109] and [OAI-110], all `unresolved at cap` from that
+  ladder.
+
 - **OAI-139** — **When nothing is resident the window is unknown, so the size guard is DISABLED and
   the drop-to-hunks fallback can never fire — a cold start sends untrimmed input.** Filed 2026-08-10,
   found while probing OAI-138 and **distinct from it**: this is a window-detection defect, not a
