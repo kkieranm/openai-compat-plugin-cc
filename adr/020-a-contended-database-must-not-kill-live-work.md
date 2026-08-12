@@ -348,7 +348,12 @@ Measured 2026-08-12 rather than reasoned, since the point of the qualification i
 table did not reveal it: unwrapping (f) `registerWaiter` in `scripts/lib/cmd-task-worker.mjs` reddened
 **two** tests — its own witness `a busy while REGISTERING as the waiter does not silently lose the job`
 and `every stated count of contention sites matches the code` — for 800 pass / 2 fail, restored to 802
-pass / 0 fail on revert. Mutations that leave the counted occurrences alone leave the count guard
+pass / 0 fail on revert. **Those totals are the suite as it stood at that measurement, mid-OAI-67, and
+they are deliberately not updated as it grows** — it ended that feature at 810. What the experiment
+establishes is the DELTA and which two tests moved; a total refreshed to match today's suite would
+claim the experiment was re-run when it was not. Said explicitly in the one document whose subject is
+that stated numbers drift, and where a reader meeting 800 against a 810-test suite would otherwise be
+right to wonder. Mutations that leave the counted occurrences alone leave the count guard
 green, and the table names four of them: making the WAL set unconditional, deleting the open cleanup,
 moving the terminal-write placement, and deleting the diagnosis catch.
 

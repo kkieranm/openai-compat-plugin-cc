@@ -50,12 +50,11 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-67, OAI-66, OAI-64,
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-66, OAI-64,
 OAI-69**. One subsystem, four independent closes, so they sit adjacent rather than merged.
-**OAI-62 closed 2026-08-12** — its three shipped fixes were accepted and its residual re-scoped into
-OAI-106; see BACKLOG_DONE. **OAI-67 now leads**, and it and
-OAI-66 mis-report an ending (a blocked queue reported as nothing; a crash published as a clean
-`cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
+**OAI-62 and OAI-67 both closed 2026-08-12** — see BACKLOG_DONE; OAI-62's residual was re-scoped into
+OAI-106, and OAI-67 shipped with its root cause deliberately separated as OAI-145. **OAI-66 now
+leads**, mis-reporting an ending the way OAI-67 did (a crash published as a clean `cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
 OAI-64 shows it does not, so OAI-69 is not an independent gap and must not be scheduled as one.
 
@@ -252,7 +251,7 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**.
+**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**.
 **OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
@@ -1477,28 +1476,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   The draft also found the cancel path has **two** exits, not one — a queued worker leaves via
   `awaitTurn` and never reaches the heartbeat — and that the acknowledgement write **must not use
   `withBusyRetry`**, whose synchronous sleep would freeze the very request the user asked to stop.
-
-- **OAI-67** — **A failed spawn blocks the whole queue; a post-spawn write failure reports failure while
-  the worker runs on.** Raised independently by three lenses.
-  **(a)** `spawnWorker` rejects on `'error'` (`job-spawn.mjs:40-43`) and `task-submit.mjs:97` does not
-  catch it, so the row stays `queued` with `spawned_at` NULL. `queuedRole` then returns `starting` →
-  `blocks` (`job-queue.mjs:60`), so **every successor is blocked for the full 120s grace**, not merely
-  this job. The plan's own bullet asked that a spawn `'error'` mark the job failed; it is failed only
-  by the grace, two minutes later, via a different mechanism.
-  **(b)** After `spawnWorker` resolves the child is alive and detached, but `markSpawned`
-  (`job-record.mjs:121`, a bare UPDATE) or `sweepQuietly` (`task-submit.mjs:72-78`, which **rethrows
-  anything non-busy** by deliberate design) can still throw. The submitter then exits non-zero with
-  **no id printed** while the worker proceeds to call the model. The job is discoverable via
-  `/oai:status`, so it is not lost — but the user was told it failed, and a reasonable retry duplicates
-  the work. Once the child is known to exist the submission is accepted; later housekeeping must not
-  convert that into a reported failure.
-  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists and is NOT harness approved:**
-  `plans/oai-67-a-spawn-failure-must-not-hold-the-queue.md`. Codex pre-review reached **APPROVE**
-  (digest `4951873328aa`) after killing a real defect in the first draft. **Two corrections to this
-  entry, verified against disk:** (b) is **half closed already** — `markSpawned` is wrapped in
-  `withBusyRetry` and on exhaustion warns on stderr while still returning the id, so only the
-  `sweepQuietly` half is live; and the spawn-failure block is **bounded at the 120 s startup grace**,
-  not permanent. Resume by entering plan mode with the draft as input and re-running the plan gate.
 
 - **OAI-68** — **`PRAGMA user_version` is checked only when a connection opens, so an in-flight worker
   bypasses the newer-database refusal.** `applySchema` (`job-store.mjs:120-125`) reads it once inside
@@ -2912,3 +2889,22 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   header from an orphan — the last block before the first declaration is a header only if it is the
   ONLY one there. A new module is precisely where a first-function docstring gets written, which is why
   the blind spot and the defect coincide.
+
+- **OAI-148** — **the evidence a ladder produces does not outlive the session that produced it.**
+  Filed 2026-08-12 from OAI-67's review, which spent real effort rediscovering its own work twice.
+  Two concrete losses, both measured rather than supposed:
+  **(a)** the MUTATION SET was never written down. OAI-67 re-ran nine mutations after every batch, but
+  the set existed only in one session's context; resuming after a compaction meant reconstructing it
+  from what each witness appeared to guard, and one reconstructed mutation was wrong in a way that
+  mattered — it produced a SYNTAX ERROR rather than a behavioural failure, which proves a file changed
+  and nothing else, and would have been recorded as a passing mutation had it not been re-examined.
+  **(b)** the plan cited a ledger at `scratchpad/ledger-oai-67.md` for its round-by-round measurements.
+  That path is session-local and resolves to nothing in the repo, so an auditor could not corroborate a
+  single cited figure; the plan now says so instead of citing it, which is honest but not a fix.
+  **The shape of the fix is a durable per-feature evidence file** — the mutation set as a runnable
+  list, and the measurements the plan relies on — sitting beside the plan rather than in a scratchpad.
+  **The bar for it being real:** the mutation list must be EXECUTABLE, not prose. A written list of
+  mutations nobody runs is exactly the class this repo keeps legislating against, and it would decay
+  faster than the code it describes.
+  Related: the ladder register already survives the session (`adr/082`), which is the precedent — this
+  is the same argument applied to the evidence rather than to the metadata.

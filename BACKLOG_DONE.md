@@ -1,3 +1,27 @@
+## 2026-08-12 — a failed launch stops holding the queue, and housekeeping stops sinking live submissions (OAI-67)
+
+- **OAI-67** — **A failed spawn blocked the whole queue; post-spawn write failures reported failure
+  while the worker ran on.** Shipped 2026-08-12, commit `9883f7f`, on branch
+  `oai-67-spawn-failure-must-not-hold-the-queue`. Three fixes, all one defect class — the submitter
+  asserting more about a worker than it can observe:
+  **(a)** an unconfirmed launch now terminalizes its own row via `abandonUnstarted`'s
+  `state = 'queued' AND waiter_pid IS NULL` compare-and-set, so the 120s startup grace no longer
+  blocks every successor. The CAS rather than `finish` is the whole design: a rejection does NOT prove
+  no child exists, since `spawnWorker` closes its log descriptor AFTER the `'spawn'` event fires.
+  **(b)** the retention sweep moved before `insertJob`, so a non-busy sweep failure can no longer sink
+  a submission whose worker may already be spending.
+  **(c)** the row stamp now reports ANY storage fault and still returns the id — with the report
+  itself guarded, since a throwing stderr would lose the id it was announcing.
+  Five review passes, 26 accepted findings, four batches, dual approval on digest `ad3dc1daf058`.
+  810 tests green; nine mutations re-run after every batch; live round trip against LM Studio.
+  **What was deliberately NOT done here, and why it is not residue but scope:** the root cause in
+  `job-spawn.mjs` is **OAI-145** (the user chose containment over enlarging this change), the
+  liveness overclaims in pre-existing text are **OAI-146**, and a structural-guard blind spot found
+  during the review is **OAI-147**. **OAI-108 was amended rather than fixed** — this change ENLARGED
+  it: a `--json` caller now sees ordinary success after a corrupt-database submission that previously
+  rejected. That trade was put to the user with both my recommendation and Codex's, and chosen
+  knowingly.
+
 ## 2026-08-09 — the load hints stop predicting an outcome the plugin cannot control (OAI-134)
 
 - **OAI-62** — **The `SQLITE_BUSY` property does not hold at two sites, and one of them kills live work.**
