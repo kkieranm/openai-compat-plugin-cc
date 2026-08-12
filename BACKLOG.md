@@ -179,7 +179,7 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12d — what the first completed overnight sweep found, 2026-08-10.** **OAI-139**, **OAI-138**,
+**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-139**, **OAI-141**, **OAI-138**,
 **OAI-140**, **OAI-137**.
 **OAI-139 leads the tier and was found by probing OAI-138, not by the sweep**: when nothing is
 resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
@@ -193,6 +193,11 @@ standing expectation — starvation happened once, wall-clock exhaustion twenty 
 sweep should set the cap from the recorded `generationMs` distribution rather than by doubling it.
 Read it against OAI-132, which the same run priced: a higher cap lengthens an already unobservable
 window, and there is still no incremental record to survive a crash.
+OAI-141 is second because it changes how everything else in this tier should be READ: four sweeps over
+one corpus put the run-to-run spread (17 vs 22 finding-bearing, 5 of 17 not reproducing) above the
+difference between the configurations being compared, so a single-run A/B here cannot resolve a small
+effect. It did not invalidate the cap result, which clears that spread comfortably; it did refute the
+diff-only concern, and it is why OAI-139's ceiling is safe to build.
 OAI-140 sits between them because it is live at today's cap and **OAI-138's cap rise makes it worse**:
 a slow commit zeroes the consecutive-outage counter, so a genuine outage interleaved with slow commits
 never trips `--abort-after`, and last night's data cannot rule that out because nothing records the
@@ -2913,6 +2918,29 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Between: inconclusive.** Match **substantive findings**, not merely whether a commit produced any.
   **Total findings and finding-bearing counts are explicitly NOT the decision statistic** — extra
   findings may be false positives and cannot automatically offset lost established ones.
+  **REPLICATION RESULT 2026-08-12 — the diff-only concern is REFUTED, and `E` clears the bar.** Of
+  whole-file #1's 17 finding-bearing commits, the re-runs were finding-bearing again: **whole-file #2
+  kept 12 (absent 5)**, **diff-only #1 kept 12 (absent 5)**, **diff-only #2 kept 14 (absent 3)**.
+  **`E = mean(5, 3) - 5 = -1`**, comfortably inside the pre-registered `E <= 2` branch: *the loss is
+  ordinary run variation, proceed with the ceiling design.* **The same configuration re-run against
+  itself lost exactly as many as diff-only did**, so the five losses that looked like an
+  under-enrichment signal were noise from a single draw.
+  **The variance is larger than the effect anyone was arguing about**: whole-file's own finding-bearing
+  count moved **17 -> 22** between identical runs.
+  **A caveat that is NOT a hedge: this is the finding-bearing PROXY, not substantive matching.** The
+  full per-commit comparison is committed alongside the records at
+  `bench/results/oai139-replication-2026-08-11/substantive-comparison.md` (gitignored directory - the
+  numbers here are the durable copy).
+  **What the substantive read shows, and it changes the meaning of "absent":** across the 10 commits
+  where any run went quiet, "absent" almost never means *the defect was not found*. It usually means
+  **a different defect was reported**. `d2396ce08` had its relative-path guard defect found by three of
+  four runs; `caa9d85ba`'s `reduce`/NaN defect was found by the baseline and by diff-only #1 in nearly
+  identical words. **Only ONE of the 17 - `10b29cbda` - went clean in all three re-runs**, making its
+  baseline finding the single best candidate for a baseline false positive.
+  **One commit is the exception worth keeping in view**: `f5079538d`'s `coverageSection` exactly-once
+  pair was found by **both whole-file runs, in near-identical words, and by neither diff-only run**.
+  That is the only per-commit pattern in the set that looks like a genuine enrichment effect rather
+  than churn, and it is one commit - not evidence, but the thing to watch if the ceiling ships.
   **Codex's stated failure mode for this design: nonstationary pseudo-replication.** Two sequential
   samples per arm can look stable while power state, thermal load, residency or rare decoding paths
   shift together, and `E` also rests on a human judging whether findings substantively match. A
@@ -2941,3 +2969,32 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   consecutive; decay the counter instead of zeroing it; or keep the streak but record every outage so
   the report can say how many occurred and how often the streak reset. **The last one is worth doing
   regardless**, since it is what would have let last night's record answer the question at all.
+- **OAI-141** — **The reviewer's per-commit output is unstable enough that ~30% of finding-bearing
+  commits do not reproduce run-to-run, and every single-run comparison in this tracker was read as if
+  it were a measurement.** Filed 2026-08-12 from OAI-139's replication, which was designed to answer a
+  different question and answered this one on the way.
+  **Four sweeps over the same 40 eligible commits, same pinned SHA, same model, same 1800s cap.** Two
+  whole-file, two diff-only. Finding-bearing counts: **17, 22** (whole-file) and **19, 21**
+  (diff-only). **Whole-file re-run against ITSELF reproduced only 12 of its own 17 finding-bearing
+  commits** — the same number the diff-only arm reproduced.
+  **So the spread between identical runs (17 vs 22, and 5 of 17 not reproducing) is LARGER than the
+  difference between the two configurations anyone was arguing about.** A single-run A/B in this
+  harness cannot resolve an effect smaller than that, and nothing in the tracker previously said so.
+  **What this does and does not invalidate**, judged rather than asserted:
+  - **OAI-138's cap result SURVIVES.** 20 commits hitting the 900s boundary exactly, against 18
+    completions demonstrably needing more than 900s, is far outside this spread. Codex made the same
+    call independently.
+  - **The diff-only comparison did NOT survive it** and was correctly recorded as inconclusive before
+    the replication existed; the replication then refuted it outright.
+  - **Anything else here resting on one run against one run should be re-read**, and future arms
+    should say what effect size they can actually detect.
+  **The likely mechanism is already measured, not speculative:** 97-98% of every completion is
+  `reasoning_tokens` on an unconstrained path with no schema (`adr/003`), so what the model attends to
+  varies run to run. The same commit has completed once and starved once on identical input.
+  **What "absent" means here matters and was nearly mis-recorded:** across the 10 commits where a run
+  went quiet, absence usually meant **a different defect reported**, not none — so a naive
+  reproduction rate understates agreement. Only 1 of 17 went clean in every re-run.
+  **Fix shape (not decided).** Options: report a reproduction rate alongside any sweep comparison;
+  require N>=2 runs per arm before an A/B enters this tracker as evidence; or state a minimum
+  detectable effect in the pre-registration. **The cheap half is the last one** — it costs a sentence
+  and would have stopped this being read as a signal for two days.
