@@ -1,93 +1,38 @@
-// How a finished review run is shown — the text report, the `--json` object,
-// and the refusals that decide whether a run is reportable at all.
+// How a finished review run is shown — the text report and the `--json` object.
 //
 // Split from cmd-review.mjs, which orchestrates the request. Kept out of
 // review.mjs deliberately: that module is pure string-building, and this one
-// writes to stdout and throws.
-import { requireAnswer } from './client.mjs';
-import { UserError } from './errors.mjs';
+// writes to stdout and throws. The refusals that decide whether a run is
+// REPORTABLE AT ALL left for `review-unparsed.mjs` at the size ratchet, so this
+// file no longer owns them and this line no longer claims it does.
 import { renderTaskFooter } from './render.mjs';
-import { renderFindings, unreadableNote } from './review.mjs';
+import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
+import { unparsedReply } from './review-unparsed.mjs';
 
-/**
- * The verbatim reply, for the paths that could not read findings out of it —
- * and the two refusals that have to fire before anything is shown.
- *
- * Shared by the text report and `--json` rather than copied into each. These
- * are decisions about whether the run is reportable at all, so a second copy
- * would be free to disagree, and this repo keeps relearning that fixing the
- * branch in front of you leaves the adjacent one wrong (trap instance 11).
- */
-function unparsedReply(result, { structured, profile }) {
-  // A reply we cut off mid-object is a token-budget problem, not a shape
-  // problem. Showing the fragment and calling it a bad shape blames the model
-  // for damage we did, and hides the one flag that fixes it.
-  if (result.finishReason === 'length') {
-    // The old hint said "raise --max-tokens" and stopped there, which is now
-    // sometimes advice that cannot work: below the wall-clock ceiling every
-    // extra token widens `analysis`, not the findings tail, so a reply overrun
-    // by its ninth long finding fails again at a larger budget — and on a big
-    // input `prepareRequest` may shrink the raised value straight back to the
-    // window's leftovers. Reviewing less is the lever that moves both.
-    throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
-      // Tagged so a caller can tell "the budget ran out" from "the server broke"
-      // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
-      // off the `--json` envelope and states the rule its own header keeps —
-      // never regex a cause out of prose — and an overnight sweep that cannot
-      // separate a starved run from a failed one reports a night that measured
-      // nothing as a night that found nothing.
-      reason: 'token-exhaustion',
-      hint:
-        'Review a smaller target — a single commit with --commit, or specific files with --file. '
-        + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
-        + 'reasoning rather than more room for the findings themselves.',
-    });
-  }
-
-  // Under a schema the reasoning channel carries the constrained output, so it
-  // is legitimate to show; without one it is only the model's scratchpad.
-  // Either way an empty reply falls through to requireAnswer, which refuses —
-  // returning an empty "verbatim" block would report a run that produced
-  // nothing as one that merely said something odd.
-  //
-  // BOTH are shown, labelled, when both carry something. Preferring `content`
-  // was a silent choice about which text the reader gets to see, and it picked
-  // wrong in exactly the case the parser exists to refuse: stray prose in
-  // `content` with the rejected findings payload in `reasoning` printed the
-  // prose and dropped the payload — on the human path and, through the same
-  // helper, in `--json`'s `raw`. A claim that refusing preserves the evidence is
-  // only true if the evidence is what gets printed.
-  if (structured) {
-    const content = result.content.trim();
-    const reasoning = result.reasoning.trim();
-    if (content && reasoning) return `[content]\n${content}\n\n[reasoning]\n${reasoning}`;
-    if (content || reasoning) return content || reasoning;
-  }
-  return requireAnswer(result, profile).trim();
-}
-
-function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly }) {
+function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped }) {
   if (parsed) {
     process.stdout.write(
       renderFindings(
-        { ...parsed, hunksOnly, unreadable: target.unreadable },
+        { ...parsed, hunksOnly, unreadable: target.unreadable, skippedUnsizedWindow: skipped === 'unsized-window' },
         // The model that ANSWERED, not the one requested. This block heads the
         // report and the footer closes it; handing one the requested id and the
         // other the served id would produce a single report naming two different
         // models, which is worse than the silence it replaced.
-        { label: target.label, provider: profile.name, model: result.model || model },
+        { label: target.label, profile, model: result.model || model },
       ),
     );
     return;
   }
 
   const text = unparsedReply(result, { structured, profile });
-  // The same caveat as the parsed path: a file that never arrived is a fact
-  // about the request, and this output is just as derived from it.
-  const missing = unreadableNote(target.unreadable);
+  // Both caveats, because a reply that came back as prose did not see more.
+  const notes = [
+    unsizedWindowNote(skipped === 'unsized-window', profile),
+    unreadableNote(target.unreadable),
+  ].filter(Boolean);
   process.stdout.write(
     `The model did not return findings in the requested shape. Its reply, verbatim:\n\n${text}\n\n` +
-      `Nothing here has been checked against the code.${missing ? `\n\n${missing}` : ''}`,
+      `Nothing here has been checked against the code.${notes.length ? `\n\n${notes.join('\n\n')}` : ''}`,
   );
 }
 
@@ -181,7 +126,7 @@ function parseFields(parsed, result, context) {
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs, structured, ledger } = context;
+  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger } = context;
   return {
     label: target.label,
     provider: profile.name,
@@ -204,6 +149,10 @@ export function jsonReport(parsed, context) {
     requestedModel: result.requestedModel ?? model,
     ...parseFields(parsed, result, context),
     hunksOnly,
+    // The CAUSE `hunksOnly` cannot carry — it is equally true of `--diff-only`.
+    // Read off the rung the ladder actually took, never recomputed from the
+    // inputs that chose it: a second copy of the premise can outlive the branch.
+    skippedUnsizedWindow: skipped === 'unsized-window',
     unreadable: target.unreadable,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,

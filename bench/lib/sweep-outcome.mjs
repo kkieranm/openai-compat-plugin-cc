@@ -12,8 +12,13 @@
 //
 // **The CLI already says which it was — in fields, not prose.** `analysisCut`
 // is the caveat meaning the model never finished looking; `atCap` means the
-// findings list was cut at the ceiling; `hunksOnly` means the whole files did not
-// fit and only the diff was reviewed; `dropped` counts findings the model DID
+// findings list was cut at the ceiling; `hunksOnly` means only the diff was
+// reviewed, whatever the cause — it is equally true of `--diff-only`, and the
+// wording here used to say "did not fit", which was already false for that flag
+// before OAI-139 added a second cause; `skippedUnsizedWindow` is one of those
+// causes named — nothing could size the window, so the whole-file rung was never
+// attempted, and the remedy is a `contextLength` in the provider config;
+// `dropped` counts findings the model DID
 // emit that normalization discarded. `review-report.mjs` states the rule these
 // serve — "a fact changing what the reader should believe cannot live on one
 // path alone". Reading `findings` and none of them is how the first version of
@@ -162,6 +167,10 @@ function reported(report) {
     analysisCut: report?.analysisCut ?? null,
     atCap: report?.atCap ?? null,
     hunksOnly: report?.hunksOnly ?? null,
+    // The cause `hunksOnly` cannot carry. Carried rather than derived here
+    // because this side has no `budget` or `target` — only the envelope — so
+    // reconstructing it would be guessing at the run's inputs.
+    skippedUnsizedWindow: report?.skippedUnsizedWindow ?? null,
     dropped: report?.dropped ?? null,
   };
   // `null` is "could not be read" and `[]` is "read, nothing found" — the

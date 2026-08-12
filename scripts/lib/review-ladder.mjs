@@ -1,5 +1,6 @@
-// How a review's messages are built: whole files if they fit, the diff alone if
-// they do not, and the prose instruction that stands in for a grammar.
+// How a review's messages are built: whole files if they fit and something could
+// size the window, the diff alone otherwise, and the prose instruction that
+// stands in for a grammar.
 //
 // Split from `review-request.mjs` under the size ratchet when the unconstrained
 // path became the default (OAI-51) and the file crossed 300 lines. The seam is a
@@ -23,6 +24,17 @@ import { findingsFirst, schemaInstruction } from './structured.mjs';
  * Only `target.changed` is droppable. `target.files` is code no diff covers —
  * untracked files, or `--file` where there is no diff at all — so dropping one
  * would review nothing and report a clean pass. See ADR 005.
+ *
+ * The first rung needs a CHECKABLE window, not merely a non-empty `changed`
+ * list. `windowKnown` already gated the prompt's completeness claim; it now also
+ * gates whether those bodies are attached at all, because the two were the same
+ * decision wearing one flag. Without this the guard returns unchecked, the
+ * oversize refusal below never throws, and nothing else drops `changed` — so a
+ * cold process shipped a request nobody could size (OAI-139: 492k prompt chars
+ * against a 61,696 window, against 150k for the same commit once a model was
+ * resident). The cost is real and is NOT hidden: an unknown window is not
+ * evidence of a SMALL one, so a review that would have fitted is narrowed, and
+ * `review.mjs` says so and names `contextLength` as the remedy.
  */
 export function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' }) {
   const hasDiff = Boolean(target.diff.trim());
@@ -44,9 +56,9 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
     };
   };
 
-  if (target.changed.length > 0) {
+  if (windowKnown && target.changed.length > 0) {
     try {
-      return { ...prepareRequest({ ...shared, ...build(true) }), hunksOnly: false };
+      return { ...prepareRequest({ ...shared, ...build(true) }), hunksOnly: false, rung: 'whole', skipped: null };
     } catch (error) {
       // Only the oversize refusal is retryable by sending less; anything else
       // is a different failure and must not be laundered into "too big".
@@ -57,7 +69,23 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // file went whole, whether they did not fit, were not asked for, or were
   // never listed. Pinned files are unaffected — the note only ever qualifies
   // findings the diff alone had to carry.
-  return { ...prepareRequest({ ...shared, ...build(false) }), hunksOnly: hasDiff };
+  //
+  // `skipped` is the CAUSE beside that state, and it is OBSERVED here rather
+  // than re-derived at the renderer. The first version of this feature computed
+  // the same predicate a second time where the report is built; the two agreed
+  // only by construction, so removing the guard above left the report asserting
+  // a skip while whole bodies went on the wire. Both halves of that predicate
+  // survive — they are simply evaluated once, at the branch that acts on them.
+  //
+  // `null`, never `false`, where the rung was taken deliberately: a known-window
+  // oversize fallback reaches this line having been sized and shed, and `false`
+  // would assert a determination about a cause nobody evaluated.
+  return {
+    ...prepareRequest({ ...shared, ...build(false) }),
+    hunksOnly: hasDiff,
+    rung: 'hunks',
+    skipped: !windowKnown && target.changed.length > 0 ? 'unsized-window' : null,
+  };
 }
 
 /**

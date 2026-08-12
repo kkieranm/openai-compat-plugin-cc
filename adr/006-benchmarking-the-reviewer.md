@@ -26,7 +26,8 @@ suite is network-free by contract.
 ### It drives the shipped command, through `--json`
 
 `/oai:review --json` prints the whole run as one object — findings, summary, and **every caveat the
-text report carries** (`hunksOnly`, `atCap`, `analysisCut`, `dropped`, `unreadable`), plus usage and
+text report carries** (`hunksOnly`, `skippedUnsizedWindow`, `atCap`, `analysisCut`, `dropped`,
+`unreadable`), plus usage and
 timing. The bench runs the real CLI exactly as a user would and reads that.
 
 The alternative — reimplementing the request inside the harness — was rejected on this repo's own

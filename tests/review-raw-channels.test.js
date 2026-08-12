@@ -20,7 +20,13 @@ const context = (result, structured = true) => ({
   result: { content: '', reasoning: '', model: 'test-model', requestedModel: 'test-model', ...result },
   profile: { name: 'test' },
   model: 'test-model',
-  target: { label: 'a.js', unreadable: [] },
+  // A COMPLETE target, not a load-bearing field. An earlier version of this
+  // comment described `changed` as read by an unsized-window derivation at the
+  // render site — that derivation was deleted (the report now reads the ladder's
+  // own `skipped`), so the comment outlived its mechanism. Deleting `changed`
+  // here still leaves 3/3 passing: this file asserts nothing about the skip, and
+  // `skippedUnsizedWindow` is covered by value in review-unsized-window.test.js.
+  target: { label: 'a.js', unreadable: [], changed: [] },
   hunksOnly: false,
   budget: { checked: true, note: null },
   estimatedTokens: null,

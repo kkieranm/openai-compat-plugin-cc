@@ -60,6 +60,11 @@ test('--json emits one object carrying the findings and every caveat field', asy
     // ceiling unsizeable: 6 of 15 recorded runs were cut and nothing said how
     // close the other 9 came.
     'analysisLength', 'analysisCap',
+    // A cause `hunksOnly` cannot carry: the whole-file rung was skipped because
+    // nothing could size the window, not because the files were shed or not
+    // asked for. tests/review-unsized-window.test.js owns the behaviour; this
+    // pins the key's presence, which is what a harness reads.
+    'skippedUnsizedWindow',
   ]) {
     assert.ok(key in report, `--json must report ${key}`);
   }

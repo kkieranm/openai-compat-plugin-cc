@@ -24,7 +24,9 @@ string). Real commit diffs had produced zero verified catches across roughly six
 ## Decision
 
 **Each changed file is sent whole, alongside the diff.** The diff still says what changed; the files
-let the model resolve what the diff refers to but does not show. `--diff-only` restores the previous
+let the model resolve what the diff refers to but does not show.
+**Conditional since 2026-08-12 — the rung requires a window this plugin can size; see the amendment
+below.** The sentence above stands as what was decided on this date and is not rewritten. `--diff-only` restores the previous
 behaviour for a fast pass, and is the A/B switch OAI-12 needs.
 
 **Content comes from the revision the diff describes**, never the working tree — otherwise the model
@@ -73,14 +75,34 @@ The prompt asserts one of two things, and each is a fact the code must actually 
 - *whole files* — "you have the complete current content of every changed file". Sent only when the
   files really are all there **and the context window is known**. With the window unknown the guard
   is unarmed, so a truncated request cannot be ruled out, and telling a model it holds a whole file
-  it does not hold is this very defect regenerated. The files still go; the claim does not.
+  it does not hold is this very defect regenerated.
+  ~~The files still go; the claim does not.~~ **Reversed 2026-08-12 — see the amendment below.**
 - *hunks only* — "do not report an identifier as undefined, unimported or missing; you have no way to
   tell from this". The direct antidote to the observed failure, on the rung where it can still occur.
 
-**The incompleteness note lives in `renderFindings`**, beside `analysisCut`, `atCap` and `dropped` —
-the same artifact as the claims it qualifies, derived from the attempt that produced them, emitted
-once. It is raised only when bodies we actually had were dropped: under `--diff-only` none were
-collected, so the note would describe a loss that never happened.
+**The incompleteness notes are caveats about the REQUEST AND ITS RESULT, rendered on every path that
+shows either** — beside `analysisCut`, `atCap` and `dropped`, in the same artifact as the claims they
+qualify, derived from the attempt that produced them, emitted once each. `renderFindings` is where
+the PARSED path renders them; the unparsed path renders them itself (`review-report.mjs`), because a
+reply that came back as prose is not a reply that saw more. **Corrected 2026-08-12**: this paragraph
+said they "live in `renderFindings`", which contradicted both the amendment below — that promises
+both output paths — and the code.
+
+**Corrected 2026-08-12, and the original is quoted because it was FALSE rather than merely stale.**
+It read: *"It is raised only when bodies we actually had were dropped: under `--diff-only` none were
+collected, so the note would describe a loss that never happened."* Shipped behaviour is the
+opposite — `collectTarget` empties `changed` under that flag while still collecting the diff, so
+`prepareLadder` returns `hunksOnly: hasDiff` and the note **is** raised, which
+`tests/review-context.test.js` asserts. An accepted decision record stated the reverse of its own
+tested behaviour, and this ADR is the one that exists to keep claims matching reality.
+
+There are two kinds of note and the false sentence came from collapsing them:
+
+- a **STATE** notice — `hunksOnly` — fires whenever a diff was reviewed without whole diff-covered
+  files, **`--diff-only` included**. It describes what the model saw and is deliberately silent
+  about why, so it stays true whatever produced it.
+- a **CAUSE** notice — `skippedUnsizedWindow` — fires only when bodies that were collectable were
+  withheld because nothing could size the window, and it carries the remedy.
 
 **Pre-existing defects are labelled, not suppressed.** Given a whole file the model finds defects in
 untouched code whatever it is told; instructing it to ignore them only makes it report them
@@ -153,3 +175,73 @@ bug into "too big" — the same shape as `planSelection` returning a `problem` f
   fixing only the branch in front of you is how instance 11 happened.
 - No end-to-end coverage of `--commit`, `--base`, `--staged` or `--file` existed before this item;
   all four were unit-tested against `collectTarget` alone. `tests/review-context.test.js` adds it.
+
+## Amendment, 2026-08-12 — the first rung requires a CHECKABLE window (OAI-139)
+
+**Decision: with the context window unsizeable, the whole-file rung is not attempted at all, and the
+report says it was skipped.** This reverses "the files still go; the claim does not" above, and keeps
+the other half of that decision untouched: the completeness claim is still made only when verified.
+
+**Why the old reasoning failed.** It anticipated *truncation* and concluded that sending was harmless
+— a degraded review rather than none. Measured 2026-08-10: commit `77c1eab97` reviewed on a **cold**
+process built a **492,053-character prompt against a 61,696 window** and died in 14s as
+`empty-completion` on all three attempts, while the same commit mid-sweep with a model resident built
+**150,056 characters** and completed. Same code, same machine; only residency differed, because
+`contextLength` comes from `loaded_context_length`, which is null when nothing is resident. The
+failure is not a narrower review, it is **no review**.
+
+**Where the guard was disarmed.** `context-guard.mjs` returns `{ checked: false }` without checking,
+so its `oversize` refusal never throws — and that refusal is the *only* thing that makes
+`prepareLadder` drop `target.changed`. No refusal, no fallback. The fix is one condition:
+`prepareLadder` already receives `windowKnown` and already applies it to the prompt's completeness
+claim, so the defect was one flag used inconsistently at two decisions that are really one. **No size
+constant was introduced**; a named enrichment ceiling addresses a different case (a known, genuinely
+large window) and would be a number with no evidence behind it.
+
+**The degradation is disclosed, not silent.** This ADR's own rule — an incompleteness notice belongs
+in the rendered artifact — applies to the skip. `prepareLadder` returns the rung it took and, on the
+fallback, `skipped: 'unsized-window'` where diff-covered bodies existed and no window could size
+them; `skippedUnsizedWindow` in the envelope is that observation, and it reaches **both** output
+paths: `caveats()` for a parsed reply, and the unparsed branch, which carries only what it is given.
+
+**This replaced a derivation, and the reason is recorded because the first version's justification
+was false.** That version recomputed `!budget.checked && target.changed.length > 0` at the renderer
+and claimed it therefore *"cannot drift from the skip it describes"*. It cannot drift from
+`budget.checked` — which is not the fact the field reports. The two agreed by **construction, not
+observation**, and this feature's own mutation demonstrated the gap: removing the ladder's guard
+left the report asserting a skip while whole bodies went on the wire, with only the request-log
+test failing. The same mutation now reddens the disclosure tests too, because both readings come
+from one branch. A second copy of a premise can outlive the branch that acted on it. It is a **separate note** from the
+`hunksOnly` one, which stays deliberately worded for the state; this one names cause and remedy.
+
+**The pinned files still go, and they still go UNMEASURED — said here because "unaffected" is not
+the same as "safe".** `target.files` is untracked code and `--file` paths, covered by no diff, so
+ADR 005 refuses to drop it: withholding the only copy of that code would review nothing and report
+a clean pass. That refusal is unchanged and correct, and it means an unsized window can still build
+an unbounded request through `files` — the same class as the failure this amendment exists to fix,
+entered by the one door the design will not close. So this feature delivers its premise for
+diff-covered bodies and **not** for pinned ones, and the notice now says so rather than implying
+the pinned path was checked. A ceiling on pinned bodies is the remedy and is deliberately NOT taken
+here — see the rejection of a named enrichment ceiling above, which is a rejection of inventing a
+size number, not a claim that the exposure is absent.
+
+It names the **provider and the config key, no model**: the window was established for the model
+*requested* while the report heads itself with the model that *answered*, and under substitution
+those differ. It says **diff-covered** changed files, because `target.files` — untracked, and `--file`
+— is still sent whole, and "the changed files were not sent whole" would be false on a mixed target
+and would collide with the two-list distinction above.
+
+**The accepted cost, stated rather than mitigated.** An unknown window is not evidence of a *small*
+one, so a review that would have fitted is narrowed. Affected — and this side is **inferred from the
+readers too**, not measured, which the first correction relabelled on only the unaffected half:
+generic OpenAI-compatible `/models` responses, Ollama's listing, and any failed probe. The remedy is the existing per-provider
+`contextLength`, which is what the note names.
+
+**Which providers are unaffected is INFERRED FROM THE READERS IN `model-info.mjs`, not measured, and
+the first version of this paragraph did not say so.** Only **LM Studio with a model resident** is
+observed here — `loaded_context_length` 61,696, this machine, 2026-08-12. llama.cpp, vLLM, TGI and
+oMLX have readers in `model-info.mjs` and are inferred from those readers alone. The list originally
+also named **OpenRouter**, which is withdrawn: there is no OpenRouter reader, `readVllm` keys on
+`max_model_len`, and nothing in this repository establishes what that provider's `/v1/models`
+returns. A claim about what a value *reaches* has to cite the endpoint that returns it — the same
+failure that shipped OAI-22 on a refuted premise.

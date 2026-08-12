@@ -107,6 +107,43 @@ export function unreadableNote(unreadable) {
 }
 
 /**
+ * The whole-file rung was not attempted because the window could not be sized.
+ *
+ * Exported and shared for the same reason `unreadableNote` above is: the parsed
+ * and unparseable paths both derive their output from this request, so both must
+ * say it. A reply that came back as prose is not a reply that saw more.
+ *
+ * Says the CAUSE and the REMEDY, which is why it sits beside the `hunksOnly`
+ * note rather than replacing it — that one is deliberately worded for the state
+ * and stays true whatever produced it.
+ *
+ * Names the PROVIDER and no model. The window was established for the model that
+ * was *requested*, while the report heads itself with the model that *answered*,
+ * and under substitution those differ — a single report naming two models is the
+ * defect `review-report.mjs` avoids by choosing one. The config key is per
+ * provider anyway, so the provider is also the only id the remedy needs.
+ *
+ * Scoped to the DIFF-COVERED files: `target.files` — untracked, or `--file` —
+ * is still sent whole, so "the changed files were not sent whole" would be false
+ * on a mixed target and would collide with the two-list rule ADR 005 rests on.
+ */
+export function unsizedWindowNote(skipped, profile) {
+  if (!skipped) return null;
+  // Named for what it is on each path. An ad-hoc `--base-url` run has no config
+  // entry, so "set contextLength for X" would name one the user does not have.
+  // Read from the profile rather than compared against its NAME: a user may
+  // legitimately configure a provider called "custom".
+  const server = profile.adHoc ? 'the server given with --base-url' : `"${profile.name}"`;
+  const remedy = profile.adHoc
+    ? 'Add a provider entry with "contextLength" to the config, or pass --provider to name one,'
+    : `Set "contextLength" for "${profile.name}" in the config`;
+  return (
+    `NOTE: the context window for ${server} could not be determined, so the diff-covered changed ` +
+    `files were not sent whole — the model saw only their hunks. ${remedy} to send them whole.`
+  );
+}
+
+/**
  * Every reason this result may be less than it appears, in one place.
  *
  * Each is a claim about what happened, so each must be true on every path that
@@ -114,7 +151,7 @@ export function unreadableNote(unreadable) {
  * differs from the condition actually tested. Kept together because they are one
  * idea, and because a new one added beside them inherits the same scrutiny.
  */
-function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable }) {
+function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow }, profile) {
   const notes = [];
 
   // Said loudly, and before the findings count is believed: the model was cut
@@ -146,6 +183,11 @@ function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable }) {
         'a part of the file that was not sent.',
     );
   }
+  // Directly after the state note it explains, and before the rest: a reader who
+  // has just been told the model saw only hunks is owed the reason and the fix
+  // in the next breath.
+  const unsized = unsizedWindowNote(skippedUnsizedWindow, profile);
+  if (unsized) notes.push(unsized);
   const missing = unreadableNote(unreadable);
   if (missing) notes.push(missing);
   if (dropped > 0) {
@@ -158,9 +200,9 @@ function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable }) {
  * The findings, ordered by severity. Framed as claims, not conclusions: they
  * come from a small local model and have not been checked against the code yet.
  */
-export function renderFindings(parsed, { label, provider, model }) {
+export function renderFindings(parsed, { label, profile, model }) {
   const { findings, summary } = parsed;
-  const lines = [`${findings.length} finding(s) from ${model} on ${provider} — ${label}`, ''];
+  const lines = [`${findings.length} finding(s) from ${model} on ${profile.name} — ${label}`, ''];
 
   if (findings.length === 0) {
     lines.push('No defects reported.');
@@ -172,7 +214,7 @@ export function renderFindings(parsed, { label, provider, model }) {
   }
 
   if (summary) lines.push('', `Summary: ${summary}`);
-  for (const note of caveats(parsed)) lines.push('', note);
+  for (const note of caveats(parsed, profile)) lines.push('', note);
   lines.push('', 'These are unverified claims from a local model. Check each one against the code before acting on it.');
   return lines.join('\n');
 }

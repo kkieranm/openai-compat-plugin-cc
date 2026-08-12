@@ -220,14 +220,18 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
 
 // --- OAI-121: the rule, and the two shapes that prove it holds ---
 
-// The five carried report fields survive on EVERY report-derived path. `findings`
+// The carried report fields survive on EVERY report-derived path. `findings`
 // is separate on purpose: `unreadable` has no array to carry, which is why the
 // first draft of this invariant contradicted the code it describes.
-const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'dropped'];
+// `skippedUnsizedWindow` joined them in OAI-139: it is the CAUSE `hunksOnly`
+// cannot carry, so a path keeping one and losing the other reports a diff-only
+// review with no way to tell a deliberate shed from an unmeasurable window.
+const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped'];
 
 test('a substituted model keeps the findings it produced, and every caveat', () => {
   const entry = classify(ok([{ file: 'a.mjs', line: 3, summary: 'a real defect' }], {
     model: 'other-model', requestedModel: 'test-model', atCap: true, dropped: 2, hunksOnly: true,
+    skippedUnsizedWindow: true,
   }));
   assert.equal(entry.outcome, 'substituted');
   assert.equal(entry.findings.length, 1, 'a different model still found a real defect');
@@ -239,7 +243,7 @@ test('a substituted model keeps the findings it produced, and every caveat', () 
 // The other half of the invariant: caveats survive, findings legitimately does
 // not, because there was no array to carry.
 test('an unreadable reply keeps the caveats without inventing a findings list', () => {
-  const entry = classify(ok(null, { parsed: false, hunksOnly: true }));
+  const entry = classify(ok(null, { parsed: false, hunksOnly: true, skippedUnsizedWindow: true }));
   assert.equal(entry.outcome, 'unreadable');
   for (const key of CARRIED) assert.ok(key in entry, `unreadable dropped ${key}`);
   assert.equal(entry.findings, undefined, 'there was no array to carry');

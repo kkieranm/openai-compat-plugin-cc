@@ -36,10 +36,54 @@ test('a truncated review still shows the findings it managed to produce', () => 
 
 test('a clean review that only saw the diff says so, though it never reaches coverage', () => {
   const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
-  assert.match(out, /only the diff was reviewed/);
+  assert.match(out, /reviewed only as hunks/);
   // It is a completed review, so it belongs with the reviewed commits rather
   // than in coverage — but it must not pass silently as a full one.
   assert.match(out, /Reviewed, nothing reported/);
+});
+
+test('an unsized-window review says WHY, and never re-asserts a measurement', () => {
+  // The two notes are separate on purpose. `hunksOnly` is the state and is
+  // equally true of `--diff-only`; this is the cause, and it carries a remedy a
+  // reader can act on. A single merged sentence would have to guess at one.
+  const out = render(commit({
+    outcome: 'clean', hunksOnly: true, skippedUnsizedWindow: true, model: 'qwen/qwen3.6-27b', findings: [],
+  }));
+  assert.match(out, /reviewed only as hunks/, 'the state');
+  assert.match(out, /context window could not be determined/, 'and the cause');
+  assert.match(out, /contextLength/, 'and the remedy');
+  // The forbidden claim, not merely the required ones. Without this the test stays
+  // green if the renderer re-appends "did not fit the window" — a MEASUREMENT nobody
+  // took, and the precise error the state/cause split exists to prevent.
+  assert.doesNotMatch(out, /did not fit/, 'nothing measured this window');
+});
+
+test('the state note is scoped to diff-covered files, not to the whole request', () => {
+  // It said "only the diff was reviewed" flatly, which is FALSE for a mixed target:
+  // collectTarget can pair diff-covered tracked files with untracked or --file bodies that
+  // are sent WHOLE and are never droppable. Found by codex-adversarial at 0.99.
+  const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
+  assert.match(out, /diff-covered changed files were reviewed only as hunks/);
+  assert.match(out, /may still have been sent whole/, 'the pinned files are not covered by this note');
+});
+
+test('a diff-only review with no cause recorded does not invent one', () => {
+  // `--diff-only`, or any older record predating the field. Attributing this to
+  // an unsizeable window sends the reader after a config key that would change
+  // nothing — the failure mode the state/cause split exists to prevent.
+  const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
+  assert.match(out, /reviewed only as hunks/);
+  assert.doesNotMatch(out, /context window could not be determined/);
+  assert.doesNotMatch(out, /contextLength/);
+});
+
+test('the report-wide caveat never claims every commit was seen whole', () => {
+  // It covers every entry, so it has to be true of the worst one. It said "its
+  // changed files in full" flatly, which is false for any diff-only row in the
+  // same file — and this section is what a reader weeks later believes.
+  const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
+  assert.match(out, /Commit-local leads/);
+  assert.doesNotMatch(out, /its changed files in full/);
 });
 
 test('a clean review whose findings were all discarded says how many', () => {
@@ -116,7 +160,7 @@ test('a disqualified review still shows what it reported, in full', () => {
   assert.match(out, /high/);
   assert.match(out, /the line/);
   assert.match(out, /other-model/);
-  assert.match(out, /only the diff was reviewed/);
+  assert.match(out, /reviewed only as hunks/);
   assert.match(out, /leads only/);
 });
 

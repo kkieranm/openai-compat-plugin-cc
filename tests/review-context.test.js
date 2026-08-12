@@ -145,11 +145,26 @@ test('--diff-only with --file refuses instead of sending nothing', async () => {
   assert.equal(chatRequests(server).length, 0, 'an empty review reads exactly like a clean one');
 });
 
-test('an unknown window sends the files but never claims they are complete', async () => {
-  // With no window figure the guard is unarmed, so we cannot rule out the
-  // server truncating the request. Telling a model it holds a whole file it
-  // does not hold is the defect this feature exists to remove, regenerated
-  // under a banner saying it was fixed.
+test('an unknown window withholds the files, and the report says why', async () => {
+  // REVERSED 2026-08-12 (OAI-139), and the old decision is written out because
+  // it was deliberate and half of it still stands.
+  //
+  // This test used to be `an unknown window sends the files but never claims
+  // they are complete`, asserting `--- FILE: seed.txt ---` was present with the
+  // message "the files still go — we have no basis to withhold them". Its
+  // reasoning: with no window figure the guard is unarmed, so we cannot rule out
+  // the server truncating the request, and telling a model it holds a whole file
+  // it does not hold is the defect that feature existed to remove.
+  //
+  // The half that stands: never claim completeness. Still asserted below, still
+  // enforced by the `wholeFiles` gate.
+  //
+  // The half that fell: "no basis to withhold". There is now a basis. Measured
+  // 2026-08-10 — a cold process built 492,053 prompt chars against a 61,696
+  // window and the review DIED (`empty-completion`, 14s, all three attempts),
+  // while the same commit with a model resident built 150,056 and completed. The
+  // old reasoning anticipated truncation and concluded sending was harmless; the
+  // failure is not a degraded review but no review at all.
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
   const server = await startFakeServer((request, response) => {
@@ -166,8 +181,12 @@ test('an unknown window sends the files but never claims they are complete', asy
 
   assert.equal(result.status, 0, result.stderr);
   const prompt = sentPrompt(server);
-  assert.match(prompt, /--- FILE: seed\.txt ---/, 'the files still go — we have no basis to withhold them');
-  assert.doesNotMatch(prompt, /complete current content/, 'but the claim is not backed by anything');
+  // The witness is what the SERVER received, not what the report said about it.
+  assert.doesNotMatch(prompt, /--- FILE: seed\.txt ---/, 'the body is withheld: nothing could size it');
+  assert.doesNotMatch(prompt, /complete current content/, 'and the claim is still not made');
+  // The cause and the remedy, on the path a human reads.
+  assert.match(result.stdout, /could not be determined/, 'the report names the cause');
+  assert.match(result.stdout, /contextLength/, 'and the remedy');
 });
 
 test('--commit reviews a commit end to end, whole files and all', async () => {

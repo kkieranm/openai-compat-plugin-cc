@@ -179,9 +179,9 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-139**, **OAI-141**, **OAI-138**,
+**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-141**, **OAI-138**, **OAI-142**,
 **OAI-140**, **OAI-137**.
-**OAI-139 leads the tier and was found by probing OAI-138, not by the sweep**: when nothing is
+**OAI-139 (done 2026-08-12) was found by probing OAI-138, not by the sweep**: when nothing is
 resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
 fallback therefore cannot fire — so a cold start ships untrimmed input and the failure arrives wearing
 a known LM Studio symptom. It leads because it is a live correctness defect on every cold invocation,
@@ -2806,145 +2806,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **zero aborts**. That reason is minted from the caller's own budget, and OAI-119 was filed because
   it counted toward `--abort-after 3` — *"three slow commits abort a healthy sweep."* The OAI-120 fix
   held in the field.
-- **OAI-139** — **When nothing is resident the window is unknown, so the size guard is DISABLED and
-  the drop-to-hunks fallback can never fire — a cold start sends untrimmed input.** Filed 2026-08-10,
-  found while probing OAI-138 and **distinct from it**: this is a window-detection defect, not a
-  wall-clock one, and raising `--max-seconds` cannot touch it.
-  **Reproduced by accident, then confirmed in code.** Commit `77c1eab97` was re-run alone on a fresh
-  process with `lms ps` empty. It failed in **14 seconds** with `empty-completion` on all three
-  attempts, at **`promptChars: 492053`** — roughly **145k tokens against a 61,696 window**. The same
-  commit in the overnight sweep, reviewed mid-run with the model already resident, built a prompt of
-  **150,056 chars** — **3.3x smaller** — and failed as `deadline-timeout` instead. Same commit, same
-  code, same machine; the only difference is whether a model was loaded when the process started.
-  **The mechanism, read off the code rather than inferred.** `context-guard.mjs:46-51`:
-  `if (!contextLength) return { checked: false, note: 'Context window unknown for …' }`. The guard
-  **returns without checking**, so the oversize refusal below it never throws. That refusal is the one
-  carrying `reason: 'oversize'` — its own comment calls it *"the one refusal that sending less input
-  can fix, so the one a caller may retry smaller"* — and it is what makes a caller drop `changed`
-  files and fall back to the hunks. **No refusal, no retry, no dropping.** `contextLength` comes from
-  `loaded_context_length` (CLAUDE.md: never `max_context_length`), which is **null for a model that is
-  not resident**, so the whole chain is disarmed exactly when a run starts cold.
-  **Why it matters beyond one commit.** Every sweep starts with nothing loaded, so its **first**
-  review runs unguarded, and any single-commit invocation does too. `adr/005`'s guarantee — *"the reply
-  falls back to the diff alone when the window is too small"* — is **unavailable in precisely the
-  situation it was written for**. The failure is then attributed to the server (`empty-completion` is
-  a documented LM Studio drop shape), which is how it stayed invisible: a client-side sizing bug
-  wearing a known server-side symptom.
-  **A hypothesis this DISPROVED, recorded so it is not re-run.** The obvious next thought was that
-  last night's 20 timeouts were also over-window. **They were not**: measured across all eligible
-  entries, the failures' inputs run 7,253-48,583 tokens with **zero above 61,696**. They are 2-3x
-  larger than the completions (median 33,071 vs 9,213-15,669) and that is why they are slow, but they
-  fit. **OAI-138 remains a time problem; this is a separate size problem.**
-  **DECIDED 2026-08-10 (user, Claude and Codex agreeing): do NOT set a per-provider `contextLength`
-  as an interim mitigation.** It was proposed and rejected on Codex's reasoning: `delegate.mjs:149`
-  lets a configured value override per-model detection **unconditionally**, this profile serves six
-  models whose windows were never measured, and `adr/002` records the author removing exactly such an
-  override from their own config. Decisively, it would **mask this defect while making the guard look
-  armed** — removing the runtime symptom OAI-139 needs to stay observable and preventing an ordinary
-  run from ever testing the fallback. **The accepted risk of leaving it unset** is that a cold-start
-  first review stays fail-open; that risk is visible and attributable, which the alternative is not.
-  **CODEX REVIEW 2026-08-10 — two of the three claims above were overstated. Corrected here.**
-  - **Claim A (the guard returns early) — TRUE**, `context-guard.mjs:46`.
-  - **Claim B — FALSE AS WRITTEN, narrower version true.** I cited the wrong files: the caller is
-    `review-ladder.mjs:47`, not `review.mjs` or `git-diff.mjs`, and the drop happens there via
-    `if (error.reason !== 'oversize') throw error;` then a rebuild with whole files off. Other paths
-    DO reach the hunks rung independently — explicit `--diff-only` (`git-diff.mjs:219`), and changes
-    with no readable body (deletions, binaries, vanished files) — but **none of them drops a populated
-    `changed` collection.** So "the fallback is reached only via that refusal" is false; **"an
-    oversized whole-file review with an unknown window never drops those files" is true**, and that is
-    the defect.
-  - **Claim C — FALSE AS UNCONDITIONAL, true for unconfigured LM Studio.** `delegate.mjs:149` resolves
-    `contextLength: profile.contextLength ?? windowFor(described, model)`, so **a configured
-    `contextLength` still arms the guard** — which is why the note tells the user to set one, and it
-    is a real mitigation available today. Detection is also stricter than I said: `model-info.mjs:87`
-    requires `state === 'loaded'` **and** a positive integer, not merely a non-null field. And it does
-    not generalise: llama.cpp `/props`, TGI `/info` and oMLX report a served window **without**
-    residency, so this is an LM-Studio-shaped hole, not a universal one.
-  **FIX RECOMMENDED BY CODEX: option 3, as a cap on optional whole-file ENRICHMENT — not option 1.**
-  I had favoured assuming a small window; Codex argued the better seam is `target.changed`, which is
-  already explicitly droppable, where `target.files` may be the only copy of untracked or `--file`
-  content. In `prepareLadder`, build and measure the whole-file candidate and choose the hunks rung
-  when it exceeds a named enrichment ceiling **even when `contextLength` is unknown**, keeping the
-  existing guard for authoritative refusal when a real window IS available. **This invents no window
-  number**, which is the objection to option 1.
-  Its stated constraints: never silently truncate an individual file; never apply the cap to
-  `target.files`; never turn an oversized irreducible diff into a fabricated context-window refusal;
-  set `hunksOnly: true` exactly as the existing fallback does; and **give the ceiling its own name and
-  rationale** — `REVIEW_UNKNOWN_WINDOW_TOKENS` is a *reply* budget and must not be reused as an input
-  threshold.
-  Its risks, as stated rather than as reassurance: on a large but undetectable window it may discard
-  whole-file context that would have fit, reducing precision and possibly reviving the false positives
-  `adr/005` exists to address; the threshold is a heuristic, not proof of fit; a huge diff or a pinned
-  `--file` can still overload an unknown window because those inputs cannot honestly be dropped; and a
-  threshold chosen against this 61,696-token machine may age badly across providers.
-  Note the interaction with OAI-134: that item established the plugin has **no channel to influence a
-  load**, so it cannot ensure residency — it can only notice.
-  **PRE-REGISTERED EXPERIMENT, launched 2026-08-10 21:35, thresholds fixed BEFORE the result exists.**
-  A `--diff-only` sweep over the same pinned SHA, window, model and 1800s cap as that night's
-  whole-file run — `bench/results/oai139-diff-only-2026-08-10/`. Diff-only **is** the rung this item's
-  enrichment ceiling would force, so this prices the fix's stated risk (under-enrichment reviving the
-  false positives `adr/005` exists to address) before a line of it is written.
-  Read against the whole-file baseline of **17 finding-bearing commits of 40 eligible**:
-  - **CHANGES THE DESIGN** if diff-only loses **5 or more** of those 17 (~30%) with no credible
-    replacement findings. A low blanket ceiling would then be wrong, and the fix needs a higher or
-    selective threshold, or a different cold-start sizing mechanism entirely.
-  - **CHANGES NOTHING** if **15 or more** of the 17 still produce credible findings with no material
-    rise in false positives.
-  - **Between those: INCONCLUSIVE, and explicitly not evidence for changing the design.**
-  - **A better completion rate on its own changes nothing** — the ceiling is *expected* to improve
-    fit, so that result is not informative about the risk being measured.
-  **It is a CONSERVATIVE test and its asymmetry is stated:** `--diff-only` strips enrichment from
-  every commit, where the ceiling would strip it only above the threshold. So a good result strongly
-  de-risks the fix, while a bad one identifies the risk but likely overstates its incidence.
-  **RESULT 2026-08-11: INCONCLUSIVE by the letter, and the letter is what counts.** Diff-only kept
-  **12** of the 17, **lost 5** (all five going to `clean`, not to fewer findings), and made **7** new
-  commits finding-bearing; totals 19 finding-bearing and 35 findings against 17 and 23. Neither branch
-  fires: the design-change branch needed 5+ lost **with no credible replacements** and replacements
-  exist; the changes-nothing branch needed 15+ kept and only 12 were. Recorded as inconclusive rather
-  than argued either way.
-  **The result NOT in the thresholds is the one that matters: all five losses became `clean`.** A
-  false-clean is this repo's worst outcome shape, and it is exactly the under-enrichment risk. Also as
-  pre-registered, diff-only's better completion (39 of 40 vs 36) is **uninformative** here.
-  **REPLICATION LAUNCHED 2026-08-11 08:26, design challenged and changed by Codex.** My proposal was
-  two more whole-file runs to bound variance; Codex rejected it — that leaves the **diff-only** arm,
-  the one whose effect must actually be identified, as a single draw. Running instead **one more of
-  each arm**, both at 1800s on the same pinned SHA, **diff-only FIRST** so that any drift with time or
-  machine state no longer lines up with the arm as it did before. `lms unload --all` between arms for
-  the same cold-start state. Records in `bench/results/oai139-replication-2026-08-11/`.
-  **The decision statistic, fixed in advance: EXCESS NON-REPRODUCTION `E`.** Over the original 17
-  whole-file finding-bearing commits, let `L` be how many have their credible original finding absent
-  in a run; `E = mean(L_diffonly_1, L_diffonly_2) - L_wholefile_2`. **`E >= 5`: reject a blanket low
-  enrichment ceiling. `E <= 2`: the loss is ordinary run variation, proceed with the ceiling design.
-  Between: inconclusive.** Match **substantive findings**, not merely whether a commit produced any.
-  **Total findings and finding-bearing counts are explicitly NOT the decision statistic** — extra
-  findings may be false positives and cannot automatically offset lost established ones.
-  **REPLICATION RESULT 2026-08-12 — the diff-only concern is REFUTED, and `E` clears the bar.** Of
-  whole-file #1's 17 finding-bearing commits, the re-runs were finding-bearing again: **whole-file #2
-  kept 12 (absent 5)**, **diff-only #1 kept 12 (absent 5)**, **diff-only #2 kept 14 (absent 3)**.
-  **`E = mean(5, 3) - 5 = -1`**, comfortably inside the pre-registered `E <= 2` branch: *the loss is
-  ordinary run variation, proceed with the ceiling design.* **The same configuration re-run against
-  itself lost exactly as many as diff-only did**, so the five losses that looked like an
-  under-enrichment signal were noise from a single draw.
-  **The variance is larger than the effect anyone was arguing about**: whole-file's own finding-bearing
-  count moved **17 -> 22** between identical runs.
-  **A caveat that is NOT a hedge: this is the finding-bearing PROXY, not substantive matching.** The
-  full per-commit comparison is committed alongside the records at
-  `bench/results/oai139-replication-2026-08-11/substantive-comparison.md` (gitignored directory - the
-  numbers here are the durable copy).
-  **What the substantive read shows, and it changes the meaning of "absent":** across the 10 commits
-  where any run went quiet, "absent" almost never means *the defect was not found*. It usually means
-  **a different defect was reported**. `d2396ce08` had its relative-path guard defect found by three of
-  four runs; `caa9d85ba`'s `reduce`/NaN defect was found by the baseline and by diff-only #1 in nearly
-  identical words. **Only ONE of the 17 - `10b29cbda` - went clean in all three re-runs**, making its
-  baseline finding the single best candidate for a baseline false positive.
-  **One commit is the exception worth keeping in view**: `f5079538d`'s `coverageSection` exactly-once
-  pair was found by **both whole-file runs, in near-identical words, and by neither diff-only run**.
-  That is the only per-commit pattern in the set that looks like a genuine enrichment effect rather
-  than churn, and it is one commit - not evidence, but the thing to watch if the ceiling ships.
-  **Codex's stated failure mode for this design: nonstationary pseudo-replication.** Two sequential
-  samples per arm can look stable while power state, thermal load, residency or rare decoding paths
-  shift together, and `E` also rests on a human judging whether findings substantively match. A
-  decisive-looking answer may reflect one machine-day and one adjudicator.
 - **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
   with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
   OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
@@ -2998,3 +2859,23 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   require N>=2 runs per arm before an A/B enters this tracker as evidence; or state a minimum
   detectable effect in the pre-registration. **The cheap half is the last one** — it costs a sentence
   and would have stopped this being read as a signal for two days.
+
+- **OAI-142** — **`unconstrainedLadder` sizes the reply schema from a rung the request may not send.**
+  Filed 2026-08-12 by `codex-adversarial` (high, confidence 0.96) during OAI-139's review ladder, and
+  **deliberately not fixed there** — it is pre-existing, `git diff` confirms OAI-139 never touched
+  `unconstrainedLadder`, and the user classified it a widening.
+  `prepareLadder` runs **twice**: call 1 sizes against `REVIEW_SCHEMA`, the longest instruction, and
+  the schema is derived from that call's reserve; call 2 uses the shorter derived instruction and is
+  the request actually sent. If the whole-file rung is **rejected on call 1 and fits on call 2**, the
+  reserve SHRINKS between them, so the schema advertises an `analysis` ceiling the budget cannot pay
+  for — token exhaustion or a truncated unparseable reply, precisely at the window boundary.
+  **The docstring asserts this cannot happen** (`review-ladder.mjs`): *"the cap derived from it can
+  only under-state the room available: wrong in the safe direction by a bounded amount"*. That holds
+  only while the rung cannot flip, which is the case this finding constructs — so the ADR-grade
+  reasoning is refuted, not merely incomplete.
+  Disclosure is **unaffected**: the report reads call 2's `rung`/`skipped`, so the bodies sent and the
+  note about them still agree.
+  Fix per Codex: make rung selection stable across sizing passes, or iterate until rung and reserve
+  converge, deriving the final schema from the reserve of the exact request that will be sent. Needs a
+  test pinning a target ON the fit boundary, which is the part with no precedent here.
+

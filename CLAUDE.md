@@ -18,7 +18,8 @@ named, and refuses an id a recognised catalogue does not list; `scripts/lib/mode
 `substitution()` is the one comparison that says the model which answered is not the one requested —
 see [ADR 011](adr/011-which-model-actually-answered.md).
 
-`scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff, taking content from the
+`scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff **when the window can be
+sized** — an unsizeable one skips that rung and the report says so — taking content from the
 revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by
 no diff) from droppable `changed`, and the reply falls back to the diff alone when the window is too
 small — see [ADR 005](adr/005-whole-files-for-review.md).
@@ -164,7 +165,7 @@ the real CLI via `--json` and matched on a quoted anchor line — see
 `bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it, and
 `bench/lib/sweep-outcome.mjs` `classify` builds every report-derived entry through one mapping so each
 carries the envelope fields that change what a reader should believe (`analysisCut`, `atCap`,
-`hunksOnly`, `dropped`, `reason`) — leaving each commit disposed of exactly once across the report's
+`hunksOnly`, `skippedUnsizedWindow`, `dropped`, `reason`) — leaving each commit disposed of exactly once across the report's
 three sections, so a night lost to starvation reads as coverage rather than as silence — see
 [ADR 021](adr/021-an-unwatched-sweep-must-say-what-it-did-not-review.md).
 

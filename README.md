@@ -58,7 +58,11 @@ for the reviewer.
 Per-provider options: `defaultModel`, `contextLength`, `timeoutSeconds`, `prefillTokensPerSecond`,
 `generationTokensPerSecond`, and `apiKeyEnv` (name of an environment variable holding the key —
 preferred) or `apiKey`. All are optional: `contextLength` is detected where possible, and
-`defaultModel` is only needed when a server offers more than one chat model.
+`defaultModel` is only needed when a server offers more than one chat model. Setting `contextLength`
+is worth it for `/oai:review`: without a window figure it sends the diff-covered changed files as
+hunks alone rather than building a request nothing can size, so a review is narrower than it needs to
+be (it says so when it does). Files covered by no diff — untracked, or given with `--file` — still go
+whole either way, because withholding the only copy of that code would review nothing.
 
 The two rate options exist only so `/oai:task` can tell you roughly how long a request will take
 **before** it spends it — prefill is silent and can run to minutes on a large input, which is exactly
@@ -94,7 +98,9 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   shows where the number came from. Only the window a server is *actually serving* counts — a
   model's theoretical ceiling is ignored, since guarding on it would admit input the server rejects.
   Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on a
-  profile overrides detection.
+  profile overrides detection. An undetected window is not treated as a large one: `/oai:review`
+  stops sending the diff-covered changed files whole rather than shipping a request it cannot size,
+  and reports the skip. Files covered by no diff still go whole — see the review command's docs.
 - **Review findings are claims, not conclusions.** They come from a small model asked for a strict
   JSON schema; each one is checked against the real code before anything is changed, and a finding
   that cannot be reproduced is reported as refuted rather than fixed. Expect false positives.

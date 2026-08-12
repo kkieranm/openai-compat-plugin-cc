@@ -204,6 +204,17 @@ function requireProvider(config, name) {
 }
 
 /** Pick one provider: an explicit --base-url wins, then --provider, then the default. */
+/**
+ * The name a profile gets when `--base-url` named no provider.
+ *
+ * Exported because a second module has to RECOGNISE it: a remedy that says
+ * `set "contextLength" for "custom"` points at a config entry that does not
+ * exist, so `review.mjs` must tell this case apart and say something the user
+ * can actually do. A bare string compared in two files is the same fact stored
+ * twice, which is the defect that produced it.
+ */
+export const AD_HOC_PROFILE_NAME = 'custom';
+
 export function resolveProfile(config, { provider, baseUrl } = {}) {
   // A named provider must exist even when --base-url overrides its endpoint.
   // Skipping this check let a typo yield an empty profile, which silently threw
@@ -219,7 +230,14 @@ export function resolveProfile(config, { provider, baseUrl } = {}) {
       delete overridden.apiKey;
       delete overridden.apiKeyEnv;
     }
-    const profile = buildProfile(provider ?? 'custom', overridden);
+    const profile = buildProfile(provider ?? AD_HOC_PROFILE_NAME, overridden);
+    // Set HERE because this is the only branch that KNOWS it: a profile built at the
+    // bottom of this function came from a config entry, and one built here did not.
+    // Read by `review.mjs`, whose remedy would otherwise send the user to a config key
+    // that does not exist. Comparing `name` against the constant instead was a real
+    // defect — a user may legitimately configure a provider CALLED "custom", which
+    // reaches the branch below and never touches it.
+    profile.adHoc = true;
     profile.credentialWithheld = Boolean(crossOrigin && (named.apiKey || named.apiKeyEnv));
     return profile;
   }

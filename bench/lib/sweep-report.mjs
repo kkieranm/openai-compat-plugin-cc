@@ -16,6 +16,7 @@
 // act, so a lead is never lost and a commit is never counted twice.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { incompleteness } from './sweep-notes.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
 
 /**
@@ -48,29 +49,6 @@ const WHY = {
  */
 function answeredBy(entry) {
   return entry.model ? ` *(answered by \`${entry.model}\`)*` : '';
-}
-
-/**
- * The caveats that ride along with a review that DID complete.
- *
- * `atCap` and `dropped` do not stop a review counting — findings were produced —
- * but both mean the list is shorter than what the model had to say, and a reader
- * comparing two commits' counts needs to know which.
- */
-function incompleteness(entry) {
-  const notes = [];
-  // Read from the entry, never inferred from the outcome name. `analysisCut`
-  // used to reach the artifact only by surviving as the `truncated` verdict, so
-  // an entry whose outcome was overridden — a substituted model whose analysis
-  // was ALSO cut — lost the fact entirely.
-  if (entry.analysisCut) notes.push('the analysis was cut off before the model finished looking, so this is not a complete review of the commit');
-  if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
-  if (entry.dropped) notes.push(`${entry.dropped} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
-  if (entry.hunksOnly) notes.push('the changed files did not fit the window, so only the diff was reviewed — not the files whole');
-  if (entry.rawTruncated) notes.push('the raw reply was truncated in the machine record');
-  if (entry.stderrTruncated) notes.push('the captured stderr was truncated in the machine record');
-  if (entry.signal) notes.push(`the child was terminated by signal ${entry.signal}`);
-  return notes;
 }
 
 /**
@@ -252,8 +230,9 @@ function header(record) {
  * this run read the code to check one. Saying so in the file means a reader who
  * finds it weeks later, with no memory of how it was produced, still knows what
  * it is worth. The commit-local point matters just as much: a commit-scoped
- * review sees the changed files whole (ADR 005) but nothing the commit did not
- * touch, so it cannot see a defect that lives in an existing caller elsewhere.
+ * review sees AT MOST the changed files whole (ADR 005) and nothing the commit
+ * did not touch, so it cannot see a defect in an existing caller elsewhere. "At
+ * most" because this section covers every entry, so it must hold for the worst.
  */
 function caveats() {
   return [
@@ -261,8 +240,9 @@ function caveats() {
     '',
     '- **Unverified claims from a small local model.** Nothing here read the code to check a finding.',
     '  Treat every one as a lead to confirm or refute, never as a conclusion.',
-    '- **Commit-local leads.** Each review saw one commit: its changed files in full, and nothing else.',
-    '  A defect in the relationship between a change and an existing caller elsewhere is invisible to it.',
+    '- **Commit-local leads.** Each review saw one commit and nothing else, so a defect in the relationship',
+    '  between a change and an existing caller elsewhere is invisible to it. Whether it saw that commit\'s',
+    '  files whole or only its diff hunks is per entry, in the coverage notes above.',
     '- **An empty findings list is not a clean bill of health** unless the coverage section is also empty.',
     '',
   ];

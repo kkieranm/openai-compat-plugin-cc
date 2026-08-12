@@ -153,8 +153,9 @@ separately; it is not a reason to keep 900.
   A defect living in the relationship between a change and an existing caller elsewhere is invisible
   by construction. The report says so, in those words.
   **"Whole files" is conditional and the report now says when it did not hold**: the request ladder
-  falls back to the diff alone when the changed files do not fit the window, which the envelope
-  reports as `hunksOnly`. An entry carrying it is annotated, because otherwise this ADR's own
+  falls back to the diff alone when the changed files do not fit the window, **and skips the rung
+  outright when nothing could size that window** (OAI-139), which the envelope reports as `hunksOnly`
+  and — for the second cause only — `skippedUnsizedWindow`. An entry carrying it is annotated, because otherwise this ADR's own
   whole-files claim would be false for that commit with nothing saying so.
 - **A completed review can still be incomplete, and says which kind.** `atCap` means the findings list
   hit the reporting ceiling; `dropped` counts findings the model emitted that normalization discarded
@@ -200,8 +201,8 @@ separately; it is not a reason to keep 900.
 - **One mapping builds every report-derived entry, and a differing verdict is an override on top.**
   `classify` no longer constructs entries itself: every parsed non-error report goes through
   `reported()`, and `substituted` is that entry with its outcome replaced. The rule it enforces:
-  *every report-derived entry retains `model`, `analysisCut`, `atCap`, `hunksOnly` and `dropped`, and
-  retains `findings` whenever it is an array* — `unreadable` legitimately has no array to carry.
+  *every report-derived entry retains `model`, `analysisCut`, `atCap`, `hunksOnly`,
+  `skippedUnsizedWindow` and `dropped`, and retains `findings` whenever it is an array* — `unreadable` legitimately has no array to carry.
   **This exists because the identity recurred.** "`classify` does not carry a belief-changing envelope
   field onto the entry" was fixed for `analysisCut`/`atCap`/`hunksOnly`, then for `dropped`, and then
   reappeared on the `substituted` branch, which the two fixes never reached. Fixing a third branch
