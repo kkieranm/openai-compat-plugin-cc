@@ -179,7 +179,7 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-141**, **OAI-138**, **OAI-142**,
+**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
 **OAI-140**, **OAI-137**.
 **OAI-139 (done 2026-08-12) was found by probing OAI-138, not by the sweep**: when nothing is
 resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
@@ -2878,4 +2878,26 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Fix per Codex: make rung selection stable across sizing passes, or iterate until rung and reserve
   converge, deriving the final schema from the reserve of the exact request that will be sent. Needs a
   test pinning a target ON the fit boundary, which is the part with no precedent here.
+
+
+- **OAI-143** — **`errorReport` carries none of the caveat fields `jsonReport` does, so a run that was
+  CUT tells a harness nothing about what it sent.** Filed 2026-08-12, observed while verifying
+  OAI-139: a review cut by `--max-seconds` returns `{error, reason, message, hint, attempts,
+  requestedModel}` and nothing else. `estimatedTokens`, `hunksOnly`, `skippedUnsizedWindow` and
+  `contextChecked` are all absent — so the run carrying the MOST evidence about a sizing problem is
+  the one that reports least about it. Concretely: the first live reproduction attempt for OAI-139 was
+  cut at 900s and its envelope could not evidence the skip either way; the claim had to be carried by
+  a separate deterministic stub run. `adr/012` already argues the failure path is where the attempt
+  record matters most, and the same reasoning applies to the request-shape fields. Not a wide change —
+  `errorReport` needs the context `jsonReport` already receives.
+
+- **OAI-144** — **`finishReason === 'length'` is treated as a vendor-uniform signal and nothing
+  establishes that it is.** Filed 2026-08-12 by `lean-wide`'s vendor-assumption lens during OAI-139's
+  ladder, as an UNVERIFIABLE rather than a finding: the check was only MOVED in that change
+  (`review-report.mjs` to `review-unparsed.mjs`), never introduced or altered. This repo targets LM
+  Studio, llama.cpp, vLLM, TGI and oMLX, and `tests/` holds no per-vendor fixture set enumerating
+  `finish_reason` values across them, so whether the field is uniformly named and valued is assumed.
+  The consequence if it is not: a truncated reply from one of them is not recognised as truncated, and
+  a run that ran out of room reads as a run that finished. Cheap first step is a fixture set, not a
+  code change.
 

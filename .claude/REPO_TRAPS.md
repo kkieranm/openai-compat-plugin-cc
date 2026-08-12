@@ -1118,3 +1118,41 @@ Distinct from the stub-fidelity entry above, and filed separately for that reaso
 double being kinder than its dependency, this one is about an assertion the production code makes
 unfalsifiable. Fifth confirmed instance of "a test that cannot fail" in a single feature, second
 distinct shape.
+
+## A sentence that grows one clause per fix ends up asserting something false
+
+**Confirmed four times in one feature (OAI-139, 2026-08-12)**, by four different lenses, always in
+prose and never in the mechanism it described.
+
+The shape: a user-visible note or an ADR paragraph states a fact about what the code did. A review
+finds a case the statement is wrong about. The fix APPENDS a qualifying clause. The longer sentence
+now asserts one more thing that must be true on every path that can render it — and the next review
+finds a path where the new clause is false.
+
+The four instances, in order:
+
+1. `adr/005` said the incompleteness note is not raised under `--diff-only`. It is, and a shipped test
+   asserted so. Adjudicated FALSE by `codex-adversarial` at confidence 1.0.
+2. "the whole-file rung is skipped" was stated unqualified in four artifacts. Only DIFF-COVERED files
+   are skipped; pinned and untracked ones always go whole.
+3. The ADR called the pinned path "unaffected" — true about the skip, and read as reassurance about
+   safety, while those bodies are exactly what still goes unmeasured.
+4. The fix for (3) added "Files given with --file, and untracked files, still went whole" to the
+   note — asserted on every unsized run, including ordinary tracked-only reviews where **no such
+   bodies existed**. The clause added to stop a false claim made a new one.
+
+**What actually worked, after three patches failed**: stop describing the adjacent path in the
+user-facing sentence at all. The note now states only what the run OBSERVED — the window could not be
+sized, the diff-covered files were not sent whole, here is the remedy — and the ADR carries the
+residual. Silence about a path is not a false claim about it; a clause is.
+
+**The tell, and it is checkable before writing the clause**: if the new clause describes something
+the note's own firing CONDITION does not require, it will be false whenever the condition holds and
+the described thing does not. `skippedUnsizedWindow` requires an unsized window and a non-empty
+`changed` list; it says nothing about `files`, which is exactly why a clause about `files` was wrong.
+
+**Guarded by** `tests/review-unsized-window.test.js` — three negative controls that assert the REMEDY
+TEXT IS ABSENT, not merely that a flag is false; and `tests/sweep-report.test.js`
+"an unsized-window review says WHY, and never re-asserts a measurement", which asserts a FORBIDDEN
+phrase rather than only required ones. A test that checks only what should be present cannot catch a
+sentence that grew.
