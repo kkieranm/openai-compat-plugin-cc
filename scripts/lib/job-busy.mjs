@@ -35,16 +35,28 @@ export function isBusy(error) {
  * they do not need.
  *
  * **What comes through here is an ENUMERATED SET, not "every important write".**
- * Six sites: opening the store; the three writes that publish a job's terminal
+ * Seven sites: opening the store; the three writes that publish a job's terminal
  * state (`completed`, `failed`, `queue-timeout`); `markSpawned`, which runs after
- * a detached worker already exists; and `registerWaiter`, whose caller has no
- * catch, so losing it costs a whole run. What they share is that work exists
- * which is lost if the call does not land.
+ * a detached worker already exists; `registerWaiter`, whose caller has no catch,
+ * so losing it costs a whole run; and the LAUNCH-OUTCOME terminal write in
+ * `job-launch-outcome.mjs`, added for OAI-67, without which a row whose launch
+ * could not be confirmed AND WHICH NO WORKER HAS REGISTERED AGAINST blocks every job behind it
+ * for the whole startup grace. What they share is that work exists which is lost
+ * if the call does not land — for the seventh, the work is the queue's ability to
+ * move past such a row.
  *
- * Counting them, outside this module: six `withBusyRetry` call sites, and
- * six `isBusy` call sites. The two sets OVERLAP — one `isBusy` call is the
- * exhaustion guard at a retried site, the spawn stamp — so no total is stated,
- * and neither number
+ * **Both qualifications are load-bearing, not hedging.** A spawn rejection can
+ * arrive after the child is alive, so that site records a launch it could not
+ * CONFIRM rather than one it saw fail, and the row may be one a worker registers against a
+ * moment later — in which case nothing was blocked and the write correctly
+ * matches nothing.
+ *
+ * Counting them, outside this module: seven `withBusyRetry` call sites, and
+ * five `isBusy` call sites. The two sets are now DISJOINT — every remaining
+ * `isBusy` is a skip-only caller that never retries. They overlapped until
+ * OAI-67's third review pass: the one shared member was the spawn stamp's
+ * exhaustion guard, and it went when that site stopped asking WHICH storage fault
+ * it had suffered. No total is stated even so, and neither number
  * appears without its noun. `tests/busy-site-count.test.js` counts both from
  * `scripts/lib` and reddens if either sentence here disagrees, because this count
  * drifted three times in three review passes when it was prose alone.
@@ -83,12 +95,40 @@ export function isBusy(error) {
  * code could not keep.
  *
  * The sleep is synchronous, and that is safe **only because of where these
- * callers sit**: every one of them runs before the model call or after it has
- * settled, so none can freeze a request in flight. During terminal persistence
+ * callers sit**: each of the first six runs before this process's model call or
+ * after it has settled, so none can freeze a request in flight. The seventh is
+ * different and is argued separately below — on the post-`'spawn'` path another
+ * PROCESS may have a request in flight, which is why its safety cannot come from
+ * this sentence. During terminal persistence
  * it does delay the heartbeat and the cancellation read — but no generation
- * remains to cancel by then. **A SEVENTH call site does not inherit that
- * argument** — it is a property of where these six sit, not of this function, and
- * a caller added inside a live request would freeze it.
+ * remains to cancel by then. **A further call site does not inherit that
+ * argument** — it is a property of where these sit, not of this function, and a
+ * caller added inside a live request would freeze it.
+ *
+ * **The seventh site's argument, made on its own terms as that warning demands.**
+ * The first version of it claimed the site runs "after the child has failed to
+ * launch, so no model call exists" — and that is FALSE, by this feature's own
+ * design: a spawn rejection can arrive after a detached worker was created, and
+ * that worker may still be running and may yet call a model. The true argument does not depend on the spawn outcome at all.
+ * **The sleep blocks the SUBMITTER and nothing else.** Any worker that does exist
+ * is a DETACHED process with its own event loop, reaching the database
+ * independently; this process cannot suspend it by blocking itself. So a request
+ * in flight in that worker is not one this sleep can REACH — it keeps running
+ * while this process sits still.
+ *
+ * Note what that argument does NOT say, because an earlier version of it said
+ * exactly this and it was false: it does not say there is no such request. There
+ * may well be one — the paragraph above this says so outright — and this site is
+ * safe because the sleep cannot touch it, never because it does not exist.
+ * Unreachable is not nonexistent, and collapsing the two is the same conflation
+ * OAI-67 exists to remove.
+ *
+ * Deliberately NOT argued from descriptors. An earlier version added that the
+ * worker "holds no descriptor this process owns", which is false on exactly the
+ * path in question: the rejection that brings us here can be a FAILING CLOSE of
+ * the submitter's copy of the log descriptor, so what that copy is doing is the
+ * one thing unresolved. The argument does not need it — process independence
+ * carries it alone.
  */
 export function withBusyRetry(fn, { budgetMs = 30_000, delayMs = 50 } = {}) {
   // `performance.now()` rather than `Date.now()`: the budget measures a duration,

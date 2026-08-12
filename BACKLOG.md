@@ -252,7 +252,7 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**.
+**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**.
 **OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
@@ -270,6 +270,7 @@ an exclusion resting on an untested argument (OAI-105), a rescue whose own guard
 one unreachable-today hole (OAI-109), a count restated where nothing holds it to the code (OAI-110),
 a stop request with no contention policy at all (OAI-107), and a fact that reaches a human on stderr
 but no machine through `--json` (OAI-108). OAI-111 is housekeeping the review fan-outs generate.
+**OAI-145** sits with them for the same reason and with one difference worth stating: its trigger has never been observed either, but unlike the rest it is a claim the code makes and cannot support, and OAI-67 already contained every destructive consequence of it.
 
 <!-- /tiers -->
 
@@ -2128,6 +2129,16 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   with the doc, an end-to-end `--background --json` test, and a name describing what is actually
   unknown — the spawn IS confirmed, `spawnWorker` returned a pid; it is the recorded start that is
   missing, and a caller reading "unconfirmed spawn" could resubmit a billable request.
+  **Enlarged by OAI-67 on 2026-08-12, and this is now the item's worst case rather than its original
+  one.** OAI-67 changed the same stamp so that ANY storage fault — not only an exhausted lock
+  contention — reports on stderr and still returns the id, because rethrowing lost the handle to a
+  worker that may already have been spending. The `--json` channel did not change, so a submission
+  made against a CORRUPT database or a FULL DISK now emits the same success envelope as a healthy one,
+  where before that caller received a rejection and knew the submission was unhealthy. The trade was
+  made deliberately (a lost id is unrecoverable and costs money; a silent success is recoverable by
+  polling `/oai:status`), Codex and the author both recommended keeping it, and the user chose it — but
+  it means **this item now covers a path that previously did signal**, not merely one that was always
+  quiet. The contract fix is still the same fix, and it is still gated on the same doc-plus-test work.
 
 - **OAI-109** — **the rescue's own guard is unwitnessed, and one narrow hole inside it is real.**
   `salvageOutcome` guards its stderr write, and if `JSON.stringify` throws it writes a
@@ -2852,3 +2863,52 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   a run that ran out of room reads as a run that finished. Cheap first step is a fixture set, not a
   code change.
 
+
+- **OAI-145** — **`spawnWorker` can reject after the child is alive, so "the spawn failed" is a
+  claim it cannot support.** Filed 2026-08-12 by `codex-adversarial` (0.94) during OAI-67's ladder;
+  OAI-67 CONTAINED the harm rather than fixing this, by the user's decision, so this is the root fix
+  and nothing depends on it. `job-spawn.mjs:33-50` awaits the `'spawn'` event and then runs
+  `closeSync(log)` in a `finally`; a throw there (EIO, EBADF) rejects the promise while a detached
+  worker is already running, and `child.unref()` never executes either. The caller cannot tell that
+  rejection apart from "no child was ever created", because the contract does not distinguish them.
+  **What OAI-67 did instead:** the submitter terminalizes with `abandonUnstarted`, whose
+  `waiter_pid IS NULL` compare-and-set makes both orderings safe — so no row is destroyed and no paid
+  work is lost. What survives is milder and real: a submission REPORTS FAILURE while its worker runs
+  to completion, and the user is billed for an answer they were told did not start. The fix is to
+  preserve the pid once the `'spawn'` event has fired and report a cleanup fault separately, which
+  changes the contract of the one function in this repo that launches a process meant to outlive its
+  parent — its own header says every line is load-bearing, which is why this is a feature and not a
+  patch. Codex recommended doing it inside OAI-67; the user chose to separate it.
+
+- **OAI-146** — **"A detached worker is running" is asserted in many places and established in
+  none.** Filed 2026-08-12, from OAI-67's gate rounds, which kept surfacing instances OUTSIDE that
+  feature's diff. The `'spawn'` event proves a child was CREATED; nothing in this repo watches it
+  afterwards, so every sentence saying a worker "is running", "is alive", or "is about to make a
+  billable call" claims continued liveness nobody observed. OAI-67 corrected every instance it
+  touched and left these, which are pre-existing and unrelated to it: `adr/020`'s site (e) discussion
+  and its evidence-table row name `a busy on the SPAWNED stamp does not lose an id whose worker is
+  already running` (renaming it renames a live test, which is why it survives a claim sweep twice over
+  — it is quoted text, not prose), and `tests/job-busy-spawn.test.js`'s header
+  ("already running and about to make a real, billable model call"). **Why it matters rather than
+  being pedantry:** the same overclaim, in `task-submit.mjs`, is what made a spawn rejection destroy
+  a live worker's row — OAI-67's central defect — and the shape recurred eight times inside one
+  feature once anyone looked. **Cheap first step is a grep, not a redesign**, and the honest bound is
+  that this is comment/ADR text, not behaviour: no code reads these sentences.
+
+- **OAI-147** — **`tests/structure.test.js`'s orphaned-doc-comment guard is blind to a file's FIRST
+  function, which is where the defect it exists for is most likely to be.** Filed 2026-08-12 from
+  OAI-67's review pass 3, and **measured rather than argued**. The guard tracks `seenFunction` and only
+  reports once a `function` declaration has been passed (`tests/structure.test.js:120,125`), so two
+  adjacent doc blocks ABOVE a module's first function are invisible to it. That is exactly the shape
+  `acceptance-audit` found by eye in `scripts/lib/job-launch-outcome.mjs`, where the module's own
+  contract had detached onto a one-line stderr writer and the exported function carried no docstring at
+  all — while this guard ran green in the same suite.
+  **Positive control, both directions, in one run:** a probe file with the adjacency placed BEFORE the
+  first function leaves the guard green; the identical adjacency placed AFTER a function reddens it and
+  names the line. So the guard works and its scope is wrong, which is the more dangerous shape — it
+  reports success over the case it was written for.
+  The `seenFunction` gate is not gratuitous: its comment says it exists so a module HEADER, attached to
+  nothing on purpose, is not called a defect. So the fix is not deleting the gate but distinguishing a
+  header from an orphan — the last block before the first declaration is a header only if it is the
+  ONLY one there. A new module is precisely where a first-function docstring gets written, which is why
+  the blind spot and the defect coincide.

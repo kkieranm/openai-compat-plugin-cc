@@ -96,9 +96,13 @@ matters because `--json` must stay parseable.
 
 ## The eligibility transaction, and the two pids that are not one pid
 
-**The eligibility check, the registration and the transition are ONE transaction** — which a dozen
+**The eligibility check, the OWNER registration and the transition are ONE transaction** — which a dozen
 rounds of filesystem protocol could not achieve, and splitting any part out reintroduces exactly the
-defect the substrate was adopted to remove.
+defect the substrate was adopted to remove. **Owner registration, not waiter registration** — the two
+are different facts and this ADR's own vocabulary splits them. The waiter update is the first
+statement below, and it runs on worker start, outside and long before this transaction; what happens
+inside it is the `worker_pid` write that takes ownership. Said explicitly because the unqualified word
+made this sentence false against the SQL printed directly beneath it (OAI-67, review pass 2).
 
 ```sql
 -- On worker start, long before eligibility: "a worker exists and is waiting."
@@ -162,12 +166,64 @@ explicit, and the CAS is what makes a late worker safe:
   it exits **without contacting the server**. The guard that elects a winner is the guard that
   protects the loser.
 
+### The submitter closes its own end of that boundary — and holds less knowledge than it looks (OAI-67, 2026-08-12)
+
+The bound above is a *reconciler's* 120-second grace. Until OAI-67 nothing shortened it from the
+submitter's side: when `spawnWorker` rejected, the row was simply left, so the queue behind it waited
+out the full grace for an owner that was usually never coming. The submitter now **attempts a guarded terminal
+write** on that row — through **the same `UPDATE … WHERE seq=? AND state='queued' AND waiter_pid IS
+NULL`**, reached as `abandonUnstarted`, not through `finish`. *Attempts*, because the CAS may
+deliberately match nothing: that is the mechanism working, not failing.
+
+**Using that CAS rather than `finish` is the whole of the decision, because a rejection does not
+establish that no child exists.** `spawnWorker` awaits the `'spawn'` event and only then closes its
+copy of the log descriptor; a throw from that close rejects after a detached worker was created and
+may still be running.
+`finish` admits `state IN ('queued','running')` — deliberately, so a worker can publish over its own
+live row — and would therefore flip a *running* row to `failed` and null its `worker_pid`, after
+which terminal immutability stops the real worker ever publishing. Paid work may be lost, behind a
+row asserting a failure that did not happen — *may*, because a `running` row establishes that a worker
+acquired the job, not that a billable call had begun.
+
+The CAS makes both orderings safe, and **the second half of the safety is the property already stated
+above rather than anything new**: if the child registered first, the submitter's write matches nothing
+and the job is left to the worker's own lifecycle; if the submitter's write lands first, the late
+worker stops at its own
+guarded `registerWaiter` — which requires the same `state='queued' AND waiter_pid IS NULL` — and
+returns before it sends anything (`cmd-task-worker.mjs:260`). It never reaches the eligibility
+transaction described above; that is the *second* line of the same defence, not the first. Either way
+the guard that elects a winner is the guard that protects the loser — read here from the submitter's
+side.
+
+What the row may CLAIM is bounded by the same uncertainty: the failure carries
+`reason: 'worker-launch-unconfirmed'`, never `spawn-failed`, because in the admitted ordering a worker
+process did start. The root ambiguity in `spawnWorker`'s contract is filed as **OAI-145** and
+deliberately not fixed here; this is containment, and it is complete on its own terms.
+
+### Two defaulted seams, and why neither is a runtime knob
+
+`submitTask` takes `{ spawn = spawnWorker }` and `terminalizeSpawnFailure` takes `{ report =
+reportToStderr }`. Both are defaulted parameters that no production caller passes, and both exist
+because the paths they reach are otherwise unreachable from a test: `spawnWorker` is a static import
+called unparameterised, and `writeSync` is an ESM named import whose binding a test cannot patch —
+measured, after a probe patched `node:fs` and watched the real function run anyway.
+
+**An environment variable overriding the worker's executable path was rejected**, though it would have
+made the spawn testable too. It ships a runtime override of *which binary this plugin launches
+detached* — a product capability nobody asked for and a durable one, readable and settable by anything
+that can set an env var, in the one place in this repo that starts a process meant to outlive its
+parent. A defaulted parameter is reachable only by a caller already inside the module graph, which is
+to say by the tests. The seam should be as wide as the test needs and no wider.
+
 ## The snapshot: `request.messages` is canonical
 
 The prompt, every attached file's full text, and the resolved request options are built **at
 submission** and stored as a DTO. The worker never touches the filesystem for input, so the gate's
-second half is true by construction rather than by discipline. `attachments` carries `{path, bytes,
-sha256}` so a reader can see which files were sent and whether they have since changed.
+second half is true by construction rather than by discipline. `attachments` carries `{path, bytes}`
+so a reader can see which files were sent and how much of each was captured. **It does NOT carry a
+hash** — this sentence claimed `sha256` until OAI-67's review pass 2, and `digestsOf`
+(`task-submit.mjs`) has never computed one, so "whether they have since changed" was a capability
+described here and absent from the code.
 
 The DTO has one rule, matching `client.mjs`: a field whose foreground value is `undefined` is
 **absent** from the DTO and from the reconstructed request; `null` is invalid rather than a second

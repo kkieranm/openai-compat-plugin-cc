@@ -10,12 +10,14 @@ and every call site below was written trusting it.
 
 **Every count here is greppable, and a test asserts it against the code** — because this document's
 site count drifted three times in three review passes, wrong each time it was written. There are
-six `withBusyRetry` call sites and six `isBusy` call sites outside the module that defines them.
+seven `withBusyRetry` call sites and five `isBusy` call sites outside the module that defines them.
 Those are the only two quantities stated, they always carry their noun, and
 `tests/busy-site-count.test.js` counts both from `scripts/lib` and reddens if either sentence
-disagrees. A derived total is deliberately absent: one `isBusy` call is the exhaustion guard *at*
-a retried site, so the sets overlap, and a third number nothing counts is exactly what
-drifted. The guard has already earned itself: a later fix added a seventh `isBusy` and then removed
+disagrees. A derived total is deliberately absent, and the reason CHANGED in OAI-67's third review
+pass without the absence changing. The two sets used to OVERLAP — one `isBusy` call was the exhaustion
+guard *at* a retried site, the spawn stamp — and that member went when the stamp stopped asking which
+storage fault it had suffered. **The sets are now disjoint.** A total is still not stated, now for the
+plainer reason that a third number nothing counts is exactly what drifted, four times. The guard has already earned itself: a later fix added a seventh `isBusy` and then removed
 it again, and on both moves it was the test that reddened rather than a reader who noticed.
 
 SQLite's busy handler is not consulted for every contended operation. It is not honoured when a
@@ -43,9 +45,10 @@ So a `SQLITE_BUSY` really does reach the callers. Where it reached them, it dest
 - **(d) The queue's wait loop.** `awaitTurn`'s per-iteration `beat` was unguarded, so a worker that
   had sent nothing and was merely waiting its turn could die silently and never run.
 - **(e) The spawn stamp.** `task-submit.mjs` writes `spawned_at` **after** `spawnWorker` returns, so
-  at that line a detached worker already exists and is about to make a real, billable model call. A
-  busy escaping it rejects `submitTask`, and `cmd-task.mjs` never prints the id — leaving a running
-  job the user cannot name, poll or cancel. Found by review, in the pass after this ADR was first
+  at that line a detached worker has been created and is expected to make a real, billable model call
+  — expected rather than established, since nothing watches it after the `'spawn'` event. A
+  busy escaping it rejects `submitTask`, and `cmd-task.mjs` never prints the id — leaving a job the
+  user cannot name, poll or cancel, and which may well be running. Found by review, in the pass after this ADR was first
   written.
 - **(f) The worker's registration.** `cmd-task-worker.mjs` handles `registerWaiter`'s false *return*
   and has no catch at all, so a busy there killed the worker before it had sent anything and the job
@@ -59,14 +62,20 @@ answers** to contention — because the right response is not uniform, and prete
 original comment came to be believed. (A fourth answer, at one site, governs what happens when a retry
 runs OUT rather than what happens when contention arrives.)
 
-**Retry, at the three terminal writes (b), the spawn stamp (e) and the registration (f).** Work already exists that will be lost otherwise.
+**Retry, at the three terminal writes (b), the spawn stamp (e), the registration (f) and the
+launch-outcome write (g).** Work already exists that will be lost otherwise.
 `withBusyRetry` re-runs the call until it succeeds or a budget elapses, then rethrows the busy error
 so the existing outer catch reports it exactly as it does today. All three terminal writes are wrapped — completed,
 failed and queue-timeout — because a contended database must not turn a *diagnosed* failure into an
 undiagnosed one either. The spawn stamp joins them for the same reason read the other way: the work
 it must not lose is not a *reply* but a *process* — one already spawned, whose id is the only handle
 anyone has on it. The registration joins them because its caller has no catch: losing it costs the
-whole run of a job nobody is watching.
+whole run of a job nobody is watching. The launch-outcome write (g) joins them on the same reading
+taken a third time: what it must not lose is neither a reply nor a process but the *record of an
+outcome nobody else will write* — the submitter is the only party that knows this launch could not be
+completed or confirmed, and the row it is writing about may be one no worker ever registers against. While such a
+row stays unregistered and queued, `livenessOf` reads it as `starting`, so every job behind it waits
+out the full startup grace. The harm is not this job; it is the queue behind it.
 
 ### Where the retry sits matters as much as that it is there
 
@@ -116,18 +125,29 @@ contended terminal write never reads as stale, and `stalled` is not a verdict in
 
 ### Exhausting a retry is a fourth answer, not the absence of one
 
-`withBusyRetry` rethrows when its budget runs out, and the six retried sites split three ways rather
+`withBusyRetry` rethrows when its budget runs out, and the seven retried sites split three ways rather
 than two. At **four** of them rethrowing is right — the open, the queue timeout, the completed write,
 and `registerWaiter`, whose throw reaches the worker's top-level handler and kills a worker that has
-sent nothing. At the **spawn stamp** and at the worker's **`failed` write** it is not, and for
-different reasons; each catches its own exhausted busy, and neither swallows a non-busy error.
+sent nothing. At the **spawn stamp**, at the worker's **`failed` write** and at the **launch-outcome
+write** it is not, and for three different reasons. Four rethrowing and three converting, which is the
+seven above.
+
+**What those three converting sites CATCH is no longer uniform, and the difference is deliberate.**
+Two of them — the worker's `failed` write and the launch-outcome write — catch any storage fault and
+do not ask which; and since OAI-67's third review pass the **spawn stamp** does the same. It formerly
+caught its exhausted busy alone and rethrew everything else, which meant a corrupt database, a disk
+error or a schema fault reproduced through that line the exact loss the retry existed to prevent: the
+submission rejected, the id was never printed, and a detached worker already created was left
+unnameable. All three sites sit past a point where a live worker may exist, and at every one of them
+the fault's CLASSIFICATION changes nothing a reader can act on — so all three report by message and
+none rethrows.
 
 The completed write sits in the first group **with a qualification**: its exhausted busy is rethrown
 unchanged, and that is still right, but it is no longer rethrown *alone* — `salvageOutcome` runs
 first, from a catch that returns rather than throws, for exactly the reason the `failed` write's
-catch does. The distinction is that the spawn stamp and the `failed` write **convert** their
-exhaustion into something else (a warning, a preserved diagnosis); the completed write converts
-nothing. It rescues the payload and lets the error travel.
+catch does. The distinction is that the spawn stamp, the `failed` write and the launch-outcome write
+**convert** their exhaustion into something else (a warning, a preserved diagnosis, a reported storage
+fault); the completed write converts nothing. It rescues the payload and lets the error travel.
 
 Take the `failed` write first, because its defect was invisible in the shape rather than the policy.
 A `throw` raised inside a `catch` block **replaces the pending rethrow**, so an exhausted busy escaped
@@ -145,11 +165,13 @@ storage one by message, the diagnosis by propagating. `error.cause` was rejected
 fault somewhere nobody reads.
 
 And the **spawn stamp**. The retry narrows the
-lost-id window without closing it, and when it closes a detached worker is already running and
-spending money — so rethrowing trades the one fact worth keeping for one worth much less. Without the
+lost-id window without closing it, and when it closes a detached worker has been created and is
+expected to be spending money — so rethrowing trades the one fact worth keeping for one worth much
+less. *Expected*, not established: the `'spawn'` event proves the child existed, and this process
+watched nothing after that, which is the same limit the warning further down is careful about. Without the
 stamp, `livenessOf` falls back to `created_at`, which only shortens a startup grace window, and once
 the worker registers itself the stamp is not consulted at all. Without the id there is no way to poll
-or cancel a job that is costing the user money. So that site alone catches the exhausted busy, warns
+or cancel a job that may be costing the user money. So that site alone catches the exhausted busy, warns
 on stderr, and returns the id.
 
 **What that warning may say is narrower than what the site knows**, and an earlier wording overstepped
@@ -166,6 +188,24 @@ verifying means more contended reads at the one moment the database is already s
 whose whole purpose is to stop costing the user something when it is. Saying less is cheaper than
 learning more here, and is sufficient, because `/oai:status` answers the question on demand and after
 contention has cleared.
+
+And the **launch-outcome write**. It takes the `failed` write's policy wholesale, because the shape is
+the same one: the exhausted busy is reported by message on stderr and the launch error propagates, the
+inner catch does **not** test `isBusy` — a disk error, a corrupt file or a schema fault would otherwise
+reproduce the identical loss through the identical line — and the report itself is wrapped, because a
+throw raised inside a `catch` replaces the pending rethrow. What is different is what the site is
+allowed to say. **A rejected launch does not prove that no child exists:** `spawnWorker` awaits the
+`'spawn'` event and only then closes its copy of the log descriptor, so a throw from that close rejects
+after a detached worker was created and may still be running. The write therefore records a
+launch that could not be completed or confirmed, never one that failed. And when the retry exhausts,
+what it reports is a storage fault and nothing about the row: the row is left **untouched**, which is
+not the same claim as left `queued` — an unregistered queued row ages out through the startup grace,
+and a row a worker has already registered against is left to that worker's own lifecycle.
+Registration establishes only that a worker REGISTERED as the waiter — `registerWaiter` sets
+`waiter_pid` on a row that is still `queued`. Acquisition is the separate guarded transition to
+`running`, which `tryAcquire` may never grant, and publication is separate again. Collapsing those
+three is the same error as collapsing `waiter_pid` with `worker_pid`, which this store already
+records as a shipped bug.
 
 **Skip the tick, at the two beats (a, d) — but skip only what actually failed.** The next beat is five seconds away, and the stale-beat →
 `stalled` path already represents a missed update correctly. The wait loop is *itself* a retry, with
@@ -264,11 +304,11 @@ targets: widening the catch reddens *a non-busy error from the heartbeat is not 
 ## Evidence
 
 Each guarded site has a witness that drives a path where a busy error is really raised, and each
-was proved load-bearing by a mutation that reddens **exactly one** named test — with one stated
-exception, the diagnosis pair, where a single mutation reddens both because the code they guard
-deliberately treats their two fault classes alike. The exception is written into the row rather than
-left for a reader to discover, since a table claiming a property its own rows break is the shape this
-ADR exists to remove:
+was proved load-bearing by a mutation that reddens **exactly one** named **behavioural** test — with
+one stated exception, the diagnosis pair, where a single mutation reddens both because the code they
+guard deliberately treats their two fault classes alike. The exception is written into the row rather
+than left for a reader to discover, since a table claiming a property its own rows break is the shape
+this ADR exists to remove. The word *behavioural* is load-bearing and is qualified under the table:
 
 | Site | Witness | Mutation that reddens it |
 |---|---|---|
@@ -284,9 +324,33 @@ ADR exists to remove:
 | (e) spawn stamp | `a busy on the SPAWNED stamp does not lose an id whose worker is already running` | unwrap `markSpawned` |
 | (e) exhaustion | `an EXHAUSTED spawn-stamp retry still reports the id` | rethrow instead of warning |
 | (f) registration | `a busy while REGISTERING as the waiter does not silently lose the job` | unwrap `registerWaiter` |
+| (g) launch outcome | `a TRANSIENT busy on the launch-outcome write is retried, not lost` | unwrap the `withBusyRetry` around `abandonUnstarted` |
 | (b) placement | `a storage failure on the COMPLETED write is never republished as a task failure` | move the completed write back inside the `failed` catch |
 | (b) diagnosis — both | both diagnosis witnesses | delete the inner `try` around the `failed` write — **reddens the pair, not one**, because the fix deliberately stopped distinguishing the two fault classes |
 | (b) diagnosis — other | `a NON-BUSY failure of the failed write also leaves the diagnosis propagating` | restore the `if (!isBusy(storageError)) throw storageError` guard |
+
+**The unqualified form of that claim was never true, and it was untrue from the moment the table was
+written.** It read "a mutation that reddens **exactly one** named test — with one stated exception, the
+diagnosis pair", and the structural guard breaks it for a whole column at once:
+`tests/busy-site-count.test.js` counts occurrences of `withBusyRetry(` and `isBusy(` across
+`scripts/lib` and requires the resulting spelled sentence to appear in this document, so **any**
+mutation that adds or removes a counted occurrence reddens it as well — every `unwrap` row above, but
+also `replace withBusyRetry(openOnce, …) with openOnce()`, also `widen the catch`, which deletes a
+counted `isBusy(`, and also `restore the if (!isBusy(storageError)) throw storageError`, which is the
+one that *adds* rather than removes. The rule is what to read, not the list.
+It is not an exception to carve per site — the guard watches the *enumeration*, not any one site's
+behaviour — so the exactly-one property is a statement about the behavioural witnesses and always was.
+`busy-site-count.test.js` and this document landed in the same commit, `77c1eab`, so nothing here made
+the claim stale; it was simply wrong when written, which is the defect this ADR keeps finding in its
+own counts.
+
+Measured 2026-08-12 rather than reasoned, since the point of the qualification is that reading the
+table did not reveal it: unwrapping (f) `registerWaiter` in `scripts/lib/cmd-task-worker.mjs` reddened
+**two** tests — its own witness `a busy while REGISTERING as the waiter does not silently lose the job`
+and `every stated count of contention sites matches the code` — for 800 pass / 2 fail, restored to 802
+pass / 0 fail on revert. Mutations that leave the counted occurrences alone leave the count guard
+green, and the table names four of them: making the WAL set unconditional, deleting the open cleanup,
+moving the terminal-write placement, and deleting the diagnosis catch.
 
 The open has **three** rows because the first of them cannot fail on the other two: it inspects the
 statements two *clean* opens execute, and raises no busy at all. Both of the mutations the other two
@@ -311,18 +375,26 @@ assertion could not have passed for the right reason.
    per-attempt timeout.** `withBusyRetry` checks elapsed time *before* sleeping again, and a
    synchronous SQLite call in progress cannot be interrupted, so a call overruns its budget by up to
    one attempt plus one delay. `openStore` bounds that overshoot at 250ms by construction. **Any
-   other caller inherits the handle's 10-second timeout**, so the three terminal writes and the spawn stamp may overshoot
-   their 30-second budget by up to ten seconds. That is accepted there — the alternative is losing an
+   other caller inherits the handle's 10-second timeout**, so **every retried site except `openStore`** —
+   the three terminal writes, the spawn stamp, the registration and the launch-outcome write — may
+   overshoot their 30-second budget by up to ten seconds. Stated as *all but one* rather than as a
+   list, because the list was already wrong before this feature touched it: it omitted the
+   registration (f), and enumerating it again would only have added (g) to a sentence that was
+   incomplete on the day it was written. The property follows from the handle, not from which sites
+   anyone remembered. That is accepted there — the alternative is losing an
    answer — but it is not a bound anyone should quote.
 3. **A cancellation read that fails is still a delayed cancellation.** Splitting the catches means a
    busy *beat* no longer costs the tick its cancellation check, which was the common case. A busy
    *read* still does, and a database contended for a long stretch postpones a requested cancel by a
    multiple of `BEAT_MS`. Skipping remains the right answer — the alternative is a dead worker, which
    never notices the cancel at all — but the residual delay is real and unbounded here.
-4. **Two of the retried sites were wrapped on reasoning alone.** `timeOut` is wrapped because its
+4. **Three of the retried sites were wrapped on reasoning alone.** `timeOut` is wrapped because its
    contention is *structurally* likely — it is reached only while another job runs, so a competing
-   worker is beating throughout — and `markSpawned` because of what it costs when it fails, not
-   because either was observed failing. No production instance of either throw has been seen.
+   worker is beating throughout — and `markSpawned` and the launch-outcome write because of what they
+   cost when they fail: for the stamp, an id nobody can poll or cancel by; for the launch-outcome
+   write, an outcome nobody else is in a position to record, and a queue stalled for a whole startup
+   grace behind a row that, if no worker registers against it, no one else will clear. None of the three was observed failing, and no production
+   instance of any of their throws has been seen.
 5. **The unprotected writes are argued, not measured.** The exclusion list above rests on
    `job-reconcile`'s sweep being re-run by a later read. Nothing bounds how long that deferral can
    last under sustained contention, and nothing proves a later read always arrives — OAI-105.

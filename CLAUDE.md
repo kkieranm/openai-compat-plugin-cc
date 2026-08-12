@@ -111,7 +111,7 @@ before its log so that a crash in between leaves an orphan the same sweep alread
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
 see [ADR 014](adr/014-async-jobs.md).
 
-`scripts/lib/job-busy.mjs` `withBusyRetry` bounds a `SQLITE_BUSY` by elapsed time at six enumerated sites,
+`scripts/lib/job-busy.mjs` `withBusyRetry` bounds a `SQLITE_BUSY` by elapsed time at seven enumerated sites,
 while skip-only callers keep a bare `isBusy` catch and the store's open takes the exclusive WAL lock only
 when the journal mode is not already set — and **where a retry sits decides what it can cost**: the
 completed write sits outside the catch that publishes `failed`, and the `failed` write inside a catch of
@@ -119,6 +119,22 @@ its own that discards neither error, because a throw raised in a `catch` replace
 an exhausted completed write hands its outcome to `salvageOutcome` — one `SALVAGED_OUTCOME` line on the log
 the worker already owns, so the answer outlives the row that would not take it — see
 [ADR 020](adr/020-a-contended-database-must-not-kill-live-work.md).
+
+`scripts/lib/job-launch-outcome.mjs` `terminalizeSpawnFailure` is what a submitter may write about a
+launch it could not confirm, and it **holds strictly less knowledge than its call site suggests**: a
+rejection from `spawnWorker` does not prove no child exists, because that helper closes its copy of the
+log descriptor *after* the `'spawn'` event fires. So the reason is `worker-launch-unconfirmed` rather
+than `spawn-failed`, and the verb is `abandonUnstarted` — whose `state = 'queued' AND waiter_pid IS
+NULL` compare-and-set makes both orderings safe — never `finish`, which would flip a row a live worker
+owns and lose paid work behind a terminal state that never happened. Its ignored return is wider than
+it looks: `false` means the row is no longer an unregistered queued row, not that a worker registered.
+Four facts stay separate throughout — a child was CREATED, a worker REGISTERED, a worker ACQUIRED, a
+worker PUBLISHED — and conflating any two is the defect class this module and OAI-67 exist to remove.
+`task-submit.mjs` keeps the other half: the retention sweep runs **before** anything is inserted or
+spawned, so a broken sweep can no longer sink a submission whose worker may already be spending, and
+both post-spawn writes report any storage fault while still returning the id — including a guard on the
+report itself, since a throwing stderr would lose the id it was announcing — see
+[ADR 014](adr/014-async-jobs.md) and [ADR 020](adr/020-a-contended-database-must-not-kill-live-work.md).
 
 `job-store.mjs` `requireDatabaseSync()` gates `node:sqlite` as a **capability rather than a version** —
 one caught dynamic import classified at first use, so a runtime without that builtin loses background

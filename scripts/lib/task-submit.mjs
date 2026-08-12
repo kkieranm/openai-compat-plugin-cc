@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
 import { authPolicyFor } from './job-auth.mjs';
 import { insertJob, markSpawned } from './job-record.mjs';
+import { terminalizeSpawnFailure } from './job-launch-outcome.mjs';
 import { persistRequest } from './job-request.mjs';
 import { sweep } from './job-retention.mjs';
 import { spawnWorker } from './job-spawn.mjs';
@@ -90,6 +91,19 @@ function buildJob(prep) {
  * on it having happened. Anything else is a defect in the sweep and is raised
  * rather than swallowed: a blanket catch would turn a broken sweep into an
  * unbounded table nobody ever hears about.
+ *
+ * **That first sentence was FALSE until 2026-08-12 (OAI-67), and the fix was
+ * position rather than wording.** This ran AFTER the spawn, so a non-busy throw
+ * rejected `submitTask` with a detached worker already created and expected to be
+ * calling a paid model, and the id never printed — costing the user their handle
+ * on the job they had just submitted, plus a retry that CAN duplicate the spend. Not "precisely
+ * that job" and not "duplicates": only creation is established here, so what is
+ * lost for certain is the id, and the double spend is a consequence that follows
+ * when the worker did in fact survive to call. It now runs before anything
+ * is created, where the sentence is simply true: there is no job yet to cost.
+ * The rethrow is deliberately KEPT — dropping it would make retention
+ * best-effort, and a `--json` caller cannot see the stderr warning that would
+ * replace it (OAI-108), so the store could grow unbounded with no signal.
  */
 function sweepQuietly(db) {
   try {
@@ -100,60 +114,92 @@ function sweepQuietly(db) {
 }
 
 /**
- * Launch the worker and record that it exists — the half of submission that runs
- * with a live process already spending money.
+ * Launch the worker and record that it exists — the half of submission where a
+ * live process may already have been created, and may already be spending.
  *
  * Extracted from `submitTask` when the exhaustion handling pushed it past this
  * repo's function-size budget; it is also the only part of submission whose
- * failure handling turns on a process existing, so it names something real.
+ * behaviour turns on how the spawn SETTLED — not on whether a process exists,
+ * which the rejection branch cannot determine: "no child" and "live child after a
+ * failed cleanup" arrive down the same path.
+ *
+ * **Its two branches know different amounts, and the difference is the whole
+ * feature.** Past the `await`, the `'spawn'` event has fired and a child
+ * demonstrably existed — the stamp path below can say so. The REJECTION branch
+ * cannot: `spawnWorker` closes its copy of the log descriptor after that event,
+ * so a rejection may mean no child was ever created, or a child that is alive.
+ * `terminalizeSpawnFailure` is written for both, which is why it uses a
+ * compare-and-set instead of a terminal write.
+ *
+ * Stamped only once the child is known to exist, because it is what bounds how
+ * long a job may sit with no worker registered before it is treated as one
+ * that never started. Stamping it before the spawn would start that clock
+ * against a process that does not exist yet.
+ *
+ * Retried, for the reason just given: by here the `'spawn'` event has
+ * fired, so a DETACHED WORKER EXISTED and is expected to make a real model
+ * call. (Expected, not guaranteed — it may already have died, which the
+ * warning in the catch below is careful not to claim either way. What is established
+ * is that one was created, and that is what makes the id worth keeping.) A busy that escapes this
+ * write rejects `submitTask`, so `cmd-task.mjs` never prints the id — leaving
+ * the user liable for a job they cannot name, poll or cancel. `insertJob`,
+ * which runs before this, is deliberately NOT wrapped: a busy there
+ * means no row and no worker, which is a clean failure with nothing running.
+ *
+ * And the retry NARROWS that window without closing it, so exhausting the
+ * budget must not reject the submission either. The id is the more valuable
+ * of the two facts by a wide margin: without the stamp `livenessOf` falls back
+ * to `created_at`, which only shortens a startup grace window, and once the
+ * worker registers itself the stamp stops being consulted at all — whereas
+ * without the id there is no way to poll or cancel a job that may be spending
+ * money. Reported rather than swallowed, on stderr, where the submitting
+ * session can see it.
+ *
+ * What that report may SAY is narrower than what this function knows. A spawn
+ * happened — that is observed, and it is why the id is worth printing. Whether
+ * the worker is still alive thirty seconds later is not: the retry only
+ * exhausts after a budget long enough for the child to have registered, run,
+ * failed, or died, and this process watched none of it. So the warning states
+ * the spawn, states that the submitter cannot see what followed, and points at
+ * `/oai:status`, which reads the row rather than guessing. Claiming "the job is
+ * running" here turned a submission that may have failed into apparent success.
+ *
+ * Reported on stderr and NOWHERE ELSE, which is a known gap rather than an
+ * oversight: a machine caller reads `--json`, whose background envelope is the
+ * same `{id, background: true}` a recorded start produces, so nothing in that
+ * channel distinguishes them. A field carrying it was built during review and
+ * reverted — it changed a published contract this feature's plan never
+ * approved — and the gap is filed as **OAI-108** instead.
  */
-async function spawnAndStamp(db, seq, job) {
-  const pid = await spawnWorker(seq);
-  // Stamped only once the child is known to exist, because it is what bounds how
-  // long a job may sit with no worker registered before it is treated as one
-  // that never started. Stamping it before the spawn would start that clock
-  // against a process that does not exist yet.
-  //
-  // Retried, and the reason is the line above it: by here a DETACHED WORKER IS
-  // ALREADY RUNNING and will make a real model call. A busy that escapes this
-  // write rejects `submitTask`, so `cmd-task.mjs` never prints the id — leaving
-  // the user billed for a job they cannot name, poll or cancel. `insertJob`
-  // above is deliberately NOT wrapped: it precedes the spawn, so a busy there
-  // means no row and no worker, which is a clean failure with nothing running.
-  //
-  // And the retry NARROWS that window without closing it, so exhausting the
-  // budget must not reject the submission either. The id is the more valuable
-  // of the two facts by a wide margin: without the stamp `livenessOf` falls back
-  // to `created_at`, which only shortens a startup grace window, and once the
-  // worker registers itself the stamp stops being consulted at all — whereas
-  // without the id there is no way to poll or cancel a job that is spending
-  // money. Reported rather than swallowed, on stderr, where the submitting
-  // session can see it.
-  //
-  // What that report may SAY is narrower than what this function knows. A spawn
-  // happened — that is observed, and it is why the id is worth printing. Whether
-  // the worker is still alive thirty seconds later is not: the retry only
-  // exhausts after a budget long enough for the child to have registered, run,
-  // failed, or died, and this process watched none of it. So the warning states
-  // the spawn, states that the submitter cannot see what followed, and points at
-  // `/oai:status`, which reads the row rather than guessing. Claiming "the job is
-  // running" here turned a submission that may have failed into apparent success.
-  //
-  // Reported on stderr and NOWHERE ELSE, which is a known gap rather than an
-  // oversight: a machine caller reads `--json`, whose background envelope is the
-  // same `{id, background: true}` a recorded start produces, so nothing in that
-  // channel distinguishes them. A field carrying it was built during review and
-  // reverted — it changed a published contract this feature's plan never
-  // approved — and the gap is filed as **OAI-108** instead.
+async function spawnAndStamp(db, seq, job, spawn) {
+  let pid;
+  try {
+    pid = await spawn(seq);
+  } catch (error) {
+    terminalizeSpawnFailure(db, seq, job, error);
+    throw error;
+  }
+  // ANY storage fault, never `isBusy` alone — `adr/020`'s converting group, argued
+  // there. Rethrowing all but a busy lost the id the same way (OAI-67, pass 3).
   try {
     withBusyRetry(() => markSpawned(db, seq, new Date().toISOString()));
   } catch (error) {
-    if (!isBusy(error)) throw error;
-    process.stderr.write(
-      `Warning: job ${job.id} was spawned, but its start time could not be recorded — the database stayed locked. `
-      + 'The id below is valid; this session cannot see what the worker did next. '
-      + 'Check it with /oai:status.\n',
-    );
+    // Guarded, and NOT for the sibling's reason. `terminalizeSpawnFailure` wraps
+    // its report because a throw inside a catch replaces a pending rethrow; here
+    // nothing is pending, and the damage is different: an escaping write would
+    // stop this function RETURNING, so the id would be lost — the exact harm the
+    // catch exists to prevent, delivered by the reporting of it. A closed stderr
+    // pipe is enough. Swallowing means the caller keeps a valid id and gets no
+    // notice at all, which is the lesser loss and the deliberate one.
+    try {
+      process.stderr.write(
+        `Warning: job ${job.id} was spawned, but its start time could not be recorded: ${error.message}. `
+        + 'The id below is valid; this session cannot see what the worker did next. '
+        + 'Check it with /oai:status.\n',
+      );
+    } catch {
+      // Nothing can carry the notice. The id still can.
+    }
   }
   return pid;
 }
@@ -162,7 +208,7 @@ async function spawnAndStamp(db, seq, job) {
  * Submit, spawn, and report the id — the whole foreground half of a background
  * job.
  */
-export async function submitTask(args) {
+export async function submitTask(args, { spawn = spawnWorker } = {}) {
   // FIRST, before the server is probed and before anything is written. A runtime
   // that cannot open the store can never accept this job, and everything below
   // costs something the user does not get back: `prepareTask` makes real requests
@@ -185,15 +231,31 @@ export async function submitTask(args) {
   process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
 
   const db = openStore();
+
+  // BEFORE the row and the worker exist, not after. Submission is still the only
+  // place a row is ever created, so it is still the only place the table grows
+  // and the only place worth sweeping — putting it in the readers would make
+  // `/oai:status` delete history while someone was looking at it, for no gain.
+  // That reasoning is unchanged by the move; what changed is that a sweep defect
+  // can no longer sink a submission whose worker may already be spending. The
+  // row about to be inserted is not finished, so nothing about WHAT gets swept
+  // changes either.
+  //
+  // WHEN it gets swept does change, and in one way worth stating rather than
+  // leaving a reader to infer from the line above. A submission that FAILS —
+  // because the insert throws, or the spawn is unconfirmed — has now already run
+  // the sweep, where before the failure path skipped it entirely. So an
+  // unsuccessful submission carries a destructive side effect it did not carry
+  // before. That is accepted rather than overlooked: the rows it deletes are
+  // exactly the retention-eligible ones it would have deleted on the success
+  // path, so nothing is destroyed that a successful run would have kept, and
+  // sweeping is not owed to the submission that triggered it.
+  sweepQuietly(db);
+
   const job = buildJob(prep);
   const seq = insertJob(db, job);
 
-  const pid = await spawnAndStamp(db, seq, job);
+  const pid = await spawnAndStamp(db, seq, job, spawn);
 
-  // Submission is the only place a row is ever created, so it is the only place
-  // the table grows and the only place worth sweeping. Putting it in the readers
-  // instead would make `/oai:status` delete history while someone was looking at
-  // it, for no gain.
-  sweepQuietly(db);
   return { id: job.id, seq, pid };
 }
