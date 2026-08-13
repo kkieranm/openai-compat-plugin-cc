@@ -121,7 +121,8 @@ while skip-only callers keep a bare `isBusy` catch and the store's open takes th
 when the journal mode is not already set — and **where a retry sits decides what it can cost**: the
 completed write sits outside the catch that publishes `failed`, and the `failed` write inside a catch of
 its own that discards neither error, because a throw raised in a `catch` replaces the pending rethrow, while
-an exhausted completed write hands its outcome to `salvageOutcome` — one `SALVAGED_OUTCOME` line on the log
+an exhausted completed write hands its outcome to `scripts/lib/cmd-task-worker.mjs` `salvageOutcome`
+(the one step in this paragraph that is not `job-busy.mjs`'s) — one `SALVAGED_OUTCOME` line on the log
 the worker already owns, so the answer outlives the row that would not take it — see
 [ADR 020](adr/020-a-contended-database-must-not-kill-live-work.md).
 
