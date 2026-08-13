@@ -1,3 +1,50 @@
+## 2026-08-13 — the sweep writes as it goes, and says what the server did to it (OAI-132, OAI-140 recording half)
+
+- **OAI-132** — **An overnight sweep emitted NO signal until it ended, so a crash lost the whole
+  night.** Shipped 2026-08-13, commit `223136e`. 870 tests green, measured in a fresh clone of the
+  committed tree rather than the working tree.
+  Each settled commit now reaches disk immediately, in an append-only JSONL ledger beside the artifacts
+  it will become (`bench/lib/sweep-ledger.mjs`), and `bench/recover-sweep.mjs` turns an interrupted
+  ledger into the report the run never wrote — through the same `writeSweep` a completed run uses. The
+  header carries the enumerated **manifest**, not counts, which is what stops a recovered report saying
+  *"enumerated 40 · reviewed 2"* above *"every enumerated commit was reviewed"*. See
+  [ADR 022](adr/022-a-record-written-while-the-run-is-happening.md).
+  **Two decisions worth not relearning.** Records are written LEADING-newline-first, because a
+  terminated record that fails part-way leaves a fragment the next *successful* append fuses onto,
+  losing a line whose own write succeeded. And because `settle` guards the sink so a recording fault
+  cannot cost review coverage, a missing entry became ambiguous — hence `unobserved` (never reached, or
+  settled and lost, and the ledger cannot tell which) versus `unrecorded` (a `gap` line proves it
+  settled and the write failed). Reporting either as "never settled" would have been false precisely
+  because the harness defended against a failing disk.
+  **Verified by a real crash**, not an injected sink counting calls: a child drives the real `runSweep`
+  against a real ledger and SIGKILLs itself mid-loop, with a positive control that writes the header
+  and suppresses only the per-entry writes. Also run live end to end against LM Studio.
+  **The review ladder ended `terminated`, not dual-approved** — Codex approved; the Claude verdict-only
+  subagent returned CHANGES-REQUIRED on ADR 022 naming the wrong file for the crash test. Both that and
+  a second nit were corrected before the commit, at the user's direction, without a further verdict
+  round. Recorded because the register says `terminated` and the reason belongs beside it.
+
+  *Original filing, kept because it is what priced the work:*
+
+  - **OAI-132** — **A two-hour sweep arm emits NO signal until it ends.** Filed 2026-08-09 from running
+    the matrix. `writeSweep` runs once, after the loop, so an arm in progress is observable only as a
+    live pid and a SHA in `ps`; a healthy run and a doomed one look identical from outside for hours.
+    The fail-fast covers an outage, not "is this producing anything useful". Observed directly: arm 1 ran
+    2h13m with no readable output, and the four aborted gemma arms were only diagnosable afterwards.
+    **For a harness whose whole purpose is running unattended, that is the wrong end of the trade.**
+    Fix shape: append each entry to the record as it settles, or emit one progress line per commit.
+    **PRICED 2026-08-10 by a full overnight run**, which is why this is no longer a nuisance item.
+    `sweep-2026-08-09-overnight` ran **8h22m** (2026-08-09 20:39 → 2026-08-10 05:01 BST) and wrote its
+    first and only byte of result at the very end. Confirmed by reading the code, not inferred from the
+    silence: `review-sweep.mjs` has **exactly three** `stderr.write` sites — the opening enumeration
+    line, the closing report paths, and the error handler. **Nothing per commit.** So for 8h22m the
+    only observable was a live pid and `lms ps` reporting `GENERATING`, and **had the machine slept or
+    the process died at hour eight, all 40 eligible commits would have been lost with no partial
+    record** — not degraded, gone. Two sessions have now had to reason about liveness from `ps` alone,
+    and one of them (2026-08-09) misread a stalled log tail as a dead job. The append-as-settled fix
+    shape is the one to take: a progress line helps a watcher, but only an incremental record survives
+    the crash that makes the silence expensive.
+
 ## 2026-08-13 — the worker confirms its own cancellation, and a crash stops reading as one (OAI-66)
 
 - **OAI-66** — **Two reconciler diagnoses that contradicted the row they were written from.** Shipped

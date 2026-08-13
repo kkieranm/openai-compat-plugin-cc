@@ -177,6 +177,21 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
+**Tier 12e — residue from OAI-132 / OAI-140's recording half, 2026-08-13.** **OAI-151**, **OAI-152**,
+**OAI-153**, **OAI-154**.
+**OAI-151 leads and its justification is OAI-141**, which put run-to-run spread above the differences
+being compared: a per-commit reproduction rate ACROSS runs is exactly the number this tracker cannot
+compute today, and the one that decides whether any sweep A/B means anything. The feedstock now exists
+— every run leaves a ledger with per-commit timings and the full manifest — so this is an index over
+artifacts rather than new instrumentation. It was deliberately NOT built into OAI-132: the ledger is
+the within-run crash record, a history is the cross-run index, and ADR 018 gates `node:sqlite` as a
+capability, so a hard dependency would have made crash protection conditional on the one thing the job
+store was careful to keep optional. Neither argument applies to a cross-run index, which is not on the
+crash path.
+OAI-153 and OAI-154 are both *stated limitations rather than defects* — the ADR says each one out loud,
+which is what makes them filable rather than lurking. OAI-152 records a trade so it is not rediscovered
+and re-argued.
+
 **Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
 **OAI-140**, **OAI-137**.
 **OAI-139 (done 2026-08-12) was found by probing OAI-138, not by the sweep**: when nothing is
@@ -190,7 +205,8 @@ job is bounding *overshoot past the stop time*, never *fitting a review*. It als
 standing expectation — starvation happened once, wall-clock exhaustion twenty times — so the next
 sweep should set the cap from the recorded `generationMs` distribution rather than by doubling it.
 Read it against OAI-132, which the same run priced: a higher cap lengthens an already unobservable
-window, and there is still no incremental record to survive a crash.
+window. **That half is now closed** — since 2026-08-13 the sweep writes an incremental ledger as each
+commit settles, so a longer cap no longer widens a window in which a crash loses everything.
 OAI-141 is second because it changes how everything else in this tier should be READ: four sweeps over
 one corpus put the run-to-run spread (17 vs 22 finding-bearing, 5 of 17 not reproducing) above the
 difference between the configurations being compared, so a single-run A/B here cannot resolve a small
@@ -199,14 +215,19 @@ diff-only concern, and it is why OAI-139's ceiling is safe to build.
 OAI-140 sits between them because it is live at today's cap and **OAI-138's cap rise makes it worse**:
 a slow commit zeroes the consecutive-outage counter, so a genuine outage interleaved with slow commits
 never trips `--abort-after`, and last night's data cannot rule that out because nothing records the
-counter's history. Do the recording half of it whichever way the rest is decided.
+counter's history. **The recording half shipped 2026-08-13** — every attempted commit now carries
+`startedAt`/`endedAt` and the report renders a derived server-health section naming the longest streak
+and how often a non-outage reset one. **What remains live is the ACTING half**: whether to count
+outages in a sliding window, decay the counter, or leave the rule alone now that the record can finally
+show whether it ever mattered. That last option is newly credible, because the question can now be
+answered from data rather than argued.
 OAI-137 is small, real and reproduced — `readOmlx` silently ignores `data` when `models` is an empty
 array, contradicting the comment that says it does not. It is in this tier because the sweep found it
 in the commit that introduced it, which is the first time this harness has caught a defect in code
 written the same day.
 
 **Tier 12c — what the model benchmark actually found, 2026-08-09.** **OAI-136**, **OAI-131**,
-**OAI-133**, **OAI-132**, **OAI-135**.
+**OAI-133**, **OAI-135**.
 **OAI-134 shipped 2026-08-09 and its framing did not survive contact**: the filed mechanism — the
 plugin sizing a JIT load by `max_context_length` — was **refuted** (the plugin has no load channel at
 all), and the live check that settled it also refuted the proposed blanket refusal, because oMLX 0.5.7
@@ -219,7 +240,7 @@ it was found by looking at this code, not by the benchmark.
 OAI-131 is **answered, not open**: `idle-timeout` was never observed across 22 failures, so the five
 iterations spent admitting it bought no measured coverage. OAI-133 records that the gemma arms measured
 nothing and carries the sized contexts for a future attempt, including that **`gemma-4-31b` will not
-fit this machine at a fair context**. OAI-132 is the harness emitting no signal for hours at a time.
+fit this machine at a fair context**. OAI-132 — the harness emitting no signal for hours at a time — **shipped 2026-08-13**; see BACKLOG_DONE.md.
 **The usable result of the whole exercise is one line: use `qwen/qwen3.6-27b`** — 7 of 10 commits
 reviewed in both runs, against 3-5 for the MoE, which starved exactly as OAI-115 predicted.
 
@@ -2272,25 +2293,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **(b) remains unmeasured**: no reply carried both `analysisCut` and a substituted model, so that
   pairing is still only a synthetic fixture's claim.
 
-- **OAI-132** — **A two-hour sweep arm emits NO signal until it ends.** Filed 2026-08-09 from running
-  the matrix. `writeSweep` runs once, after the loop, so an arm in progress is observable only as a
-  live pid and a SHA in `ps`; a healthy run and a doomed one look identical from outside for hours.
-  The fail-fast covers an outage, not "is this producing anything useful". Observed directly: arm 1 ran
-  2h13m with no readable output, and the four aborted gemma arms were only diagnosable afterwards.
-  **For a harness whose whole purpose is running unattended, that is the wrong end of the trade.**
-  Fix shape: append each entry to the record as it settles, or emit one progress line per commit.
-  **PRICED 2026-08-10 by a full overnight run**, which is why this is no longer a nuisance item.
-  `sweep-2026-08-09-overnight` ran **8h22m** (2026-08-09 20:39 → 2026-08-10 05:01 BST) and wrote its
-  first and only byte of result at the very end. Confirmed by reading the code, not inferred from the
-  silence: `review-sweep.mjs` has **exactly three** `stderr.write` sites — the opening enumeration
-  line, the closing report paths, and the error handler. **Nothing per commit.** So for 8h22m the
-  only observable was a live pid and `lms ps` reporting `GENERATING`, and **had the machine slept or
-  the process died at hour eight, all 40 eligible commits would have been lost with no partial
-  record** — not degraded, gone. Two sessions have now had to reason about liveness from `ps` alone,
-  and one of them (2026-08-09) misread a stalled log tail as a dead job. The append-as-settled fix
-  shape is the one to take: a progress line helps a watcher, but only an incremental record survives
-  the crash that makes the silence expensive.
-
 - **OAI-133** — **The gemma arms measured NOTHING about the gemma models. CORRECTED 2026-08-09.**
   The first filing guessed the cause was "something else resident"; that was **wrong and is recorded
   here rather than quietly replaced.** Measured with `lms ps` reporting **no models loaded at all**,
@@ -2916,3 +2918,42 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **The bar for it being real:** a witness that precreates **both** directories with discriminating
   modes — state `0755` / logs `0777` must trip whatever is chosen, and state `0755` / logs `0700`
   must be left alone. A single-directory fixture cannot tell the two apart and would pass either way.
+- **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
+  it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
+  SQLite", and deliberately not built there.
+  **Its justification is OAI-141**, which measured run-to-run spread (17 vs 22 finding-bearing commits
+  on identical inputs; 5 of 17 not reproducing) *above* the difference between the configurations being
+  compared. A per-commit reproduction rate across runs is the number that decides whether any sweep A/B
+  means anything, and nothing can currently compute it.
+  **What was settled and need not be re-derived** (ADR 022): SQLite is not more crash-durable than a
+  synchronous append for the *within-run* job, and ADR 018 gates `node:sqlite` as a **capability**, so a
+  hard dependency there would have made an unattended run's crash protection conditional on precisely
+  what the job store kept optional. **Neither argument applies to a cross-run index**, which is not on
+  the crash path and may reasonably be optional.
+  **Feedstock already exists**: every run leaves `review-sweep-<stamp>.ledger.jsonl` carrying per-commit
+  `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
+  not replace them.
+- **OAI-152** — **The ledger is written with nothing checking the disk can hold it.** Observed while
+  building OAI-132, 2026-08-13; **not measured**. `classify` keeps up to `MAX_RAW` (256KB) of stdout
+  *and* stderr per entry, so a pathological night could write ~20MB of JSONL into `bench/results`
+  (gitignored). **Accepted deliberately rather than fixed** — bounding it would mean the ledger holding
+  less than the record it must reconstruct — and a failed append declares a `gap` line rather than
+  vanishing, so the loss is visible. Filed so the trade is recorded rather than rediscovered and
+  re-argued. **The bar for it being real:** an actual run that fills a disk, or a ledger observed above
+  ~50MB.
+- **OAI-153** — **The ledger header carries no schema version, so a recovered streak is bound to the
+  build that recovers it.** Raised 2026-08-13 by `codex-adversarial` at pass 1 of OAI-132's review
+  ladder [high/0.96]; the documentation half shipped, the mechanism did not.
+  `isOutage` can change between a run and its recovery, so a later build may derive a streak the run
+  itself would never have computed. That is the cost of deriving rather than storing, and **ADR 022 now
+  states it**; a `schemaVersion` in the header would let a future build *detect* the mismatch instead of
+  silently suffering it. Not ship-blocking: in every real use the recovery tool runs against the same
+  build within hours. Deferred rather than dismissed — the stored-counter alternative is worse, since a
+  second representation of one fact is free to disagree with the entries beside it.
+- **OAI-154** — **Captured stdout/stderr can carry a credential, and file mode is the only thing
+  limiting who reads it.** Raised 2026-08-13 at pass 1 of OAI-132's ladder and split: **the file-mode
+  half shipped** (the ledger is created `0o600`, and at pass 2 the `.json` record too, since only those
+  two carry the raw streams — the rendered `.md` emits neither and is deliberately left at the umask).
+  **Redaction was deferred and stays deferred.** A base URL with an embedded credential is the subject
+  of the existing OAI-91/92/95, and widening a feature to cover it is how a feature stops converging.
+  Filed here so the split is on the record and the shipped half is not mistaken for the whole.
