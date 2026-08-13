@@ -10,7 +10,8 @@
 // those are the same thing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enumerateCommits, optionsFrom, resolveDeadline, runSweep } from '../bench/review-sweep.mjs';
+import { enumerateCommits, optionsFrom, runSweep } from '../bench/review-sweep.mjs';
+import { resolveDeadline } from '../bench/lib/sweep-window.mjs';
 import { resolvePin } from '../bench/lib/sweep-window.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
 
@@ -201,15 +202,6 @@ test("a crashed child keeps its stderr, the only text that says why", () => {
   assert.equal(classify({ status: 1, stdout: '', stderr: 'ENOENT: no such model' }).stderr, 'ENOENT: no such model');
 });
 
-// --abort-after was documented in the plan and in ADR 021 and could not be
-// passed. Exercised through optionsFrom, NOT the injected OPTIONS — going
-// through the injection is exactly why the suite could not see the gap.
-test('--abort-after is a real flag, read through the option parser', () => {
-  assert.equal(optionsFrom({ minutes: '10', 'abort-after': '7' }, 0).abortAfter, 7);
-  assert.equal(optionsFrom({ minutes: '10' }, 0).abortAfter, 3);
-  assert.throws(() => optionsFrom({ minutes: '10', 'abort-after': 'x' }, 0), /--abort-after/);
-});
-
 // A fixed 24h and "the next local calendar date" differ by an hour across a DST
 // boundary, and the overnight run is precisely what crosses one.
 test('--until advances the local calendar date, not a fixed 24 hours', () => {
@@ -235,11 +227,6 @@ test('--from pins where enumeration starts, and defaults to HEAD', () => {
   seen.length = 0;
   enumerateCommits({ include: ['scripts'], maxCommits: 1, scanLimit: 10 }, git);
   assert.ok(seen[0].includes('HEAD'), 'and HEAD is the default');
-});
-
-test('--from is accepted by the option parser and recorded', () => {
-  assert.equal(optionsFrom({ minutes: '10', from: 'deadbeef' }, 0).from, 'deadbeef');
-  assert.equal(optionsFrom({ minutes: '10' }, 0).from, 'HEAD');
 });
 
 // --- pass-1 batch: an auditable window, and a run that admits it fell short ---

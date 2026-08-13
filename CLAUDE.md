@@ -191,6 +191,19 @@ carries the envelope fields that change what a reader should believe (`analysisC
 three sections, so a night lost to starvation reads as coverage rather than as silence — see
 [ADR 021](adr/021-an-unwatched-sweep-must-say-what-it-did-not-review.md).
 
+`bench/lib/sweep-ledger.mjs` `openLedger` appends each commit to a JSONL ledger as it settles — one
+unbuffered `appendFileSync` per line, every record written **leading-newline-first** so a part-written
+line cannot fuse with the next successful one, the file created `wx` because two runs merging into one
+ledger still parses where the artifacts beside it would visibly clobber, and the header carrying the
+enumerated **manifest** so `bench/recover-sweep.mjs` can synthesize `unobserved` for what a crash never
+reached and hand the result to the same `writeSweep` a completed run uses. **Three failure points, three
+policies**: bootstrap kills the run, a per-entry write declares a `gap` and carries on, a stamp collision
+is refused. `bench/lib/sweep-health.mjs` `serverHealth`
+**derives** the consecutive-outage streak from the recorded timeline rather than storing a counter,
+selecting attempted commits on `startedAt` — and its `timelineComplete` warning is about the HEALTH
+timeline, so a missing **ineligible** commit does not raise it while coverage still disposes of that
+commit — see [ADR 022](adr/022-a-record-written-while-the-run-is-happening.md).
+
 ## Commands
 
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns).
@@ -200,6 +213,11 @@ three sections, so a night lost to starvation reads as coverage rather than as s
   here rather than left implicit, and required rather than skipped, because a suite that silently
   shrinks its shell matrix is a check that has stopped being able to fail.
 - Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
+- Recover an interrupted sweep: `node bench/recover-sweep.mjs [--out-dir DIR] [--force] <review-sweep-<stamp>.ledger.jsonl>`
+  — turns the ledger a crashed run left behind into the report it never wrote. **Options come BEFORE the
+  ledger path** (`parseArgs` stops reading flags at the first positional; the other order is refused
+  rather than silently ignored), it takes exactly one ledger, and it refuses a run whose own record is
+  already written and parses — `--force` overrides that.
 - TTL challenge: `node bench/ttl-challenge.mjs` (opt-in, ~45 min, needs LM Studio with **nothing**
   resident — `lms ps` empty — and nothing else connected). Every flag except `--out-dir` makes the run
   non-canonical, which the record states as `protocol.canonical: false`.

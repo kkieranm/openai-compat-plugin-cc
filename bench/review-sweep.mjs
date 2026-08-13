@@ -21,14 +21,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
-import { classify, serverUnwell } from './lib/sweep-outcome.mjs';
-import { resolvePin } from './lib/sweep-window.mjs';
+import { classify, isOutage } from './lib/sweep-outcome.mjs';
+import { resolveDeadline, resolvePin } from './lib/sweep-window.mjs';
+import { envelopeFor, openLedger } from './lib/sweep-ledger.mjs';
 import { writeSweep } from './lib/sweep-report.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
 
-const SPEC = {
+// Exported so the tests can drive the REAL argv through the REAL spec. A test
+// that rebuilds this object proves only that its own copy is consistent, which
+// is how two flags came to be documented and unpassable.
+export const SPEC = {
   valueFlags: [
     'until', 'minutes', 'from', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
     'abort-after', 'model', 'provider', 'base-url', 'out-dir',
@@ -45,38 +49,6 @@ const DEFAULTS = {
   maxAttempts: 3,
   abortAfter: 3,
 };
-
-/**
- * When to stop STARTING work.
- *
- * `--until` is the flag this exists for — you say 06:00 at bedtime and mean
- * tomorrow morning — so an hour already past today resolves to the next
- * occurrence rather than to a deadline in the past, which would end the sweep
- * before it began. One of the two is required: a sweep with no stop condition is
- * not the thing that was asked for, so it must not be reachable by omission.
- *
- * The next occurrence is the next local CALENDAR DATE at the requested
- * hour and minute, not "24 hours later". Across a DST boundary those differ by
- * an hour, and it is precisely the overnight run that crosses one — in
- * Europe/London, `--until 06:00` started at 23:00 on the spring transition
- * resolved to 07:00 when this added a fixed 86,400,000 ms.
- */
-export function resolveDeadline({ until, minutes }, startMs) {
-  if (until && minutes) throw new UserError('Pass --until or --minutes, not both.');
-  if (minutes !== undefined) {
-    const n = Number(minutes);
-    if (!Number.isFinite(n) || n <= 0) throw new UserError(`--minutes must be a positive number, got "${minutes}".`);
-    return startMs + n * 60_000;
-  }
-  if (!until) throw new UserError('A stop condition is required: pass --until <HH:MM> or --minutes <N>.');
-  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(until);
-  if (!match) throw new UserError(`--until must be HH:MM in 24-hour local time, got "${until}".`);
-  const at = new Date(startMs);
-  at.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  if (at.getTime() > startMs) return at.getTime();
-  at.setDate(at.getDate() + 1);
-  return at.getTime();
-}
 
 /** Which of a commit's paths decide whether it is worth a review. */
 function touchesIncluded(paths, include) {
@@ -153,25 +125,6 @@ function invoke(args) {
 }
 
 /**
- * Does this entry say the SERVER is unwell, rather than this commit being hard
- * or this harness being at its own limit?
- *
- * Three admissions, and the boundary is "would the next commit fare any better":
- * a child that died; a failure envelope with **no usable reason**, which is what
- * a wrong `--model` produces and the likeliest unattended misconfiguration
- * there is; and a reason `serverUnwell` recognises.
- *
- * **`output-too-large` is NOT here.** It is this harness's 64MB capture ceiling —
- * a sweep defect, in ADR 021's own words — and counting it would have the sweep
- * blame the server for its own limit, then stop the night saying so.
- */
-function isOutage(entry) {
-  if (entry.outcome === 'crashed') return true;
-  if (entry.outcome === 'failed' && !entry.reason) return true;
-  return entry.outcome === 'failed' && serverUnwell(entry.reason);
-}
-
-/**
  * The loop. Returns every enumerated commit with what became of it.
  *
  * The deadline is read immediately BEFORE starting each review and never after,
@@ -186,33 +139,69 @@ function isOutage(entry) {
  * most needs the list. An earlier version `break`ed out of this loop, which
  * dropped the remainder from both artifacts and left the header understating
  * how much had been enumerated.
+ *
+ * **Every branch settles through ONE function, and that is the point of it.**
+ * `settle` both records the entry and hands it to the sink that puts it on disk,
+ * so the two cannot come apart and a branch added later cannot quietly keep its
+ * commit in memory only. `sink` defaults to discarding, which is what keeps the
+ * existing tests — and any caller that only wants the return value — unchanged.
+ *
+ * **A sink that throws must never end the night, and that is not defensiveness.**
+ * The sink writes to a disk that can be full, read-only or gone, and an
+ * unguarded throw from commit 20 would propagate out of this loop and abandon
+ * the remaining 20 — a *recording* fault destroying *review* coverage, which is
+ * the exact failure this whole mechanism exists to remove. So the write is
+ * attempted, its fault is reported once per occurrence, and the in-memory path
+ * carries on as the floor it was before any of this existed.
  */
-export function runSweep(commits, options, { execute = invoke, now = Date.now } = {}) {
+export function runSweep(commits, options, { execute = invoke, now = Date.now, sink = () => {}, warn = (m) => process.stderr.write(m) } = {}) {
   const entries = [];
   let consecutiveOutage = 0;
   let stoppedBecause = 'every enumerated commit was settled';
   let aborted = false;
+  const settle = (entry) => {
+    entries.push(entry);
+    try {
+      sink(entry);
+    } catch (error) {
+      warn(`Could not append ${entry.sha?.slice(0, 9)} to the ledger: ${error?.message ?? error}\n`);
+    }
+    return entry;
+  };
   for (const commit of commits) {
     // Eligibility is asked FIRST, and the order is the point: a docs-only commit
     // was never going to be reviewed, so blaming an outage for it overstates
     // what the outage cost. The deadline branch below was already ordered this
     // way; the abort branch was not, which is a slip rather than a policy.
     if (!commit.eligible) {
-      entries.push({ ...commit, outcome: 'skipped-no-code' });
+      settle({ ...commit, outcome: 'skipped-no-code' });
       continue;
     }
     if (aborted) {
-      entries.push({ ...commit, outcome: 'skipped-abort' });
+      settle({ ...commit, outcome: 'skipped-abort' });
       continue;
     }
     if (now() >= options.deadline) {
-      entries.push({ ...commit, outcome: 'skipped-deadline' });
+      settle({ ...commit, outcome: 'skipped-deadline' });
       stoppedBecause = 'the wall-clock deadline passed';
       continue;
     }
-    const startedAt = now();
-    const entry = { ...commit, ...classify(execute(reviewArgs(commit.sha, options))), seconds: Math.round((now() - startedAt) / 1000) };
-    entries.push(entry);
+    // Absolute times, where `seconds` is only a duration: no artifact this
+    // harness ever wrote could say WHEN a commit was reviewed. They also mark a
+    // commit as ATTEMPTED — the skip branches return before this line exactly as
+    // they return before the outage counter below, so replaying that counter
+    // selects on `startedAt` rather than on a second list of skip outcome names
+    // kept in step with this loop by hand.
+    const startedMs = now();
+    const settled = classify(execute(reviewArgs(commit.sha, options)));
+    const endedMs = now();
+    const entry = settle({
+      ...commit,
+      ...settled,
+      startedAt: new Date(startedMs).toISOString(),
+      endedAt: new Date(endedMs).toISOString(),
+      seconds: Math.round((endedMs - startedMs) / 1000),
+    });
     consecutiveOutage = isOutage(entry) ? consecutiveOutage + 1 : 0;
     if (consecutiveOutage >= options.abortAfter) {
       stoppedBecause = `${consecutiveOutage} consecutive server failures — the server looks gone`;
@@ -252,7 +241,16 @@ function git(args) {
 }
 
 function main() {
-  const { options: parsed } = parseArgs(process.argv.slice(2), SPEC);
+  const { options: parsed, positionals } = parseArgs(process.argv.slice(2), SPEC);
+  // **This command takes no positional argument, so a leftover one is a typo and
+  // is refused.** `parseArgs` stops reading flags at the first non-`--` token and
+  // pushes the REST into positionals, so `--minutes 10 typo --model wanted` used
+  // to run for eight unattended hours on the DEFAULT model and say nothing about
+  // it. Discarding `positionals` is what made that silent. The recovery CLI
+  // beside this one refuses the same shape for the same reason.
+  if (positionals.length > 0) {
+    throw new UserError(`Refusing: ${positionals.map((token) => `"${token}"`).join(', ')} is not an option this command takes, and everything after it was ignored rather than parsed.`, { hint: 'Flags only, and every flag must start with --. Check for a typo or a missing --.' });
+  }
   const startMs = Date.now();
   const options = optionsFrom(parsed, startMs);
   // Pin first, then enumerate from the resolved SHA, so the record and the
@@ -260,29 +258,21 @@ function main() {
   options.from = resolvePin(options.from, git);
   const commits = enumerateCommits(options, git);
   process.stderr.write(`Sweeping ${commits.filter((c) => c.eligible).length} eligible of ${commits.length} enumerated commits.\n`);
-  const { entries, stoppedBecause } = runSweep(commits, options);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  // Stamped from the START, not from the end as this once was: the ledger must
+  // be named before the first review, and the report it may become has to carry
+  // the same stamp or recovery cannot name its output after the run it recovers.
+  const stamp = new Date(startMs).toISOString().replace(/[:.]/g, '-');
+  const ledger = openLedger(options.outDir, stamp);
+  const envelope = envelopeFor(options, commits, startMs);
+  ledger.header(envelope);
+  // Announced before the loop, because for the next several hours this path is
+  // the only thing a watcher can read.
+  process.stderr.write(`Ledger: ${ledger.path}\n`);
+  const { entries, stoppedBecause } = runSweep(commits, options, { sink: ledger.entry });
   const { reportPath, recordPath } = writeSweep(options.outDir, stamp, {
-    startedAt: new Date(startMs).toISOString(),
+    ...envelope,
     endedAt: new Date().toISOString(),
     stoppedBecause,
-    requestedModel: options.model ?? null,
-    maxSeconds: options.maxSeconds,
-    include: options.include,
-    // Which window was enumerated. A report that cannot say this cannot be
-    // compared with another one, which is the whole reason the flag exists.
-    from: options.from,
-    // Requested versus found. Without both, an arm that reached six of the ten
-    // commits it was asked for reads as a completed run.
-    requestedCommits: options.maxCommits,
-    eligible: commits.filter((commit) => commit.eligible).length,
-    // Both, because the shortfall sentence must name WHICH cause applied: the
-    // scan limit stopping the walk, or the pinned history simply running out.
-    scanLimit: options.scanLimit,
-    walked: commits.length,
-    // The enumeration's own count, never `entries.length`: they agree today and
-    // the report must not depend on them continuing to.
-    enumerated: commits.length,
     entries,
   });
   process.stderr.write(`\nReport: ${reportPath}\nRecord: ${recordPath}\n`);

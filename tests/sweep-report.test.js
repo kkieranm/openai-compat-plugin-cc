@@ -7,7 +7,10 @@
 // called — and each test below is one way keying on the outcome went wrong.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderSweep } from '../bench/lib/sweep-report.mjs';
+import { mkdtempSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
 
 const base = {
   startedAt: '2026-08-08T23:00:00.000Z',
@@ -216,4 +219,25 @@ test('a substituted entry whose analysis was cut still says so', () => {
     findings: [{ file: 'a.mjs', summary: 'a lead' }],
   }));
   assert.match(out, /cut off before the model finished looking/);
+});
+
+test('the JSON record is private, because it is the only artifact holding raw output', () => {
+  // `classify` keeps up to MAX_RAW of each review's stdout AND stderr, and only
+  // this file carries them. The ledger beside it is created 0o600 for exactly
+  // that material, so a world-readable record made the ledger's privacy
+  // decorative. The rendered .md is deliberately NOT included: it emits neither
+  // stream, which is what scopes this fix.
+  const dir = mkdtempSync(join(tmpdir(), 'sweep-report-mode-'));
+  const { reportPath, recordPath } = writeSweep(dir, 'stamp', {
+    startedAt: '2026-08-13T09:00:00.000Z',
+    endedAt: '2026-08-13T10:00:00.000Z',
+    stoppedBecause: 'every enumerated commit was settled',
+    include: ['scripts'],
+    enumerated: 1,
+    entries: [{ sha: 'a', subject: 's', outcome: 'clean' }],
+  });
+  assert.equal(statSync(recordPath).mode & 0o777, 0o600);
+  // The report's own mode is left to the umask, and stating that here keeps the
+  // asymmetry deliberate rather than looking like an oversight.
+  assert.notEqual(statSync(reportPath).mode & 0o777, 0o600);
 });

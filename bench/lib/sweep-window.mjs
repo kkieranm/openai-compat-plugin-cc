@@ -1,14 +1,46 @@
-// Which window a sweep walked, pinned so that two runs can be compared.
+// Which window a sweep walked, and when it stops opening new work.
 //
 // Its own module because the harness file reached this repo's size budget, and
-// because the seam is real: this decides WHICH revision is enumerated from, and
-// nothing else in the sweep cares how that was arrived at.
+// because the seam is real: this decides WHICH revision is enumerated from and
+// UNTIL WHEN, and nothing else in the sweep cares how either was arrived at.
 //
 // The flag exists for the benchmark, where several models review "the same ten
 // commits". Enumerating from `HEAD` meant a commit landing between arms silently
 // shifted the window and the arms were no longer comparable — so what is
 // recorded here is the RESOLVED commit, never the text the caller typed.
 import { UserError } from '../../scripts/lib/errors.mjs';
+
+/**
+ * When to stop STARTING work.
+ *
+ * `--until` is the flag this exists for — you say 06:00 at bedtime and mean
+ * tomorrow morning — so an hour already past today resolves to the next
+ * occurrence rather than to a deadline in the past, which would end the sweep
+ * before it began. One of the two is required: a sweep with no stop condition is
+ * not the thing that was asked for, so it must not be reachable by omission.
+ *
+ * The next occurrence is the next local CALENDAR DATE at the requested
+ * hour and minute, not "24 hours later". Across a DST boundary those differ by
+ * an hour, and it is precisely the overnight run that crosses one — in
+ * Europe/London, `--until 06:00` started at 23:00 on the spring transition
+ * resolved to 07:00 when this added a fixed 86,400,000 ms.
+ */
+export function resolveDeadline({ until, minutes }, startMs) {
+  if (until && minutes) throw new UserError('Pass --until or --minutes, not both.');
+  if (minutes !== undefined) {
+    const n = Number(minutes);
+    if (!Number.isFinite(n) || n <= 0) throw new UserError(`--minutes must be a positive number, got "${minutes}".`);
+    return startMs + n * 60_000;
+  }
+  if (!until) throw new UserError('A stop condition is required: pass --until <HH:MM> or --minutes <N>.');
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(until);
+  if (!match) throw new UserError(`--until must be HH:MM in 24-hour local time, got "${until}".`);
+  const at = new Date(startMs);
+  at.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  if (at.getTime() > startMs) return at.getTime();
+  at.setDate(at.getDate() + 1);
+  return at.getTime();
+}
 
 /**
  * Resolve a revision to the commit SHA that will be recorded and reviewed.

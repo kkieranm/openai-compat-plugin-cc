@@ -17,6 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { incompleteness } from './sweep-notes.mjs';
+import { serverHealth } from './sweep-health.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
 
 /**
@@ -36,6 +37,17 @@ const WHY = {
   'skipped-deadline': 'the wall-clock deadline passed before this commit was reached',
   'skipped-abort': 'the sweep aborted on repeated server failures before reaching this commit',
   'skipped-no-code': 'the commit touched none of the included paths',
+  // Only `recover-sweep.mjs` mints this one, and it must NOT be read as "the run
+  // never settled it": since a ledger write can fail without ending the run, an
+  // absent entry means either never-reached or settled-and-lost, and nothing on
+  // disk distinguishes them. It is not a review that failed — nothing is known
+  // about it either way, which is exactly why it must still appear rather than
+  // being silently absent from a recovered report.
+  unobserved: 'the ledger has no entry for it — the run either never reached this commit or settled it and lost the write, and nothing on disk can tell which',
+  // Distinct from `unobserved` on purpose: here the run demonstrably DID settle
+  // the commit and the ledger write failed, so the record is lost rather than
+  // unknown to have existed.
+  unrecorded: 'the run settled this commit and the ledger write failed, so whatever it found was lost',
 };
 
 /**
@@ -209,7 +221,10 @@ function header(record) {
   return [
     '# Overnight review sweep',
     '',
-    `- **Started** ${record.startedAt} · **ended** ${record.endedAt}`,
+    // A recovered run passes `endedAt: null` on purpose — it was killed, so it
+    // has no end, and the last thing observed is stated in `stoppedBecause`
+    // where it can be labelled as an observation rather than an ending.
+    `- **Started** ${record.startedAt} · **ended** ${record.endedAt ?? 'not observed'}`,
     `- **Stopped because** ${record.stoppedBecause}`,
     `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
     `- **Enumerated** ${enumerated} commits · **reviewed** ${reviewed} · **no review** ${enumerated - reviewed}`,
@@ -252,6 +267,7 @@ function caveats() {
 export function renderSweep(record) {
   return [
     ...header(record),
+    ...serverHealth(record.entries, record.abortAfter, record.timelineComplete !== false),
     ...findingsSection(record.entries),
     ...coverageSection(record.entries),
     ...reviewedSection(record.entries),
@@ -272,6 +288,12 @@ export function writeSweep(outDir, stamp, record) {
   const reportPath = join(outDir, `review-sweep-${stamp}.md`);
   const recordPath = join(outDir, `review-sweep-${stamp}.json`);
   writeFileSync(reportPath, `${renderSweep(record)}\n`);
-  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+  // **The record is private; the rendered report is not, because only this JSON
+  // carries the raw material.** `classify` keeps up to `MAX_RAW` of a review's
+  // stdout AND stderr per entry and the renderer emits neither — the same
+  // material the ledger is created `0o600` for, so leaving the record at a
+  // default `0o666` would make the ledger's privacy decorative. Mode applies at
+  // creation, which is this case: the stamp is fresh.
+  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   return { reportPath, recordPath };
 }

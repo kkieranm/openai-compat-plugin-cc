@@ -89,6 +89,30 @@ export function serverUnwell(reason) {
 }
 
 /**
+ * Does this entry say the SERVER is unwell, rather than this commit being hard
+ * or this harness being at its own limit?
+ *
+ * Three admissions, and the boundary is "would the next commit fare any better":
+ * a child that died; a failure envelope with **no usable reason**, which is what
+ * a wrong `--model` produces and the likeliest unattended misconfiguration
+ * there is; and a reason `serverUnwell` recognises.
+ *
+ * **`output-too-large` is NOT here.** It is this harness's 64MB capture ceiling —
+ * a sweep defect, in ADR 021's own words — and counting it would have the sweep
+ * blame the server for its own limit, then stop the night saying so.
+ *
+ * **It lives here rather than in the harness because it now has two readers.**
+ * The loop asks it to decide whether to abort; the report asks it to say how the
+ * night went (ADR 022). Two copies of this boundary would let the morning
+ * artifact describe an abort decision the run never took.
+ */
+export function isOutage(entry) {
+  if (entry.outcome === 'crashed') return true;
+  if (entry.outcome === 'failed' && !entry.reason) return true;
+  return entry.outcome === 'failed' && serverUnwell(entry.reason);
+}
+
+/**
  * Bound one captured stream, and say so when it was cut.
  *
  * Applied to `stderr` as well as `stdout`, which the first version missed: the
