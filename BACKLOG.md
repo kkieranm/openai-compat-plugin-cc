@@ -50,11 +50,12 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-66, OAI-64,
-OAI-69**. One subsystem, four independent closes, so they sit adjacent rather than merged.
-**OAI-62 and OAI-67 both closed 2026-08-12** — see BACKLOG_DONE; OAI-62's residual was re-scoped into
-OAI-106, and OAI-67 shipped with its root cause deliberately separated as OAI-145. **OAI-66 now
-leads**, mis-reporting an ending the way OAI-67 did (a crash published as a clean `cancelled`). OAI-64 trails the three that are wrong on their own, and **gates OAI-69** — ADR 014
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-64,
+OAI-69**. One subsystem, independent closes, so they sit adjacent rather than merged.
+**OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
+re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
+OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
+OAI-64 leads what remains, and **gates OAI-69** — ADR 014
 accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
 OAI-64 shows it does not, so OAI-69 is not an independent gap and must not be scheduled as one.
 
@@ -1442,46 +1443,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   is already a known row and its log is not an orphan. Observed end to end — `logs/1.log` survives
   carrying era-1 output and is attributed to the new job, and both `/oai:status` and `/oai:result`
   point the user at it.
-
-- **OAI-66** — **Two reconciler diagnoses that contradict the row they are written from.**
-  **(a) A crashed worker is published as a clean `cancelled`.** `job-reconcile.mjs:30-33` treats **any**
-  `cancel_requested_at` as proof the cancellation completed and returns before the `worker-died` branch
-  at `:34-39`, writing `state='cancelled'` with `failure=null` and `outcome=null` — and
-  `job-render.mjs` `noteFor` renders **no note** for terminal `cancelled`. **Proved with a positive
-  control**: the identical abrupt death (a real child SIGKILLed while `running`) reconciled twice — no
-  cancel pending → `worker-died`/`failed`; cancel pending → `cancelled`, `failure=null`. The control
-  fires, so the check *can* distinguish; the verdict is decided purely by whether a cancel was in
-  flight, never by why the process died. **This is a diagnostic that exists and is thrown away.** It
-  pairs with OAI-62(a), which supplies a very reachable crash.
-  **Note for whoever fixes it:** the reconciler cannot be fixed alone. The cooperative exit leaves no
-  positive signal that the worker exited *because of* the cancel — that absence is why the inference
-  exists — so the worker must record something before exiting, spanning `cmd-task-worker.mjs` /
-  `job-heartbeat.mjs`. Changing `job-reconcile.mjs:30` alone flips legitimate cancellations to
-  `failed`, and `tests/cancel.test.js:44-101` asserts the opposite.
-  **(b) `terminalizeUnstarted` blames the submitter for a crash the row proves was the worker's.**
-  `job-reconcile.mjs:50-58` writes "The process that submitted it most likely died before the worker
-  was spawned. Submit it again." unconditionally — but `job-spawn.mjs:40-43` awaits the OS `'spawn'`
-  event before returning and `task-submit.mjs:102` stamps `spawned_at` only after, so a **non-null
-  `spawned_at` is proof the submitter survived process creation**. `job-liveness.mjs:85`
-  (`spawned_at ?? created_at`) collapses the two windows ADR 014:121-122 explicitly distinguishes.
-  Reachable via any throw in the worker's pre-registration window (`cmd-task-worker.mjs:78-92`):
-  `DatabaseTooNewError`, a swept row, an unhandled `SQLITE_BUSY`, OOM. "Submit it again" reproduces a
-  systemic failure identically. The sibling `terminalizeDead` (`:37`) names the log; this one does not.
-  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists, is NOT harness approved, and is NOT
-  implementable as it stands:** `plans/oai-66-a-crash-must-not-be-published-as-a-clean-cancellation.md`.
-  Six Codex rounds, a real defect at every one, final verdict **CHANGES-REQUIRED**. The design reached
-  is: the worker terminalizes *itself* on cancel (no new column, no migration) and reconciliation
-  publishes a distinct `cancel-unconfirmed` outcome when no acknowledgement exists. **Two independent
-  blockers stop it, and both need the owner.** (1) How `cancel-unconfirmed` is represented — a new
-  terminal state carries a cross-version hazard, since the row stays a *known version* so an older
-  build reaches `reconcile()`, fails `isTerminal`, and may overwrite a finished row; the alternatives
-  are a `user_version` bump or carrying it as a `reason` inside the existing `failed` envelope.
-  (2) **The pre-stamp window has no evidence-safe reading**: the OS spawn precedes `markSpawned`, so
-  `spawned_at` NULL does *not* prove no worker existed, and `spawned_at` non-null proves only "never
-  registered by the grace deadline", not that anything died. **OAI-67's fix widens that window.**
-  The draft also found the cancel path has **two** exits, not one — a queued worker leaves via
-  `awaitTurn` and never reaches the heartbeat — and that the acknowledgement write **must not use
-  `withBusyRetry`**, whose synchronous sleep would freeze the very request the user asked to stop.
 
 - **OAI-68** — **`PRAGMA user_version` is checked only when a connection opens, so an in-flight worker
   bypasses the newer-database refusal.** `applySchema` (`job-store.mjs:120-125`) reads it once inside

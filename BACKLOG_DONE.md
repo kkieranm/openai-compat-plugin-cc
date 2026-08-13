@@ -1,3 +1,43 @@
+## 2026-08-13 — the worker confirms its own cancellation, and a crash stops reading as one (OAI-66)
+
+- **OAI-66** — **Two reconciler diagnoses that contradicted the row they were written from.** Shipped
+  2026-08-13, commit `e966c95`, direct to `main`. 820 tests green, measured from a clean extract of the
+  commit rather than the working tree.
+  **(a)** `terminalizeDead` treated any pending `cancel_requested_at` as proof the cancellation
+  completed, so a worker that CRASHED with a cancel in flight was published as a clean `cancelled` with
+  `failure=null` and no rendered note. Now the exiting worker announces itself in `<seq>.cancel-ack`
+  beside its job log, bearing the row's id, and the reader splits on the row's own state: a `queued`
+  row reads `cancelled` needing no evidence (acquisition is what makes a row `running`, so it provably
+  sent nothing), a `running` row only on a present, id-matching acknowledgement, and otherwise `failed`
+  / `cancel-unconfirmed`.
+  **(b)** `terminalizeUnstarted` blamed the submitter for a crash it could not establish. The draft's
+  fix — condition the hint on `spawned_at` — was **refuted during the probe**: OAI-67 had made a NULL
+  `spawned_at` possible while a real worker exists, so it would have replaced one false claim with
+  another. The hint now scopes its ignorance to itself and points at the log.
+  **A file, not a row, and beside the log rather than in it.** A terminal row would clear the `running`
+  blocker and let the queue dispatch before the process reached `process.exit()`; and the log carries
+  model output via `SALVAGED_OUTCOME`, so a verdict that SUPPRESSES a crash diagnosis must not rest on
+  bytes the model could author. The read runs inside the queue's `BEGIN IMMEDIATE`, so it opens
+  `O_RDONLY|O_NOFOLLOW|O_NONBLOCK`, bounds the size, and never throws.
+  **Carried in the same change:** retention sweeps the acknowledgement with the log, keys its orphan
+  scan on the union of both names and admits only sequences it can address again; `/oai:status` stops
+  promising a cancelling job "reads cancelled once its worker has exited"; and three hints stop
+  asserting what they cannot establish.
+  **Live evidence**, LM Studio `qwen/qwen3.6-27b`, both directions: a cooperative cancel reads
+  `cancelled` with the acknowledgement on disk; a SIGKILL with a cancel pending reads `failed` naming
+  the ambiguity. Before this, that second run was a clean `cancelled` with no note.
+  **Review:** three ladder passes, three batches, one verification-only pass, three verdict rounds.
+  Nine mutations, eight discriminating; M7 was RETIRED rather than passed after measurement showed the
+  term it tested could never decide anything. **Committed on the user's approval, not on dual approval**
+  (`adr/088`): round 2 split — Codex approved while an independent Claude subagent caught an
+  "exactly equivalent" claim that was false and self-contradicting across two adjacent ADR lines — and
+  round 3 rejected on the status-line promise, whose fix no approver has seen. Every pass carried a
+  coverage gap: `security-review` cannot run in this repo.
+  **Residue filed rather than built:** OAI-149 (bind the orphan-sweep key to a store incarnation) and
+  OAI-150 (repair or refuse an inherited state-directory permission chain), both cleared by both
+  approvers as bounded deferrals, with the shipped artifacts stating their residuals.
+  Full ledger: `plans/oai-66-the-worker-confirms-its-own-cancellation.ledger.md`.
+
 ## 2026-08-12 — a failed launch stops holding the queue, and housekeeping stops sinking live submissions (OAI-67)
 
 - **OAI-67** — **A failed spawn blocked the whole queue; post-spawn write failures reported failure
