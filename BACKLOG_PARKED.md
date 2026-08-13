@@ -1,3 +1,133 @@
+## 2026-08-13 — parked by the backlog sweep's worth bar
+
+Six items, all `not worth doing` — **never `refuted`**. Each framing is correct; none named an instance
+of harm that had already happened, which is the bar (`adr/069`). Three said so in their own words, and
+those quotes are kept below rather than paraphrased. **Every reopening bar here is an INSTANCE, not an
+argument**: a better-sounding case for one of these does not reopen it, because that is what parked it.
+The bar was applied to all 101 surviving items, not to a chosen subset.
+
+
+### OAI-7 — parked, `not worth doing`
+
+**Why parked:** No dated instance of harm exists in the body or in any ADR; the sweep searched both.
+
+**Reopening bar (an instance, with a date):** Someone other than the author tries to install this plugin and cannot — a named person, with the date. Until then the `--plugin-dir` path is how it is used and nothing is blocked.
+
+*Filing kept verbatim:*
+
+  - **OAI-7** — Publish: README install instructions, and verify the marketplace path
+    (`claude plugin marketplace add`) actually resolves this repo once it has a remote.
+
+
+### OAI-36 — parked, `not worth doing`
+
+**Why parked:** Verified 2026-08-13 by the sweep: nothing reads `bench/results/*.json` back in, and `renderReport` has exactly one production call site (`bench/run.mjs:265`). The trap is real and unreachable.
+
+**Reopening bar (an instance, with a date):** A replay or re-render path is added — `--render <file>`, or anything that reads `bench/results/*.json` back. The sweep verified on 2026-08-13 that nothing does today, which is exactly why the trap cannot fire yet.
+
+*Filing kept verbatim:*
+
+  - **OAI-36** — If a re-render command is ever added, the reliability prose becomes schema-dependent.
+    Filed 2026-08-03 from the OAI-31 review, where it was raised at high confidence (0.99) and
+    **dismissed with evidence rather than fixed** — recorded here because the evidence is exactly what
+    a future change would invalidate. `reliabilitySection` renders "an attempt record carries `<nine
+    fields>`" from `RECORD_FIELDS`, pinned against a live ledger entry. That sentence is true of
+    entries the *current* ledger produced, and today it can only ever describe those: `renderReport` is
+    called from exactly one place, `bench/run.mjs:251`, on live results, and nothing reads
+    `bench/results/*.json` back in. Add a `--render <file>` or any replay path and the report can
+    describe a record written before `promptChars` or `waitedMs` existed, while the prose asserts nine
+    fields it never had. The fix then is to version the serialized attempt schema at the report
+    boundary and condition the enumeration on the schema actually present — not to weaken the sentence,
+    which is the one thing that made it checkable. Cheap now, invisible later: whoever adds replay will
+    not think to look at a paragraph in the reliability section.
+
+
+### OAI-43 — parked, `not worth doing`
+
+**Why parked:** Its own body: *"Worth an hour to decide deliberately; worth nothing to change by reflex"* — and it records the duplication tripwire firing usefully twice (OAI-31, then OAI-35).
+
+**Reopening bar (an instance, with a date):** The two-place edit FAILS to fire: a field is added to the ledger and `RECORD_FIELDS` does not go red, or the reader-facing paragraph goes stale while the key-set test stays green. Its own body records the tripwire firing usefully twice, so the evidence currently runs the other way.
+
+*Filing kept verbatim:*
+
+  - **OAI-43** — Decide whether the attempt record deserves one schema both sides read. **Low priority,
+    and it may close as "no" — it is filed because it was rejected on judgement rather than on
+    evidence.** Raised by `codex-adversarial` in OAI-35's pass 2 and dismissed there as out of scope.
+    The observation: adding a field to the ledger means editing two places — `newEntry` in
+    `scripts/lib/attempt-ledger.mjs`, and `RECORD_FIELDS` in `bench/lib/reason-notes.mjs` — and
+    `RECORD_FIELDS` is attempt-record schema metadata living in a *rendering* helper because one
+    paragraph happens to enumerate it. Codex's read: a shared record schema would be the genuine seam,
+    and the current arrangement is a size-driven extraction wearing one.
+    The counter, which is why it was rejected: that two-place edit **is the designed tripwire**. The
+    key-set test goes red the moment the two disagree, which is what forces the reader-facing paragraph
+    to be re-read rather than left quietly describing a record it no longer matches — and that tripwire
+    has now fired usefully twice (OAI-31, then OAI-35). A shared schema keeps them in sync
+    automatically, which sounds better and would have *removed* the prompt to re-read the prose.
+    So the real question is not "is this duplication" but **"is the duplication load-bearing"**, and
+    OAI-35 gave weak evidence for both sides: the tripwire worked, and separately three documents
+    still went stale on a witness count no tripwire watched. Worth an hour to decide deliberately;
+    worth nothing to change by reflex. If it is done, the paragraph must keep something that fails when
+    the record changes, or the one guard that has demonstrably worked here is traded for tidiness.
+
+
+### OAI-47 — parked, `not worth doing`
+
+**Why parked:** Its own body: *"So nothing is currently wrong."*
+
+**Reopening bar (an instance, with a date):** A TTL challenge record is read somewhere its `BACKLOG_DONE.md` attestation is not — copied off this machine, or cited when the tree state matters — and its provenance cannot be established.
+
+*Filing kept verbatim:*
+
+  - **OAI-47** — Make the TTL challenge record self-attesting by stamping the git revision into
+    `environment`. **Small, and filed as satisfied-but-improvable rather than as a defect.** The
+    manifest's `environment` is `{startedAt, model, lmsCommit, residentBefore}` — it names the `lms`
+    build but not the revision of *this* repo that produced it, so the artifact cannot say which
+    instrument wrote it. OAI-34's done-condition anticipated exactly this and solved it out-of-band:
+    the handover records the SHA in `BACKLOG_DONE.md`, and the 2026-08-04 run did so (`0c566b6`). So
+    nothing is currently wrong. What is fragile is that the attestation lives in a *different file*
+    from the record, and `bench/results/` is gitignored — a record copied off this machine arrives with
+    no provenance at all. Add `gitRev` (and whether the tree was dirty, which matters more: a canonical
+    run from a modified tree is not the reviewed instrument, and today nothing in the record would say
+    so). Cheap, and it is the same class this repo already files — a claim that is true because a human
+    remembered to write it down elsewhere.
+
+
+### OAI-82 — parked, `not worth doing`
+
+**Why parked:** Its own body: *"Not a defect — the invariant holds by instruction and the refusal is the point."*
+
+**Reopening bar (an instance, with a date):** A delegate run is observed making more than two `task` submissions, or accepting more than one job. The invariant holds by instruction today and the item says outright it is not a defect.
+
+*Filing kept verbatim:*
+
+  - **OAI-82** — **"At most two `task` submissions, at most one accepted job" is not auditable.** Filed
+    2026-08-05. The invariant is stated in the agent, ADR 015, this tracker and the done entry, and only
+    its *accepted* half leaves a trace: an oversize refusal happens before any row exists, so a second
+    submission is invisible afterwards and nothing can reconstruct the count from persisted state. Not a
+    defect — the invariant holds by instruction and the refusal is the point — but it is a claim the
+    repo cannot check, which is the class this repo keeps promoting into structural tests. If it is ever
+    worth checking, the cheap form is a pre-publication attempt counter on the row rather than an
+    idempotency key; note that Codex proposed the full transactional design and it is far more than this
+    earns.
+
+
+### OAI-152 — parked, `not worth doing`
+
+**Why parked:** Its own body: *"Observed while building OAI-132, 2026-08-13; **not measured**."*
+
+**Reopening bar (an instance, with a date):** An actual run fills a disk, or a ledger is observed above ~50MB. This bar is the item's own words, written when it was filed.
+
+*Filing kept verbatim:*
+
+  - **OAI-152** — **The ledger is written with nothing checking the disk can hold it.** Observed while
+    building OAI-132, 2026-08-13; **not measured**. `classify` keeps up to `MAX_RAW` (256KB) of stdout
+    *and* stderr per entry, so a pathological night could write ~20MB of JSONL into `bench/results`
+    (gitignored). **Accepted deliberately rather than fixed** — bounding it would mean the ledger holding
+    less than the record it must reconstruct — and a failed append declares a `gap` line rather than
+    vanishing, so the loss is visible. Filed so the trade is recorded rather than rediscovered and
+    re-argued. **The bar for it being real:** an actual run that fills a disk, or a ledger observed above
+    ~50MB.
+
 # Parked
 
 Items whose *framing* was disproved, not merely deprioritised. Each carries a **reopening bar**: what

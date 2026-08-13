@@ -1,3 +1,93 @@
+## 2026-08-13 — closed by the backlog sweep, each verified against disk (OAI-33, OAI-84)
+
+- **OAI-33** — **`plans/README.md` was missing.** Closed 2026-08-13 by the backlog sweep, which
+  **verified the file exists on disk** rather than taking it off a commit message. The `/feature` skill
+  points at it for naming, collisions and provenance; it is there. No code change was needed and none
+  was made — this entry records that the gap closed at some point between the filing and the sweep.
+
+  *Original filing, kept because it is the record of what was wanted:*
+
+  - **OAI-33** — Write `plans/README.md`, which the `/feature` skill already points at and this repo
+    does not have. Filed 2026-08-02, noticed while filing OAI-26's plan. The skill says naming,
+    collisions, the `draft`/`final` distinction and provenance "live in `plans/README.md`" — so the
+    one place those rules are supposed to be written down is missing here, and six plans have been
+    written without them. In practice a convention has emerged and should just be recorded rather than
+    invented: `oai-NN-slug.md`, one per item, occasionally spanning two IDs where the work was
+    (`oai-20-21-survive-the-server.md`). Worth stating explicitly: a plan is **not** rewritten when
+    review refutes it — OAI-26's carries a dated correction block at the top and leaves the refuted
+    text in place, because the plan is the record of what was believed at the time, and that is the
+    convention the next one should follow. Housekeeping, so it sits down here; it costs one short file.
+
+- **OAI-84** — **Two ways `/oai:review` threw away an answer the model gave it, on the default path.**
+  **Both repairs SHIPPED and VERIFIED on disk 2026-08-13** by the backlog sweep, independently of the
+  entry's own claim to have shipped:
+  **(a)** `scripts/lib/structured.mjs:202` now builds `const channels = structured ? [content, reasoning] : [content];`
+  and tries each channel in turn, replacing the pre-parse ternary that buried a valid payload in
+  `reasoning` when one stray character sat in `content`.
+  **(b)** `scripts/lib/structured.mjs:242` wraps a bare top-level array —
+  `Array.isArray(parsed) ? { findings: parsed } : parsed` — so a reply of `[{...}, {...}]` is no
+  longer discarded. Both sites carry comments recording the old behaviour as a fixed defect.
+  **The item did NOT close as a whole, and this is the honest split.** Its ladder ended at its terminal
+  pass without dual approval, and the candidate-selection design it grew is under a partial plan
+  withdrawal that the user adjudicated PARTIAL on 2026-08-07. That remainder **could not close
+  independently** of the replacement, so it merged into **OAI-112**, which now carries it; OAI-84's ID
+  redirects there. Its two live sibling defects stay separately filed as **OAI-113** (quadratic scan)
+  and **OAI-114** (a primitive sibling discarding a whole findings list), both re-verified STILL TRUE
+  by this sweep.
+
+  *Original filing, kept in full because its evidence is the record:*
+
+  - **OAI-84** — **Two ways `/oai:review` throws away an answer the model gave it, on the default path,
+    and reports the throw-away as "no findings in the requested shape".**
+    **STATUS 2026-08-07 — BUILT AND SHIPPED, ladder ended WITHOUT approval, item stays LIVE and is
+    BLOCKED on the user.** Both repairs landed and were independently audited (commits through
+    `674cf49`, suite 692/0 verified in a committed copy, verify skill all three steps including a
+    CLI-level before/after control). The six-pass review ladder then ended at its terminal pass with
+    **both approvers returning `CHANGES-REQUIRED`**, and raised a partial plan withdrawal against the
+    candidate-selection design — filed as **OAI-112**, which the user must adjudicate part-versus-whole
+    before any replacement is planned. Two live defects the ladder found are filed separately and are
+    fixable without waiting for that decision: **OAI-113** (quadratic scan, measured 39s end-to-end) and
+    **OAI-114** (a primitive sibling discarding a whole findings list, a regression from base). Do NOT
+    mark this done: what it was filed for works, but the design it grew is withdrawn.
+    The register row is `84-two-ways-a-reply-is-thrown-away` (exit_mode `withdrawn`, 16 filed at exit). **Split out of OAI-13 on
+    2026-08-05 by the backlog sweep**, which verified against disk that these two stopped being what
+    they were filed as. They were filed 2026-07-27 from the OAI-4/OAI-10 built-in review as
+    vendor-dependent behaviour of a *degraded* path — untestable here, waiting for a second server. OAI-51
+    then made the unconstrained prose-parse path the **default** (2026-08-04), and the default runs the
+    same `parseFindings`. So neither needs a second server any more, and both are reachable on every
+    ordinary review this plugin now performs.
+
+    **(a) The channel is picked before the parse, and there is no fallback.**
+    `scripts/lib/structured.mjs:265` — `const text = structured && !content.trim() ? reasoning : content;`
+    — chooses one of `content` / `reasoning_content`, and `extractJson` then tries only that text. One
+    stray non-whitespace character in `content` discards a valid payload sitting in `reasoning`. Verified
+    2026-08-05 as applying **regardless** of `structuredOutput`, so the schema flip did not narrow it.
+
+    **(b) A bare top-level findings *array* is discarded**, though the adjacent comment promises repair.
+    `scripts/lib/structured.mjs:269` —
+    `if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.findings)) return null;` — so a
+    reply of `[{...}, {...}]` fails the object test and returns null. Under a grammar this was a
+    degraded-path curiosity; under prose instructions, "emit the findings" answered with a plain array is
+    an *ordinary* thing for a model to do, which makes this the most likely candidate for a review that
+    found something reporting nothing — a candidate, not a measurement; see the next-but-one paragraph.
+
+    **Why this outranks the vendor items it was filed with.** Both render as trap instance 14 — the
+    `findings: null` versus `[]` distinction that [ADR 003](adr/003-structured-findings.md) exists to
+    protect. The distinction itself is intact and test-pinned (`tests/review-json.test.js:83`), which is
+    precisely what makes this worth fixing: the plumbing correctly reports "unparseable", and the parser
+    is calling things unparseable that are not. The user sees an honest message about a dishonest verdict.
+
+    **Not yet measured, and say so rather than guess.** How often either fires on the current default is
+    unknown — no run has been instrumented for it. The 2026-08-04 whole-tree run that returned **0
+    findings** with `parsed: true` is *not* evidence for this item (it emitted content and genuinely found
+    nothing), and must not be recruited as such. The cheap instrument is to log the raw reply whenever
+    `parseFindings` returns null and read a handful; the cheap fix for (b) is to accept an array and wrap
+    it, which the comment already says was intended.
+
+    **Sequencing.** Before **OAI-19**, or the baseline measures a parser that is about to change — this
+    is the same argument OAI-51 made for suspending that run, one layer down. Cheap enough that it should
+    not delay anything: (b) is a few lines, (a) is a try-the-other-channel fallback.
+
 ## 2026-08-13 — the sweep writes as it goes, and says what the server did to it (OAI-132, OAI-140 recording half)
 
 - **OAI-132** — **An overnight sweep emitted NO signal until it ended, so a crash lost the whole
