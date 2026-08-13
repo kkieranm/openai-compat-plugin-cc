@@ -113,7 +113,7 @@ worth reusing: **does this sentence permit silent substitution?**
 numbers are in the tracker and the timings are in a gitignored JSON.
 **OAI-137** — `readOmlx` ignores `data` when `models` is an empty array.
 **OAI-136** — `--model` bypasses the embedding-model rejection that `defaultModel` enforces, so a chat
-request can be sent to an embedder; `README.md:74` currently claims the opposite. Pre-existing, found
+request can be sent to an embedder; `README.md:78` currently claims the opposite. Pre-existing, found
 by `codex-plain` while reviewing OAI-134. Fixing it is a **behaviour change needing its own grill** —
 it is not obvious that an explicit `--model` should be overridden.
 **OAI-125** — the resolved-SHA guarantee reaches the artifact by one untested path (mutation-proved);
@@ -129,8 +129,8 @@ Three ran. Two ended **`cap-without-approval`** at the computed cap of 3 — reg
 `sweep-overnight-review` and `sweep-followon-one-mapping`. The third,
 `oai-134-conditional-load-hint`, ended **`terminated`** after **one light pass, 5 findings, no
 verdict point**: the window closed. Its batch was applied and committed green, so nothing is
-half-landed, but **`adr/089`'s verification-only pass never ran** — the last discovery pass was also
-the last pass, which is exactly the shape `adr/089` exists to prevent. If OAI-136 is picked up, that
+half-landed, but **dotfiles `adr/089`'s verification-only pass never ran** — the last discovery pass was also
+the last pass, which is exactly the shape dotfiles `adr/089` exists to prevent. If OAI-136 is picked up, that
 is the honest place to note the gap.
 
 That is four `cap-without-approval` rows in the cohort, so the evaluator keeps the cap at 3 for the

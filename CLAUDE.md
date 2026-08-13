@@ -256,12 +256,8 @@ Domain:
 ## Verifying and reviewing changes
 
 - Prove changes with the repo `verify` skill (`.claude/skills/verify/SKILL.md`).
-- Review order: `advisor` → lean workflow (`.claude/workflows/review-lean.js`) per feature →
-  the same lean workflow in **wide mode** (`--wide` args prefix: 5 finders, verifier cap 6) once per
-  milestone, or when a change introduces or alters a module carrying vendor/protocol assumptions —
-  which in this repo is most of them. Wide mode replaced the built-in `/code-review` here on
-  2026-07-30 after it died at its verifier fan-out on both OAI-16 and OAI-17 (dotfiles `adr/003`); the
-  built-in stays available at `medium` when typed by hand.
+- Review runs the `review-ladder` skill's stage table — read the stages there; this file does not
+  restate them. The built-in `/code-review` stays available at `medium` when typed by hand.
 - Every recurring defect class graduates from a reviewer's prompt to a structural test — size/growth
   is itself such a class and is guarded by `tests/structure.test.js` (ratchet allowlist; raising a
   ceiling is a deliberate commit that says why). `tests/plugin.test.js` guards the markdown command
@@ -272,8 +268,8 @@ Domain:
 
 - `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
   **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**. **Since 2026-08-08 the
-  tier list is the PRIORITY VIEW and the bodies below sit in ascending ID order** (`adr/025`); a
-  re-order rewrites only the index. **`tests/backlog-structure.test.js` enforces this on every
+  tier list is the PRIORITY VIEW and the bodies below sit in ascending ID order** (dotfiles
+  `adr/025`); a re-order rewrites only the index. **`tests/backlog-structure.test.js` enforces this on every
   `npm test`** (OAI-104, 2026-08-09 — before it, the same guarantee was prose naming a script that
   did not exist, and it found three classes of live drift on its first run): the index covers the
   live set exactly, no ID repeats in it, the bodies are in ID order, and nothing is live and closed

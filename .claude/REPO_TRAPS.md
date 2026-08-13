@@ -680,10 +680,12 @@ script driving the production entry point settles it in seconds; here it printed
 
 ## Untracked files are invisible to the review workflow
 
-`review-lean`'s scope agent pins the diff with `git diff`, which does not show untracked files — its
-own output said so ("need `git add -N <file>` first"). During OAI-22 that meant a newly extracted
-109-line production module, `scripts/lib/stream-collect.mjs`, was very likely never read by any of
-the five finders, while the review still reported clean. Worse, `git commit -am` would have shipped
+A review stage that scopes itself with `git diff` does not see untracked files. Observed in the
+since-retired `review-lean` workflow, whose scope agent said so in its own output ("need `git add -N
+<file>` first") — but the trap belongs to any stage that takes its scope from a diff rather than
+from the transcript. During OAI-22 that meant a newly extracted 109-line production module,
+`scripts/lib/stream-collect.mjs`, was very likely never read by any of the five finders, while the
+review still reported clean. Worse, `git commit -am` would have shipped
 `chat.mjs` with those lines *removed* and the module they moved into absent — a tree broken on any
 fresh clone, with the local suite green because the file existed in the working tree.
 

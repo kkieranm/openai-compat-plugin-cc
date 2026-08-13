@@ -809,9 +809,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `bench/results/2026-07-30T*.json` with rendered reports beside them as
   `2026-07-30-oai19-arm-{dense,moe}.log` (gitignored; the quotable summary is in ADR 006).
 
-- **OAI-27** — Run `/security-review` over the transport-classification path. Filed 2026-08-01 from
-  the OAI-22 ladder, where it was **evaluated and not triggered, and that call is disputed**. The
-  skill's trigger list is auth/sessions, personal data, money movement, secrets and credentials, or
+- **OAI-27** — Put a security lens on the transport-classification path. **The instrument this item
+  named is gone: `security-review` was retired 2026-08-13 (dotfiles `adr/100`), which folds its
+  surface into `codex-adversarial`'s focus string — so this asks for that focus, not the deleted
+  stage.** Filed 2026-08-01 from
+  the OAI-22 ladder, where it was **evaluated and not triggered, and that call is disputed**. That
+  skill's trigger list was auth/sessions, personal data, money movement, secrets and credentials, or
   anything irreversible — OAI-22 touches none of them, so it was skipped and the specific concern
   raised (`transportError` now branches on a `cause.code` that arrives from a remote peer, and a TLS
   rejection such as `CERT_HAS_EXPIRED` becomes `non-retryable-transport` with `cause.message`
@@ -2389,7 +2392,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
      `--model` is the caller's instruction, and `planSelection` deliberately lets a named model outrank
      our inference (`chatCandidates` is a denylist for the same reason — the verification machine's chat
      model reports type `vlm`). The choice is between refusing, warning, and documenting.
-  2. **`README.md:74` says "embedding models are never chosen", which (1) makes FALSE.** Pre-existing
+  2. **`README.md:78` says "embedding models are never chosen", which (1) makes FALSE.** Pre-existing
      prose. It sits in the paragraph OAI-134 extended but is not a sentence OAI-134 wrote, so it was
      dispositioned out of scope rather than fixed in that batch — fixing it is `widening` under
      `adr/056` and belongs to whichever option (1) settles on, since the honest sentence depends on it.
