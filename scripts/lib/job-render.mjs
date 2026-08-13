@@ -71,8 +71,16 @@ function noteFor(view, nowMs) {
     return `pid ${view.pid} is alive but has not beaten since ${relativeAge(view.last_beat_at, nowMs)}.${unheard}`;
   }
   if (view.display === 'cancelling') {
-    return `cancellation asked for ${relativeAge(view.cancel_requested_at, nowMs)}; it stops at its next check-in,`
-      + ' and reads cancelled once its worker has exited.';
+    // **The second half is CONDITIONAL, and saying "reads cancelled once its
+    // worker has exited" made it a promise this build cannot keep (OAI-66).** An
+    // exit alone no longer decides the verdict: the worker must also leave the
+    // acknowledgement beside its log, and a worker that crashed — or whose
+    // acknowledgement would not write — exits and reads `failed` /
+    // `cancel-unconfirmed` instead. Reading the old sentence, someone who then saw
+    // `failed` would think the plugin had lost their cancellation.
+    return `cancellation asked for ${relativeAge(view.cancel_requested_at, nowMs)}; it stops at its next check-in.`
+      + ' It reads cancelled if the worker confirms that is why it stopped, and cancel-unconfirmed if it dies'
+      + ' without saying so.';
   }
   if (view.display === 'dead' || view.display === 'never-started') {
     return `written by a newer plugin (row schema ${view.schema_version}), so this build will not touch it.`;

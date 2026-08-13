@@ -275,14 +275,60 @@ faster" edit.
 
 **Cancel is cooperative and signal-free.** `/oai:cancel` sets `cancel_requested_at`, **re-reads**, and
 reports the terminal state if the job finished in between; otherwise `cancelling`. The worker sees it
-at its next beat and **exits**; a later reader observes the dead pid and writes terminal `cancelled`.
-Only an observed exit produces it.
+at its next beat and **exits**; a later reader observes the dead pid and writes the terminal state.
+Only an observed exit produces one **for a job a worker took** — a row nothing ever registered for is
+terminalized on the startup grace instead, with no process to observe.
+
+**A pending cancellation is not proof that the cancellation is what happened (OAI-66).** Until then the
+reader inferred `cancelled` from the pending request alone, so a worker that **crashed** while a cancel
+happened to be pending was published as a tidy `cancelled` — no failure, no note, and the crash
+diagnosis discarded. A dead pid establishes that the process is gone, never why. So the reader now
+splits on the row's own state, and only one half needs evidence:
+
+- A **`queued`** row provably sent nothing: `job-queue.mjs` `decide` returns `cancelled` only while the
+  row is still `queued`, and acquisition is what makes it `running`. Nothing was spent; `cancelled`
+  needs no confirming and none is written.
+- A **`running`** row may have been mid-request. It reads `cancelled` only if the worker left the
+  acknowledgement `scripts/lib/cancel-ack.mjs` describes — a file beside the job log, bearing the row's
+  id — and otherwise `failed` with `reason: 'cancel-unconfirmed'`, which says exactly what is known.
+
+**The acknowledgement is a FILE and not a row**, because a terminal row would clear this job as a
+`running` blocker and let the queue dispatch the next worker in the window before this process reaches
+`process.exit()` — two model calls in flight, the one thing the queue exists to prevent. It is a file
+**beside** the log rather than a line **in** it, because `job-spawn.mjs` sends stdout and stderr both to
+that log and `salvageOutcome` (`cmd-task-worker.mjs`) writes the model's own answer onto it. That is the
+demonstration, not the licence: a verdict that SUPPRESSES a crash diagnosis must not rest on bytes this
+plugin did not author, and nothing the model emits can create a file. The claim is narrower than
+authentication: another process running as this user could write one, and the reader cannot tell such a
+file from a worker's. **The footing is narrower still than "whoever can write that directory can
+already write `jobs.db`", and it needs the whole permission chain rather than a loose state
+directory.** It fails exactly where an attacker can traverse the state directory, write `logs/`, and
+not write `jobs.db` — state `0755`, logs `0777`, database `0600`. Neither end generalises: state
+`0755` over a plugin-created `logs/` at `0700` is safe, and state `0777` lets that attacker replace
+`logs/` and `jobs.db` alike, which collapses the distinction instead of widening it. `job-store.mjs`
+requests `0700` at creation only and never repairs an inherited directory, which is what makes the
+middle case reachable at all; `jobs.db` is separately chmod'ed `0600`. Tracked as **OAI-150**; what is
+claimed here is only what is enforced.
+
+**If the acknowledgement write FAILS, the worker exits anyway — and that is the whole promise, because
+a synchronous call cannot make a wider one.** A write that HANGS still delays the exit: the open, the
+write and the close are all synchronous, so a wedged NFS or FUSE mount keeps the paid request alive
+and the queue blocked. Nor is "a write that fails does not delay" a claim about latency — a filesystem
+call may block for a long time and then fail. The residual is the same one the read side records,
+reached from the other direction, and it is stated rather than argued away.
+A cancelled request costs money for
+as long as it generates, while an unrecorded cancellation costs only the precision of the word the
+reader publishes — recoverable from the log. Waiting on a contended filesystem would invert that, and
+would repeat the defect `job-heartbeat.mjs` already documents: contention keeping an expensive request
+alive after the user asked for it to stop.
 
 **The exit mechanism is named, because the obvious one does not work.** Setting `process.exitCode`
-leaves the process alive — the open socket and the heartbeat timer keep the loop running and the
-request continues. The heartbeat callback calls **`process.exit()`**, which closes the socket, and
-that is what makes "no `AbortController`" true (a deliberate deviation from OAI-3's original note).
-The same applies to `--max-wait` expiry.
+leaves the process alive — the open socket keeps the loop running and the request continues. (Not the
+heartbeat timer: `startHeartbeat` calls `timer.unref()`, so it holds nothing open. The socket is the
+whole of it.) The heartbeat callback calls **`process.exit()`**, which closes that socket, and that is
+what makes "no `AbortController`" true (a deliberate deviation from OAI-3's original note).
+**`--max-wait` does NOT use this mechanism and does not need to**: it expires while the job is still
+queued with no request in flight, so it writes its terminal row and returns normally.
 
 **`--max-wait` fires while the job is still ineligible**, terminalizing as `queue-timeout` **without
 sending a chat completion**. Submission has already probed `/v1/models` via `resolveTarget`, so the
@@ -324,10 +370,32 @@ crash-recovery path are the same code** — so the recovery path runs on every s
 rotting unexercised until the crash it was written for.
 
 The orphan sweep **lists the directory before it reads the rows**, and that order is the whole safety
-argument: a log is created only after its row exists, so anything in the listing already had a row
-when the listing was taken. Read the rows first and a job submitted in the gap looks like an orphan,
-and the sweep unlinks the log of a worker still writing to it. Only `^\d+\.log$` is eligible — a file
-this plugin did not write is not this plugin's to delete.
+argument **while sequences cannot be reused**: a log is created only after its row exists, so anything
+in the listing already had a row when the listing was taken. Read the rows first and a job submitted
+in the gap looks like an orphan, and the sweep unlinks the log of a worker still writing to it.
+A name is eligible when it matches `^[1-9]\d*\.(log|cancel-ack)$` **and its number is a safe
+integer**. The union is there because keying on logs alone would strand an acknowledgement whose log
+had already gone; the numeric test is there because these names are converted to numbers and the
+unlink interpolates the result, so anything the conversion does not carry exactly addresses a
+DIFFERENT file. A round trip (`String(Number(x)) === x`) was written alongside it and then removed on
+measurement — and the relation is an **implication, not an equivalence**: within that regex
+`isSafeInteger` implies the round trip, while the converse is false, since `9007199254740992` and
+`9223372036854776000` both round-trip and neither is safe. So the round trip could never decide
+anything *as a conjunct* — wherever the safe test passed it passed too — and a conjunct that cannot
+change an answer is a check that cannot fail. The same asymmetry is why it could not be kept instead:
+`9223372036854776000.log` survives it and is `2^63`, past any legal sequence. `0002.cancel-ack` parses to `2` and leaks the
+listed file; `1000000000000000000000.cancel-ack` becomes `1e+21` and would delete an unrelated
+`1e+21.log`. **A name is not a provenance**: the sweep can say a file is SHAPED like one it writes and
+has no row to explain it, never who wrote it — a hand-made `77.cancel-ack` with no row 77 is deleted.
+What holds is the converse: anything not of that shape is left alone.
+
+**That safety argument has a stated precondition, and deleting `jobs.db` while `logs/` survives breaks
+it.** `seq` restarts, so a sweep that listed a surviving `2.cancel-ack`, read the rows and found no
+seq 2 can be overtaken by a submission that inserts seq 2 and opens its log — and the sweep then
+unlinks a LIVE job's files. The race is not new (a surviving `<seq>.log` could always start it) and the
+union widens which residues can. Closing it needs the orphan key bound to a store incarnation, which is
+the schema change declined at this feature's grill; it is tracked as **OAI-149** rather than asserted
+away here.
 
 Sweeping is wired to **submission alone**: that is the only place a row is created, so it is the only
 place the table grows, and a reader that deletes history is a surprise for no gain.

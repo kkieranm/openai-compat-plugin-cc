@@ -106,7 +106,12 @@ one is refused for all mutations, while a row's `schema_version` describes its p
 build cannot read is never mutated and never deleted. `job-liveness.mjs` decides death by pid and only
 corroborates with the heartbeat — a worker's last act is to beat — and nothing here ever signals a
 process it cannot verify, which `tests/queue-guards.test.js` enforces structurally; cancel is
-therefore cooperative, and `job-retention.mjs` keeps the newest 50 finished jobs, deleting each row
+therefore cooperative, and **a dead pid says the process is gone, never why** — so
+`scripts/lib/cancel-ack.mjs` has the exiting worker announce itself in a file beside the job log
+(never a row, which would release the queue mid-request, and never a line in the log, which carries
+model output), and a `running` row that died without one reads `failed` / `cancel-unconfirmed` rather
+than as a tidy cancellation; a `queued` one provably sent nothing and needs no announcement.
+`job-retention.mjs` keeps the newest 50 finished jobs, deleting each row
 before its log so that a crash in between leaves an orphan the same sweep already collects. What the
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem —
 see [ADR 014](adr/014-async-jobs.md).

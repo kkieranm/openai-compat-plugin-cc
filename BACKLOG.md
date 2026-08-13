@@ -251,7 +251,7 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**.
+**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**, **OAI-150**.
 **OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
@@ -270,6 +270,12 @@ one unreachable-today hole (OAI-109), a count restated where nothing holds it to
 a stop request with no contention policy at all (OAI-107), and a fact that reaches a human on stderr
 but no machine through `--json` (OAI-108). OAI-111 is housekeeping the review fan-outs generate.
 **OAI-145** sits with them for the same reason and with one difference worth stating: its trigger has never been observed either, but unlike the rest it is a claim the code makes and cannot support, and OAI-67 already contained every destructive consequence of it.
+**OAI-149** and **OAI-150** joined from OAI-66's review on 2026-08-13 and belong here for the same
+reason again: each needs a precondition nobody has been observed to create — a recreated `jobs.db`
+beside a surviving `logs/`, or a permission chain that lets an attacker traverse the state directory
+and write `logs/` while `jobs.db` stays out of reach. Both are the
+MECHANISM halves of findings whose CLAIM halves shipped with OAI-66, so what is left standing today
+states its own residual rather than asserting safety.
 
 <!-- /tiers -->
 
@@ -2908,3 +2914,41 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   faster than the code it describes.
   Related: the ladder register already survives the session (`adr/082`), which is the precedent — this
   is the same argument applied to the evidence rather than to the metadata.
+
+- **OAI-149** — **the orphan sweep's safety argument holds only while sequences cannot be reused, and
+  deleting `jobs.db` beside a surviving `logs/` reuses them.** Filed 2026-08-13 from OAI-66's review
+  (`codex-adversarial`, finding 1). `job-retention.mjs` `orphanSeqs` lists the directory *before* it
+  reads the rows, and that order is what makes an unlisted seq safely an orphan — but `seq` is
+  `AUTOINCREMENT` **per database**, so a recreated store restarts it. Interleaving: sweep A lists a
+  stale `2.cancel-ack`, reads rows holding no seq 2 and marks it orphaned; submission B inserts seq 2
+  and opens `2.log`; sweep A resumes and unlinks **B's live files**.
+  **The race predates OAI-66** — a surviving `<seq>.log` could always start it — and OAI-66's union
+  scan widened which residues can. The docstring and `adr/014` now state the precondition instead of
+  asserting safety, which is the honest half; this is the mechanism half.
+  **The shape of the fix is binding the orphan key to a STORE INCARNATION** — a value minted when the
+  database is created and carried in the filename or a sibling — so a file from a previous incarnation
+  can never be attributed to a current seq. That is the schema change OAI-66's grill declined, which is
+  why it is separate rather than folded in.
+  **The bar for it being real:** a witness that reproduces the interleaving — recreate the store, plant
+  the residue, submit, and prove the live job's files survive. Without it this is a story about a race.
+
+- **OAI-150** — **the state directory's mode is requested at creation and never repaired, so the
+  cancellation acknowledgement's trust footing is weaker than "whoever can write here can write
+  `jobs.db`".** Filed 2026-08-13 from OAI-66's review (`codex-adversarial`, finding 3).
+  `job-store.mjs` passes `mode: 0o700` to `mkdirSync`, which is a no-op on a directory that already
+  exists — while `jobs.db` itself is explicitly chmod'ed `0600`.
+  **The precondition is the WHOLE permission chain, not a loose state directory** (corrected
+  2026-08-13 from the review's second pass, which showed the first wording wrong at both ends). It
+  fails exactly where an attacker can **traverse** the state directory, **write** `logs/`, and **not
+  write** `jobs.db`: state `0755`, logs `0777`, database `0600`. State `0755` over a plugin-created
+  `logs/` at `0700` is SAFE, and state `0777` lets that attacker replace `logs/` and `jobs.db` alike,
+  so the distinction the item rests on disappears rather than worsening. In the reachable middle case
+  they can plant a `<seq>.cancel-ack`, turning a worker's crash into a clean `cancelled`, without
+  being able to write the database the footing appeals to. The narrower claim OAI-66 actually rests
+  on — that model output cannot create files — is unaffected and was separately confirmed.
+  **The shape of the fix is checking the mode of an EXISTING state directory** and either repairing it
+  or refusing to use it, the same way the database file is already handled. Which of the two is right
+  is the open question: repairing silently changes permissions a user may have set deliberately.
+  **The bar for it being real:** a witness that precreates **both** directories with discriminating
+  modes — state `0755` / logs `0777` must trip whatever is chosen, and state `0755` / logs `0700`
+  must be left alone. A single-directory fixture cannot tell the two apart and would pass either way.

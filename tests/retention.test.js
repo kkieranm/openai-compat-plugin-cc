@@ -14,6 +14,7 @@ import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, readJobs, stateD
 // Stated independently of `logPathFor`, so a test cannot agree with the code
 // about a layout they both got wrong.
 const logPath = (state, seq) => join(state, 'logs', `${seq}.log`);
+const ackPath = (state, seq) => join(state, 'logs', `${seq}.cancel-ack`);
 
 function writeLog(state, seq) {
   writeFileSync(logPath(state, seq), `log for ${seq}\n`);
@@ -110,8 +111,85 @@ test('an orphaned log is swept, and anything else in the directory is left alone
   assert.equal(
     existsSync(join(state, 'logs', 'notes.txt')),
     true,
-    'a file this plugin did not write is not this plugin\'s to delete',
+    'a name that is not of the shape this plugin writes is left alone',
   );
+});
+
+test("a deleted job's cancellation acknowledgement goes with its log", { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  const seqs = fillTerminal(state, RETAIN + 2);
+  for (const seq of seqs.slice(0, 2)) writeFileSync(ackPath(state, seq), 'someid\n');
+  writeFileSync(ackPath(state, seqs[seqs.length - 1]), 'someid\n');
+
+  runSweep(state);
+
+  for (const seq of seqs.slice(0, 2)) {
+    assert.equal(existsSync(ackPath(state, seq)), false, `${seq}.cancel-ack outlived its row`);
+  }
+  assert.equal(
+    existsSync(ackPath(state, seqs[seqs.length - 1])),
+    true,
+    'and one belonging to a job that was kept is not touched',
+  );
+});
+
+test('an acknowledgement whose log is already gone is still enumerated and swept', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // Also what creates the logs directory, so the fixture below writes somewhere
+  // real rather than reporting its own absence as the sweep's answer.
+  const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
+  writeFileSync(ackPath(state, live), 'someid\n');
+  // The leak this scan key exists to close: every unlink here tolerates failure,
+  // so a job whose log went while its acknowledgement did not is exactly the
+  // residue a `<seq>.log`-keyed scan can never see again. There is no log at all
+  // for 8888 — if the sweep still finds it, it is not keying on one.
+  writeFileSync(ackPath(state, 8888), 'someid\n');
+  writeFileSync(join(state, 'logs', 'notes.txt'), 'not ours\n');
+
+  const { logs } = runSweep(state);
+
+  assert.deepEqual(logs, [8888], 'an orphan with no log is an orphan');
+  assert.equal(existsSync(ackPath(state, 8888)), false);
+  assert.equal(existsSync(ackPath(state, live)), true, "a running job's acknowledgement is not an orphan");
+  assert.equal(existsSync(join(state, 'logs', 'notes.txt')), true, 'and the widened key took nothing extra');
+});
+
+test('a name the unlink could not address again is not swept, and takes nothing with it', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
+  writeLog(state, live);
+  const named = (name) => join(state, 'logs', name);
+  // Three shapes, because the regex alone closes only the first. Each is a name
+  // whose `Number` conversion does NOT round-trip, so the path the unlink builds is
+  // a different string from the file that was listed.
+  writeFileSync(named('0002.cancel-ack'), 'leading zero\n');
+  writeFileSync(named('9007199254740993.log'), 'past MAX_SAFE_INTEGER\n');
+  writeFileSync(named('1000000000000000000000.cancel-ack'), 'becomes 1e+21\n');
+  // The bystander, and the sharpest half of this witness: `Number` turns the name
+  // above into `1e+21`, so a sweep that keyed on the number would unlink THIS —
+  // deleting an unrelated file rather than merely leaking the listed one.
+  writeFileSync(named('1e+21.log'), 'not addressed by any sequence\n');
+  // A SECOND bystander, because without it the fixture above it is inert: on its own
+  // `9007199254740993.log` rounds to a path that does not exist, both unlinks fail,
+  // and every assertion passes with the check removed. This is the file that rounding
+  // would take. A fixture that cannot fail inside a witness that can is the same
+  // defect one layer down.
+  writeFileSync(named('9007199254740992.log'), 'what the rounding would hit\n');
+  // Past SQLite's maximum sequence, so no row can ever own it — and it DOES survive
+  // the round trip, which is why the round trip is not the whole check.
+  writeFileSync(named('9223372036854776000.log'), 'beyond any legal sequence\n');
+
+  const { logs } = runSweep(state);
+
+  assert.deepEqual(logs, [], 'a name that does not survive the conversion is not this sweep\'s to collect');
+  const survivors = [
+    '0002.cancel-ack', '9007199254740993.log', '1000000000000000000000.cancel-ack',
+    '1e+21.log', '9007199254740992.log', '9223372036854776000.log',
+  ];
+  for (const name of survivors) {
+    assert.equal(existsSync(named(name)), true, `${name} was taken by a sweep that could not address it`);
+  }
+  assert.equal(existsSync(logPath(state, live)), true);
 });
 
 test('a deleted sequence is never reused, so a later job cannot sort ahead of an earlier one', { skip: NEEDS_SQLITE }, () => {

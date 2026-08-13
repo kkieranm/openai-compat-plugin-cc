@@ -3,32 +3,24 @@
 //
 // Nothing is signalled and no verdict is written. The command records a request,
 // the worker reads it at its own next check-in and exits, and a later reader
-// turns the dead pid into terminal `cancelled`. Every test below drives that
-// whole chain against a real second process rather than asserting on a state
-// machine in the abstract — the mechanism is a process exiting, so a test that
-// never watched one exit would be testing a comment.
+// turns the dead pid into a terminal state — `cancelled` when the worker
+// announced its exit, `cancel-unconfirmed` when it did not.
+//
+// Wherever a test is ABOUT a worker exiting it drives a real second process and
+// watches it go, because the mechanism is a process exiting and a test that never
+// watched one would be testing a comment. Where the subject is instead what a
+// reader makes of a row — the never-picked-up case below — the fixture is a
+// synthetic row, there being no worker in that story to spawn.
+//
+// What a WORKER does on its way out, and what a later reader makes of it, are
+// split: the second lives in `cancel-confirmation.test.js`, which is where the
+// acknowledgement file and every verdict read out of its absence are tested.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAlive } from '../scripts/lib/job-liveness.mjs';
+import { readAck, waitForExit } from './cancel-helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Wait for a pid to stop existing.
- *
- * The same observation the plugin makes, made the same way: a cancellation that
- * is never acted on shows up here as a process that is still there, which is a
- * far more useful failure than a row that never changed state.
- */
-async function waitForExit(pid, { timeoutMs = 20_000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isAlive(pid)) return;
-    await sleep(100);
-  }
-  throw new Error(`pid ${pid} was still alive after ${timeoutMs}ms: nothing acted on the cancellation`);
-}
 
 /** A row is `queued` the instant it is written; a worker registers a moment later. */
 async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
@@ -65,6 +57,15 @@ test('cancel records the request and terminalizes nothing', { skip: NEEDS_SQLITE
     const status = await scenario.run(['status', 'inflight']);
     assert.match(status.stdout, /job inflight\s+cancelling/);
     assert.match(status.stdout, /stops at its next check-in/);
+    // **Both outcomes, because an exit alone stopped deciding the verdict.** This
+    // note used to promise the row "reads cancelled once its worker has exited",
+    // which OAI-66 falsified: a worker that crashes, or whose acknowledgement will
+    // not write, exits and reads `cancel-unconfirmed`. Someone told the first and
+    // shown the second would think their cancellation had been lost. Asserted on
+    // the RENDERED line rather than the template, so the promise cannot come back
+    // without this reddening.
+    assert.match(status.stdout, /cancel-unconfirmed/, 'a cancelling note that names only the happy path is a promise this build cannot keep');
+    assert.doesNotMatch(status.stdout, /reads cancelled once its worker has exited/);
   } finally {
     await scenario.server.close();
   }
@@ -87,7 +88,12 @@ test('a running worker exits at its next check-in, and the next read says cancel
     assert.match(cancel.stdout, new RegExp(`Cancelling job ${id}, running since`));
 
     await waitForExit(running.worker_pid);
-    assert.equal(readJob(scenario.state, id).state, 'running', 'the exiting worker records nothing itself');
+    assert.equal(readJob(scenario.state, id).state, 'running', 'the exiting worker writes no ROW itself');
+    // What it DOES write, and the reason the verdict below is `cancelled` rather
+    // than a death: a file beside the log, bearing this row's id. Read here
+    // rather than asserted only through the verdict, so a mechanism that stopped
+    // working would fail as itself instead of as a state machine.
+    assert.equal(readAck(scenario.state, running.seq), id, 'the exit is announced, or it cannot be told from a crash');
 
     const status = await scenario.run(['status', id]);
     assert.match(status.stdout, new RegExp(`job ${id}\\s+cancelled`));
@@ -120,6 +126,10 @@ test('cancelling a queued job stops it before it reaches the model at all', { sk
     await waitForExit(queued.waiter_pid);
     await scenario.run(['status', '--all']);
     assert.equal(readJob(scenario.state, secondId).state, 'cancelled');
+    // The witness that the reconciler did not over-reach: a queued row is
+    // provably request-free — acquisition is what makes it `running` — so its
+    // verdict is reached with NO acknowledgement to consult, and none was left.
+    assert.equal(readAck(scenario.state, queued.seq), null, 'a queued exit needs no evidence and produces none');
 
     await waitForState(scenario.state, firstId, ['completed']);
     // The assertion the queued case exists for, counted on the server rather
@@ -171,6 +181,16 @@ test('a cancelled job nothing ever picked up reads cancelled, not failed', { ski
     const abandoned = readJob(scenario.state, 'alsoneverran');
     assert.equal(abandoned.state, 'failed', 'without the cancellation the same row is an abandoned job');
     assert.equal(abandoned.failure.reason, 'worker-never-started');
+    // The hint consults no evidence at all, so it may not name a cause. It used
+    // to say the submitting process "most likely died", which this row cannot
+    // establish and `spawned_at` cannot supply — OAI-67 made that column NULL
+    // while a real worker exists.
+    assert.doesNotMatch(abandoned.failure.hint, /submitted it/, 'a hint that consults nothing may not name a cause');
+    // It may not assert an ABSENCE either: a worker that started and died before
+    // registering can have printed its own reason to the log this row's grace then
+    // terminalizes past. So the hint scopes the ignorance to itself and points there.
+    assert.match(abandoned.failure.hint, /Nothing here establishes why/);
+    assert.match(abandoned.failure.hint, /may have printed its own reason/);
   } finally {
     await scenario.server.close();
   }

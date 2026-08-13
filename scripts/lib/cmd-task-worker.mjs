@@ -195,7 +195,9 @@ function salvageOutcome(seq, outcome) {
 async function runAndPublish(db, seq, job) {
   // Only now: a queued worker is already visible through the wait loop's beat,
   // and this is the stretch that would otherwise be silent.
-  const stopBeating = startHeartbeat(db, seq);
+  // `job.id` goes with it because the cancellation exit records that id beside
+  // the log, and that path may touch no database to look it up (OAI-66).
+  const stopBeating = startHeartbeat(db, seq, { jobId: job.id });
   try {
     let outcome;
     try {
