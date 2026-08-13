@@ -4,7 +4,7 @@
 // moves one half and not the other: the same 56,805-token prompt reached its
 // first token in 421.7s cold and 11.5s warm, generating for ~3s in both. A
 // single total welded them together, and the benchmark ranged `13–425` across
-// three runs of one case and printed it as a result. See ADR 009.
+// three runs of one case and printed it as a result.
 //
 // The delays below are what make these tests guards rather than restatements. A
 // fake server answering instantly cannot tell a stamp taken at the first token

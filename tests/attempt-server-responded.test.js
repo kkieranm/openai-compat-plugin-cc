@@ -8,7 +8,7 @@ import { closedPort } from './helpers.mjs';
 // OAI-35. `serverResponded` answers ONE question — did an HTTP response arrive —
 // and the record was blocked on it because nothing else in an attempt entry can
 // separate "the server took the request and then died on it" from "nothing was
-// ever served". ADR 013's instrument reads that distinction off the record, so
+// ever served". The TTL instrument reads that distinction off the record, so
 // these pin what the flag means on each closing path rather than merely that the
 // key exists.
 //
@@ -158,7 +158,7 @@ test('a measured prefill is itself a response, whatever the error forgot to say'
   //
   // Without it the record could hold `{prefillMs: 7, serverResponded: false}` —
   // model text at seven milliseconds, and nothing answered — which is the exact
-  // shape ADR 013's instrument would read as a server that never replied. A
+  // shape the TTL instrument would read as a server that never replied. A
   // backstop, not a live path: every production site that can measure a prefill
   // already sets the flag, so today this fires only where the record would
   // otherwise contradict itself. That is what it is for.

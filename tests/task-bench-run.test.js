@@ -24,7 +24,7 @@ function answering(byArm) {
 }
 
 test('every case runs BOTH arms, and the report never averages them', async () => {
-  // Framing was the dominant variable ADR 016 measured. A single figure across
+  // Framing was the dominant variable measured. A single figure across
   // both arms would describe a measurement nobody made.
   const { execute } = answering({
     pointed: 'the lookup uses bracket notation; prototype members leak; use Object.hasOwn',
@@ -54,7 +54,7 @@ test('a single-arm sweep declares itself INCOMPLETE rather than looking finished
 
 test('arm ORDER alternates across repetitions, so one arm cannot always pay the cold prefill', async () => {
   // Both arms send a nearly identical prefix and a server-side cache moves first
-  // token latency by tens of times — ADR 009 measured 421.7s cold against 11.5s
+  // token latency by tens of times — measured at 421.7s cold against 11.5s
   // warm on the same prefix here. A fixed order would bill one arm the cold run
   // every time and report the difference as a property of the framing.
   const { execute, seen } = answering({ pointed: 'x', neutral: 'y' });

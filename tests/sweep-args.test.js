@@ -4,7 +4,7 @@
 // Split out of `review-sweep.test.js` when that file reached the repo's size
 // ratchet. It is a coherent subject on its own: everything here answers "does
 // what I typed reach the run", which is the question two flags failed silently
-// for — documented in the plan and in ADR 021, and unpassable.
+// for — documented in the plan, and unpassable.
 //
 // **These invoke `parseArgs` with the exported `SPEC`.** The versions they
 // replace built the parsed object by hand and called `optionsFrom`, so removing
@@ -17,7 +17,7 @@ import { parseArgs } from '../scripts/lib/args.mjs';
 
 const from = (argv) => optionsFrom(parseArgs(argv, SPEC).options, 0);
 
-// --abort-after was documented in the plan and in ADR 021 and could not be
+// --abort-after was documented in the plan and could not be
 // passed. **This now runs the REAL argv through the REAL parser**: the earlier
 // version handed `optionsFrom` an object it built itself, so dropping the flag
 // from SPEC would have made the CLI reject `--abort-after` while this test went

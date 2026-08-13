@@ -98,7 +98,7 @@ test('content wins over reasoning when both are present', () => {
 test('a bare top-level array is the same reply as {findings: [...]}, field for field', () => {
   // It used to be discarded and reported as "no findings in the requested
   // shape", so a review that found two defects said it had found nothing
-  // readable. Asked for findings in prose — the default since ADR 003's
+  // readable. Asked for findings in prose — the default since the 2026-08-04
   // amendment — a model answers with a bare array about as readily as with the
   // wrapper, so this was reachable on every ordinary review.
   //

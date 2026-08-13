@@ -125,7 +125,7 @@ test('an id only the dialect lists is served too — even loaded, it was being r
   // reproducing it end to end. `merge` keys `described.models` on the
   // /v1/models ids, so a model the dialect enumerated is absent from it
   // whenever /v1/models is the narrower list — filtered, aliased or
-  // permission-scoped, all of which adr/011 says to expect. The refusal gated
+  // permission-scoped, all of which are expected. The refusal gated
   // on "the dialect published a catalogue" while testing membership in the
   // OTHER endpoint's list, and so refused `chat-b` here: the one model the
   // server actually had resident in memory and would have answered instantly.

@@ -76,7 +76,7 @@ test('--structured-output reaches the CLI when asked for', () => {
 });
 
 test('--structured-output is ABSENT by default', () => {
-  // The control. ADR 003: the unconstrained path is the deliberate default,
+  // The control. The unconstrained path is the deliberate default,
   // because a schema is a crash on this backend rather than a formatting choice.
   // If this ever passes vacuously, every arm in the corpus is a schema arm.
   assert.ok(!build({}).includes('--structured-output'));

@@ -10,7 +10,7 @@
 // the previous day, OAI-131 and OAI-106 were each indexed under two tiers, and one
 // body (OAI-123) sat out of ID order behind OAI-134.
 //
-// THE INVARIANT CHANGED ON 2026-08-08 (adr/025) and this guard encodes the CURRENT
+// THE INVARIANT CHANGED ON 2026-08-08 and this guard encodes the CURRENT
 // one, not the pre-migration "index sequence equals heading sequence": the tier list
 // is the PRIORITY view, the bodies sit in ascending ID order, and a re-order rewrites
 // only the index.
@@ -140,7 +140,7 @@ test('the tier index covers the live set exactly', () => {
   assert.deepEqual(liveNotIndexed, [], `live body missing from the tier index: ${liveNotIndexed.join(', ')}`);
 });
 
-test('item bodies are in ascending id order (adr/025)', () => {
+test('item bodies are in ascending id order', () => {
   const breaks = [];
   for (let i = 1; i < BODIES.length; i++) {
     if (num(BODIES[i]) < num(BODIES[i - 1])) breaks.push(`${BODIES[i - 1]} -> ${BODIES[i]}`);
@@ -160,7 +160,7 @@ test('no id is both live and closed out', () => {
 
 test('every id in the tier index resolves to a live body', () => {
   // Deliberately NOT "every id ever issued resolves somewhere": that set is
-  // unknowable from the files (ids are cited by ADRs and plans too), and a guard
+  // unknowable from the files (ids are cited by plans and prose too), and a guard
   // that guesses its own domain is the class this file exists to remove. The
   // absorbed-ID table is checked for shape only.
   const table = BACKLOG.split('Absorbed IDs')[1] ?? '';

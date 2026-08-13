@@ -39,7 +39,7 @@ test('an empty findings ARRAY is clean — the model read it and reported nothin
   assert.equal(classify(ok([])).outcome, 'clean');
 });
 
-// The pair that matters most, and the distinction ADR 003 exists to protect.
+// The pair that matters most, and the distinction that must be protected.
 // `null` means the reply could not be read; `[]` means it was read and was
 // empty. Collapsing them turns an unreadable night into a clean one.
 test('a null findings list is UNREADABLE, never clean', () => {

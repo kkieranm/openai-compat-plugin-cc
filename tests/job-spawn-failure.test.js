@@ -192,7 +192,7 @@ test('a non-busy sweep failure rejects before a row or a worker exists', { skip:
 // deleting the stderr warning in `spawnAndStamp` leaves this test green, so the
 // "reported by message" half of the new behaviour has no witness here.
 //
-// This pairs with the busy case `adr/020` already settles. The distinction that
+// This pairs with the busy case already settled elsewhere. The distinction that
 // used to live at this line — busy is survivable, anything else is fatal — was
 // wrong in the one direction that costs money: a corrupt database is no more
 // recoverable for the user than a locked one, and both leave the same worker

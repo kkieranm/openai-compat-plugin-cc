@@ -9,7 +9,7 @@ import { checkContextBudget, estimateTokens } from '../scripts/lib/context-guard
 test('the estimate assumes code density, not prose density', () => {
   // Measured live against LM Studio on two real diffs: 3.61 and 3.48
   // chars/token. At 4 the guard admitted input the server then rejected, which
-  // is the one failure it exists to prevent (ADR 003).
+  // is the one failure it exists to prevent.
   assert.equal(estimateTokens('x'.repeat(3400)), 1000);
   assert.ok(estimateTokens('x'.repeat(50_000)) >= 14_000, 'a 50 KB diff counted 13.9k tokens on the server');
 });

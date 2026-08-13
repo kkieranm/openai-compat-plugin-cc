@@ -63,7 +63,7 @@ export function completion(content, extra = {}) {
 /**
  * A completion whose text arrived in the reasoning channel with `content`
  * empty — what every schema-constrained reply from a reasoning model looks
- * like (ADR 003).
+ * like.
  */
 export function reasoningCompletion(reasoning, extra = {}) {
   return {
@@ -148,7 +148,7 @@ export function completionFrames(text, {
 
 /**
  * The streaming twin of reasoningCompletion: the whole reply in the reasoning
- * channel with `content` never appearing in any delta (ADR 003).
+ * channel with `content` never appearing in any delta.
  */
 export function reasoningFrames(reasoning, options = {}) {
   return completionFrames(reasoning, { ...options, channel: 'reasoning' });

@@ -31,7 +31,7 @@ test('a strict schema declares every property required and forbids extras', () =
 test('every string and array in the schema carries a ceiling', () => {
   // The confirmed defect class, promoted from a comment to a guard: an
   // unbounded field is a runaway waiting to happen, and one measured run
-  // generated all 16,384 tokens it was allowed and returned nothing (ADR 004).
+  // generated all 16,384 tokens it was allowed and returned nothing.
   // A field added later without a cap fails here rather than in production.
   const missing = [];
   const walk = (node, path) => {

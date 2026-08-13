@@ -5,7 +5,7 @@
 // what a reply means, but whether a constant this harness's coverage depends on
 // actually reaches the process that enforces it.
 //
-// Raised 900 -> 1800 on 2026-08-10 (ADR 021, OAI-138) after the first sweep run
+// Raised 900 -> 1800 on 2026-08-10 (OAI-138) after the first sweep run
 // to completion lost HALF its eligible corpus to the old value — 20 of 40
 // commits, every one `deadline-timeout`. Nothing would have noticed it going
 // back: every fixture in the sweep suite passes its own `maxSeconds`, so the

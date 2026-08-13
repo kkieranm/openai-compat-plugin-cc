@@ -95,7 +95,7 @@ test('a decoy naming only empty strings is not a candidate', () => {
 });
 
 test('one malformed entry does not discard its siblings, in any spelling', () => {
-  // The guarantee ADR 003 states in its own words: a bare array is the SAME
+  // The guarantee, in its own words: a bare array is the SAME
   // REPLY as `{findings: […]}`. Requiring EVERY element to be named broke it for
   // the prose-wrapped spelling alone, which is why this asserts all three
   // together rather than the repaired one on its own.
@@ -123,8 +123,8 @@ test('a wrapper is never replaced by the array nested inside it', () => {
 test('a bare array that IS the whole reply keeps the generous rule', () => {
   // The strict rule applies only to what the scanner digs out of prose. A whole
   // reply competes with nothing, so an empty one stays a clean review and a list
-  // of unnamed objects stays an answer we cannot read — the distinction ADR 003
-  // exists to protect. Tightening the scanned case must not reach these.
+  // of unnamed objects stays an answer we cannot read — the distinction this
+  // rule exists to protect. Tightening the scanned case must not reach these.
   assert.deepEqual(parseFindings({ content: '[]', reasoning: '' }, { structured: false }).findings, []);
   assert.equal(parseFindings({ content: '[{"id":1}]', reasoning: '' }, { structured: false }), null);
 });
@@ -189,7 +189,7 @@ test('a prose-wrapped CLEAN review is deliberately unreadable, not clean', () =>
   // byte-identical to a quoted empty-findings example, and accepting it would
   // let a TRAILING quoted empty beat real findings and report a silent clean
   // review. Unreadable is visible and retryable; false-clean is neither. If this
-  // goes red because someone relaxed the rule, read ADR 003 before changing it.
+  // goes red because someone relaxed the rule, understand it before changing it.
   assert.equal(parse('Here are the findings: {"findings":[]}'), null);
   // The same bytes as the WHOLE reply stay a clean review — that is the boundary.
   assert.deepEqual(parse('{"findings":[]}').findings, []);

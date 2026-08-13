@@ -1,8 +1,9 @@
 // The task scorer: what an answer demonstrated, and what that does not prove.
 //
 // Driven by the four canonical answers Codex's design asks every marker scorer
-// to pin — exact, partial, contradictory, missed — using the real answers ADR 016
-// recorded, so the fixtures are transcripts rather than inventions.
+// to pin — exact, partial, contradictory, missed — using the real answers the
+// template evaluation recorded, so the fixtures are transcripts rather than
+// inventions.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MARKER_LIMITS, PROFILES, profileOf, scoreAnswer, tallyArm } from '../bench/lib/task-score.mjs';
@@ -17,7 +18,7 @@ const CLAIMS = [
   { id: 'remedy', any: ['Object.hasOwn', 'hasOwnProperty', 'Object.create(null)'] },
 ];
 
-// The real pointed-arm reply from ADR 016's evaluation, abridged.
+// The real pointed-arm reply from the template evaluation, abridged.
 const EXACT = `Passing an unsanitized CLI string directly into resolveTemplate as an object key relies on
 bracket notation for existence checks. In JavaScript this is a known prototype pollution vector. If the
 flag contains __proto__ or constructor, TEMPLATES[name] returns inherited properties. Whether
@@ -34,7 +35,7 @@ test('an answer naming every claim scores exact', async () => {
   assert.ok(byClaim.every((c) => c.hit));
 });
 
-test('the real neutral reply scores missed, which is the finding ADR 016 recorded', async () => {
+test('the real neutral reply scores missed, which is the finding recorded', async () => {
   const { profile, byClaim } = scoreAnswer(MISSED, CLAIMS);
   assert.equal(profile, 'missed');
   // It does mention TEMPLATES, but not as a lookup site — the markers are chosen
@@ -54,7 +55,7 @@ test('naming some claims and not others scores partial, and the VECTOR says whic
 });
 
 test('an affirmatively WRONG claim is contradicted, not merely missed', async () => {
-  // ADR 016's zsh answer named the right site and the wrong mechanism. Collapsing
+  // The zsh answer named the right site and the wrong mechanism. Collapsing
   // that into "miss" would lose the most informative thing about it, and a wrong
   // assertion costs a reader more than silence because it has to be disproved.
   const wrong = 'TEMPLATES[name] is fine here — this is not a security concern in practice.';

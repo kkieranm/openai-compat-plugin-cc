@@ -4,7 +4,7 @@
 // only from v22.13.0 (v23.4.0 on the 23.x line). Because the entry point imports
 // every command module statically, a static `node:sqlite` import took the WHOLE
 // plugin down on those runtimes — `/oai:setup` included, which never opens a
-// database. See ADR 018.
+// database.
 //
 // Lives in its own file rather than in `plugin.test.js`: that file guards the
 // markdown command surface, and this guards a runtime capability. They share no
@@ -33,8 +33,8 @@ const ROOT = new URL('..', import.meta.url).pathname;
 // the child is a real runtime without the module for free.
 //
 // This is honest on both sides of the floor and covers different things on each,
-// which ADR 018 states rather than glosses: below 22.13 these tests exercise a
-// genuine absence and never the flag path; from 22.13 they exercise the flag.
+// stated rather than glossed: below 22.13 these tests exercise a genuine absence
+// and never the flag path; from 22.13 they exercise the flag.
 //
 // The ESM hook is kept for the one shape no real runtime produces on purpose — a
 // failure this plugin does not recognise — and for nothing else. An earlier

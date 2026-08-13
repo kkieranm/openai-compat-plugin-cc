@@ -33,9 +33,10 @@ test('prefill and generation are separate columns, never one number', async () =
 
 test('the prompt-token column is the prompt, not the sum of every run\'s prompt', async () => {
   // It was a sum, which is invisible at N=1 — where sum equals per-run — and
-  // wrong by a factor of `runs` everywhere else. ADR 006 quotes `config-origin`
-  // at 1,575 prompt tokens from an N=1 sweep; the first N=3 report printed 4,725
-  // for the same case, in the column a reader divides a generation figure by.
+  // wrong by a factor of `runs` everywhere else. The benchmark record quotes
+  // `config-origin` at 1,575 prompt tokens from an N=1 sweep; the first N=3
+  // report printed 4,725 for the same case, in the column a reader divides a
+  // generation figure by.
   const report = renderReport(
     [{ caseDef: CASE, runs: [goodRun(), goodRun(), goodRun()] }],
     { runsPerCase: 3, provider: 'local', model: 'test-model' },

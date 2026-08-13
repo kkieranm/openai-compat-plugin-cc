@@ -127,7 +127,7 @@ test('POSITIVE CONTROL: the same row shape under `finish` IS destroyed', { skip:
   });
 });
 
-// `adr/020:266` claims EVERY guarded site has a witness driving a path where a
+// EVERY guarded site is claimed to have a witness driving a path where a
 // busy error is really raised. The seventh site is guarded, so it needs one, and
 // every other fault injected in these files is NON-busy. Without this the retry
 // is wrapped on an argument no test can contradict.
@@ -161,7 +161,7 @@ test('a TRANSIENT busy on the launch-outcome write is retried, not lost', { skip
 });
 
 // The wrapper around the REPORT. A throw raised inside a `catch` replaces the
-// pending rethrow — `adr/020` records that defect costing a whole diagnosis once
+// pending rethrow — that defect cost a whole diagnosis once
 // already. No other test here ASSERTS what the report produced: most never reach
 // the reporting path because their storage write succeeds, and the integrated
 // failing-write witness below does reach it — through the real `writeSync` —
@@ -247,8 +247,8 @@ test('a failing terminal write leaves the launch error intact and the row unwrit
 // test GREEN — the write happened to survive the exit on this run, which is
 // precisely the timing-dependence that makes `writeSync` the right call and makes
 // the race untestable by observation. This test pins that the DEFAULT is used and
-// that its content reaches fd 2; the choice of a synchronous write rests on
-// `adr/019`, not on this assertion.
+// that its content reaches fd 2; the choice of a synchronous write rests on the
+// credential-notice design, not on this assertion.
 //
 // Async `spawn`, never `spawnSync` — a sync spawn in this suite deadlocks anything
 // sharing the event loop (repo footgun), and there is no reason to risk it.

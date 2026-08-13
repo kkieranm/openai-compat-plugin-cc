@@ -1,7 +1,7 @@
 // The count of contention-handling sites, asserted against the code rather than
 // against a reviewer's attention.
 //
-// ADR 020's site count drifted THREE TIMES in three review passes — five, six,
+// A site count in prose drifted THREE TIMES in three review passes — five, six,
 // nine, each wrong when written — because a number in prose has nothing holding
 // it to the code it describes. This repo's rule is that a recurring defect class
 // graduates from a reviewer's prompt to a structural test, and three instances
@@ -65,7 +65,7 @@ test('every stated count of contention sites matches the code', () => {
     `${SPELLED[counts.isBusy]} \`isBusy\` call sites`,
   ];
 
-  const documents = ['adr/020-a-contended-database-must-not-kill-live-work.md', 'scripts/lib/job-busy.mjs'];
+  const documents = ['scripts/lib/job-busy.mjs'];
   const failures = [];
   for (const relative of documents) {
     const text = readFileSync(join(ROOT, relative), 'utf8');

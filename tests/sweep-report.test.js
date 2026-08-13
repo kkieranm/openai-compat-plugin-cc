@@ -94,8 +94,8 @@ test('a clean review whose findings were all discarded says how many', () => {
   assert.match(out, /3 finding\(s\) the model emitted were discarded/);
 });
 
-// ADR 011's conflation, one layer up. `requestedModel` exists on a failure
-// envelope precisely BECAUSE nothing answered.
+// The requested-model conflation, one layer up. `requestedModel` exists on a
+// failure envelope precisely BECAUSE nothing answered.
 test('a failed row never claims a model answered it', () => {
   const out = render(commit({ outcome: 'failed', reason: 'transport', requestedModel: 'qwen/qwen3.6-27b' }));
   assert.doesNotMatch(out, /answered by/, 'nothing answered a failed review');

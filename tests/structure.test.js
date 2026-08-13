@@ -156,7 +156,7 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
   // Comments are stripped first, because the modules that replaced fetch have to
   // be able to *say* "fetch()" while explaining why they exist — and a guard
   // that forbids naming the thing it forbids would be edited away rather than
-  // obeyed. Markdown is outside SOURCE_EXT, so ADR prose is unaffected, and
+  // obeyed. Markdown is outside SOURCE_EXT, so prose is unaffected, and
   // bench/cases is already excluded via SKIP_PATHS: the frozen corpus holds
   // copies of the old client, byte-identical precisely because they contain
   // this defect.

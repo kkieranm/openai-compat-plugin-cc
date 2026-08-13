@@ -193,8 +193,8 @@ test('a signal-killed child is distinguishable from an ordinary crash', () => {
   assert.equal(classify({ status: 1, stdout: '' }).signal, null);
 });
 
-// ADR 011's conflation, one layer up: nothing answered, so nothing may be
-// reported as having answered.
+// The requested-model conflation, one layer up: nothing answered, so nothing
+// may be reported as having answered.
 test('a failed run reports no answering model, only the one it asked for', () => {
   const entry = classify({ status: 1, stdout: JSON.stringify({ error: true, reason: 'transport', requestedModel: 'qwen/qwen3.6-27b' }) });
   assert.equal(entry.model, undefined, 'a failed run had nothing answer it');

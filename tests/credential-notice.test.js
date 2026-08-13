@@ -189,10 +189,10 @@ test('the notice survives a preamble larger than the pipe buffer', { skip: NEEDS
   // discards undrained stderr, and the unbounded provider name in the preamble
   // pushed the notice past the pipe buffer, losing it on a run that had already
   // written the row. Measured: 131245 bytes, notice absent, one row on disk.
-  // `adr/019` carries the account, including the `writeSync` remedy that did not
-  // work and why the endpoint here must come from the CONFIG — `--base-url`
-  // replaces the provider name in the preamble, so with that flag only ~1 KB is
-  // written, nothing truncates, and this test passes against the reverted fix.
+  // The `writeSync` remedy did not work, and the endpoint here must come from
+  // the CONFIG — `--base-url` replaces the provider name in the preamble, so with
+  // that flag only ~1 KB is written, nothing truncates, and this test passes
+  // against the reverted fix.
   const server = await startFakeServer(modelsAndChat());
   const state = stateDir();
   mkdirSync(join(state, 'logs', '1.log'), { recursive: true });

@@ -20,9 +20,9 @@ test('an unmeasured provider gets NO estimate, not a default one', async () => {
 });
 
 test('the two halves are estimated separately, never blended', async () => {
-  // ADR 009 established that no arithmetic on a footer recovers generation from
-  // duration. A single figure would hide the fact that makes --background the
-  // right call: most of the wait happens before anything appears.
+  // No arithmetic on a footer recovers generation from duration. A single figure
+  // would hide the fact that makes --background the right call: most of the wait
+  // happens before anything appears.
   const estimate = estimateRun({ estimatedTokens: 35_000, maxTokens: 1600, profile: MEASURED });
   assert.equal(Math.round(estimate.prefillSeconds), 50);
   assert.equal(Math.round(estimate.generationSeconds), 20);

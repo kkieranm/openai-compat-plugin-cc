@@ -120,7 +120,7 @@ test('a configured window that disagrees with the server is flagged as possibly 
 
 test('a fully configured profile lists models anyway, so setup and task agree', async () => {
   // This asserted the OPPOSITE until OAI-16, and the reversal is deliberate.
-  // ADR 002 made a fully configured profile skip the probe to save a round trip.
+  // A fully configured profile used to skip the probe to save a round trip.
   // That became untenable once `planSelection` could refuse a model for being
   // absent from the catalogue: `/oai:setup` probes unconditionally, so it printed
   // "cannot run here" and "No provider can take a task right now" about a task

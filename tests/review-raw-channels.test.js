@@ -60,7 +60,7 @@ test('the labels appear only when there are two channels to tell apart', () => {
 });
 
 test('without a schema the reasoning channel is still not shown', () => {
-  // ADR 003: without a grammar that channel is scratchpad, and printing it as
+  // Without a grammar that channel is scratchpad, and printing it as
   // the model's reply would present a draft as an answer. The dual-channel fix
   // is gated on `structured` for that reason, not incidentally.
   assert.doesNotMatch(rawFor({ content: CONTENT, reasoning: REASONING }, false), /\[reasoning\]/);

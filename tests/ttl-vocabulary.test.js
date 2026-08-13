@@ -11,10 +11,10 @@ import {
  *
  * Two separate sets of names (per-episode verdicts, per-sweep outcomes) and one
  * subset of the second (the outcomes that mean the run produced a result). All
- * three are quoted in ADR 013 and in BACKLOG.md's done-condition, and all three
- * have already drifted from the code once: the ADR's outcome table lost a row it
- * still licensed, and its "the mapping is now a test" claim sat under the sweep
- * table while only the episode set had a guard.
+ * three are quoted in prose and in BACKLOG.md's done-condition, and all three
+ * have already drifted from the code once: the documented outcome table lost a
+ * row it still licensed, and its "the mapping is now a test" claim sat under the
+ * sweep table while only the episode set had a guard.
  */
 
 const ttlMs = 120_000;
@@ -23,9 +23,9 @@ const short = 130_000;
 const ok = { ttlMs, failed: false, unloadObserved: false, obtainedResponse: true, invalid: [] };
 
 test('the emitted verdict set is exactly the documented one', () => {
-  // ADR 013 lost a table row once to exactly this drift — an outcome the code
-  // could produce that no table listed. A recurring defect class graduates from a
-  // reviewer's prompt to a guard.
+  // A documented table lost a row once to exactly this drift — an outcome the
+  // code could produce that no table listed. A recurring defect class graduates
+  // from a reviewer's prompt to a guard.
   const emitted = new Set();
   for (const failed of [false, true]) {
     for (const unloadObserved of [false, true]) {
@@ -41,7 +41,7 @@ test('the emitted verdict set is exactly the documented one', () => {
 
 
 test('the emitted SWEEP outcome set is exactly the documented one', () => {
-  // ADR 013's outcome table lists SWEEP outcomes, not episode verdicts, and the
+  // The documented outcome table lists SWEEP outcomes, not episode verdicts, and
   // amendment claiming "the mapping is now a test" sat directly under it while
   // the only guard covered the episode set. Two vocabularies, one claim.
   //
@@ -81,7 +81,7 @@ test('only the outcomes that actually produced a result count as conclusive', ()
 
 
 test('the tracker names the same verdicts the code calls conclusive', () => {
-  // ADR 013 claims the exit code and the tracker read ONE list. Only the driver
+  // The exit code and the tracker are claimed to read ONE list. Only the driver
   // imports CONCLUSIVE — BACKLOG.md restates the strings in prose — so without
   // this the claimed single source does not exist.
   //

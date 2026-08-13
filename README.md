@@ -127,5 +127,4 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
 npm test    # network-free; runs against an in-process fake OpenAI-compatible server
 ```
 
-See `CLAUDE.md` for conventions and [ADR 001](adr/001-generic-openai-compatible-plugin.md) for the
-design rationale.
+See `CLAUDE.md` for conventions and the design rationale.

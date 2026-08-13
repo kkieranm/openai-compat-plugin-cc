@@ -124,7 +124,7 @@ test('a small window still gets a review, though the explicit-budget floor would
   // --max-tokens below the schema's minimum is a mistake and is refused; a model
   // whose window is merely small is not, and refusing every review on it would
   // deny work that usually succeeds. A reply that does overrun there fails
-  // loudly, which is the trade ADR 004 took.
+  // loudly, which is the trade taken.
   const { dir, server, configPath } = await scenario(
     (request, response) => respondJson(response, completion(FINDINGS)),
     { contextLength: 6_000 },
