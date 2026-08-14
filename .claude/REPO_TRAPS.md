@@ -1025,6 +1025,34 @@ was the **stated mitigation** for an accepted design risk (the recycled-pid wedg
 quietly voided a correctness trade-off recorded in an ADR. **Check whether anything upstream accepted a
 risk on the strength of the thing you filtered out.**
 
+## A necessary condition, restated as a sufficient one, in the prose beside it
+
+Confirmed 2026-08-14 (OAI-64), three times in one feature — each instance written while fixing the
+previous one.
+
+The marker `/oai:status` prints for a blocking row says *"must clear before this workspace's queued
+job can proceed"*. That is deliberately a **necessary** condition: clearing it is required, and
+promises nothing about what runs next. The code has been right about this since the wording was
+settled. The prose beside it was not, three times: *"takes its turn first"* (refuted at plan round 1,
+because a pathological head may never take a turn at all), then *"has to clear first"*, then *"what
+to deal with now, not merely something ahead of you"* — each an upgrade to sufficiency, each caught by
+a different reviewer, each written into a file being edited to remove the previous one.
+
+**The rule**: when the code states a necessary condition, the prose describing it will drift toward
+sufficiency, because sufficiency is what a reader wants and the weaker claim reads as evasive. The
+drift is invisible to tests — every one of these shipped green — and invisible to a diff reviewer,
+who sees a sentence that matches the feature's intent.
+
+**The check that works**: for each user-facing sentence, ask *what does the code guarantee if the user
+does exactly what this says?* Here, clearing the flagged row guarantees only that one obstruction is
+gone; another may sit behind it. Where the honest answer is weaker than the sentence, the sentence is
+wrong even when the feature is right.
+
+**Related, and the reason this is its own entry rather than a note on that one**: [A visibility filter
+keyed on raw state](#a-visibility-filter-keyed-on-raw-state-where-blocker-ness-is-a-derived-property)
+is about the *code* misdescribing the queue. This is about the *prose* misdescribing correct code, and
+it survived four review passes that were all looking at the code.
+
 ## A helper parses the attacker-influenced value you passed it as its own option
 
 Found 2026-08-05 in OAI-5, in a fix the *previous* review pass had just introduced — which is the

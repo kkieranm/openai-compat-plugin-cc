@@ -1,3 +1,49 @@
+## 2026-08-14 — OAI-64 closed (`dd35df8`)
+
+- **OAI-64** — **`/oai:status` now names the row that is actually starving you.** Closed 2026-08-14 by
+  `dd35df8`, after five review passes and eleven plan-gate rounds. Plan:
+  [`plans/oai-64-the-blocker-is-relational.md`](plans/oai-64-the-blocker-is-relational.md),
+  dual-approved pre-build and again mid-build, both archives beside it.
+
+  **What shipped.** `job-queue.mjs` exports `scanQueued`, the single definition of the queue's head, and
+  `decide` dispatches on it. `job-view.mjs` `blockingSeqFor` walks `decide`'s two rungs read-only — a
+  non-dead running row, else that head — and names one FOREIGN row when this workspace holds a queued
+  job that is live or still inside its startup grace. `job-render.mjs` flags it with a NECESSARY
+  condition: *must clear before this workspace's queued job can proceed*, which never promises yours
+  runs next.
+
+  **Three findings worth keeping, each proved rather than argued.**
+  1. *This item's own diagnosis was incomplete.* It said blocker-ness is decided by `queuedRole`, which
+     returns `blocks` for the pathological shapes. But an ordinary live known-version queued row returns
+     `head` and still blocks everyone behind it via `decide`'s `seq` comparison — and the reproduction
+     recorded in the item **is** that ordinary case. A fix built on the enumeration would have passed a
+     test drawn from the item's own transcript while hiding the commonest blocker there is.
+  2. *The first implementation committed this item's own defect.* It consulted the queued rung alone, so
+     with a live running row it marked a queued job that clearing would not help, while the row actually
+     holding the queue sat unmarked below it. Found at review pass 2, reproduced by execution, then fixed.
+  3. *The witness rule was narrowed during review.* A local queued row with no waiting process — dead,
+     never-started, malformed — no longer counts as evidence anyone is starved, because for such a row
+     the flag's sentence is false rather than vacuously true. The superseded justification ("`decide`
+     blocks it too, so excluding it would disagree with the queue") was unfalsifiable: those rows never
+     call `decide` at all.
+
+  **Evidence.** 891 tests pass, against 871 at the baseline. Nine mutation controls fired across the
+  run, each caught by the test written for it — head-sort inversion, witness-comparison inversion,
+  running-rung removal, `isKnownVersion` refusal deleted, local-head guard deleted, eligible-witness
+  gate deleted, `scanQueued`'s `onSkip` deleted, `ORDER BY seq` deleted, `decide`'s state guard deleted.
+  The `ORDER BY` one was undetectable until `PRAGMA reverse_unordered_selects` was used, since rowid
+  order already matches `seq` order. Also driven through the real plugin against a seeded queue.
+
+  **Dismissed, by the owner's decision:** the flag is not linearizable with the queue, because the
+  display reads outside a transaction. `BEGIN IMMEDIATE` is impossible on the read-only connection,
+  would not cover the OS pid probes the display also depends on, and would make every `/oai:status`
+  contend for the queue's write lock against workers polling every 300ms. Internal consistency already
+  holds — the whole report derives from one atomic `SELECT` — and no wrong-kill path exists, since
+  `requestCancel` is state-guarded and a stale flag matches zero rows.
+
+  **Residue:** OAI-160 here; process items 161 and 162 in `~/Code/backlog`. OAI-69's gating condition
+  is discharged — re-read it.
+
 ## 2026-08-13 — closed by the backlog sweep, each verified against disk (OAI-33, OAI-84)
 
 - **OAI-33** — **`plans/README.md` was missing.** Closed 2026-08-13 by the backlog sweep, which

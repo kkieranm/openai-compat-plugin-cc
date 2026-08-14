@@ -66,14 +66,17 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-64,
-OAI-69**. One subsystem, independent closes, so they sit adjacent rather than merged.
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-69**. One subsystem, independent closes, so they sit adjacent rather than merged.
 **OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
 re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
 OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
-OAI-64 leads what remains, and **gates OAI-69** — ADR 014
-accepts the recycled-pid wedge *on the stated condition* that `/oai:status` names the blocker, which
-OAI-64 shows it does not, so OAI-69 is not an independent gap and must not be scheduled as one.
+**OAI-64 closed 2026-08-14 (`dd35df8`), and that DISCHARGES the condition it gated OAI-69
+on.** OAI-69 was held because the recycled-pid wedge had been accepted only on the promise that
+`/oai:status` would name the blocker, and it did not. It now names the row the queue actually stops at,
+so **re-read OAI-69 against the shipped behaviour before scheduling it** — what survives is whatever
+naming does not mitigate, which is not the whole item. The mitigation is imperfect by construction:
+`isAlive` proves only that a pid NUMBER exists, so a recycled pid still reads `live` and can still be
+the row named.
 
 **Tier 2 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-65, OAI-72,
 OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved on the wire,
@@ -317,7 +320,9 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**, **OAI-150**.
+**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**, **OAI-150**,
+**OAI-160**. The last of those is coverage debt in the same subsystem, filed by OAI-64's confirmation
+pass and owned by nothing else.
 **OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
@@ -1259,39 +1264,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   outside the OAI-3 range and cannot be closed by a fix scoped to it — which is the reason it was
   filed separately and the reason it must not stay that way. **OAI-72 keeps its ID and its other two
   claims**, which are about file modes and stdout and share nothing with this.
-
-- **OAI-64** — **`/oai:status` cannot show the blocker that is starving you, which VOIDS the mitigation
-  ADR 014 traded the recycled-pid wedge for.** `job-view.mjs:127` filters visibility on
-  `row.workspace === cwd || row.state === 'running'` — a **state** predicate — while blocker-ness is
-  decided by `job-queue.mjs:56-62` `queuedRole()`, which returns `blocks` for a queued row that is
-  live-but-unknown-version, `starting` or `malformed`, and by `job-queue.mjs:96` for the plain queued
-  head. **Every one of those blockers has `state='queued'`**, so none satisfies the exception.
-  `job-view.mjs:118-123` asserts the opposite in its own words ("a malformed row holding the head of
-  the queue is the one thing a user most needs to see") and ADR 014 (~180) promises "`/oai:status`
-  names the blocking pid for the user to deal with by hand".
-  Executed: `tryAcquire(A)='blocked'`, yet `statusView` shows only jobA plus
-  `(1 more elsewhere — pass --all)`. `viewOf(jobB)` had the note **ready** ("pid N is alive but has not
-  beaten since 10m ago") and never reached it, because the row was filtered out one step earlier — the
-  information is computed at `job-view.mjs:125` and discarded.
-  Needs no second plugin build: one queued waiter whose pid was recycled or suspended suffices.
-  The correct predicate is the derived `display`/`liveness` already in hand. **Do this before OAI-69**,
-  which it partly mitigates.
-  **STATUS, 2026-08-08 — an UNATTENDED DRAFT exists and is NOT harness approved:**
-  `plans/oai-64-status-must-show-the-blocker-that-is-starving-you.md`. Codex pre-review reached
-  **APPROVE** on a blind round (digest `aa16e596d84c`, verdict parsed by the gate). **Of the three
-  drafts produced on 2026-08-08 this is the closest to shippable** — it is blocked on one scope
-  choice, not on an unresolved design.
-  **This entry's own last sentence is REFUTED and must not be built from.** "The correct predicate is
-  the derived `display`/`liveness`" is false: **blocking is RELATIONAL, not a property of a row.**
-  `queuedRole` returns `blocks` only for the *pathological* rows (`starting`, `malformed`,
-  live-but-unknown-version); an ordinary live known-version queued row returns **`head`**, and `decide`
-  still blocks every caller behind it via `row.seq !== seq`. So a filter on `queuedRole === 'blocks'`
-  would ship, pass a test written from this entry's transcript, and still hide the commonest blocker
-  there is. The choice the owner must make is therefore **relational** (show an off-workspace queued
-  row when it precedes a local one in `seq` order) versus **narrowed** (pathological blockers only,
-  stated plainly as reduced scope). Also in scope, found by the pre-review: `job-render.mjs` describes
-  every `malformed` row as "running with no worker pid", which is false for a malformed *queued* row —
-  and this fix is what starts showing those rows.
 
 - **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
   `0644`.** Four related defects in the state directory's posture, all observed with controls.
@@ -2706,3 +2678,26 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-59, OAI-63, OAI-64,
   OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
+- **OAI-160** — **Twelve branches in the background-job display and queue modules are reachable and
+  untested, enumerated by OAI-64's confirmation pass.** Filed 2026-08-14 from that pass, which was
+  steered at PRE-BATCH symbols precisely because the three passes before it had reviewed only new
+  code. None is a defect and none was introduced by OAI-64 — which is why they are here rather than in
+  that change. `job-view.mjs` `openJobs`' null-database return and `cmd-status.mjs` `runStatus`'
+  matching "none has ever been submitted" branch; `displayOf`'s `dead` and `never-started` arms,
+  reachable only for a row a newer plugin wrote, which `queue-reconcile.test.js` creates but never
+  renders; `noteFor`'s matching "written by a newer plugin" note; `stamp`'s `—` fallback,
+  `workerField`'s "no worker registered yet", and `fields`/`renderDetail` as a whole for a **queued**
+  row, since no test renders the detail view of one; `isAlive`'s `EPERM` arm; `inImmediateTransaction`'s
+  ROLLBACK path, which nothing makes `decide` throw inside; `attempt`'s `isBusy` → `blocked` mapping,
+  exercised only incidentally by real concurrency; `claimJob`'s `false` return, the late-arrival race
+  its own comment names; and `showOne`'s "No job with id" `UserError` — the identically worded
+  assertions elsewhere hit `cmd-cancel`'s and `cmd-result`'s own copies, not this one.
+  **Two constants are pinned by nothing that names them:** `STARTUP_GRACE_MS` (fixtures sit ~1.5x past
+  it) and `STALE_BEAT_MS` (5x past it), so either could change severalfold undetected.
+  **The `noteFor` newer-plugin branch is the borderline entry, called out rather than buried:** OAI-64
+  is what first puts foreign unknown-version queued rows on a bare `/oai:status` screen, and its own
+  version-99 test executes `renderList` over such a row without asserting the note. Judged out of scope
+  because the branch itself is untouched.
+  *Enumerated by a scout against a fixed manifest, each entry checked by grepping the test tree rather
+  than assumed.*
+
