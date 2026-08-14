@@ -46,7 +46,9 @@ const DEFAULTS = {
   maxCommits: 40,
   scanLimit: 200,
   maxSeconds: 1800, // raised from 900, which lost half the corpus to deadline-timeout — see ADR 021
-  maxAttempts: 3,
+  // 2 rather than 1: the starvation path records no attempts (OAI-116), so what
+  // that ceiling costs there is unmeasured rather than known-idle.
+  maxAttempts: 2,
   abortAfter: 3,
 };
 

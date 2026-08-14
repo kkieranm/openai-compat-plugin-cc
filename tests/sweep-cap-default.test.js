@@ -37,3 +37,20 @@ test('the per-commit cap default is 1800 and reaches the review command', () => 
   assert.notEqual(at, -1, 'the review command must carry --max-seconds');
   assert.equal(seen[0][at + 1], '1800');
 });
+
+// The same shape for the attempt ceiling: a default nothing observes, whose
+// fixtures all pass their own value.
+test('the attempt default is 2 and reaches the review command', () => {
+  assert.equal(optionsFrom({ minutes: '10' }, 0).maxAttempts, 2);
+  assert.equal(optionsFrom({ minutes: '10', 'max-attempts': '5' }, 0).maxAttempts, 5);
+
+  const seen = [];
+  const options = { deadline: Infinity, maxSeconds: 1800, abortAfter: 3, maxAttempts: optionsFrom({ minutes: '10' }, 0).maxAttempts };
+  runSweep([{ sha: 'aaa', subject: 'a commit', eligible: true }], options, {
+    execute: (args) => { seen.push(args); return ok(); },
+    now: () => 0,
+  });
+  const at = seen[0].indexOf('--max-attempts');
+  assert.notEqual(at, -1, 'the review command must carry --max-attempts');
+  assert.equal(seen[0][at + 1], '2');
+});

@@ -69,10 +69,15 @@ should be decided together even though they close separately. OAI-77 and OAI-81 
 local write access or a mis-selection, and neither has a path-shaped fix.
 
 **Tier 3 — `/oai:review` returns no answer at all, or throws away the one the model gave.**
-**OAI-115, OAI-116, OAI-113, OAI-114, OAI-112, OAI-59, OAI-70, OAI-68, OAI-60, OAI-57,
+**OAI-115, OAI-116, OAI-156, OAI-113, OAI-114, OAI-112, OAI-59, OAI-70, OAI-68, OAI-60, OAI-57,
 OAI-80**. Re-led on 2026-08-08 by measurement: the tier used to be trap instance 14's
 family (`findings: null` against `[]`), and it still contains it, but a *worse* class now sits on top
 of it and is wrong on the shipped default path today.
+**OAI-156 joined 2026-08-14 and sorts third, directly behind the two starvation items**, because it
+is the same tier's other half observed for the first time: OAI-115 and OAI-116 are answers never
+written, where OAI-156 is an answer written, complete, `finishReason: "stop"` — and dropped at the
+parser. It sits behind them on frequency (three starvations to its one in the same run) and ahead of
+the rest because 1,245 seconds bought a finding the baseline agreed with, and the harness binned it.
 
 **OAI-115 leads the whole tier and is arguably the sharpest item in this file**: `max_tokens` is a
 single pool shared by reasoning and the answer, so on a large target the model spends the entire
@@ -198,8 +203,16 @@ which is what makes them filable rather than lurking. **OAI-152 was PARKED the d
 states outright that it is "not measured" and already carried its own reopening bar, which is a
 park-ready shape rather than an item.
 
-**Tier 12d — what the completed overnight sweeps found, 2026-08-10/12.** **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
+**Tier 12d — what the completed overnight sweeps found, 2026-08-10/14.** **OAI-155**, **OAI-157**, **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
 **OAI-140**, **OAI-137**.
+**OAI-157 sorts directly behind OAI-155 because it is the same night's lesson at a tenth of the
+cost**: OAI-155 makes an oversized target reviewable, where OAI-157 merely says so before the night
+is spent, and it can land without any decision about what a finding is scoped to.
+**OAI-155 leads the tier from 2026-08-14 and is the first thing here that is a COVERAGE fact rather
+than a harness defect**: the 2026-08-13 sweep reviewed 31 old commits successfully and none of the
+five it was launched for, two of them refused outright as oversize with nothing left for the ladder
+to shed. Every other item in this tier improves what a sweep reports; this one is about work the
+sweep cannot reach at all, which outranks them.
 **OAI-139 (done 2026-08-12) was found by probing OAI-138, not by the sweep**: when nothing is
 resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
 fallback therefore cannot fire — so a cold start ships untrimmed input and the failure arrives wearing
@@ -1954,6 +1967,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   on 2026-08-04 all 4 failed runs carried ledgers, because those failures were transport failures,
   whose path preserves the record. It also destroys the reliability evidence exactly where failures
   are most interesting. **Blocks OAI-19**, and is likely small.
+  **RECONFIRMED 2026-08-14 outside the benchmark, on the shipped default path.** The overnight sweep
+  starved on four of 40 commits — `223136e` (928s), `e966c95` (947s), `bc469ce` (691s), `77c1eab9`
+  (1,586s) — and all four recorded `attempts: null`, against a populated `attempts[]` on every commit
+  that answered in the same run. So this is not an artifact of how `bench` invokes the CLI: **4,152
+  seconds of real work left no attempt record at all**. Evidence in
+  `bench/results/sweep-2026-08-13-overnight/review-sweep-2026-08-13T21-57-52-135Z.ledger.jsonl`.
 
 - **OAI-123** — **The sweep's deadline has no monotonic guard.** Filed 2026-08-08 from the
   review-sweep ladder, stated-untested at pass 1 and never fixed. `resolveDeadline` now advances the
@@ -2526,6 +2545,18 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   require N>=2 runs per arm before an A/B enters this tracker as evidence; or state a minimum
   detectable effect in the pre-registration. **The cheap half is the last one** — it costs a sentence
   and would have stopped this being read as a signal for two days.
+  **A FIFTH run, 2026-08-14, and it is recorded here rather than as its own item.** Same model, same
+  1800s cap, whole-file, warmed rather than cold-started; 35 eligible commits overlap the arms above.
+  On that overlap: **15 finding-bearing tonight against 21**, 23 total findings against 33, **14 of
+  21 reproduced, and 1 finding-bearing commit was novel**. That sits inside the spread this item
+  measured (17 vs 22; 12 of 17), so it is a data point, **not** a regression — and the discipline
+  this item asks for is what produced that reading. **It was nearly filed as a separate defect**: at
+  36 of 40 commits the partial run showed 11 against 18 with *zero* novel commits, which looked like
+  an asymmetry the noise model does not predict. The last four commits removed it. **A partial sweep
+  is not a small sweep — reading one is how this item's own mistake gets made again.**
+  One real subtraction survives: **1 of tonight's 7 non-reproductions is a discarded answer, not a
+  quiet one** (OAI-156), so a reproduction rate computed off outcomes alone understates agreement by
+  at least that much.
 
 - **OAI-142** — **`unconstrainedLadder` sizes the reply schema from a rung the request may not send.**
   Filed 2026-08-12 by `codex-adversarial` (high, confidence 0.96) during OAI-139's review ladder, and
@@ -2705,3 +2736,80 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Redaction was deferred and stays deferred.** A base URL with an embedded credential is the subject
   of the existing OAI-91/92/95, and widening a feature to cover it is how a feature stops converging.
   Filed here so the split is on the record and the shipped half is not mistaken for the whole.
+- **OAI-155** — **The size ladder ends at the diff, so this repo's own large commits cannot be
+  reviewed at all.** Filed 2026-08-14 from the overnight sweep. Two of the five never-reviewed
+  commits were refused `oversize` in under a second: `d1ad2aa` at **128.9k estimated tokens** and
+  `9883f7f` at **101.1k**, against **57.6k usable** (a 61.7k window less a 4.1k reply reserve) on
+  `qwen/qwen3.6-27b`.
+  **This is the ladder working, and that is what makes it filable rather than a bug report.**
+  `prepareLadder` (`scripts/lib/review-ladder.mjs:60`) reaches the `hunks` rung only after the `whole`
+  rung has thrown and every changed-file body has been shed, so those two figures are **the diff
+  alone, with nothing left to drop**. There is no rung below it, so the refusal is honest and
+  instant — and terminal.
+  **The consequence is measured, not argued: the harness cannot review its own newest work.** Taken
+  with three starvations (OAI-115), the split across the completed run is exact: of the five
+  genuinely-unreviewed commits of 2026-08-13, **2 failed oversize and 3 starved — none produced a
+  review**, while of the 35 older and smaller commits **33 did** (18 clean, 15 with findings, 1
+  starved, 1 unreadable). So a sweep's coverage skews
+  systematically toward small old commits, and a header reading "40 eligible" conceals that the
+  interesting five were never seen.
+  **Fix shape (not decided), and it is a decision rather than a patch**: a per-file rung below
+  `hunks` (review each changed file's hunks alone and merge), or split the target and report N
+  sub-reviews as one. Both change what a finding is scoped to, and the second changes what "a commit
+  reviewed" means in every artifact this repo writes.
+  **There is a cheaper repair in front of both, and the measurement is decisive.** The sweep selects
+  commits by `--include scripts bench tests` but then sends the **whole** commit, so both refusals
+  were mostly content the include filter had already declared irrelevant: `d1ad2aa`'s diff is
+  **436,887 bytes whole and 34,800 restricted to those paths — 8%** (the rest is the deleted ADR
+  corpus); `9883f7f` is **340,491 against 58,384 — 17%**. Both fit the window comfortably once
+  scoped. So the first thing to try is not a new rung but **making the review honour the same
+  pathspec the eligibility check uses** — a pathspec through `selectDiff`'s `listArgs` and diff
+  command.
+  **Do NOT reach for `--file` as the interim.** `collectTarget` (`scripts/lib/git-diff.mjs:199`)
+  short-circuits on `options.file` **before** any diff selection, so `--commit X --file path`
+  silently discards the commit and reads `path` from the **working tree**, returning `diff: ''` and a
+  label of `N file(s)`. In a sweep artifact that would read as a review of the commit while being a
+  review of today's tree — the wrong-content-under-a-right-looking-label class this tracker keeps
+  filing. This entry previously recommended exactly that, on 2026-08-14, before the code was read.
+- **OAI-156** — **A complete answer, in the shape the prompt asked for, is discarded because it is
+  not bracketed JSON.** Filed 2026-08-14 from the overnight sweep — one commit, `9a38a2a6b`, and
+  **1,245 seconds of work thrown away**.
+  Nothing failed. `finishReason: "stop"`, one attempt recorded, `outcome: answered`, `usage` present,
+  no truncation (`analysisCut: null`, `atCap: null`). The reply carried a well-formed findings list
+  and an `analysis` section, in YAML-ish prose rather than JSON — and the sweep recorded
+  `parsed: false`, `findings: null`, `summary: null`, outcome `unreadable`.
+  **This is NOT OAI-112.** That item is candidate SELECTION among several bracketed runs; here there
+  is no bracketed run at all, so `extractJson` has nothing to select between and `findingsShaped` is
+  never reached. It is the tier's other half — the answer was given and thrown away.
+  **It follows from the 2026-08-04 default** (OAI-51): the ordinary path asks for the shape **in
+  prose** and no grammar compels JSON, so a prose-shaped answer is a *likely* reply rather than a
+  malformed one, while the parser accepts only the bracketed form.
+  **What was discarded was a REPRODUCING finding, which is what raises this above a curiosity.** Its
+  first item names `scanFor`'s parameter list at that commit — `(text, from, open, close, accept)` —
+  the same defect the 2026-08-11 baseline reported on the same commit, and which today's
+  `json-scan.mjs:66` no longer has. The parser did not discard noise; it discarded agreement.
+  **Fix shape (not decided)**: accept a `findings:` list as a candidate shape in
+  `findings-candidate.mjs`, or keep the parser strict and make the instruction compel JSON harder.
+  The first widens what `parseFindings` will trust; the second costs nothing and enforces nothing.
+- **OAI-157** — **A sweep commits a night to a corpus it has never sized, so an impossible target is
+  discovered at 08:00 rather than at 22:57.** Filed 2026-08-14, recommended by `codex-rescue` in its
+  review of that night's run and adopted because the night it describes had already happened.
+  **The evidence is the run itself**: the two commits refused `oversize` were refused in **under a
+  second each**, on an arithmetic — estimated tokens against the served window — that needs no model
+  and could have been done before the first review started. Instead it was done nine hours later, by
+  hand, by a reader comparing two records.
+  **Shape**: a `--plan-only` that runs everything up to the first request and then stops, emitting per
+  enumerated commit — the resolved SHA, whether any prior ledger already covered it, the whole-file
+  and diff-alone token estimates, which ladder rung those imply, and whether the target is reviewable
+  at all. **It must run AFTER the warm-up**, or the window is unknown and every estimate it prints is
+  the unsized-window case (OAI-139) rather than the one the night will run.
+  **What it buys, stated as the thing it prevents**: 9h26m was spent to learn that 5 of 40 targets
+  were unreachable. The same fact is a sub-second calculation. It also gives the sweep a refusal it
+  cannot currently express — *this corpus contains targets no configuration of this run can review* —
+  which is the only signal that would have stopped the 2026-08-13 night going ahead unchanged.
+  **Related but NOT the same as OAI-155**: that item is about making a big target reviewable, this one
+  about knowing it is not before spending the hardware. Either can land without the other, and this
+  one is strictly smaller.
+  **Coverage lookup is the one part with a dependency**: "has a prior ledger covered this SHA" is
+  OAI-151's cross-run history. Until that exists `--plan-only` should print the sizing half and say
+  the coverage column is unavailable, rather than growing its own second index.
