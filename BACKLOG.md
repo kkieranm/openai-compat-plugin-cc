@@ -66,17 +66,18 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-69**. One subsystem, independent closes, so they sit adjacent rather than merged.
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-161, OAI-162**. Both are
+OAI-69's residue, filed 2026-08-15 when `/oai:abandon` shipped, and both are about the same seam that
+item opened: a terminal row whose worker may still be alive is a category this queue did not have
+before. OAI-161 leads because it can destroy a paid-for answer; OAI-162 is a misattribution rather
+than a loss.
 **OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
 re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
 OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
-**OAI-64 closed 2026-08-14 (`dd35df8`), and that DISCHARGES the condition it gated OAI-69
-on.** OAI-69 was held because the recycled-pid wedge had been accepted only on the promise that
-`/oai:status` would name the blocker, and it did not. It now names the row the queue actually stops at,
-so **re-read OAI-69 against the shipped behaviour before scheduling it** — what survives is whatever
-naming does not mitigate, which is not the whole item. The mitigation is imperfect by construction:
-`isAlive` proves only that a pid NUMBER exists, so a recycled pid still reads `live` and can still be
-the row named.
+**OAI-64 closed 2026-08-14 (`dd35df8`) and OAI-69 closed 2026-08-15 (`6d41bd0`)** — see
+BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to need: naming the blocker
+mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
+shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
 **Tier 2 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-65, OAI-72,
 OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved on the wire,
@@ -1300,20 +1301,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   a hole in the two-version design **on its own terms**, since the stated rule is that a newer database
   is refused for all mutations. The fix (recheck under the same write lock) touches every mutation path
   and collides with whatever OAI-63 does to the persisted payload, so sequence it after that decision.
-
-- **OAI-69** — **A recycled pid reads `live` forever and wedges the queue, with no recovery path.**
-  `isAlive` (`job-liveness.mjs:45-53`) proves a pid is *owned*, not that it is owned by our worker. A
-  recycled `worker_pid` reads `live` at `:80`, so every reader and `decide` treat the row as a blocker
-  permanently; the stale heartbeat is cosmetic by explicit design ("the pid decides death; the beat
-  only corroborates"); and cooperative cancel cannot reach a process that is not ours. **I grepped for
-  a recovery path and there is none** — no `--force`, no abandon, in `cmd-cancel.mjs` or
-  `commands/cancel.md`. Recovery today is deleting `jobs.db` by hand. Most reachable across a reboot,
-  where low pids are certainly reused.
-  ADR 014 accepts this wedge **on the stated condition** that `/oai:status` names the blocker — which
-  OAI-64 shows it does not. **So this item's urgency depends on OAI-64 landing**, and it is not an
-  independent gap.
-  Constraint on any fix: `tests/queue-guards.test.js` forbids signalling a process this repo cannot
-  verify, so the answer is operator force-terminalization of the **row**, never a kill.
 
 - **OAI-70** — **Three small correctness guards on the worker's row-decoding path.**
   **(a)** `resolveCredential` never checks `auth.profile` exists: `job-auth.mjs:54` passes
@@ -2701,3 +2688,33 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   *Enumerated by a scout against a fixed manifest, each entry checked by grepping the test tree rather
   than assumed.*
 
+- **OAI-161** — **Retention can delete an abandoned row's log while its worker is still writing to
+  it, destroying the salvaged answer.** Filed 2026-08-15 from `/oai:abandon`'s review (`6d41bd0`),
+  found by `codex-plain` and verified against `job-retention.mjs`. `/oai:abandon --force` can
+  terminalize a row whose worker is genuinely alive; that worker's later `finish()` misses its CAS and
+  writes the answer to its job log as `SALVAGED_OUTCOME` instead. But an abandoned row is terminal, so
+  once 50 newer terminal rows exist the retention sweep prunes it and unlinks that log — and
+  `job-spawn.mjs` gave the worker the log as its stdout descriptor, so it keeps writing to an unlinked
+  inode and the line goes when the process exits.
+  **This is the first time a terminal row can have a live worker**, which is the assumption retention
+  was built on — so the defect is created by that feature rather than pre-existing.
+  Narrow: it needs a live writer AND 50 subsequent completions on a one-at-a-time queue. The headline
+  recycled-pid case has no live writer at all.
+  **Not fixed because the fix is a retention-policy fork this feature's plan never opened** — a
+  windowed exemption, an unbounded one, or an incarnation-keyed store (the sibling of OAI-149). The
+  in-scope half shipped: `cmd-task-worker.mjs`'s `salvageOutcome` docblock states the bound rather than
+  claiming durability it does not have.
+
+- **OAI-162** — **A corrupt `worker_pid` reads as a dead process, so a row is auto-terminalized on
+  evidence that proves nothing.** Filed 2026-08-15 from `/oai:abandon`'s review, raised by Codex as a
+  refuse-to-ship and adjudicated by the user as file-whole-change-nothing.
+  `isAlive` (`job-liveness.mjs`) returns `false` for every invalid pid and for every probe error except
+  `EPERM` — verified by execution: `-1`, `0`, `1.5`, `2**40` and `"garbage"` all answer `false`.
+  `livenessOf` turns that into `dead`, reconciliation terminalizes the row, and `/oai:abandon` reports
+  "its process was already gone" about a pid that never denoted a process. The contract says only
+  `ESRCH` proves disappearance.
+  **The honest fix is `malformed`, not `dead`** — which is what `commands/abandon.md` promises for a
+  pid that "cannot be read" — but it changes `job-liveness.mjs`, shared by `decide`, `reconcile` and
+  `/oai:status`, so reconciliation would stop collecting such rows and they would wedge until forced.
+  That is a queue-core behaviour change needing its own plan. The doc was narrowed instead, so nothing
+  ships promising what the code does not do.

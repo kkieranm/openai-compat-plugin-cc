@@ -1,3 +1,46 @@
+## 2026-08-15 — OAI-69 closed (`6d41bd0`)
+
+- **OAI-69** — **A wedged row now has an operator exit.** Closed 2026-08-15 by `6d41bd0`. Plan:
+  [`plans/oai-69-a-wedged-row-needs-an-operator-exit.md`](plans/oai-69-a-wedged-row-needs-an-operator-exit.md).
+  **The plan gate ran its full ten rounds and never dual-approved** — Codex found something real in
+  every one of them and the Claude half approved every one — so the plan proceeded on the user's
+  approval, recorded here because the archive directory that would otherwise show it does not exist.
+
+  **What shipped.** `/oai:abandon <id> [--force]` writes off a row whose worker cannot be proved gone.
+  `job-abandon.mjs` resolves liveness, decides and writes inside ONE `BEGIN IMMEDIATE` — the clock
+  sampled inside too, because a default parameter samples before a lock that can block for
+  `busy_timeout`. Four refusals no flag lifts; `malformed` is liftable, because refusing it outright
+  leaves a corrupt row wedging the queue with no escape. A dead or never-registered pid is handed to
+  ordinary recovery rather than recorded as the operator's verdict, and a row recovery already settled
+  reports idempotently instead of refusing. `job-drain.mjs` `couldDrain` walks both of `decide`'s rungs
+  and demands a readable, fresh beat — accepting `live` would reproduce inside this command the defect
+  it exists to fix. Nothing is ever signalled.
+
+  **The cost is stated rather than hidden.** Abandoning a running row is an operator-authorized
+  exception to one-job-at-a-time; the five sites asserting that invariant now name the exception.
+
+  **Four findings worth keeping.**
+  1. *The command asserted a liveness probe it never performed.* The probe ran in another module,
+     before the lock, and the unit tests bypassed it entirely — passing only because the fixture pid
+     was the live test process. Found by a full pass reading assembled files; invisible to four diff
+     passes.
+  2. *`couldDrain` reproduced this feature's own defect class.* It treated a successor as runnable on
+     `live`, which proves only that a pid number is occupied — so a dead successor holding a recycled
+     pid would have been reported as about to start.
+  3. *Three load-bearing guards shipped unpinned, and only mutation found them* — the `cancelled` arm
+     of the classifier, `couldDrain`'s beat-parse check, and `remedyFor`'s liveness gate. Each was
+     itself the fix for an earlier review finding. Six reading passes found none of the three.
+  4. *A stale clock was invisible to both instruments.* `nowMs` sampled before the lock was correct
+     code with a stale input — mutation cannot find that, because nothing is wrong to mutate.
+
+  **Evidence.** 940 tests pass, from 891 at the baseline. Mutation controls fired for the stale-beat
+  invariant (24 tests), every dispatch rung, the recovery-owned classifier, the drainage guards, the
+  render gate, the in-lock clock, and the salvage branch. The completion-after-abandon race is driven
+  end to end across two processes, with its control proved by removing the branch. Seven review passes
+  fixed 71 findings; the suite was re-proved green from the committed state.
+
+  **Residue:** OAI-161 and OAI-162, both filed live.
+
 ## 2026-08-14 — OAI-64 closed (`dd35df8`)
 
 - **OAI-64** — **`/oai:status` now names the row that is actually starving you.** Closed 2026-08-14 by
