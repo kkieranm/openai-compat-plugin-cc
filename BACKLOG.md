@@ -2,6 +2,22 @@
 
 Ordered; top item is next. IDs are stable and global (`OAI-n`, never reused).
 
+> ## Sweep, 2026-08-14 — what verification changed, which was almost nothing
+>
+> **84 items were verified against disk by six parallel readers, split by evidence domain. Not one was
+> closeable.** One sub-claim had been fixed (OAI-55(1) — the endpoint notice no longer interpolates the
+> query), one internal correction was itself refuted (OAI-42's "only one reader" is false; there are
+> at least two and a dozen mint sites), and four counts had drifted. Everything else is still true
+> today. **That is the finding**: the 2026-08-13 sweep already did the closing work, so this one had
+> nothing to close and should not pretend otherwise by churning the order.
+>
+> **What it did do.** Filed two defects it found while checking: **OAI-158** (the tracker guard cannot
+> see six of the seven parked items — mutation-proved) and **OAI-159** (78 citations across 37 items
+> point at a deleted `adr/` corpus). Parked **OAI-153** and **OAI-154** under the worth bar, applied
+> only to the ten items filed since the last pass. Moved 17,405 bytes of OAI-138's measurement tables
+> to [`evidence/138.md`](evidence/138.md) as a byte-asserted pure partition — it was two thirds of the
+> largest item in the file, all of it evidence for a decision that has already landed.
+>
 > ## Where this stands, 2026-08-05 — rewritten by a backlog sweep
 >
 > The direction is still **"use local LLMs like I use Codex"** —
@@ -150,7 +166,12 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-27, OAI-29, OAI-42, OAI-46**. **OAI-42 and OAI-46** ask "is this worth
+**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46**.
+**OAI-159 leads the tier from 2026-08-14**: 78 citations across 37 live items point at the `adr/`
+corpus deleted in `d1ad2aa`, and the deletion commit records that `BACKLOG*.md` was *"deliberately not
+touched"* — so the convention chosen for code comments was never adjudicated for the one file where a
+citation is doing evidentiary work. It leads because every other item in this tier is one decision
+about one thing, while this one decides how 37 items are read. **OAI-42 and OAI-46** ask "is this worth
 doing" rather than "do this", and each was rejected on judgement rather than on evidence, which is why
 the judgement is worth recording once; OAI-27 and OAI-29 are ordinary open work. **Four of this tier's members were PARKED 2026-08-13** by the sweep's worth bar —
 OAI-43, OAI-47, OAI-36 and OAI-7 named no instance of harm that had already happened, and three said so
@@ -179,7 +200,11 @@ the only one touching code that just landed. They are recorded rather than carri
 because they belong to the capability gate, not to the withdrawn mechanisms — filing them separately is
 what stops the withdrawal from becoming a place unrelated findings go to be forgotten.
 
-**Tier 10 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-103**.
+**Tier 10 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-158**, **OAI-103**.
+**OAI-158 leads the tier from 2026-08-14 and is the sharpest instance of its class yet**, because it
+is the class inside the guard written to end the class: `tests/backlog-structure.test.js` cannot see
+six of the seven parked items, so a resurrected parked id keeps the suite green — mutation-proved
+both directions. It is also one line to fix.
 The class is a statement this repo makes about itself that nothing checks. **OAI-104 closed
 2026-08-09** — it was the sharper of the two, and closing it removed the instance in this very file:
 `tests/backlog-structure.test.js` now enforces the tier/heading invariant that was previously
@@ -187,8 +212,7 @@ promised by a script which did not exist. OAI-103 is the same shape one level ou
 payload that omits the caveats its human-readable sibling prints, so a harness reads a crowded reply
 as a clean one.
 
-**Tier 12e — residue from OAI-132 / OAI-140's recording half, 2026-08-13.** **OAI-151**, **OAI-153**,
-**OAI-154**.
+**Tier 12e — residue from OAI-132 / OAI-140's recording half, 2026-08-13.** **OAI-151**.
 **OAI-151 leads and its justification is OAI-141**, which put run-to-run spread above the differences
 being compared: a per-commit reproduction rate ACROSS runs is exactly the number this tracker cannot
 compute today, and the one that decides whether any sweep A/B means anything. The feedstock now exists
@@ -198,8 +222,9 @@ the within-run crash record, a history is the cross-run index, and ADR 018 gates
 capability, so a hard dependency would have made crash protection conditional on the one thing the job
 store was careful to keep optional. Neither argument applies to a cross-run index, which is not on the
 crash path.
-OAI-153 and OAI-154 are both *stated limitations rather than defects* — the ADR says each one out loud,
-which is what makes them filable rather than lurking. **OAI-152 was PARKED the day it was filed**: it
+**OAI-153 and OAI-154 were PARKED 2026-08-14** by the sweep's worth bar, `not worth doing`: both were
+*stated limitations rather than defects*, neither named an instance of harm that had already happened,
+and the ADR that "said each one out loud" no longer exists (OAI-159). See `BACKLOG_PARKED.md`. **OAI-152 was PARKED the day it was filed**: it
 states outright that it is "not measured" and already carried its own reopening bar, which is a
 park-ready shape rather than an item.
 
@@ -496,7 +521,8 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
   wait for one rather than being fixed blind. (1) `isFormatRejection` reads `error.message`, which
-  `client.mjs` truncates to 400 characters — a server whose validation dump names `response_format`
+  ~~`client.mjs`~~ **`provider.mjs` (file attribution corrected 2026-08-14 against disk; `client.mjs`
+  has no truncation logic at all)** truncates to 400 characters — a server whose validation dump names `response_format`
   later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
   matcher fires on *any* 400 whose body echoes the request, asserting "rejected response_format"
   as a cause it only guessed. ~~(3)~~ **and** ~~(5)~~ **left this item on 2026-08-05 — see the split
@@ -903,9 +929,16 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   and a reader who trusts the name reaches the wrong conclusion without ever hitting one of them. The
   original backlog item for OAI-35 made exactly that error in its own text.
   The evidence against, which is why this is filed rather than done: the name **predates** OAI-35 —
-  ~~`http.mjs` and `cmd-setup.mjs` were reading it~~ **corrected 2026-08-05 by the sweep: `http.mjs:107`
-  and `http-errors.mjs:142` *mint* the field and `cmd-setup.mjs:32` is the only site that *reads* it** —
-  before the ledger ever carried it, so a rename
+  ~~`http.mjs` and `cmd-setup.mjs` were reading it~~ ~~corrected 2026-08-05 by the sweep: `http.mjs:107`
+  and `http-errors.mjs:142` *mint* the field and `cmd-setup.mjs:32` is the only site that *reads* it~~
+  **— that correction was itself WRONG and is corrected again 2026-08-14, verified against disk. The
+  field is minted at roughly a dozen sites (`http-errors.mjs`, `provider.mjs`, `sse.mjs`, `body.mjs`,
+  `chat.mjs`, `answer-attempts.mjs`, `attempt-outcome.mjs`, `attempt-ledger.mjs`) and it is READ to
+  drive a decision in at least two: `attempt-outcome.mjs` `obtainedResponse` opens with
+  `if (error?.serverResponded === true) return true;`, and `provider.mjs` propagates it. So
+  `cmd-setup.mjs` is not the only reader, and the rename is LARGER than this item has ever said —
+  which cuts against doing it, not for it.** The name predates the ledger,
+  so a rename
   touches the transport, not just the record; and the documentation now carries the load correctly,
   so this buys clarity rather than fixing a defect. If it is done, `httpResponseObtained` was the
   suggested name and every recorded benchmark file under `bench/results/` carries the old key, so it
@@ -1094,8 +1127,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   warning, "the credential is never persisted" was simply untrue, and that sentence had been in the
   plan for fourteen rounds before the gate caught it.
   **Widened and part-corrected 2026-08-05 by the OAI-58 ladder, in three ways.**
-  **(1) The warning itself prints the secret.** `task-submit.mjs:37-40` interpolates `profile.query`
-  verbatim. Executed: `Note: the base URL's query string (?api-key=sk-SUPER-SECRET-1234) is stored…`.
+  **(1) ~~The warning itself prints the secret.~~ FIXED — verified against disk 2026-08-14 by the
+  backlog sweep.** `task-submit.mjs` `noteEndpointPersistence()` now takes **no argument** and
+  interpolates nothing: it describes the storage rather than the credential, because the code cannot
+  know which part of a URL is a secret. The sub-claim below is kept as the record of what was wrong.
+  ~~`task-submit.mjs:37-40` interpolates `profile.query`
+  verbatim. Executed: `Note: the base URL's query string (?api-key=sk-SUPER-SECRET-1234) is stored…`.~~
   **The consumer, cited rather than assumed:** `commands/task.md:5` declares `allowed-tools: Bash(node:*)`
   and `:57` invokes the companion with **no stderr redirection**, and the Bash tool returns stderr as
   conversation content — the same channel the plugin deliberately uses for `substitutionNotice` and
@@ -1353,7 +1390,9 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 
 - **OAI-74** — Enforce the attachment boundary for **every** caller, not just the delegate's recipe.
   **Narrowed 2026-08-05 by OAI-5's second review pass: the delegate path is now enforced.** Its recipe
-  runs `readlink -f` per attachment and refuses the submission when a resolved path leaves the git top
+  canonicalises per attachment — ~~`readlink -f`~~ **a `canon()` wrapping `realpathSync`, corrected
+  2026-08-14 against disk; the recipe already made the (a) fix this item argues for below** — and
+  refuses the submission when a resolved path leaves the git top
   level — falling back to the working directory outside a repository, so it is only as tight as where
   the session was rooted —
   proved with controls in `bash` and `zsh` (an in-tree symlink to `/etc/hosts` and a bare `/etc/hosts`
@@ -1790,7 +1829,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 
 - **OAI-105** — **the reconciliation writes have no contention answer, only an argument.** ADR 020
   retries six sites with `withBusyRetry`, skips three more with a bare `isBusy` catch, and
-  deliberately leaves `job-reconcile.mjs`'s four writes
+  deliberately leaves `job-reconcile.mjs`'s ~~four~~ **five (recounted against disk 2026-08-14)** writes
   unprotected, on the reasoning that the sweep re-runs on the next read so a `SQLITE_BUSY` costs one
   deferred reconciliation rather than a lost fact. That reasoning is untested in both halves: nothing
   bounds how long the deferral can last under sustained contention, and nothing establishes that a
@@ -1889,6 +1928,14 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   their nouns, *then* add it to `documents`. This is the same defect the guard was written three
   review passes deep to eliminate, reproduced one document over. Raised and CONFIRMED by `lean-wide`
   in OAI-62's terminal pass.
+  **RE-MEASURED 2026-08-14 by the sweep, and both numbers moved — read this before working it.** The
+  counts are now **seven `withBusyRetry` sites and five `isBusy` sites**, and CLAUDE.md says "seven
+  enumerated sites", which is **currently accurate**. Two things changed underneath the item: the
+  guard's `documents` array is now `['scripts/lib/job-busy.mjs']` **alone**, because `adr/020` was
+  deleted with the ADR corpus (`d1ad2aa`) — the deletion commit calls that *"A REAL WEAKENING"* in its
+  own words, since one witness means a file and its own doc comment can now move together. So the
+  defect is no longer "CLAUDE.md disagrees" but "**one witness, and CLAUDE.md still outside it**", and
+  the fix is unchanged in shape while being more valuable than when filed.
 
 - **OAI-111** — **Stale git worktrees accumulate under `.claude/worktrees/`.** *(Count corrected
   2026-08-13 by the backlog sweep: **3 directories, 29M**, not the ~28 first filed — the retired
@@ -2031,6 +2078,9 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the mapping, not that it read the right field. **Fifth instance of "a test that cannot fail" in one
   feature**, and the second distinct shape; belongs in `.claude/REPO_TRAPS.md` as its own entry, since
   the stub-fidelity entry would otherwise read as covering it.
+  *(Half done, verified 2026-08-14: the `REPO_TRAPS.md` entry now exists — "A test that asserts
+  presence where the code guarantees presence". **The test itself is unchanged**, so what is live here
+  is the fix, not the filing.)*
 
 - **OAI-129** — **The shortfall cause is still guessable at one boundary.** Filed 2026-08-08,
   `unresolved at cap`. `walked >= scanLimit` is *also* true when exactly `scanLimit` commits are
@@ -2209,52 +2259,18 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `sweep-2026-08-09-overnight`, the first sweep run to completion against a decided model
   (`qwen/qwen3.6-27b`, chosen by the OAI-121 benchmark). Full disposition, and every commit is
   accounted for exactly once, per `adr/021`:
-  | outcome | n |
-  |---|---|
-  | skipped-no-code | 36 |
-  | **failed — all `deadline-timeout`** | **20** |
-  | findings | 11 |
-  | clean | 7 |
-  | unreadable | 1 |
-  | starved | 1 |
-  76 enumerated, 40 eligible, **18 reviewed**. The 36 skips are legitimate (docs, tracker and plan
-  commits touching none of `scripts`/`bench`/`tests`).
+  **The disposition table, the timing distribution, the cap probes, the analysis-cap measurements and
+  the corrections this item made to itself moved to [`evidence/138.md`](evidence/138.md)** by the
+  2026-08-14 sweep — verbatim, nothing rewritten or summarised. That file carries the evidence for the
+  cap value (1,800s, landed), the right-censoring argument, the four-commit probe, the retracted
+  throughput claim and its power-state cause, and `r(prompt,completion) = 0.072` against
+  `r(completion,seconds) = 0.940`. **The salvage design is what is live here; the cap is history.**
   **`--max-seconds 900` was inherited, not chosen.** It is the `DEFAULTS` value from the sweep's first
   commit (`e467be0`) and carries no comment justifying the number. Its *documented* purpose is not
   "a review fits in 15 minutes" — `adr/021` says **the deadline governs starting, not finishing**, and
   the per-commit cap exists to bound **overshoot past the stop time**. It has never been calibrated as
   a sufficient review budget, and last night is the first run to ask.
-  **The result inverts the standing expectation.** OAI-115 predicted **starvation** — the model
-  reasoning until its token budget is gone. That happened **once**. The binding constraint at 61696
-  context is **wall clock**: every one of the 20 failures is `deadline-timeout` and **not one** is a
-  transport drop. The survivors were degraded too — many carry *"the changed files did not fit the
-  window, so only the diff was reviewed"*.
-  **The artifacts** are `bench/results/sweep-2026-08-09-overnight/review-sweep-2026-08-10T04-01-56-336Z.{md,json}`
-  (18 KB / 172 KB). **`bench/results/` is gitignored**, so the table above is the durable copy and the
-  JSON is the only place the per-attempt timings survive — read it before any clean, or the
-  calibration below has to be re-measured over another night.
-  **FRAMING CORRECTED 2026-08-10, same day, by reading the record this item was filed from.** The
-  filing above says the next step is to read the timing distribution and set the cap from it. **That
-  is not the defect and not the fix**, and the original wording is kept because the numbers in it are
-  sound and only its conclusion was wrong.
-  **What the record actually shows.** Generation dominates and prefill is nearly irrelevant: prefill
-  24-261s (p50 68), generation 79-770s. Pooled rate **15.82 tok/s** over the 18 completions
-  (per-run 13.7-16.9). So 900s buys ~14k completion tokens, and the completions cluster at
-  11.2k-12.5k — **against the ceiling the cap imposes**, not against anything the design chose.
   **THE ACTUAL DEFECT: nothing bounds the reviewer's reasoning on the path it actually runs.**
-  A first attempt at this paragraph claimed `ANALYSIS_CEILING` is a rival wall-clock bound
-  disagreeing with `--max-seconds` by 2x. **That is WRONG and is recorded rather than quietly
-  replaced**, because it is the more tempting reading and the next person will reach for it too.
-  `ANALYSIS_CEILING` bounds the schema's `analysis` **string**, and:
-  1. **No schema was sent.** `review-sweep.mjs` never passes `--structured-output`, and per `adr/003`
-     the default path has sent no schema since **2026-08-04** (the grammar segfaults LM Studio at
-     ~14k generated tokens). Proved from the record, not assumed: every entry carries
-     `analysisCap: null`, which `structured.mjs:133` emits precisely when `structured` is false.
-  2. **Even with a schema it would not have bound this.** Measured across the completions,
-     `analysisLength` is **359-685 characters** while `completion_tokens` is **9,960-12,548**, of
-     which `completion_tokens_details.reasoning_tokens` is **97-98%** (e.g. 12,326 of 12,548). The
-     cost is native reasoning in `reasoning_content`, and the `analysis` field is three orders of
-     magnitude below the 74,000-char ceiling.
   **So `--max-seconds` is not competing with a designed bound — it is the ONLY bound**, together with
   the reply reserve that `token-exhaustion` reports (which fired once in 40). `adr/003`'s
   default-off decision on 2026-08-04 was taken to stop a segfault and, as a side effect nobody
@@ -2264,11 +2280,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   MoE and ~28 minutes on a dense 27B"* still describes the schema path faithfully. It is simply dead
   on the default path, and a reader costing the reviewer from it would conclude the reasoning is
   bounded when it is not.
-  **A correction to the throughput argument**, which was also wrong in the filing above: raising the
-  cap does **not** halve coverage. The 8h22m run was not cap-bound — it stopped because every commit
-  was settled. Each of the 20 timeouts burned a **full 900s and returned nothing**, so ~5 hours of the
-  8h22m bought zero output. A higher cap reallocates time from *guaranteed waste* to *possible
-  completion*; it does not trade commits for depth in the way "40 at 900s vs 20 at 1800s" suggests.
   **Fix shape LEANING (user, 2026-08-10): express the relation in code, rather than tuning a
   constant** — chosen before the correction above, and it survives it, because the defect it targets
   is the *absence of any relation between the bounds*, which is now more clearly the problem, not
@@ -2278,90 +2289,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   a **derived** `--max-seconds` from a target token count and a measured rate;
   or a **startup check** refusing a cap that cannot reach the work it authorises.
   Not decided — this is the leaning carried into the grill.
-  **The data is RIGHT-CENSORED and one number must not be read off it.** All 20 failures sit at
-  exactly 900s: that says they need `>900`, **never how much more**. "Raise it to ~1900 and most will
-  complete" is an assumption. **Probe launched 2026-08-10 08:35** — three of the timed-out commits
-  re-run at `--max-seconds 2400`, out-dir `bench/results/oai138-cap-probe-2026-08-10/`.
-  **PROBE COMPLETE 2026-08-10, four commits at a 2,400-3,600s cap. The 1,800s choice is VALIDATED with
-  margin, and nothing came near it.** Records in `bench/results/oai138-worstcase-2026-08-10/`.
-  | commit | outcome | seconds | prompt tokens |
-  |---|---|---|---|
-  | `3e7d42965` | **findings** | 1,163 | ~40,979 |
-  | `f6a471fa7` | **findings** | 1,192 | ~32,499 |
-  | `e1cc17dc9` | starved (`token-exhaustion`) | 1,307 | — |
-  | `77c1eab97` | failed (`empty-completion`) | 14 | ~144,721 |
-  **Two commits that returned NOTHING at 900s produced findings at ~1,170-1,190s on mains.** That is
-  the claim the cap rise rests on, measured rather than assumed. **The slowest thing ever observed to
-  complete is 1,518s** (and that was throttled; on mains the same corpus runs ~1,190s), so 1,800
-  carries **at least 18% margin over the worst observed completion** and no run approached it.
-  **What this does NOT establish**, stated because the sample is four: the 20 failures remain
-  right-censored as a set — these are three of them, plus one unmeasurable. **`77c1eab97` cannot be
-  measured at all until OAI-139 is fixed**: on a cold process it builds a ~145k-token prompt against a
-  61,696 window and dies in 14s, so the true worst case of this corpus is still unknown, and it is
-  unknown for a *sizing* reason rather than a timing one.
-  **One in four still lost to `token-exhaustion` at a cap that was not binding** — which is the
-  measurement behind "raise the cap AND salvage": the cap rise converts some losses into findings and
-  leaves others exactly where they were.
-  **It also corrects two claims made higher up in this item.** The split was **prefill 441s +
-  generation 1,076s** on a **43,340-token** prompt:
-  - **"Prefill is nearly irrelevant" is FALSE for large commits.** It was 24-261s last night only
-    because no *completed* run exceeded 37.8k prompt tokens — the sample was truncated by the very cap
-    under investigation. Here prefill is **29% of the run**.
-  - **The generation-rate claim is WITHDRAWN — the probe was run on a throttled machine.** This run
-    measured **10.6 tok/s** against last night's 15.82, and that was first written up here as
-    *"a longer context slows generation"*. **That attribution is unsupported and is retracted.**
-    Checked after the user flagged it: `pmset` reported **battery power, 46%, and `powermode 1` — Low
-    Power Mode ON**. The variable that actually differed between the two measurements is **the power
-    state, not the context length**, and no run varied context length with power held constant. This
-    is the failure the `a-dismissal-must-name-its-axis` note exists for: naming a mechanism without
-    varying it. **The 10.6 figure is not evidence about context, and 1,518s is an upper bound under
-    throttling rather than a duration this machine needs.** Whether context length affects the rate is
-    now an **open question with no measurement behind it either way**.
-  So `r(prompt_tokens, completion_tokens) = 0.072` still holds — the model reasons ~11k tokens
-  regardless of input, and this run's 11,417 sits squarely in last night's 9,960-12,548 band, which is
-  the one claim here **not** disturbed by the power state.
-  **Which numbers to trust (user, 2026-08-10): the overnight run was on mains and its figures stand;
-  the probe was on battery (`powermode 1`) and its durations are the outlier.** So 15.82 tok/s and the
-  900s-censored distribution are the sound data, and probe 1's 1,518s is a **throttled upper bound** —
-  good for the one thing it settled, that the commit needs materially more than 900s, and for nothing
-  finer. The probe was stopped after result 1 rather than finishing on battery.
-  **RAISING THE CAP DOES NOT RECOVER THE LOST REVIEWS — measured 2026-08-10, and this is the item's
-  central result.** Commit `e1cc17dc9` re-run on mains with the cap raised to **3600s** did **not**
-  complete: it ran **1,307s** and failed with `token-exhaustion` — *"ran out of tokens before it
-  finished writing its findings"*. The same commit at cap 2400s completed at 1,518s with one finding.
-  So the outcome is **nondeterministic**, and where the cap does not bind, **the reply token reserve
-  does**.
-  **Confirmed by Codex against the code, not inferred from the two runs.** The reserve is an
-  independent ceiling: `review-request.mjs:37,67` compute a default of
-  `min(32,768, floor(window / 2))` — 30,848 for this window — possibly shrunk further for a large
-  input, and that value goes on the wire verbatim as `max_tokens` (`:123,167`), while the wall-clock
-  expiry is minted separately from `maxMs` (`:183,197`). **Extra time cannot enlarge `max_tokens`**, so
-  that generation would have exhausted its tokens at a 7,200s deadline too. And with structured output
-  off by default (`:174,204`), **nothing constrains the reasoning that consumes the reserve**.
-  **The honest phrasing, as Codex put it:** *raising the wall-clock cap alone does not reliably recover
-  deadline-limited reviews; with the request unchanged it can simply move the binding constraint to the
-  fixed reply-token reserve, and both failure paths currently yield no scored findings.*
-  **Two loss shapes, not one — which the salvage candidate must handle separately.** On token
-  exhaustion a response HAS arrived and is judged unusable: `finishAnswer` throws and only the error
-  escapes (`answer-attempts.mjs:76,114`), and `adr/008:94` says a `length` reply is never parsed. On
-  deadline expiry the path throws before any answer reaches `finishAnswer` (`:51,125`). **One outcome
-  today, two salvage entry points**: recover a returned length-limited completion, versus retain and
-  interpret an interrupted stream.
-  **Codex's ranking, and it matches the user's instinct: salvage-on-loss is the highest-value change.**
-  Raising only the wall cap exposes token exhaustion; raising only the reserve moves the run back into
-  the wall cap; bounding reasoning explicitly is the right idea but the only mechanism that can enforce
-  it is the grammar `adr/003` disabled because it crashes this server. **Salvage must accept only
-  complete, independently parseable findings and label the run unresolved** — `adr/008:73`'s rule
-  exactly, positives are usable and absences are unknown — and its carried failure mode is censored or
-  malformed partial output: it will recover *some* lost reviews, never guarantee recovery.
-  **An open thread the records cannot settle:** whether the two runs of `e1cc17dc9` used the same
-  reserve. The completed run's envelope carries `estimatedTokens: 47798`; the starved run's error
-  envelope carries **no reserve or prompt size at all**. Codex flagged this and it is a real
-  observability gap — the attempt record should carry the reserve actually sent.
-  **A measurement trap, recorded because I fell into it:** commits were ranked as worst-case
-  candidates by **changed lines**, and that is the wrong proxy. `e1cc17dc9` has **86 changed lines**
-  yet a **165,115-character prompt** — the largest input of all 20 failures — because whole files are
-  sent alongside the diff (`adr/005`). Rank by built prompt size, never by diff size.
   **THE OBJECTIVE, restated by the user and it supersedes the quantile framing above: find the WORST
   CASE, then verify a cap above it lets the sweep complete.** Not "fit a distribution" — the censored
   sample cannot support that and does not need to. The experiment that answers it is **one overnight
@@ -2370,36 +2297,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   is not the binding constraint. **A cap is then set above the observed worst case**, with the margin
   stated. If a commit still hits 3600 the tail is longer than assumed and the salvage candidate below
   becomes the answer rather than a bigger number.
-  **The analysis cap is INERT, not redundant, and the difference decides whether it may be deleted.**
-  Asked directly 2026-08-10 and answered from every record on disk (132 `analysisLength` samples), not
-  from the docstrings. Two things share the name:
-  - **The reserve-derived cap (`analysisCapFor`) has earned its keep**: 25 truncations, every one at a
-    reserve-derived value — 28,000 (x10), 30,683 (x5), 47,724 (x2), 14,407 (x1), 7 unrecorded. That is
-    `adr/008`'s real point, a schema advertising more reasoning room than the reply budget could pay
-    for.
-  - **`ANALYSIS_CEILING = 74,000` has NEVER bound anything.** High-water mark across all 132 samples is
-    **49,316 characters**, 66% of it. Introduced at that value on 2026-07-28 (`b66a3d5`, OAI-15) and
-    never reached since; the 28,000 cuts predate it and belong to the fixed cap it replaced. Its
-    docstring calls it a wall-clock bound stopping a review that "would stop being worth waiting for".
-    **Nothing is doing that job.**
-  - **Both are dormant on the path that runs.** All 25 truncations fall between 2026-07-27 and 07-30;
-    since `adr/003` (2026-08-04) `analysisCap` is `null`.
-  **Inert is not redundant**: the mechanism sleeps because of a *separate* decision that OAI-117 built
-  `--structured-output` to reverse, and never-fired is not this repo's cannot-fire — 74,000 is
-  reachable given a reserve above ~22,700 tokens and a verbose enough model. `adr/009` wanted three
-  zero-yield runs before deleting a stage. **Do not read this as licence to delete it**; read it as
-  "it is not the thing to derive a cap from".
-  **COST IS NOT PREDICTABLE FROM THE COMMIT, so there is no per-commit budget to derive.** Measured
-  over the 18 completions: **r(prompt_tokens, completion_tokens) = 0.072** — essentially zero. A
-  3,933-token prompt drew 4,375 completion tokens; a 37,863-token prompt drew 5,945. Completions span
-  1,282-12,548 with no relation to input size. **r(completion_tokens, seconds) = 0.940.** So a cap is
-  a **quantile choice on an unpredictable, right-censored distribution**, never a sizing calculation.
-  **That r = 0.940 is the relation the fix should express.** Wall clock is a *proxy for tokens*, and it
-  is the worse of the two to store: seconds move with the model, the machine and its load, while tokens
-  do not. **A seconds cap calibrated today rots the moment any of those change — which is exactly how
-  900 came to be wrong.** A reasoning-token budget is machine-independent, and a `--max-seconds` should
-  be *derived from it* at a measured rate for the overshoot job `adr/021` actually assigns it, rather
-  than being the primary bound it accidentally became.
   **DECIDED 2026-08-10 (user, with Claude and Codex agreeing): SALVAGE-ON-LOSS, *AND* RAISE THE CAP.
   They are complementary, not alternatives.** An earlier draft of this line said "not raising the
   cap", and **that was too absolute — corrected on the user's challenge.** The measurement says
@@ -2412,41 +2309,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Ruled out and kept as rejected alternatives with their evidence: raising the *reserve* alone (moves
   the run back into the wall cap) and treating a tuned constant as the whole fix. **Not yet built**:
   this session's feature budget was spent on OAI-134.
-  **CAP VALUE: 1,800s, PROVISIONALLY — Claude and Codex agreeing, and the provisionality is the
-  point.** The evidence bounds it and does not identify it:
-  - **900s is too low** — 20 of 40 hit it exactly and the slowest *completion* was already 884s.
-  - **~1,518s is needed** by at least one useful review (and that was on a throttled machine).
-  - **More time cures nothing beyond that** — the 3,600s run exhausted tokens at 1,307s.
-  **There is NO evidence distinguishing 1,800 from 2,400.** The 2,400s experiment completed at 1,518s,
-  so it demonstrates only that *some* cap above 1,518 sufficed. 1,800 clears the one observed useful
-  duration by 282s (19%) while doubling rather than tripling worst-case exposure. **It is a
-  conservative operating decision, not an identified optimum**, and is to be revisited once salvage
-  produces uncensored timings.
-  **The coverage trade, computed rather than asserted.** The sweep is strictly sequential and checks
-  the overall deadline immediately before each review (`review-sweep.mjs:190`), so worst-case attempts
-  in a 10-hour night go **40 → 20 → 15** for 900 → 1,800 → 2,400. Those are ceilings, not expected
-  counts. The trade is worth taking because an extra commit attempted after a timeout does not
-  compensate for the timed-out commit returning nothing: the current setting buys breadth *in the form
-  of unknown coverage*.
-  **An interaction NEITHER of us had considered, found by Codex: a wall-clock deadline failure does
-  not count toward `--abort-after`, and it RESETS the consecutive-outage streak**, because every
-  non-outage sets the counter back to zero. So a hard commit can burn 1,800s without advancing the
-  outage counter, and **a higher cap can delay discovering a genuine server outage**. Worth checking
-  against OAI-119/OAI-120's territory before the value lands.
-  Confirmed safe: retries do **not** each get a fresh cap — `requestFindings` mints one absolute
-  expiry shared across attempts and the schema fallback (`review-request.mjs:187`), specifically to
-  prevent cap multiplication.
-  **A per-commit derived cap is the right eventual shape but is NOT buildable now.** The sweep knows
-  only the SHA and fixed options when it builds the child command (`review-sweep.mjs:120`), and the
-  request layer mints one immutable `expiresAt` before building the final ladder request (`:183`).
-  Prompt size alone cannot predict duration: cached vs cold prefill differs enormously (**11.5s vs
-  421.7s for the same prompt**, from the records), generation is 97-98% reasoning whose token count is
-  unknown before sending, and predicting from the whole reserve would be absurdly pessimistic. An
-  adaptive design needs persisted per-model/per-machine throughput observations or a progress-sensitive
-  deadline with a hard ceiling.
-  **The carried failure mode of 1,800s, stated: long-tail head-of-line blocking.** One pathological
-  commit can monopolise 30 minutes, cut nightly coverage, and overshoot the stop time by that much —
-  and anything needing more than 1,800s stays right-censored.
   What remains open is the **design of salvage** — two loss shapes, the labelling rule, and where the
   partial is captured — which needs its own grill.
   **FOURTH FIX CANDIDATE, and it may supersede the cap question: cap the time but KEEP THE WORK.**
@@ -2486,12 +2348,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   *"throw this away"* and starts meaning *"stop thinking and conclude"*. That is a defensible bound at
   almost any value, and — unlike a number calibrated to one model on one machine — **it does not rot
   when the model changes**, which is the failure mode every other candidate here shares.
-  Note the interaction before raising anything: a higher cap multiplies the **unwatched** window,
-  which is OAI-132 — and with no incremental record, a longer run risks more.
-  **One thing that WORKED, recorded so it is not re-litigated:** 20 `deadline-timeout`s produced
-  **zero aborts**. That reason is minted from the caller's own budget, and OAI-119 was filed because
-  it counted toward `--abort-after 3` — *"three slow commits abort a healthy sweep."* The OAI-120 fix
-  held in the field.
 - **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
   with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
   OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
@@ -2630,6 +2486,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   a live worker's row — OAI-67's central defect — and the shape recurred eight times inside one
   feature once anyone looked. **Cheap first step is a grep, not a redesign**, and the honest bound is
   that this is comment/ADR text, not behaviour: no code reads these sentences.
+  **NARROWED 2026-08-14 by the sweep, verified against disk — it is now ONE instance, not two.** The
+  `adr/020` site (e) discussion went with the deleted ADR corpus (`d1ad2aa`), and `task-submit.mjs`
+  has since been corrected on its own (*"a rejection may mean no child was ever created, or a child
+  that is alive"*). What remains is `tests/job-busy-spawn.test.js`'s header and test names —
+  *"already running and about to make a real, billable model call"* — which is **quoted test text, so
+  renaming it renames a live test**, exactly the reason this survived two claim sweeps.
 
 - **OAI-147** — **`tests/structure.test.js`'s orphaned-doc-comment guard is blind to a file's FIRST
   function, which is where the defect it exists for is most likely to be.** Filed 2026-08-12 from
@@ -2720,22 +2582,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Feedstock already exists**: every run leaves `review-sweep-<stamp>.ledger.jsonl` carrying per-commit
   `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
   not replace them.
-- **OAI-153** — **The ledger header carries no schema version, so a recovered streak is bound to the
-  build that recovers it.** Raised 2026-08-13 by `codex-adversarial` at pass 1 of OAI-132's review
-  ladder [high/0.96]; the documentation half shipped, the mechanism did not.
-  `isOutage` can change between a run and its recovery, so a later build may derive a streak the run
-  itself would never have computed. That is the cost of deriving rather than storing, and **ADR 022 now
-  states it**; a `schemaVersion` in the header would let a future build *detect* the mismatch instead of
-  silently suffering it. Not ship-blocking: in every real use the recovery tool runs against the same
-  build within hours. Deferred rather than dismissed — the stored-counter alternative is worse, since a
-  second representation of one fact is free to disagree with the entries beside it.
-- **OAI-154** — **Captured stdout/stderr can carry a credential, and file mode is the only thing
-  limiting who reads it.** Raised 2026-08-13 at pass 1 of OAI-132's ladder and split: **the file-mode
-  half shipped** (the ledger is created `0o600`, and at pass 2 the `.json` record too, since only those
-  two carry the raw streams — the rendered `.md` emits neither and is deliberately left at the umask).
-  **Redaction was deferred and stays deferred.** A base URL with an embedded credential is the subject
-  of the existing OAI-91/92/95, and widening a feature to cover it is how a feature stops converging.
-  Filed here so the split is on the record and the shipped half is not mistaken for the whole.
 - **OAI-155** — **The size ladder ends at the diff, so this repo's own large commits cannot be
   reviewed at all.** Filed 2026-08-14 from the overnight sweep. Two of the five never-reviewed
   commits were refused `oversize` in under a second: `d1ad2aa` at **128.9k estimated tokens** and
@@ -2813,3 +2659,50 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Coverage lookup is the one part with a dependency**: "has a prior ledger covered this SHA" is
   OAI-151's cross-run history. Until that exists `--plan-only` should print the sizing half and say
   the coverage column is unavailable, rather than growing its own second index.
+- **OAI-158** — **The tracker guard cannot see six of the seven parked items, so its "live and closed
+  out at once" check is blind over most of its own domain.** Filed 2026-08-14 by the backlog sweep,
+  **mutation-proved**, in the guard the PREVIOUS sweep shipped (OAI-104).
+  `tests/backlog-structure.test.js` `closedIds` matches `^- \*\*(OAI-n)\*\*` — the list shape — and
+  `BACKLOG_PARKED.md` writes the 2026-08-13 block as `### OAI-n — parked` headings. So the guard sees
+  exactly **`OAI-44`**, and is blind to **`OAI-7`, `OAI-36`, `OAI-43`, `OAI-47`, `OAI-82`,
+  `OAI-152`**.
+  **Positive control, both directions, in one run:** resurrect `OAI-43` as a live body in ID order and
+  add it to its tier index — the suite stays **6 pass / 0 fail**, so an item can be live and parked
+  simultaneously with nothing going red. Restored, still 6/0.
+  **The shape is this repo's signature and the location is the sting**: the guard was written because
+  the invariant it enforces had been prose naming a script that did not exist, and it found real drift
+  on its first run — but its own domain query cannot reach the file that the last sweep's worth bar
+  filled. A check that reports success over the case it was written for.
+  **Fix is one line and a decision**: match both shapes in `closedIds`, or normalise
+  `BACKLOG_PARKED.md` to one heading shape. Prefer matching both — the parked file's two shapes are a
+  real history (the `### ` block carries a reopening bar per item, the older `- ` entries do not), and
+  a guard should read the tracker as written rather than require the tracker to be rewritten for it.
+  **Whichever is chosen, the mutation above is the test**: a parked id resurrected as live must turn
+  the suite red.
+- **OAI-159** — **78 citations in this file point at an `adr/` corpus that no longer exists, and 37 of
+  the 99 live items depend on one.** Filed 2026-08-14 by the backlog sweep, counted rather than
+  estimated: `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
+  **This is a decision that was deferred, not an oversight** — and the deletion commit says so in its
+  own words: *"agents/oai-delegate.md and BACKLOG*.md are pinned by tests and were deliberately not
+  touched"*, while comment-only references elsewhere were *"left dangling as history, matching the
+  convention used for the deleted routing log"*. So the convention was chosen for code comments and
+  **never applied to the tracker**, which is the file where a citation is doing different work.
+  **Why the tracker is not the same case.** In a comment an `adr/020` reference is provenance a reader
+  can ignore. Here it is frequently the EVIDENCE: OAI-63 argues *"Against the ADR, precisely:
+  `adr/014:147-152` states the rule as three origins"*; OAI-69's urgency rests on ADR 014 accepting a
+  wedge *"on the stated condition"*; OAI-138's whole cap argument turns on what `adr/021` assigns the
+  deadline. Those claims are now **unverifiable by a reader**, and the ones with line numbers were
+  already citations into a mutable file.
+  **Distinct from the two items about counts** (OAI-110, OAI-146): those are about a figure stated in
+  two places drifting. This is about the referent being gone.
+  **The options, and none is "rewrite 78 citations by hand"** — that is the rebasing this repo's sweep
+  discipline forbids, since it re-rots within hours: (a) declare tracker ADR references historical,
+  the same convention the deletion used elsewhere, and say so once in this file's header rather than
+  78 times; (b) for the handful that are load-bearing evidence, replace the reference with the
+  **quoted sentence** it was standing in for, which survives the file it came from; (c) restore the
+  corpus. **(a) plus (b) for the load-bearing few is the cheap combination**, and (b) is the only part
+  that needs judgement — it means deciding which citations are evidence rather than provenance.
+  The full list of affected items, so the judgement pass has a worklist: OAI-11, OAI-13, OAI-19,
+  OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-59, OAI-63, OAI-64,
+  OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
+  OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.

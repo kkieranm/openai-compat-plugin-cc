@@ -1,3 +1,55 @@
+## 2026-08-14 — parked by the backlog sweep's worth bar
+
+Two items, both `not worth doing` — **never `refuted`**. Each framing is correct. The bar was applied
+to the ten items filed SINCE the 2026-08-13 pass, not re-applied to the 89 that pass already cleared:
+re-litigating a bar one day later is not a sweep, it is churn. Eight of the ten carried a dated
+instance; these two did not. **Every reopening bar here is an INSTANCE, not an argument.**
+
+### OAI-153 — parked, `not worth doing`
+
+**Why parked:** No instance. The item states its own harm as hypothetical — a later build deriving a
+streak the run itself would never have computed — and says outright it is "not ship-blocking: in every
+real use the recovery tool runs against the same build within hours". Verified 2026-08-14: the ledger
+header still carries no `schemaVersion` (`bench/lib/sweep-ledger.mjs`), so the mechanism is real and
+unfired. The record it cited to make itself filable, `adr/022`, was deleted with the ADR corpus.
+
+**Reopening bar (an instance, with a date):** A recovery run whose derived streak disagrees with the
+run's own — `bench/recover-sweep.mjs` producing a health section a reader acts on and that the original
+sweep would not have produced. Record the two streaks and the date.
+
+*Filing kept verbatim:*
+
+- **OAI-153** — **The ledger header carries no schema version, so a recovered streak is bound to the
+  build that recovers it.** Raised 2026-08-13 by `codex-adversarial` at pass 1 of OAI-132's review
+  ladder [high/0.96]; the documentation half shipped, the mechanism did not.
+  `isOutage` can change between a run and its recovery, so a later build may derive a streak the run
+  itself would never have computed. That is the cost of deriving rather than storing, and **ADR 022 now
+  states it**; a `schemaVersion` in the header would let a future build *detect* the mismatch instead of
+  silently suffering it. Not ship-blocking: in every real use the recovery tool runs against the same
+  build within hours. Deferred rather than dismissed — the stored-counter alternative is worse, since a
+  second representation of one fact is free to disagree with the entries beside it.
+
+### OAI-154 — parked, `not worth doing`
+
+**Why parked:** Its shipped half is shipped (the ledger and record are created `0o600`, verified
+2026-08-14 at `bench/lib/sweep-ledger.mjs` and `sweep-report.mjs`). Its live half is redaction, which
+the item itself assigns elsewhere — "a base URL with an embedded credential is the subject of the
+existing OAI-91/92/95" — so what remained here was a filing so the split was on the record, not work.
+No instance of a credential reaching a sweep artifact has been observed.
+
+**Reopening bar (an instance, with a date):** A credential actually found in a `bench/results/`
+artifact — the ledger, the record or a captured stderr stream — quoted with the run stamp it came from.
+
+*Filing kept verbatim:*
+
+- **OAI-154** — **Captured stdout/stderr can carry a credential, and file mode is the only thing
+  limiting who reads it.** Raised 2026-08-13 at pass 1 of OAI-132's ladder and split: **the file-mode
+  half shipped** (the ledger is created `0o600`, and at pass 2 the `.json` record too, since only those
+  two carry the raw streams — the rendered `.md` emits neither and is deliberately left at the umask).
+  **Redaction was deferred and stays deferred.** A base URL with an embedded credential is the subject
+  of the existing OAI-91/92/95, and widening a feature to cover it is how a feature stops converging.
+  Filed here so the split is on the record and the shipped half is not mistaken for the whole.
+
 ## 2026-08-13 — parked by the backlog sweep's worth bar
 
 Six items, all `not worth doing` — **never `refuted`**. Each framing is correct; none named an instance
