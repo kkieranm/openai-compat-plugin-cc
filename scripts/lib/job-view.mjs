@@ -5,8 +5,14 @@
 //
 // 1. **Reconciliation writes.** Reading is when a dead worker is noticed, so
 //    `/oai:status` is also the thing that collects one. That is deliberate —
-//    there is no daemon here, and a job whose worker died would otherwise sit
-//    `running` forever, blocking every successor.
+//    there is no daemon here, so a job whose worker died sits `running` until
+//    something looks, and forever if nothing ever does. It does not hold the
+//    queue meanwhile: `job-queue.mjs` `decide` reconciles a dead running row and
+//    carries on past it. A row that WEDGES a queue is instead one no reconciler
+//    may touch — the live worker that has stopped beating is one such shape, and
+//    the rest are whatever `queuedRole` refuses to skip. Named there rather than
+//    listed here, because an enumeration copied into a comment goes stale the
+//    moment that rule grows a case.
 // 2. **`stalled` and `overdue` are derived, never stored.** They are statements
 //    about *now* — a live pid that has stopped beating, a run past its own cap —
 //    and a column holding one would be a cached answer to a question whose
@@ -14,6 +20,7 @@
 import { STALE_BEAT_MS, livenessOf, relevantPid } from './job-liveness.mjs';
 import { isTerminal, listJobs } from './job-record.mjs';
 import { reconcile } from './job-reconcile.mjs';
+import { scanQueued } from './job-queue.mjs';
 import { USER_VERSION, openStore, openStoreForReading } from './job-store.mjs';
 
 /**
@@ -39,10 +46,12 @@ export function openJobs() {
  * Bring every non-terminal row up to date with its process, and say which ones
  * that finished off.
  *
- * **Not filtered by workspace, while the display is.** A dead worker's row
- * blocks the *global* queue, so skipping it because the reader happened to be
- * in a different checkout would leave a queue wedged by something no `/oai:status`
- * run in that directory could ever collect.
+ * **Not filtered by workspace, while the display is.** A dead worker's row is
+ * this machine's garbage wherever it was submitted from, and a reader scoped to
+ * its own checkout would leave rows only some *other* directory's `/oai:status`
+ * could ever collect — including the row a user in this directory is being told
+ * about. (It is not that a dead row wedges the queue: `decide` reconciles one
+ * and carries on. It is that nothing else ever collects it.)
  */
 export function reconcileAll(db, { nowMs = Date.now(), at = new Date().toISOString() } = {}) {
   const collected = [];
@@ -112,18 +121,128 @@ export function viewOf(row, nowMs = Date.now()) {
 }
 
 /**
- * The rows a bare `/oai:status` shows: this workspace's, plus whatever is
- * running anywhere.
+ * The `seq` of the row this workspace's queued job is actually waiting on, or
+ * `null`.
  *
- * That second half is not a convenience. A job running in another checkout is
+ * **Blocking is DERIVED and RELATIONAL — it is not a state, and it is not a
+ * property of a row.** The same queued row blocks one caller and not another,
+ * so this asks "blocks whom?" and the answer needs both operands. Nothing here
+ * may be reduced to a predicate over a single row: `queuedRole` returns `blocks`
+ * only for the *pathological* rows, while an ordinary live known-version head
+ * returns `head` and still blocks everyone behind it through `decide`'s `seq`
+ * comparison. A filter on `queuedRole === 'blocks'` would ship, pass a test, and
+ * hide the commonest blocker there is.
+ *
+ * **It also has TWO RUNGS, in `decide`'s order, because `decide` has two.** An
+ * earlier revision consulted the queued rung alone and marked the queued head
+ * while a live *running* row was what `tryAcquire` actually stopped at — naming
+ * a row the user could clear without their job moving, which is this item's own
+ * defect wearing new clothes. The rungs are: a non-dead running row, then the
+ * queue's head. Only a FOREIGN blocker is named; a local one needs no
+ * explanation, and falling through to the next rung instead of returning would
+ * reinstate the mismatch.
+ *
+ * `scanQueued` is the queue's own head rule, imported rather than restated. The
+ * liveness handed to it is the one `viewOf` already resolved, so no pid is
+ * probed twice, and `onSkip` is a no-op: **reading must not reconcile here.**
+ * `cmd-status.mjs` has already run `reconcileAll` where that was allowed, and
+ * deliberately has not on a database a newer plugin wrote.
+ *
+ * The witness must be **uncancelled**: `decide` returns `cancelled` before it
+ * ever scans the queue, so a local row with a pending cancellation is blocked by
+ * nothing and cannot show that anyone is being starved. Reading that condition
+ * as redundant is how it would get deleted.
+ *
+ * The witness must also carry **positive evidence that something is waiting on
+ * its behalf** — `live`, or `starting`. `starting` is admitted for the ordinary
+ * case: `registerWaiter` runs in the worker, so a normal submission reads
+ * `starting` for its whole spawn window, and hiding the blocker from it would
+ * miss the commonest case there is. It is **not** only that case — `livenessOf`
+ * also answers `starting` for a submission whose parent died before spawning
+ * anything, so this admits a false positive for up to `STARTUP_GRACE_MS`, after
+ * which the row becomes `never-started` and reconciliation collects it.
+ * Evidence, not proof: see the recycled-pid limit below.
+ *
+ * A `dead`, `never-started` or `malformed` local row is excluded, and the rule is
+ * a **conservative evidence threshold**: the marker is a causal sentence the user
+ * acts on — cancelling a job in another checkout, say — so it is printed only on
+ * positive evidence that something here is waiting, and absence of evidence is
+ * read as no. For a row that truly has no waiter the sentence is not vacuously
+ * true but FALSE: that job cannot proceed whatever clears ahead of it.
+ *
+ * **Two limits, both real, neither fixable here.** A `malformed` row is not
+ * permanently caller-less — `registerWaiter` can still attach a worker to it,
+ * after which it reads `live` — so excluding it hides the blocker for that
+ * window: a transient false negative, accepted because the alternative is a
+ * confident false accusation. And `live` proves only that the pid NUMBER exists
+ * (`job-liveness.mjs` `isAlive`), so a dead worker whose pid was recycled passes
+ * condition 5 and the marker can still blame a healthy foreign job. That is the
+ * recycled-pid wedge this whole item exists downstream of, not something a
+ * display predicate can close.
+ *
+ * An earlier revision instead argued the witness need not be viable at all,
+ * because "`decide` blocks such a row too". That was withdrawn at review: it is
+ * unfalsifiable for the rows it was about, since a row with no caller issues no
+ * `tryAcquire` and so produces no verdict to disagree with.
+ */
+function blockingSeqFor(views, cwd) {
+  const queued = views.filter((view) => view.state === 'queued').sort((a, b) => a.seq - b.seq);
+  // Sorted ascending on purpose: `listJobs` is `seq DESC`, and "ahead of me"
+  // read off that order is inverted — it would name a wrong row, plausibly.
+  const eligible = (view) => view.workspace === cwd
+    && !view.cancel_requested_at
+    && (view.liveness === 'live' || view.liveness === 'starting');
+  if (!queued.some(eligible)) return null;
+
+  // Rung one, and it must come first because `decide` does: the running loop
+  // returns `blocked` before queue order is ever consulted, so whenever a
+  // non-dead running row exists it is what every local job is actually waiting
+  // on. Marking the queued head here instead named a row that clearing would not
+  // help — the defect this feature exists to remove, in a new place.
+  // NO seq comparison: `decide`'s running loop makes none, and a malformed
+  // running row's seq is arbitrary by definition.
+  const running = views
+    .filter((view) => view.state === 'running')
+    .sort((a, b) => a.seq - b.seq)
+    .find((view) => view.liveness !== 'dead');
+  // A local blocker explains itself — and falling through to the queued head
+  // here would re-create exactly the mismatch this rung was added to fix.
+  if (running) return running.workspace === cwd ? null : running.seq;
+
+  // Rung two: nothing is running, so the queue's own head is the blocker.
+  // The `!head` arm is defensive and currently unreachable — an eligible witness
+  // is `live` or `starting`, neither of which `queuedRole` skips, so the scan
+  // always finds one. Said here so a reader does not go hunting for its case.
+  const { head } = scanQueued(queued, (view) => view.liveness, () => {});
+  if (!head || head.workspace === cwd) return null;
+  return queued.some((view) => eligible(view) && view.seq > head.seq) ? head.seq : null;
+}
+
+/**
+ * The rows a bare `/oai:status` shows: this workspace's, whatever is running
+ * anywhere, and — when the row the queue currently stops at is a queued one from
+ * elsewhere — that row too. Note "currently stops at", not "is stuck behind":
+ * this workspace may be behind several foreign rows, and exactly one is shown.
+ *
+ * None of those three is a convenience. A job running in another checkout is
  * precisely what the jobs here are queued behind, and a malformed row holding
  * the head of the queue is the one thing a user most needs to see — hiding
  * either because it belongs to a different directory would leave a stuck queue
- * with no visible cause.
+ * with no visible cause. The third clause is the one that makes that true rather
+ * than merely intended: an ordinary queued job ahead of yours in another checkout
+ * is `queued`, not `running`, and belongs to a different directory — so the first
+ * two clauses drop exactly the row you most need to see.
  */
 export function statusView(db, { cwd, all = false, nowMs = Date.now() } = {}) {
   const rows = listJobs(db).map((row) => viewOf(row, nowMs));
-  if (all) return { shown: rows, elsewhere: 0 };
-  const shown = rows.filter((row) => row.workspace === cwd || row.state === 'running');
-  return { shown, elsewhere: rows.length - shown.length };
+  // Computed on both paths, so `--all` can mark the blocker too and the renderer
+  // never meets a result whose shape depends on which branch produced it.
+  const blockingSeq = blockingSeqFor(rows, cwd);
+  if (all) return { shown: rows, elsewhere: 0, blockingSeq };
+  // A third disjunct rather than an append: a blocker that already satisfies one
+  // of the first two would otherwise be listed twice.
+  const shown = rows.filter(
+    (row) => row.workspace === cwd || row.state === 'running' || row.seq === blockingSeq,
+  );
+  return { shown, elsewhere: rows.length - shown.length, blockingSeq };
 }

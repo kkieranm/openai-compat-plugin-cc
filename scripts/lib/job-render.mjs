@@ -58,6 +58,16 @@ export function excerptOf(row) {
  */
 function noteFor(view, nowMs) {
   if (view.display === 'malformed') {
+    // Split by state, because `displayOf` reaches `malformed` from two shapes and
+    // the old single sentence described one of them. A malformed QUEUED row is
+    // not running, and — unlike the running shape — it holds the line only when
+    // it is the first row the queue's scan does not skip, which one row cannot
+    // know about itself. Saying "it blocks the queue" here would be a relational
+    // claim made by a function that has no caller to be relational about.
+    if (view.state === 'queued') {
+      return 'malformed: queued with a timestamp this build cannot read.'
+        + ' While it stays in this shape, this build will neither start it nor collect it.';
+    }
     return 'malformed: running with no worker pid recorded. It blocks the queue and this build will not guess at it.';
   }
   if (view.display === 'overdue') {
@@ -93,8 +103,18 @@ function summaryLine(view, nowMs) {
   return `${view.id}  ${view.display.padEnd(13)} ${relativeAge(view.created_at, nowMs).padEnd(8)} ${excerptOf(view)}`;
 }
 
+/**
+ * Why a row belonging to somewhere else is on this screen at all.
+ *
+ * **The only relational statement this file makes**, and it is printed for one
+ * row: the one `blockingSeqFor` identified. Not "takes its turn first" — a
+ * pathological head may never take a turn at all, and holds the line until a
+ * human deals with it. "Must clear" is true of both.
+ */
+const BLOCKING = 'must clear before this workspace\'s queued job can proceed.';
+
 /** The list a bare `/oai:status` prints. */
-export function renderList({ shown, elsewhere }, { cwd, all, nowMs = Date.now() }) {
+export function renderList({ shown, elsewhere, blockingSeq = null }, { cwd, all, nowMs = Date.now() }) {
   if (shown.length === 0) {
     const scope = all ? '' : ` in ${cwd}`;
     const rest = elsewhere > 0 ? ` (${elsewhere} elsewhere — pass --all to see them)` : '';
@@ -106,7 +126,17 @@ export function renderList({ shown, elsewhere }, { cwd, all, nowMs = Date.now() 
   const lines = [`${shown.length} background job${shown.length === 1 ? '' : 's'}, ${scope}${rest}\n`];
   for (const view of shown) {
     lines.push(summaryLine(view, nowMs));
-    if (view.workspace !== cwd && !all) lines.push(`  ${view.workspace}`);
+    // `--all` normally drops the workspace line — the header already says the
+    // listing is machine-wide, so a directory under each row is noise there —
+    // but the MARKED row keeps it either way: a line saying
+    // this job is holding yours up, with no directory to go and look in, names a
+    // cause the reader cannot act on. Written as one condition rather than a
+    // second push inside the marker branch, so both paths print these two lines
+    // in the same order.
+    if (view.workspace !== cwd && (!all || view.seq === blockingSeq)) lines.push(`  ${view.workspace}`);
+    // Before the row's own note: this answers "why am I being shown this", which
+    // is the question a reader has first about a row from another directory.
+    if (view.seq === blockingSeq) lines.push(`  ! ${BLOCKING}`);
     const note = noteFor(view, nowMs);
     if (note) lines.push(`  ! ${note}`);
   }

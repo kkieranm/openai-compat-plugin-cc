@@ -25,9 +25,20 @@ Core constraints:
 
 What it shows:
 
-- With no arguments: jobs submitted from the current directory, plus anything running anywhere,
-  since a job running in another checkout is what the jobs here are queued behind. A count of the
-  rest is shown at the top.
+- With no arguments: jobs submitted from the current directory, plus anything running anywhere; and
+  when the job obstructing this directory is a *queued* one in another checkout, that row is shown
+  too — under the same condition as the flag described below, since being shown and being flagged are
+  the same decision. A count of the rest is shown at the top.
+- The obstructing row is flagged `! must clear before this workspace's queued job can proceed.` It is
+  whichever row the queue itself stops at — the running job if one is running, otherwise the job at
+  the head of the queue. The flag appears only while something here is verifiably waiting: a local job
+  that is live, or still inside its startup grace. Your own jobs are never flagged, since they need no
+  explaining.
+- **Only the obstruction the queue reaches first is flagged, and clearing it does not mean your job
+  runs next.** Other jobs from other checkouts may still be ahead of yours, queued behind the flagged
+  one and counted in the tally rather than listed; `--all` shows them. The flag says what must clear,
+  never what happens after. Nor does it always call for action: an ordinary running or queued job
+  clears by finishing, and the states below say which ones need dealing with by hand.
 - `--all`: every job on this machine, whichever directory it was submitted from.
 - With a job id: that one job in full, resolved from **any** directory — an id handed between
   sessions keeps working wherever it is used.
@@ -42,10 +53,14 @@ Reading the states:
   to deal with by hand.
 - `overdue` — past its own `--max-seconds` cap while its process is still alive. Same caveat.
 - `cancelling` — someone ran `/oai:cancel` on it and its worker has not exited yet. It stops at its
-  next check-in, a few seconds away, and then reads `cancelled`. A job showing `stalled` instead will
-  never see the request.
-- `malformed` — a row this build cannot have produced (running with no worker pid). It blocks the
-  queue and is reported rather than guessed at.
+  next check-in. It then reads `cancelled` only if the worker confirms that is why it stopped; a
+  worker that dies without confirming reads `failed`, with the reason `cancel-unconfirmed`. A job
+  showing `stalled` instead will never see the request.
+- `malformed` — a row this build cannot have produced, reported rather than guessed at. Two shapes,
+  and they do not block the same people. A **running** row with no worker pid blocks every job waiting
+  for a turn, until it is dealt with. A **queued** row whose timestamps will not parse holds the line only
+  while it is the first row the queue does not skip — behind another blocker it stops nobody — and it
+  is stuck only while it stays in that shape: a worker that registers against it can still pick it up.
 - `completed`, `failed`, `cancelled`, `queue-timeout` — finished. `queue-timeout` means the job gave
   up waiting for its turn under `--max-wait` and never contacted the model.
 

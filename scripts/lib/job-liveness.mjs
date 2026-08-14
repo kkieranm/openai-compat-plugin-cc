@@ -71,9 +71,18 @@ export function relevantPid(row) {
  *
  * `malformed` covers two shapes this build cannot produce and will not guess at:
  * a `running` row with no pid (state and pid are written in one statement here,
- * so it is legacy or corrupt), and a timestamp that will not parse. Both block
- * the queue and are surfaced rather than reconciled — failing closed costs a
- * stuck queue the user is told about, where guessing costs someone's live run.
+ * so it is legacy or corrupt), and a timestamp that will not parse. Both are
+ * surfaced rather than reconciled — failing closed costs a stuck queue the user
+ * is told about, where guessing costs someone's live run.
+ *
+ * **What they block is not the same, and saying "both block the queue" was
+ * wrong.** Neither blocks a caller that never reaches the scans: `job-queue.mjs`
+ * `decide` returns `cancelled` first. Of the callers that do reach them, the
+ * RUNNING shape blocks every one — the running loop rejects any row that is not
+ * provably dead, before queue order is consulted. The QUEUED shape blocks only
+ * the callers behind it, and only while it is the first row `scanQueued` does
+ * not skip: with an ordinary head at seq 1, this shape at seq 2 and a caller at
+ * seq 3, the scan stops at seq 1 and never looks at seq 2 at all.
  */
 export function livenessOf(row, nowMs) {
   const pid = relevantPid(row);

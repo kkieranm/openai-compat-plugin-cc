@@ -62,6 +62,37 @@ function queuedRole(row, liveness) {
 }
 
 /**
+ * The head of the queue: the first row `queuedRole` does not skip.
+ *
+ * **The one definition of who is at the front**, exported because `/oai:status`
+ * has to name that row and a second copy of this rule in the view would drift
+ * the moment `queuedRole` gains a case. `rows` must be ASCENDING by `seq`, which
+ * is queue order — `rowsInState` gives that and `listJobs` does not.
+ *
+ * **`onSkip` is a callback and not a returned list, and that is load-bearing —
+ * for `decide`.** Its `livenessAt` is `livenessOf`, which asks the OS about a pid
+ * at the moment it is called, so a skipped row must be reconciled BEFORE the next
+ * row is probed, exactly as the loop this replaced did. (A read-only caller can
+ * pass a liveness already resolved elsewhere, and `/oai:status` does exactly that
+ * — for it the ordering is moot, and it passes a no-op `onSkip` besides.) Collecting the skips and reconciling them afterwards would move
+ * every probe ahead of every reconcile, and a process dying during that window
+ * would turn a `tryAcquire` that makes progress into one that returns `blocked`.
+ * Rare, and in the safe direction, but it is a verdict change.
+ *
+ * Rows after the head are never examined — which is why a row that `blocks` can
+ * sit behind the head and hold up nobody.
+ */
+export function scanQueued(rows, livenessAt, onSkip) {
+  for (const row of rows) {
+    const liveness = livenessAt(row);
+    const role = queuedRole(row, liveness);
+    if (role !== 'skip') return { head: row, role };
+    onSkip(row, liveness);
+  }
+  return { head: null, role: null };
+}
+
+/**
  * The decision itself, run inside the transaction. Returns `acquired`,
  * `blocked`, `cancelled` or `gone`.
  */
@@ -85,18 +116,16 @@ function decide(db, seq, pid, nowMs, at) {
     reconcile(db, row, { nowMs, at, liveness });
   }
 
-  for (const row of rowsInState(db, 'queued')) {
-    const liveness = livenessOf(row, nowMs);
-    const role = queuedRole(row, liveness);
-    if (role === 'blocks') return 'blocked';
-    if (role === 'skip') {
-      reconcile(db, row, { nowMs, at, liveness });
-      continue;
-    }
-    if (row.seq !== seq) return 'blocked';
-    return claimJob(db, seq, pid, at) ? 'acquired' : 'blocked';
-  }
-  return 'gone';
+  const { head, role } = scanQueued(
+    rowsInState(db, 'queued'),
+    (row) => livenessOf(row, nowMs),
+    (row, liveness) => reconcile(db, row, { nowMs, at, liveness }),
+  );
+  // Every queued row skipped, so there is no queue left to be at the head of.
+  if (!head) return 'gone';
+  if (role === 'blocks') return 'blocked';
+  if (head.seq !== seq) return 'blocked';
+  return claimJob(db, seq, pid, at) ? 'acquired' : 'blocked';
 }
 
 /** One attempt at the head of the queue. */

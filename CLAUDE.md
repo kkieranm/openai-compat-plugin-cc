@@ -109,6 +109,10 @@ than as a tidy cancellation; a `queued` one provably sent nothing and needs no a
 `job-retention.mjs` keeps the newest 50 finished jobs, deleting each row
 before its log so that a crash in between leaves an orphan the same sweep already collects. What the
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem.
+**Blocking is relational, not a state**, so `job-queue.mjs` `scanQueued` is the one definition of the
+queue's head — `decide` dispatches on it, and `job-view.mjs` `blockingSeqFor` walks `decide`'s own two
+rungs (a non-dead running row, else that head) to name the foreign row a bare `/oai:status` marks,
+gated on this workspace holding a queued job that is live or still inside its startup grace.
 
 `scripts/lib/job-busy.mjs` `withBusyRetry` bounds a `SQLITE_BUSY` by elapsed time at seven enumerated sites,
 while skip-only callers keep a bare `isBusy` catch and the store's open takes the exclusive WAL lock only

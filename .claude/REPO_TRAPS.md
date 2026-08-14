@@ -981,21 +981,45 @@ same substitution of a nearby signal for the fact itself.
 
 ## A visibility filter keyed on raw state, where blocker-ness is a derived property
 
-Confirmed 2026-08-05 (OAI-58 ladder), executed.
+Confirmed 2026-08-05 (OAI-58 ladder), executed. **Fixed by OAI-64, 2026-08-14** — the code below is
+history, and the correction underneath it is the part worth reading twice.
 
-`job-view.mjs:127` decides what a bare `/oai:status` shows from another workspace with
-`row.workspace === cwd || row.state === 'running'`. But whether a row **blocks the queue** is decided
-by `job-queue.mjs`'s `queuedRole()`, which returns `blocks` for a queued row that is
-live-but-unknown-version, `starting`, or `malformed`. **Every one of those has `state='queued'`**, so
-the filter excludes exactly the rows the user most needs to see — while the file's own comment eight
-lines above says "a malformed row holding the head of the queue is the one thing a user most needs to
-see", and ADR 014 promises the same.
+As found in 2026-08-05's terms: `job-view.mjs:127` decided what a bare `/oai:status` shows from
+another workspace with `row.workspace === cwd || row.state === 'running'`. But whether a row **blocks
+the queue** was said to be decided by `job-queue.mjs`'s `queuedRole()`, which returns `blocks` for a
+queued row that is live-but-unknown-version, `starting`, or `malformed`. **Every one of those has
+`state='queued'`**, so the filter excluded exactly the rows the user most needs to see — while the
+file's own comment eight lines above said "a malformed row holding the head of the queue is the one
+thing a user most needs to see", and ADR 014 promised the same. (That corpus was deleted 2026-08-13,
+OAI-159; the constraint now lives inline at the code it protects.)
 
-The sting: `viewOf()` runs at line 125, one line *before* the filter, and had already computed the
-note ("pid N is alive but has not beaten since 10m ago"). The information was in hand and thrown away.
+**Correction, OAI-64, 2026-08-14 — the diagnosis above was itself incomplete, and building from it
+would have shipped a fix that did not work.** Blocker-ness is not a derived property of a row either.
+It is a RELATION between two rows: `queuedRole` returns `blocks` only for the *pathological* shapes,
+while an ordinary live known-version queued row returns **`head`** and still blocks everyone behind it,
+through `decide`'s `row.seq !== seq` branch. The reproduction recorded in OAI-64 — a queued job
+elsewhere whose waiter is alive but silent — is that ordinary case, so a filter written to the
+enumeration above would have passed a test drawn from the item's own transcript and still hidden the
+commonest blocker there is. The fix exports the queue's head rule (`scanQueued`) and asks it "blocks
+whom?", with the asking workspace as the second operand — and, per the second correction below, walks
+the running rung before that head is ever consulted.
 
-**The rule**: when a predicate exists in derived form, filtering on the raw column that *usually*
-correlates with it will diverge the moment the derivation grows a case the column does not carry. Two
+**Second correction, from OAI-64's own review pass 2 — and this one is the more useful of the two,
+because the FIX made the mistake the entry is about.** The first implementation of that fix consulted
+the queued rung alone. `decide` has two rungs: it returns `blocked` from its running loop *before* queue
+order is ever consulted. So with a live running row present, the display marked the queued head — a row
+the user could clear with no effect — while the row actually holding them sat unmarked below it.
+Proven by executing it, not argued. **A display that claims to mirror a decision must mirror ALL of that
+decision's exits, in order; sharing one rung of it is what makes the mismatch look impossible.**
+
+The sting, as recorded then: `viewOf()` ran at then-line 125, one line *before* the then-filter, and
+had already computed the note ("pid N is alive but has not beaten since 10m ago"). The information was
+in hand and thrown away. (Both coordinates are the 2026-08-05 file; neither resolves in today's.)
+
+**The rule**, strengthened by the correction: when a predicate exists in derived form, filtering on the
+raw column that *usually* correlates with it will diverge the moment the derivation grows a case the
+column does not carry — and before reaching for the derived predicate instead, check that it takes only
+one operand. Here no per-row predicate could ever have been right. Two
 things make this worse than an ordinary bug — the divergence is silent, and here the discarded display
 was the **stated mitigation** for an accepted design risk (the recycled-pid wedge), so a display defect
 quietly voided a correctness trade-off recorded in an ADR. **Check whether anything upstream accepted a
