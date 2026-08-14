@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { TERMINAL_STATES } from '../scripts/lib/job-record.mjs';
 import { renderDetail } from '../scripts/lib/job-render.mjs';
 import { viewOf } from '../scripts/lib/job-view.mjs';
+import { ABANDON_SPEC } from '../scripts/lib/cmd-abandon.mjs';
 import { CANCEL_SPEC } from '../scripts/lib/cmd-cancel.mjs';
 import { RESULT_SPEC } from '../scripts/lib/cmd-result.mjs';
 import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
@@ -33,6 +34,7 @@ const DELEGATE = join(AGENTS_DIR, 'oai-delegate.md');
 // written after finding /oai:task had accepted --system with no mention of it
 // anywhere in commands/task.md.
 const SPECS = {
+  'abandon.md': ABANDON_SPEC,
   'cancel.md': CANCEL_SPEC,
   'result.md': RESULT_SPEC,
   'review.md': REVIEW_SPEC,

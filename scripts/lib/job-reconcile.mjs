@@ -4,10 +4,18 @@
 //
 // 1. **No reconciler terminalizes a job whose pid is alive.** Finite recovery
 //    from a stale worker, zero overlap of model calls, and never signalling a
-//    process cannot all hold at once; this repo keeps the first two by paying in
-//    recovery — a suspended or recycled-pid worker wedges the head of the queue
-//    and is named in `/oai:status` for a human to act on. This does not stop a
-//    worker ending its *own* run on cancel or `--max-wait`.
+//    process cannot all hold at once; automatically this repo keeps the LAST two
+//    by paying in recovery — a suspended or recycled-pid worker wedges the head
+//    of the queue and is named in `/oai:status` for a human to act on. (It read
+//    "the first two" until 2026-08-14, which contradicted the same sentence's
+//    "paying in recovery" and the wedge described right after it.) This does not
+//    stop a worker ending its *own* run on cancel or `--max-wait`.
+//
+//    **Only the operator may trade that corner back**, and `/oai:abandon` is
+//    where: it buys finite recovery by spending zero-overlap, per invocation and
+//    on an explicit request. Never-signalling stays absolute for everyone. This
+//    rule is about RECONCILERS and is unchanged — nothing here terminalizes a
+//    live pid, then or now.
 // 2. **A row a newer plugin wrote is never mutated and never deleted.** It is
 //    skipped instead. Reinterpreting columns that merely look familiar is how an
 //    older build corrupts a newer one's state while believing it is helping.

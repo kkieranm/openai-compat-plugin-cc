@@ -17,7 +17,7 @@
 //    about *now* — a live pid that has stopped beating, a run past its own cap —
 //    and a column holding one would be a cached answer to a question whose
 //    answer changes while nobody is looking.
-import { STALE_BEAT_MS, livenessOf, relevantPid } from './job-liveness.mjs';
+import { beatIsStale, livenessOf, relevantPid } from './job-liveness.mjs';
 import { isTerminal, listJobs } from './job-record.mjs';
 import { reconcile } from './job-reconcile.mjs';
 import { scanQueued } from './job-queue.mjs';
@@ -71,15 +71,6 @@ export function deadlineOf(row) {
   const started = Date.parse(row.started_at ?? '');
   if (!Number.isFinite(maxMs) || !Number.isFinite(started)) return null;
   return started + maxMs;
-}
-
-function beatIsStale(row, nowMs) {
-  const last = Date.parse(row.last_beat_at ?? '');
-  // No beat has ever been recorded, yet the pid is alive: that is a worker still
-  // getting started, not a stalled one. Inventing a stall here would flag every
-  // job during its first moments.
-  if (!Number.isFinite(last)) return false;
-  return nowMs - last > STALE_BEAT_MS;
 }
 
 /**

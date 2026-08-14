@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runAbandon } from './lib/cmd-abandon.mjs';
 import { runCancel } from './lib/cmd-cancel.mjs';
 import { runResult } from './lib/cmd-result.mjs';
 import { runReview } from './lib/cmd-review.mjs';
@@ -10,6 +11,7 @@ import { UserError } from './lib/errors.mjs';
 
 const COMMANDS = {
   setup: runSetup, task: runTask, review: runReview, status: runStatus, result: runResult, cancel: runCancel,
+  abandon: runAbandon,
 };
 
 // Dispatched, but never advertised: `task-worker` is how `--background` re-execs

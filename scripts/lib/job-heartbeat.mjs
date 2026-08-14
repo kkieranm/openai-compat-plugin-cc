@@ -34,6 +34,12 @@ export const BEAT_MS = 5_000;
  * once, which is the one thing the queue exists to prevent. The row therefore
  * stays `running` until the pid is observed dead, exactly as before.
  *
+ * **One command may do what this refuses to**, and stating it here keeps this
+ * comment from asserting an invariant the code beside it no longer guarantees:
+ * `/oai:abandon` writes that terminal row for a live pid on an explicit operator
+ * request, and tells the operator the overlap is now possible. The rule this
+ * paragraph states is intact for every path that is not that command.
+ *
  * What IS new (OAI-66) is a file beside the job log saying the exit was asked
  * for. Without it a later reader cannot tell this exit from a crash, and it
  * published both as a clean `cancelled` — discarding a real crash diagnosis.

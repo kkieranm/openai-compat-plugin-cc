@@ -117,3 +117,109 @@ test('the blocker reaches the screen through the real command', { skip: NEEDS_SQ
     await scenario.server.close();
   }
 });
+
+test('the way out is named on the blocker only when taking it would work', { skip: NEEDS_SQLITE }, () => {
+  // Three conditions, and two are not properties of the row: the beat is stale,
+  // the row's version is one this build knows, and the database is writable.
+  // `/oai:status` reads a database `/oai:abandon` would refuse outright, so
+  // naming the command unconditionally is advice a reader can only discover is
+  // wrong by taking it.
+  const stale = stateDir();
+  theirHead(stale, { beatAgoMs: 90_000 });
+  myJob(stale, { beatAgoMs: 1_000 });
+  viewHere(stale, (view) => {
+    assert.match(renderList(view, { cwd: HERE, all: false }), /\/oai:abandon theirs/);
+  });
+
+  // Same fixture, read from a database a newer plugin wrote: every write refuses
+  // there, so the line must not appear.
+  viewHere(stale, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false, readOnly: true });
+    assert.match(text, /must clear before/, 'the blocker is still named');
+    assert.doesNotMatch(text, /oai:abandon/);
+  });
+
+  // Same fixture but the beat is fresh — abandon would refuse without --force,
+  // and the display does not advertise a command that will say no.
+  const beating = stateDir();
+  theirHead(beating, { beatAgoMs: 1_000 });
+  myJob(beating, { beatAgoMs: 1_000 });
+  viewHere(beating, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    assert.match(text, /must clear before/);
+    assert.doesNotMatch(text, /oai:abandon/);
+  });
+
+  // And a row this build may not touch at all, where --force would not help
+  // either. Differs from the first fixture in exactly the schema version.
+  const foreign = stateDir();
+  theirHead(foreign, { beatAgoMs: 90_000, version: 99 });
+  myJob(foreign, { beatAgoMs: 1_000 });
+  viewHere(foreign, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    // The control its two siblings have. An unknown-version live head is still
+    // the row `blockingSeqFor` names, so the marker DOES render here and only
+    // `remedyFor` suppresses the pointer — without asserting that, this block
+    // would pass just as well if foreign-version rows stopped being marked at all.
+    assert.match(text, /must clear before/);
+    assert.doesNotMatch(text, /oai:abandon/);
+  });
+});
+
+test('a MALFORMED blocker is named but no remedy is offered for it', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // A running row with no worker pid and a stale, PARSEABLE beat. `theirHead`
+  // cannot build it — that helper sets a live waiter pid on a queued row — and a
+  // `starting` row would not discriminate, because it has no beat at all so
+  // `beatIsStale` already suppresses the remedy. This is the only shape that
+  // reaches the liveness gate as the single deciding predicate.
+  insertSynthetic(state, {
+    id: 'theirs', state: 'running', workerPid: null, workspace: THERE,
+    startedAgoMs: 600_000, beatAgoMs: 90_000,
+  });
+  myJob(state, { beatAgoMs: 1_000 });
+
+  viewHere(state, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    // The positive control. `blockingSeqFor`'s running rung names any row that is
+    // not provably dead, malformed included — so without this assertion the test
+    // would pass vacuously the day such rows stopped being marked at all.
+    assert.match(text, /must clear before/);
+    // And the gate itself: `/oai:abandon` refuses a malformed row without
+    // --force, so naming the plain form here would advertise a refusal. Deleting
+    // that one condition left the whole suite green until this test existed.
+    assert.doesNotMatch(text, /oai:abandon/);
+  });
+});
+
+test('the remedy reaches the real CLI, and a too-new database withholds it', { skip: NEEDS_SQLITE }, async () => {
+  const { queueScenario, setUserVersion } = await import('./job-helpers.mjs');
+  const scenario = await queueScenario();
+  const mine = realWorkspace('here');
+  try {
+    // A stale live foreign blocker plus a local witness waiting behind it.
+    insertSynthetic(scenario.state, {
+      id: 'theirs', state: 'running', workerPid: process.pid, workspace: THERE,
+      startedAgoMs: 600_000, beatAgoMs: 90_000,
+    });
+    insertSynthetic(scenario.state, {
+      id: 'mine', state: 'queued', waiterPid: process.pid, workspace: mine, beatAgoMs: 1_000,
+    });
+
+    // The POSITIVE half, and it is new coverage in its own right: nothing before
+    // this drove the remedy line through the actual command.
+    const writable = await scenario.run(['status'], { cwd: mine });
+    assert.match(writable.stdout, /must clear before/);
+    assert.match(writable.stdout, /oai:abandon theirs/);
+
+    // One predicate different: the database is now one this build may not write.
+    // `reconcileAll` is skipped under readOnly, so the blocker survives to be
+    // named — but the remedy names a command that would refuse outright.
+    setUserVersion(scenario.state, 99);
+    const readOnly = await scenario.run(['status'], { cwd: mine });
+    assert.match(readOnly.stdout, /must clear before/, 'the blocker is still named');
+    assert.doesNotMatch(readOnly.stdout, /oai:abandon/);
+  } finally {
+    await scenario.server.close();
+  }
+});

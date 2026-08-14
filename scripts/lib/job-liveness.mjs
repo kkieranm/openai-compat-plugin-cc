@@ -11,11 +11,14 @@
  * How long a job may sit with no worker registered before it is treated as one
  * whose worker never started.
  *
- * It bounds exactly one window — the row is committed and the child is spawned
+ * It bounds exactly one window, and is now read by two callers — this file's
+ * verdict, and `/oai:abandon`'s grace refusal, which counts the remainder down
+ * for the operator. The row is committed and the child is spawned
  * in two steps, and a submitter that dies between them leaves a row nothing will
- * ever pick up. **A worker that HAS registered is never abandoned, however long
- * it waits**, which is what lets an indefinite `--max-wait` coexist with a
- * two-minute grace.
+ * ever pick up. **No AUTOMATIC path abandons a worker that HAS registered,
+ * however long it waits**, which is what lets an indefinite `--max-wait` coexist
+ * with a two-minute grace. The one thing that can is `/oai:abandon`, an explicit
+ * operator command; nothing here reaches it.
  */
 export const STARTUP_GRACE_MS = 120_000;
 
@@ -32,8 +35,37 @@ export const STARTUP_GRACE_MS = 120_000;
  * **`stalled` is never terminal and never a verdict about the job.** The pid
  * decides death; the beat only corroborates. Reading a stale beat as death would
  * deadlock cancellation, since a worker's last act before exiting is to beat.
+ *
+ * **Narrowed, not reversed, when `/oai:abandon` landed.** The beat still causes
+ * no state transition on its own and no automatic path consults it. What it now
+ * does is gate the REFUSAL of an explicit operator request: `job-abandon.mjs`
+ * will not terminalize a row whose beat is fresh unless the operator passes
+ * `--force`. Evidence an assertion is checked against, never an assertion.
+ *
+ * It may not be promoted further, and the reason is mechanical rather than
+ * cautious: a process asleep, `SIGSTOP`ped, or blocked in a synchronous call
+ * does not run its timer, and machine sleep advances the wall clock without
+ * running it either — so a live worker mid-answer looks exactly like a dead one.
+ * Machine sleep is also when pids get recycled, so the two cases arrive
+ * together.
  */
 export const STALE_BEAT_MS = 60_000;
+
+/**
+ * Has this row gone quiet for longer than a live worker ever should?
+ *
+ * Read by two callers that disagree about what silence means, deliberately.
+ * `/oai:status` shows `stalled` and treats an unparseable beat as NOT stale — a
+ * job in its first moments has no beat yet, and flagging every one of those
+ * would make the label worthless. `job-abandon.mjs` fails closed on the same
+ * input instead, because there the question is whether to destroy a row.
+ * One predicate, two policies; the policies live at the callers.
+ */
+export function beatIsStale(row, nowMs) {
+  const last = Date.parse(row.last_beat_at ?? '');
+  if (!Number.isFinite(last)) return false;
+  return nowMs - last > STALE_BEAT_MS;
+}
 
 /**
  * Alive, as far as the OS will say.

@@ -2,6 +2,8 @@
 // database or writes to stdout, which is the same split `render.mjs` keeps and
 // for the same reason: a renderer that also decides things cannot be tested by
 // handing it a row.
+import { beatIsStale } from './job-liveness.mjs';
+import { isKnownVersion } from './job-record.mjs';
 import { logPathFor } from './job-store.mjs';
 import { requestTextOf } from './prompt.mjs';
 
@@ -113,8 +115,39 @@ function summaryLine(view, nowMs) {
  */
 const BLOCKING = 'must clear before this workspace\'s queued job can proceed.';
 
+/**
+ * The way out, named only where taking it would actually work.
+ *
+ * FOUR conditions, and three are not properties of the row: the row's owner is
+ * `live` (a `starting` or `malformed` or dead blocker is refused or handed to
+ * recovery, so naming the plain form would advertise a refusal); the beat is stale
+ * (else `/oai:abandon` refuses without `--force`), the row's schema version is
+ * one this build knows (else it refuses with `--force` too), and the database is
+ * writable (else every write refuses). `/oai:status` will happily read a
+ * database a newer plugin wrote — pointing at a command that cannot run there
+ * would be advice the reader can only discover is wrong by taking it.
+ *
+ * The `live` condition subsumes an argument this docblock used to make at
+ * length: that `starting` needed no condition because it cannot co-occur with a
+ * stale beat (true — `registerWaiter` writes `waiter_pid` and `last_beat_at` in
+ * one `UPDATE`, so a pid-less row has never beaten). That reasoning held for
+ * `starting` and missed `malformed`, which CAN carry a stale parseable beat.
+ * Requiring `live` covers both without depending on which write is atomic.
+ */
+function remedyFor(view, readOnly, nowMs) {
+  // `live` subsumes the `starting` case the paragraph above used to reason about
+  // separately, and closes the one it missed: a MALFORMED blocker — a running row
+  // with no pid but a stale, parseable beat — passed every condition here while
+  // `/oai:abandon` refuses it without `--force`. A malformed blocker is now told
+  // nothing, deliberately: this line names the command only where the plain form
+  // works, and advertising the destructive flag is not this display's job.
+  if (view.liveness !== 'live') return null;
+  if (readOnly || !isKnownVersion(view) || !beatIsStale(view, nowMs)) return null;
+  return `it has stopped checking in — /oai:abandon ${view.id} writes the row off (nothing is signalled).`;
+}
+
 /** The list a bare `/oai:status` prints. */
-export function renderList({ shown, elsewhere, blockingSeq = null }, { cwd, all, nowMs = Date.now() }) {
+export function renderList({ shown, elsewhere, blockingSeq = null }, { cwd, all, readOnly = false, nowMs = Date.now() }) {
   if (shown.length === 0) {
     const scope = all ? '' : ` in ${cwd}`;
     const rest = elsewhere > 0 ? ` (${elsewhere} elsewhere — pass --all to see them)` : '';
@@ -136,7 +169,11 @@ export function renderList({ shown, elsewhere, blockingSeq = null }, { cwd, all,
     if (view.workspace !== cwd && (!all || view.seq === blockingSeq)) lines.push(`  ${view.workspace}`);
     // Before the row's own note: this answers "why am I being shown this", which
     // is the question a reader has first about a row from another directory.
-    if (view.seq === blockingSeq) lines.push(`  ! ${BLOCKING}`);
+    if (view.seq === blockingSeq) {
+      lines.push(`  ! ${BLOCKING}`);
+      const remedy = remedyFor(view, readOnly, nowMs);
+      if (remedy) lines.push(`  ! ${remedy}`);
+    }
     const note = noteFor(view, nowMs);
     if (note) lines.push(`  ! ${note}`);
   }

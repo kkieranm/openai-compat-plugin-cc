@@ -64,5 +64,8 @@ export async function runStatus(argv) {
 
   const all = options.all === true;
   const cwd = process.cwd();
-  process.stdout.write(`${renderList(statusView(db, { cwd, all, nowMs }), { cwd, all, nowMs })}\n`);
+  // `readOnly` reaches the renderer because one of the lines it may print names
+  // a command that writes, and this build refuses every write against a database
+  // a newer plugin wrote.
+  process.stdout.write(`${renderList(statusView(db, { cwd, all, nowMs }), { cwd, all, readOnly, nowMs })}\n`);
 }

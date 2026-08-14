@@ -9,6 +9,12 @@
 //
 // The invariant is honestly "one *background* job at a time": foreground
 // `/oai:task` and `/oai:review` do not participate. A backlog item covers that.
+//
+// There is a SECOND exception, and unlike the first it is taken deliberately,
+// one invocation at a time: `/oai:abandon` terminalizes a row whose worker this
+// build cannot prove is gone, which drops it out of the scan below while the
+// process may still be talking to the model. No automatic path does this — the
+// operator asks for it, having been told what it costs. See `job-abandon.mjs`.
 import { livenessOf } from './job-liveness.mjs';
 import { beat, claimJob, finish, isKnownVersion, jobBySeq, rowsInState } from './job-record.mjs';
 import { reconcile } from './job-reconcile.mjs';
@@ -26,7 +32,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * writes. A deferred transaction upgrading to a writer mid-way is exactly the
  * two-workers-both-saw-nothing-running case.
  */
-function inImmediateTransaction(db, fn) {
+export function inImmediateTransaction(db, fn) {
   db.exec('BEGIN IMMEDIATE');
   try {
     const result = fn();

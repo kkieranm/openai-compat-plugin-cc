@@ -150,6 +150,13 @@ function publishFailure(db, seq, error) {
 /**
  * The last place an answer can go when its row will not take it.
  *
+ * **Its durability is bounded by the row's, and since `/oai:abandon` that bound
+ * is reachable.** An abandoned row is terminal while this worker may still be
+ * running, so once 50 newer terminal rows exist the retention sweep prunes it and
+ * unlinks the log this process still holds open — the salvaged line then lives
+ * only in an unlinked inode and goes when the process exits. Narrow (it needs 50
+ * subsequent completions on a one-at-a-time queue) but real: **OAI-161**.
+ *
  * **Not durable persistence, and deliberately not.** It opens nothing, defines
  * no schema and adds no reader: it writes to the descriptor this worker was
  * spawned with — `job-spawn.mjs` opens the job log once and passes it as both
@@ -223,8 +230,20 @@ async function runAndPublish(db, seq, job) {
     // instead was worse (a paid-for answer reported as a model failure, on a
     // path where contention had by then cleared), which is why this line is
     // where it is. The residual — the row's own state — is **OAI-106**.
+    // TWO ways this write fails to land, and they differ in whether anything
+    // went wrong. A THROW is storage refusing us, and is rethrown. A `false` is
+    // the CAS matching no rows because the row is no longer `queued`/`running` —
+    // nothing failed, someone else's terminal write simply got there first, and
+    // since `/oai:abandon` that someone may be an operator rather than a race.
+    //
+    // The `false` case used to be discarded entirely: `finish`'s return went
+    // nowhere, no exception was raised, and a paid-for answer was written to
+    // neither the row nor the log. Salvaging it costs one line — see
+    // `salvageOutcome` for what that does and does not guarantee.
     try {
-      withBusyRetry(() => finish(db, seq, { state: 'completed', outcome, at: now() }));
+      if (!withBusyRetry(() => finish(db, seq, { state: 'completed', outcome, at: now() }))) {
+        salvageOutcome(seq, outcome);
+      }
     } catch (error) {
       salvageOutcome(seq, outcome);
       throw error;

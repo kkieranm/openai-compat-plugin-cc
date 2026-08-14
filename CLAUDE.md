@@ -114,6 +114,39 @@ queue's head — `decide` dispatches on it, and `job-view.mjs` `blockingSeqFor` 
 rungs (a non-dead running row, else that head) to name the foreign row a bare `/oai:status` marks,
 gated on this workspace holding a queued job that is live or still inside its startup grace.
 
+`scripts/lib/job-abandon.mjs` is the only path that terminalizes a row whose pid still reads `live`,
+and it is an **operator-authorized exception to one-job-at-a-time rather than a reconciler**: nothing
+signals anything, so `/oai:abandon` writes off the ROW as `failed` / `operator-abandoned` — never
+`cancelled`, per OAI-66 — and `job-queue.mjs`, `job-heartbeat.mjs`, `job-liveness.mjs`,
+`job-reconcile.mjs` and `commands/status.md` each name that exception where they state the invariant.
+`abandonRow` reads, decides and writes inside **one** `BEGIN IMMEDIATE`, because `beat` refreshes
+`last_beat_at` on any non-terminal row and `finish` compares only state, so a row read before the lock
+is not an authoritative read — a property `tests/queue-guards.test.js` pins structurally, since a
+synchronous `node:sqlite` makes it unreachable behaviourally. `abandonDecision` admits `queued` and
+`running` by **whitelist** — an unrecognised non-terminal state is refused rather than left to produce
+an uninterpretable `false` from `finish` — and refuses a fresh or unreadable beat unless `--force`, while
+**four** refusals are lifted by no flag at all: an unknown `schema_version`, a state outside that
+whitelist, a row still inside its startup grace, and a row whose pid is **dead or never registered** — that last
+one is ordinary reconciliation's work, and `abandonRow` hands it over inside the same lock rather than
+attributing a death to the operator who asked, reporting the two kinds apart because only one of them
+ever had a process. A row **recovery has already settled** reports idempotently instead of refusing,
+which is what stops a concurrent reconcile producing an exit-1 refusal at an operator whose queue was
+just freed; a `failed` row recovery did not write stays an ordinary refusal, and an unreadable failure
+payload fails closed to that. A `malformed` row is refused but IS liftable, because refusing it
+outright would leave a corrupt row wedging the queue with no escape at all.
+`scripts/lib/job-drain.mjs` `couldDrain` walks **both** of `decide`'s rungs so a queued head under a
+live `running` row is never reported as having unblocked anything, and requires the successor's beat to
+be readable and fresh — `live` proves only that a pid number is occupied, so accepting it would
+reproduce inside this command the very defect it exists to fix. That bar is deliberately stricter than
+`decide`'s own eligibility, so it under-claims rather than lies. **Liveness is resolved inside that transaction and passed into the decision**, so the probe the stored
+message cites is the one the write was authorised on; the guard asserts at least one `livenessOf` call
+inside the lock. The pid survives in the failure message because `finish` NULLs the column — recorded
+as **evidence and never as a target**, since the inability to prove that number still belongs to the
+job is the reason this command exists at all, and the message says the probe answered *during the
+decision* rather than implying the process is alive now. `/oai:status` names the
+remedy only where it would work — a live owner, a stale beat, a known row version and a writable
+database — and says nothing at all for a blocker the command would refuse.
+
 `scripts/lib/job-busy.mjs` `withBusyRetry` bounds a `SQLITE_BUSY` by elapsed time at seven enumerated sites,
 while skip-only callers keep a bare `isBusy` catch and the store's open takes the exclusive WAL lock only
 when the journal mode is not already set — and **where a retry sits decides what it can cost**: the

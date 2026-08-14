@@ -34,7 +34,11 @@ What it does, and what it does not:
   since a recorded pid may since have been reused by something unrelated. Cancellation is a request
   the worker honours, not something done to it.
 - A worker that has stalled — alive but no longer checking in, as `/oai:status` reports — will not
-  see the request. That job needs dealing with by hand; the status output names the pid.
+  see the request. Its **process** is yours rather than the plugin's, and the status output names the
+  pid it recorded — as evidence, and with the same caveat everywhere else carries: that number may
+  since have been reused by something unrelated, which is why nothing here signals it. Its **row**
+  can be written off with `/oai:abandon <job id>`, which is what unblocks the queue. The two commands are not alternatives: cancel asks a worker to stop, abandon gives up on the
+  row without asking anyone.
 
 Handling failures:
 
