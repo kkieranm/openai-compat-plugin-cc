@@ -66,10 +66,13 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-161, OAI-162**. Both are
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-162**, **OAI-166**. Both are
 OAI-69's residue, filed 2026-08-15 when `/oai:abandon` shipped, and both are about the same seam that
 item opened: a terminal row whose worker may still be alive is a category this queue did not have
-before. OAI-161 leads because it can destroy a paid-for answer; OAI-162 is a misattribution rather
+before. **OAI-161 closed 2026-08-15 (`6d06f6c`)** — it could destroy a paid-for answer, and retention now
+exempts an operator-abandoned row that reached `running`. What it left behind is **OAI-166**: the
+feature was scope-cut mid-build and five of its six planned fixtures were never built, so two
+measured SQL traps and half of the exemption's definition ship unpinned. OAI-162 is a misattribution rather
 than a loss.
 **OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
 re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
@@ -2716,23 +2719,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   *Enumerated by a scout against a fixed manifest, each entry checked by grepping the test tree rather
   than assumed.*
 
-- **OAI-161** — **Retention can delete an abandoned row's log while its worker is still writing to
-  it, destroying the salvaged answer.** Filed 2026-08-15 from `/oai:abandon`'s review (`6d41bd0`),
-  found by `codex-plain` and verified against `job-retention.mjs`. `/oai:abandon --force` can
-  terminalize a row whose worker is genuinely alive; that worker's later `finish()` misses its CAS and
-  writes the answer to its job log as `SALVAGED_OUTCOME` instead. But an abandoned row is terminal, so
-  once 50 newer terminal rows exist the retention sweep prunes it and unlinks that log — and
-  `job-spawn.mjs` gave the worker the log as its stdout descriptor, so it keeps writing to an unlinked
-  inode and the line goes when the process exits.
-  **This is the first time a terminal row can have a live worker**, which is the assumption retention
-  was built on — so the defect is created by that feature rather than pre-existing.
-  Narrow: it needs a live writer AND 50 subsequent completions on a one-at-a-time queue. The headline
-  recycled-pid case has no live writer at all.
-  **Not fixed because the fix is a retention-policy fork this feature's plan never opened** — a
-  windowed exemption, an unbounded one, or an incarnation-keyed store (the sibling of OAI-149). The
-  in-scope half shipped: `cmd-task-worker.mjs`'s `salvageOutcome` docblock states the bound rather than
-  claiming durability it does not have.
-
 - **OAI-162** — **A corrupt `worker_pid` reads as a dead process, so a row is auto-terminalized on
   evidence that proves nothing.** Filed 2026-08-15 from `/oai:abandon`'s review, raised by Codex as a
   refuse-to-ship and adjudicated by the user as file-whole-change-nothing.
@@ -2820,3 +2806,42 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   this repo or a tool other repos run. Only the second justifies `--repo`, a portable `--include`
   default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
   command against the caller's cwd. It is only the sweep harness that is pinned.
+
+- **OAI-166** — **OAI-161 shipped with five of its six planned fixtures cut, so two measured SQL traps
+  and half of the exemption's own definition are unpinned.** Filed 2026-08-15 from OAI-161's residue
+  (`6d06f6c`). The feature was judged too big mid-build and deliberately cut by the user to "the
+  minimum that fixes the loss"; this item is what that cut left, with every measurement recorded so
+  none of it is re-derived.
+  **The code is correct and is not in question** — one test proves the exemption fires and a mutation
+  (`started_at IS NOT NULL` → `IS NULL`) reddens exactly it. What is missing is the ability of the
+  suite to *notice* if parts of it stopped being correct.
+  **(1) The `IS`-vs-`=` trap is unpinned, and it fails silently.** `NULL = 'operator-abandoned'` is
+  NULL, not false, so with `=` every genuinely-run completed row leaves the candidate set and
+  retention stops pruning them — no error, no log line. The one fixture that discriminates is a
+  `completed` row with `startedAgoMs` set and `failure` NULL, asserted pruned.
+  **(2) The `json_valid` guard is unpinned.** `json_extract` throws `malformed JSON` on an unparseable
+  payload, and `sweep()` runs in `task-submit.mjs` *before* the insert, so one corrupt `failure` row
+  would sink every submission on the machine. Its test needs `startedAgoMs` set (or the short-circuit
+  means `json_extract` is never reached and the test cannot fail), and the row must be inserted
+  normally then corrupted by a raw `UPDATE` — `insertSynthetic` does `failure && JSON.stringify(failure)`,
+  which turns even `'{'` into valid JSON. It must assert *the sweep completes and an ordinary over-cap
+  row is still pruned*, never the malformed row's own fate, which itself differs between `IS` and `=`.
+  **(3) "Nor counted" — half of what the exemption IS — is untested, and the obvious fixture cannot
+  test it.** Measured: with the exempt row as the oldest, the correct implementation (clause in the
+  inner `SELECT`) and the wrong one (clause moved to the outer `DELETE`, which spares the row but
+  still spends its slot) both return `deleted=[2]`, identical — an exempt row below the cutoff can
+  never displace anything. The discriminating arrangement is `fillTerminal(RETAIN)` first, then the
+  abandoned row as the **newest**, asserting `deleted` is empty: inner gives `[]`, outer gives `[1]`.
+  The matching mutation is relocating the clause between the two.
+  **The existing foreign-version exemption test has the same shape and the same blind spot**, so this
+  is a pre-existing gap the new test inherited rather than introduced — worth fixing in the same pass.
+  **(4) The fork-3 narrowing is untested** — that an operator-abandoned row which never ran is pruned
+  like any other.
+  **(5) There is no end-to-end proof.** `tests/abandon-salvage.test.js` already drives a real worker
+  across two processes to miss its CAS; the missing step is a `sweep(db, {retain: 0})` between the
+  abandon and the release, driven through `withStore(scenario.state, …)` because `sweep()` resolves the
+  logs directory from ambient state rather than from the handle it is given.
+  **Why this is Tier 1 rather than test housekeeping:** (1) and (3) are both *silent* — neither throws,
+  neither logs, and both leave a queue that looks healthy while either failing to collect history or
+  quietly evicting it. The class this repo has already paid for twice is a check that cannot fail, and
+  five of them are now named on disk instead of being discovered later.

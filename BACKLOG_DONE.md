@@ -1,3 +1,39 @@
+## 2026-08-15 — OAI-161 closed (`6d06f6c`)
+
+- **OAI-161** — **A salvaged answer now outlives the retention sweep.** Closed 2026-08-15 by
+  `6d06f6c`. Plan: [`plans/oai-161-salvage-outlives-retention.md`](plans/oai-161-salvage-outlives-retention.md),
+  with `pre-build-round-1-blind.md` beside it as the one approving-round archive.
+
+  **What shipped.** `job-retention.mjs` `PRUNE` never deletes a row whose failure reason is
+  `OPERATOR_ABANDONED` and whose `started_at` is set. The clause sits in the inner `SELECT`, which is
+  what makes such a row **uncounted as well as undeleted** — moved to the outer `DELETE` it would
+  spare the row and still spend one of the 50 kept places. `OPERATOR_ABANDONED` is now a constant in
+  `job-record.mjs` because a writer and a reader agreeing by spelling was the drift risk, and a silent
+  disagreement would simply resume deleting the rows the exemption exists to keep.
+
+  **It reads no pid, and that was the fork.** A liveness-keyed exemption was cheaper and available —
+  `finish` NULLs `worker_pid` but leaves `waiter_pid`, and `claimJob` writes the same number to both,
+  so a terminal row still names the process that ran it with no schema change. It was rejected because
+  the exemption would end when the worker exits, which is exactly when the log stops being rewritable
+  and becomes the only copy, and because it would inherit OAI-162's malformed-pid-reads-dead defect.
+  Codex and Claude recommended this independently; the user confirmed all three forks.
+
+  **Two SQL properties are measured, not assumed.** `IS` rather than `=`, because `NULL = 'x'` is NULL
+  and every genuinely-run completed row would otherwise leave the candidate set and never be pruned
+  again. And `CASE WHEN json_valid`, because `json_extract` throws on an unparseable payload and
+  `sweep()` runs before the insert, so one corrupt row would sink every submission. A later Codex
+  review disputed the short-circuit claim behind the second; re-measured with a control — the same
+  unguarded query throws with `started_at` set and does not with it NULL — the claim held, and the
+  comment now says the order is the planner's rather than a documented guarantee, so the guard does
+  not depend on it.
+
+  **Accepted by design, and stated in the user-facing docs:** exempt rows accumulate without bound and
+  nothing clears one, and they pile up in `/oai:status`, which caps nothing.
+
+  **The feature was scope-cut by the user mid-build** as too big. One of six planned fixtures shipped.
+  The other five, and the measurements behind each, are **OAI-166** — including that "nor counted",
+  half of what this exemption is, cannot be tested by the obvious fixture at all.
+
 ## 2026-08-15 — OAI-69 closed (`6d41bd0`)
 
 - **OAI-69** — **A wedged row now has an operator exit.** Closed 2026-08-15 by `6d41bd0`. Plan:
