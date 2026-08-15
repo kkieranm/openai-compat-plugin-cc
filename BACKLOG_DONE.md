@@ -1,3 +1,53 @@
+## 2026-08-15 — OAI-166 closed (`7f65ac6`)
+
+- **OAI-166** — **The fixtures OAI-161's scope cut left are built, and the two silent traps are
+  pinned.** Closed 2026-08-15 by `7f65ac6`. Plan:
+  [`plans/oai-166-pin-the-cut-fixtures.md`](plans/oai-166-pin-the-cut-fixtures.md), with
+  `pre-build-round-1-blind.md` beside it as the one approving-round archive.
+
+  **What shipped.** Seven fixtures, not the six planned. Six in `tests/retention.test.js` — the
+  `IS`-vs-`=` null-safety control, the `json_valid` guard, a placement witness for each of the THREE
+  exemptions, and the `started_at` narrowing — plus a sweep inside `tests/abandon-salvage.test.js`'s
+  live two-process scenario. `scripts/lib/job-retention.mjs` changed in comments alone.
+
+  **The seventh fixture is the finding.** The module claims EVERY exemption's placement is
+  load-bearing; the plan gave witnesses to two. The pre-existing active-job test asserts
+  `deleted.length === 5` with the active rows OLDEST, which holds identically whether the clause sits
+  in the inner `SELECT` or the outer `DELETE` — the same blind spot as the foreign-version test, in
+  the exemption nobody had suspected of it.
+
+  **The placement witnesses had to be inverted mid-review.** As approved they asserted `deleted` was
+  EMPTY, which a `PRUNE` that deleted nothing satisfies. They now fill `RETAIN + 1` and assert the one
+  ordinary row over the ceiling was taken. **Then the controls themselves needed witnessing** — no
+  mutation made either mechanism inert, so for one pass the fix sat in the same class as the defect.
+  `AND 0` in the inner `WHERE` and `orphanSeqs` returning nothing closed it. That general rule is
+  filed as OAI-168.
+
+  **Thirteen mutations**, one at a time, each proved landed by `mutation-landed.py` and each restore
+  proved by `diff`, every one under the whole suite rather than one file — the first eight were
+  measured file-locally and the universe was restated as `npm test` when review caught it.
+
+  **Two review claims were refuted by measurement rather than filed.** `LIMIT 1 OFFSET ?` reddens
+  seven tests including the cap test; an `ELSE 'operator-abandoned'` arm on the `CASE` reddens the
+  `IS`-vs-`=` fixture. Neither is a coverage gap.
+
+  **What it cost, and why.** Four review passes. Three of them were spent almost entirely on
+  DESCRIPTIVE PROSE — comments and the plan — where each batch that fixed a false description wrote a
+  new one. The rule that stops this (delete the proposition, do not rewrite it) landed in
+  `~/Code/dotfiles` *twelve minutes into* the review, and this run followed the superseded copy for
+  two batches before noticing. Filed as OAI-171.
+
+  **Residue: OAI-167** (five pre-existing false comments, held out of scope because this feature did
+  not author them), **OAI-168** (the control-of-a-control stopping rule), **OAI-169** (the
+  `busy_timeout`/budget pair, unpinned and stated as such), **OAI-170** (nothing reddens the original
+  foreign-version test), **OAI-171** (the mid-run skill change).
+
+  **Process deviations, recorded rather than smoothed.** Pass 1's verdict point was not held —
+  approval was forbidden by construction with nine accepted fixes unapplied — and the plan's
+  provenance line was briefly deleted to preserve a digest before being restored. The
+  `--dual-approved` gate at the plan stage was fed a paraphrase of the Claude verdict rather than its
+  verbatim text; the pass-4 verdict was recorded verbatim.
+
 ## 2026-08-15 — OAI-161 closed (`6d06f6c`)
 
 - **OAI-161** — **A salvaged answer now outlives the retention sweep.** Closed 2026-08-15 by

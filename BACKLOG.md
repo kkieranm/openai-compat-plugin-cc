@@ -66,14 +66,25 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-162**, **OAI-166**. Both are
-OAI-69's residue, filed 2026-08-15 when `/oai:abandon` shipped, and both are about the same seam that
-item opened: a terminal row whose worker may still be alive is a category this queue did not have
+**Tier 1 — a background job kills, loses or misreports live work.** **OAI-162**. It is
+OAI-69's residue, filed 2026-08-15 when `/oai:abandon` shipped, and is about the seam that item
+opened: a terminal row whose worker may still be alive is a category this queue did not have
 before. **OAI-161 closed 2026-08-15 (`6d06f6c`)** — it could destroy a paid-for answer, and retention now
-exempts an operator-abandoned row that reached `running`. What it left behind is **OAI-166**: the
-feature was scope-cut mid-build and five of its six planned fixtures were never built, so two
-measured SQL traps and half of the exemption's definition ship unpinned. OAI-162 is a misattribution rather
-than a loss.
+exempts an operator-abandoned row that reached `running`. **OAI-166 closed 2026-08-15 (`7f65ac6`)** —
+the fixtures that cut left it are built, and the two silent SQL traps are pinned. OAI-162 is a
+misattribution rather than a loss, and it is the last thing in this tier that is wrong today.
+
+**Tier 2 — the suite says something false about itself.** **OAI-167**, **OAI-168**, **OAI-170**. All
+three are OAI-166's residue. OAI-167 is five comments that deny a failure mode, two of them turning an
+I/O fault into a claim of benign absence — read by whoever next debugs that fault. OAI-168 is the
+general rule that feature paid for twice: a positive control is a check that cannot fail until
+something witnesses it firing. OAI-170 is one unrun mutation, and the cheapest item in this file.
+
+**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**. OAI-169 is two
+constants whose removal shows as an intermittent stall rather than silent wrongness, which is what
+makes leaving them unpinned defensible. OAI-171 is a toolchain observation with no proposed fix: a
+skill loaded into a session is a snapshot, nothing says when it goes stale, and OAI-166's ladder spent
+two discovery passes because of it.
 **OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
 re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
 OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
@@ -2807,41 +2818,70 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
   command against the caller's cwd. It is only the sweep harness that is pinned.
 
-- **OAI-166** — **OAI-161 shipped with five of its six planned fixtures cut, so two measured SQL traps
-  and half of the exemption's own definition are unpinned.** Filed 2026-08-15 from OAI-161's residue
-  (`6d06f6c`). The feature was judged too big mid-build and deliberately cut by the user to "the
-  minimum that fixes the loss"; this item is what that cut left, with every measurement recorded so
-  none of it is re-derived.
-  **The code is correct and is not in question** — one test proves the exemption fires and a mutation
-  (`started_at IS NOT NULL` → `IS NULL`) reddens exactly it. What is missing is the ability of the
-  suite to *notice* if parts of it stopped being correct.
-  **(1) The `IS`-vs-`=` trap is unpinned, and it fails silently.** `NULL = 'operator-abandoned'` is
-  NULL, not false, so with `=` every genuinely-run completed row leaves the candidate set and
-  retention stops pruning them — no error, no log line. The one fixture that discriminates is a
-  `completed` row with `startedAgoMs` set and `failure` NULL, asserted pruned.
-  **(2) The `json_valid` guard is unpinned.** `json_extract` throws `malformed JSON` on an unparseable
-  payload, and `sweep()` runs in `task-submit.mjs` *before* the insert, so one corrupt `failure` row
-  would sink every submission on the machine. Its test needs `startedAgoMs` set (or the short-circuit
-  means `json_extract` is never reached and the test cannot fail), and the row must be inserted
-  normally then corrupted by a raw `UPDATE` — `insertSynthetic` does `failure && JSON.stringify(failure)`,
-  which turns even `'{'` into valid JSON. It must assert *the sweep completes and an ordinary over-cap
-  row is still pruned*, never the malformed row's own fate, which itself differs between `IS` and `=`.
-  **(3) "Nor counted" — half of what the exemption IS — is untested, and the obvious fixture cannot
-  test it.** Measured: with the exempt row as the oldest, the correct implementation (clause in the
-  inner `SELECT`) and the wrong one (clause moved to the outer `DELETE`, which spares the row but
-  still spends its slot) both return `deleted=[2]`, identical — an exempt row below the cutoff can
-  never displace anything. The discriminating arrangement is `fillTerminal(RETAIN)` first, then the
-  abandoned row as the **newest**, asserting `deleted` is empty: inner gives `[]`, outer gives `[1]`.
-  The matching mutation is relocating the clause between the two.
-  **The existing foreign-version exemption test has the same shape and the same blind spot**, so this
-  is a pre-existing gap the new test inherited rather than introduced — worth fixing in the same pass.
-  **(4) The fork-3 narrowing is untested** — that an operator-abandoned row which never ran is pruned
-  like any other.
-  **(5) There is no end-to-end proof.** `tests/abandon-salvage.test.js` already drives a real worker
-  across two processes to miss its CAS; the missing step is a `sweep(db, {retain: 0})` between the
-  abandon and the release, driven through `withStore(scenario.state, …)` because `sweep()` resolves the
-  logs directory from ambient state rather than from the handle it is given.
-  **Why this is Tier 1 rather than test housekeeping:** (1) and (3) are both *silent* — neither throws,
-  neither logs, and both leave a queue that looks healthy while either failing to collect history or
-  quietly evicting it. The class this repo has already paid for twice is a check that cannot fail, and
-  five of them are now named on disk instead of being discovered later.
+- **OAI-167** — **Four comments in `job-retention.mjs` and one in `abandon-salvage.test.js` state
+  things that are false, and two of them convert an I/O failure into a claim of benign absence.**
+  Filed 2026-08-15 from OAI-166's review, which held them OUT of scope because that feature did not
+  author them — enumerated by a closed-inventory read of the whole file rather than sampled.
+  `orphanSeqs`'s `readdirSync` catch says "No logs directory: nothing has ever been spawned here",
+  but the same catch swallows a permission or I/O error; `unlinkQuietly` says "the file is absent
+  either way", and a permission failure leaves it present. Both turn a fault into a reassurance,
+  which is the shape that makes a sweep look healthy while it silently collects nothing.
+  Also: `9223372036854776000` is called "`2^63`" — it is 192 greater, and only its `Number` value is
+  `2^63`, which matters because the surrounding argument is precisely about values that do not
+  survive the conversion; and `orphanSeqs`'s ordering argument says a row set read afterwards is
+  "guaranteed to contain it", which a concurrent sweep deleting the row in between falsifies (the
+  safety argument may still hold — the file is then genuinely an orphan — but the containment claim
+  does not). `abandon-salvage.test.js` says its promise was "reviewed six times and never executed",
+  unverifiable history in a test header.
+  **Not a behaviour defect in any case** — every one is prose. Filed because a comment that denies a
+  failure mode is read by whoever next debugs that failure mode.
+
+- **OAI-168** — **A positive control is itself a check that cannot fail until something witnesses it
+  firing, and this repo has now paid for that twice in one feature.** Filed 2026-08-15 from OAI-166.
+  That feature's review found three assertions satisfied by an inert implementation and added
+  positive controls to each. The controls were then themselves unwitnessed — no mutation made
+  `PRUNE` or `orphanSeqs` inert — so for one pass the fix was in the same class as the defect.
+  Closed for OAI-166 by two mutations (`AND 0` in the inner `WHERE`; `orphanSeqs` returning nothing),
+  and the general rule is what is worth keeping: **mutation-test production predicates and any
+  positive control whose result passes through production branching; stop at direct pre-action reads
+  of fixture state, provided each gate is asserted independently AND the read path is independent of
+  the production path.** That last clause is the one that stops the regress from being infinite and
+  the one that stops it being vacuous.
+  **This is a candidate for `.claude/REPO_TRAPS.md` rather than a fix.** It is filed here rather than
+  written there because a `REPO_TRAPS` entry is normative prose that a later session executes, so it
+  is production surface and wants its own review rather than landing as post-approval residue.
+
+- **OAI-169** — **`tests/abandon-salvage.test.js`'s `busy_timeout` and retry budget are unpinned:
+  delete either and the suite stays green.** Filed 2026-08-15 from OAI-166.
+  `db.exec('PRAGMA busy_timeout = 250')` and `withBusyRetry(…, { budgetMs: 2_000 })` exist because
+  `openStore` hands back a handle carrying a 10s `busy_timeout` and `budgetMs` is a floor rather than
+  a ceiling — left at defaults, one attempt can block ~10s and the whole retry ~40s, in the process
+  that also HOSTS the fake server, against a worker whose own 30s first-byte clock runs elsewhere.
+  Nothing exercises that contention, so nothing notices if either value is removed.
+  **State the exposure accurately: not "untested" but "unpinned".** Deleting either shows as an
+  intermittent stall landing on the deliberate `unexpected second request` handler, not as silent
+  wrongness — which is what makes leaving it unpinned defensible rather than merely cheap. A held-lock
+  fixture would pin the pair but would pin it in a NEW test, leaving the call site itself still
+  deletable, so it does not answer the question it appears to.
+
+- **OAI-170** — **Nothing reddens the ORIGINAL foreign-version exemption test, only its new sibling.**
+  Filed 2026-08-15 from OAI-166. That feature added a sibling proving the "not counted" half and
+  listed a mutation for it — relocating `schema_version <= ?` to the outer `DELETE`, which reddens
+  the sibling. The pre-existing test proves the "never deleted" half, and the mutation that would
+  redden IT is removal of the clause outright, which was never run. So one of the two halves ships
+  with a witness whose sensitivity is measured and the other with a witness whose sensitivity is
+  assumed. Cheap to close: one mutation.
+
+- **OAI-171** — **The review ladder's own rules changed mid-run and the run followed the superseded
+  copy for two batches, which is what caused two of its passes.** Filed 2026-08-15 from OAI-166.
+  `~/Code/dotfiles` commit `8475d03` (2026-08-15 16:18) added a delete-only carve-out — when a stage
+  adjudicates descriptive prose false, DELETE the proposition rather than rewriting it, because a
+  rewrite keeps producing the next false description. OAI-166's ladder had loaded `review-ladder`
+  before that commit and `feature` before `2f6fac8`, so batches 1 and 2 rewrote where they should
+  have deleted, and each introduced a fresh false claim that the next pass then found. The operator
+  discovered the staleness only by checking on a hunch.
+  **A skill loaded into a session is a snapshot, and nothing tells the session it has gone stale.**
+  Filed as a toolchain observation with no proposed fix: the obvious remedies (re-read every skill at
+  every step; a version stamp compared at each invocation) each have costs this run is not evidence
+  enough to judge. What the run does establish is the cost of not knowing — two discovery passes,
+  roughly ten subagents and four Codex calls, spent on prose.
