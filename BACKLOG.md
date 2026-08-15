@@ -170,7 +170,10 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46**.
+**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165**.
+**OAI-165 sits here rather than with the sweep's own residue** because what it needs first is a
+decision — is `bench/review-sweep.mjs` this repo's instrument or a tool other repos run — and only one
+answer makes any of the work worth doing.
 **OAI-159 leads the tier from 2026-08-14**: 78 citations across 37 live items point at the `adr/`
 corpus deleted in `d1ad2aa`, and the deletion commit records that `BACKLOG*.md` was *"deliberately not
 touched"* — so the convention chosen for code comments was never adjudicated for the one file where a
@@ -2797,3 +2800,23 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Artifacts (gitignored, this machine only): `bench/results/sweep-2026-08-15-qwen38/` — report, JSON
   record, ledger, `run.sh` and `provenance.txt` recording the served id, both context figures, the
   artifact identity and the `lms` CLI commit.
+
+- **OAI-165** — **The overnight sweep can only ever review THIS repo, and the default path filter
+  would silently hollow out a run against any other.** Filed 2026-08-15 from a question about whether
+  it can be pointed at another repo yet. It cannot. `bench/review-sweep.mjs` derives `ROOT` from the
+  script's own location (`:29`) and there is no `--repo` in `SPEC` (`:36`), so both `execFileSync`
+  call sites are pinned to it: `git()` walks this repo's history (`:242`) and `invoke()` runs the
+  companion in this repo's working tree (`:115`). `optionsFrom(parsed, startMs, root = ROOT)` (`:223`)
+  already takes a root, but `main` never passes one — it is a test seam, not a CLI knob.
+  **The path filter is the part that would fail quietly rather than loudly.** `DEFAULTS.include` is
+  `['scripts', 'bench', 'tests']` (`:45`), this repo's own layout. Pointed elsewhere with that
+  default, `touchesIncluded` would reject most commits as ineligible and the morning report would
+  show coverage over almost nothing — reading as a quiet night rather than as a misconfigured one.
+  `--include` is already a repeatable flag, so the knob exists; the DEFAULT is what is wrong off-site.
+  **Not a defect in what shipped** — the sweep is documented as this repo's instrument, in CLAUDE.md's
+  Commands table, and `README.md` never mentions it, so nothing on disk is currently false. It becomes
+  a documentation question only if this is built.
+  **The decision this needs first, and it may close as "no":** whether the sweep is an instrument for
+  this repo or a tool other repos run. Only the second justifies `--repo`, a portable `--include`
+  default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
+  command against the caller's cwd. It is only the sweep harness that is pinned.
