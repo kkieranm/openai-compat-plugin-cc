@@ -232,8 +232,21 @@ and the ADR that "said each one out loud" no longer exists (OAI-159). See `BACKL
 states outright that it is "not measured" and already carried its own reopening bar, which is a
 park-ready shape rather than an item.
 
-**Tier 12d — what the completed overnight sweeps found, 2026-08-10/14.** **OAI-155**, **OAI-157**, **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
-**OAI-140**, **OAI-137**.
+**Tier 12d — what the completed overnight sweeps found, 2026-08-10/15.** **OAI-163**, **OAI-155**, **OAI-157**, **OAI-141**, **OAI-138**, **OAI-142**, **OAI-143**, **OAI-144**,
+**OAI-140**, **OAI-164**, **OAI-137**.
+**OAI-163 leads the tier from 2026-08-15 because it is the only item here that can END a night, and
+it does so while reporting the opposite of what happened**: a healthy model that reasons without
+answering is admitted as a server outage, so three in a row abort a healthy sweep and blame the
+server. It sorts ahead of OAI-155's coverage fact because coverage lost to an oversized target is
+visible in the report, where this is a wrong verdict about the server that the report then repeats.
+**Read it immediately beside OAI-140** — same counter, opposite error, and neither fix is safe if it
+assumes the other's direction. That pairing is the reason it sits here rather than in tier 3 with the
+other no-answer items.
+**OAI-164 sorts near the bottom because it is a measurement to take, not a defect that is wrong
+today**, and because OAI-141 already says what it would cost to take it properly: one more sweep may
+still not resolve an 11-vs-6 non-answer delta against this harness's known spread. It is above
+OAI-137 only because the model in question is already installed and the question is live whenever
+someone picks a model.
 **OAI-157 sorts directly behind OAI-155 because it is the same night's lesson at a tenth of the
 cost**: OAI-155 makes an oversized target reviewable, where OAI-157 merely says so before the night
 is spent, and it can land without any decision about what a finding is scoped to.
@@ -1964,6 +1977,18 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   reasoning cannot consume, and failing loudly if the model crosses it. **Model-modulated**: the MoE
   starves on 4–5 of 6 cases, dense on 1 of 6, and dense has the *smaller* window — so this is not
   fixable by choosing a bigger model. **Blocks OAI-19.**
+  **The floor now has a measured size, 2026-08-15 (qwen3.8 sweep, OAI-164).** Across the **17
+  successful** reviews of that run, read from the `usage` each reply actually returned rather than
+  reconstructed: `reasoning_tokens` were **87.0–98.3%** of every completion (median 95.9%), while the
+  answer itself cost **205–1,116 tokens, median ~420**. The largest answer in a successful run was
+  1,116 tokens. So **the reserve this item asks for is on the order of 1–2k tokens, not a fraction of
+  the budget** — and every one of the run's six starvations died with a budget larger than that still
+  nominally available to it. The allocation framing is confirmed by the same data: budgets ranged
+  25,260–30,848 on the successes and the model simply expanded its reasoning to fill whatever it was
+  given, which is T1's "a larger budget is simply consumed" observed a third time.
+  **Sizing caveat carried deliberately:** the 17 are the runs that SUCCEEDED, so this measures what a
+  completed answer costs, not what a starved commit's answer would have cost. It is a lower bound on
+  the floor, and a starved commit reviewing more files could need more.
 
 - **OAI-116** — **The token-exhaustion failure path emits no `attempts[]`, making G-E unpassable.**
   Filed 2026-08-08. A run lost to token exhaustion is recorded with `attempts: null`, so OAI-19's
@@ -2718,3 +2743,57 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `/oai:status`, so reconciliation would stop collecting such rows and they would wedge until forced.
   That is a queue-core behaviour change needing its own plan. The doc was narrowed instead, so nothing
   ships promising what the code does not do.
+
+- **OAI-163** — **A healthy model that reasons without answering is recorded as a SERVER OUTAGE, and
+  three in a row would abort the night.** Filed 2026-08-15 from the qwen3.8 characterisation sweep;
+  claim put to Codex as a refutation request and confirmed TRUE against the code.
+  The same observable behaviour — the model reasons and never emits an answer — reaches the classifier
+  in **two shapes, and only one is safe**. `finish_reason: 'length'` is tagged `token-exhaustion`
+  (`review-unparsed.mjs:20-43`) and becomes outcome `starved`, which `isOutage` does not admit. But
+  `requireAnswer()` throws a `UserError` carrying **no `reason`** for reasoning-only output
+  (`client.mjs:104-107`); `errorReport` serialises `reason: null` (`review-report.mjs:200-216`); and
+  `isOutage` admits `failed && !reason` **unconditionally** (`sweep-outcome.mjs:109-112`), which
+  `runSweep` then counts toward the abort streak (`review-sweep.mjs:207-210`).
+  **Evidence, 2026-08-15 02:26Z, commit `caa9d85ba`:** 31,249 characters of reasoning at ~15.4 tok/s
+  over 633s, then the model ended its own turn without leaving the reasoning channel. It was recorded
+  as the run's **only** server outage. The server was healthy — the commits either side of it answered
+  normally, and the model went on to complete 17 reviews.
+  **The blast radius is not just the abort.** The report's health section fired its
+  "may have done so against a server that was failing intermittently rather than a healthy one"
+  caveat on a healthy server, so the morning artifact understates its own trustworthiness.
+  **Distinct from OAI-140, and in the OPPOSITE direction** — that one is a real outage the counter
+  never reaches; this one is a non-outage the counter does. **A fix to either must not assume the
+  other's direction**, and the two should be read together before either is designed.
+  **Not covered by OAI-115 or OAI-116** — checked against both bodies. OAI-115 is the allocation
+  defect that produces the behaviour; OAI-116 is the missing `attempts[]` on that path. Neither says
+  the resulting envelope is admitted as evidence of an unwell server.
+  **Fix shape (not decided, and cheap):** the code already distinguishes these two cases — the
+  reasoning-only branch runs only after the `finish_reason: 'length'` test did not hold — so giving
+  that refusal its own non-null reason would classify it beside `starved` without touching `isOutage`.
+  The care needed is that it must not be folded into `token-exhaustion`: they have different causes
+  and `tests/review-exhaustion-reason.test.js:56-77` varies `finish_reason` alone to keep them apart.
+
+- **OAI-164** — **Is `qwen3.8-27b-mlx` worth adopting? One run says "findings level, reliability
+  worse", and one run cannot say that.** Filed 2026-08-15 from the model's first characterisation
+  sweep. **This is a measurement to take, not a defect.**
+  **What the release does NOT change, and this is settled:** `loaded_context_length` is **61,696** —
+  identical to the outgoing `qwen/qwen3.6-27b` — against a `max_context_length` of 262,144. Same
+  `qwen3_5` arch, 4bit, artifact `lmstudio-community/Qwen3.8-27B-MLX-4bit`. So the release buys
+  **nothing** on the constraint that actually binds this repo, and the OAI-115 starvation mechanism
+  carries over rather than being fixed by it.
+  **The 8h run, `--from 8275488`, `--max-seconds 1800`, `--max-attempts 2`:** 30 attempted, 18
+  reviewed, 13 findings, 6 starved, 6 failed, 1 (wrongly) judged an outage — see OAI-163.
+  **On the 27 commits this run and the 2026-08-13 baseline both attempted: findings 12 vs 12 — level.
+  Non-answers 11 vs 6.** Throughput 3.7/hr against 4.2/hr.
+  **Why that is not yet a result, and the reason this item exists rather than a conclusion:**
+  **OAI-141** puts the run-to-run spread of this harness ABOVE an effect of this size, and records
+  that *the same commit has completed once and starved once on identical input*. Codex was asked
+  directly whether the non-answer delta clears that spread and said it does not. So what is
+  established is "this run had 11 versus 6", **not** a property of the model — exactly the
+  single-run-read-as-measurement error OAI-141 was filed to stop.
+  **What would settle it:** a second qwen3.8 sweep from the same pinned SHA with the same flags, and —
+  per OAI-141's own instruction — **state the detectable effect size before running it**, because a
+  second run may still not resolve 11 vs 6. Until then the default model stays `qwen/qwen3.6-27b`.
+  Artifacts (gitignored, this machine only): `bench/results/sweep-2026-08-15-qwen38/` — report, JSON
+  record, ledger, `run.sh` and `provenance.txt` recording the served id, both context figures, the
+  artifact identity and the `lms` CLI commit.
