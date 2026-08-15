@@ -1,37 +1,18 @@
 // Retention: the one operation here that destroys a user's record, so every
 // test below is as much about what it leaves alone as about what it removes.
 //
-// The two exemptions are asserted with a positive control rather than on their
-// own — a row that survives proves nothing unless an otherwise identical row in
-// the same position went.
+// Each exemption makes two promises: never deleted, and never counted. Only the
+// second discriminates the clause's placement in the statement, and only from the
+// NEWEST end — an exempt row below the cutoff displaces nothing, so the obvious
+// arrangement returns the same answer whichever way the clause is placed.
+//
+// See also `retention-files.test.js`.
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test from 'node:test';
-import { RETAIN, sweep } from '../scripts/lib/job-retention.mjs';
+import { RETAIN } from '../scripts/lib/job-retention.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, readJobs, stateDir, waitForState, withStore } from './job-helpers.mjs';
-
-// Stated independently of `logPathFor`, so a test cannot agree with the code
-// about a layout they both got wrong.
-const logPath = (state, seq) => join(state, 'logs', `${seq}.log`);
-const ackPath = (state, seq) => join(state, 'logs', `${seq}.cancel-ack`);
-
-function writeLog(state, seq) {
-  writeFileSync(logPath(state, seq), `log for ${seq}\n`);
-}
-
-/** `n` finished jobs, oldest first, each with the log a real run would leave. */
-function fillTerminal(state, n) {
-  const seqs = [];
-  for (let index = 0; index < n; index += 1) {
-    const seq = insertSynthetic(state, { id: `done${index}`, state: 'completed', outcome: { content: 'ok' } });
-    writeLog(state, seq);
-    seqs.push(seq);
-  }
-  return seqs;
-}
-
-const runSweep = (state) => withStore(state, (db) => sweep(db));
+import { assertCorruptAndReachable, fillTerminal, logPath, runSweep, writeLog } from './retention-helpers.mjs';
 
 test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
@@ -44,7 +25,7 @@ test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50',
   assert.deepEqual(left, seqs.slice(5), 'and what remains is exactly the newest 50');
 });
 
-test('a job that is still active is exempt however old it is, and is not counted either', { skip: NEEDS_SQLITE }, () => {
+test('a job that is still active is exempt however old it is', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const month = 30 * 24 * 60 * 60 * 1000;
   // Ancient enough that any rule reading age rather than state would take them,
@@ -59,12 +40,12 @@ test('a job that is still active is exempt however old it is, and is not counted
 
   assert.ok(!deleted.includes(queued), 'a queued job is not history');
   assert.ok(!deleted.includes(running), 'and neither is a running one');
-  assert.equal(deleted.length, 5, 'nor do they consume any of the 50 places kept for finished jobs');
+  assert.equal(deleted.length, 5);
   assert.ok(readJob(state, 'ancientq'));
   assert.ok(readJob(state, 'ancientr'));
 });
 
-test('a row a newer plugin wrote is never deleted, and is not counted toward the ceiling', { skip: NEEDS_SQLITE }, () => {
+test('a row a newer plugin wrote is never deleted', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Two finished rows in the same position — the two oldest of all — differing
   // in nothing but the version stamped on them. That is what makes the two
@@ -111,117 +92,160 @@ test('a row an operator abandoned after it ran is never deleted, and keeps its l
   assert.equal(existsSync(logPath(state, control)), false, "and the control's log went with its row");
 });
 
-test("a deleted job's log goes with it, while a surviving job's log stays", { skip: NEEDS_SQLITE }, () => {
+test('a run that recorded no failure is still ordinary history and is pruned', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  const seqs = fillTerminal(state, RETAIN + 2);
+  // The `IS`-vs-`=` control, and it is the whole test. `json_extract` yields NULL
+  // for a row with no failure, and `NULL = 'operator-abandoned'` is NULL rather
+  // than false — `NOT (1 AND NULL)` is NULL, a WHERE clause drops it, and every
+  // genuinely-run completed row would leave the candidate set and never be pruned
+  // again. Silently: no throw, no log line, just a record that stops shrinking.
+  //
+  // Two rows in the same position — the two oldest of all — differing in nothing
+  // but whether they ever reached `running`, which is why every other fixture in
+  // this file is insensitive to the operator.
+  const ran = insertSynthetic(state, { id: 'ran', state: 'completed', startedAgoMs: 60_000, outcome: { content: 'ok' } });
+  const never = insertSynthetic(state, { id: 'never', state: 'completed', outcome: { content: 'ok' } });
+  fillTerminal(state, RETAIN);
 
-  runSweep(state);
+  const { deleted } = runSweep(state);
 
-  for (const seq of seqs.slice(0, 2)) {
-    assert.equal(existsSync(logPath(state, seq)), false, `log ${seq}.log outlived its row`);
-  }
-  for (const seq of seqs.slice(2)) {
-    assert.equal(existsSync(logPath(state, seq)), true, `log ${seq}.log was taken from a job that was kept`);
-  }
-});
-
-test('an orphaned log is swept, and anything else in the directory is left alone', { skip: NEEDS_SQLITE }, () => {
-  const state = stateDir();
-  const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
-  writeLog(state, live);
-  // Exactly what a crash between the DELETE and the unlink leaves behind: a log
-  // with no row to explain it. Written by hand because the only other way to
-  // produce one is to kill a process at the one instruction in between.
-  writeFileSync(logPath(state, 9999), 'orphan\n');
-  writeFileSync(join(state, 'logs', 'notes.txt'), 'not ours\n');
-
-  const { logs } = runSweep(state);
-
-  assert.deepEqual(logs, [9999]);
-  assert.equal(existsSync(logPath(state, 9999)), false);
-  assert.equal(existsSync(logPath(state, live)), true, "a running job's log is not an orphan");
-  assert.equal(
-    existsSync(join(state, 'logs', 'notes.txt')),
-    true,
-    'a name that is not of the shape this plugin writes is left alone',
+  assert.deepEqual(
+    deleted.sort((a, b) => a - b),
+    [ran, never].sort((a, b) => a - b),
+    'both are ordinary finished jobs; a null-unsafe comparison keeps the one that ran',
   );
+  assert.equal(readJob(state, 'ran'), null);
+  assert.equal(readJob(state, 'never'), null, 'the control shows age and order were not what decided it');
 });
 
-test("a deleted job's cancellation acknowledgement goes with its log", { skip: NEEDS_SQLITE }, () => {
+test('a row whose failure payload is corrupt does not sink the sweep', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  const seqs = fillTerminal(state, RETAIN + 2);
-  for (const seq of seqs.slice(0, 2)) writeFileSync(ackPath(state, seq), 'someid\n');
-  writeFileSync(ackPath(state, seqs[seqs.length - 1]), 'someid\n');
+  // `json_extract` THROWS on an unparseable payload, and `sweep()` runs in
+  // `task-submit.mjs` BEFORE anything is inserted or spawned — so one corrupt
+  // `failure` on this machine would sink every submission, not merely misfile a
+  // row. The `CASE WHEN json_valid` guard turns it into a NULL.
+  const victim = insertSynthetic(state, { id: 'victim', state: 'completed', outcome: { content: 'ok' } });
+  // `startedAgoMs` is load-bearing rather than decorative: without it the test
+  // cannot fail with the guard removed.
+  const corrupt = insertSynthetic(state, {
+    id: 'corrupt', state: 'failed', startedAgoMs: 60_000, failure: { reason: 'worker-died' },
+  });
+  // Corrupted by a raw UPDATE because the helper cannot express it: an ordinary
+  // object is serialised, and the one value that would pass through — `''` — is a
+  // shape no failure path writes. A truncated payload is how a row actually gets
+  // this way.
+  withStore(state, (db) => {
+    db.prepare('UPDATE jobs SET failure = ? WHERE seq = ?').run('{"reason":"oper', corrupt);
+    // Asserted, not assumed — and every gate, not just the corruption. A `seq`
+    // that drifted would match no row and leave the payload valid; a row that
+    // lost its `started_at`, went non-terminal or gained a foreign version would
+    // let this test pass with the guard REMOVED, which is the one thing it exists
+    // to notice. Read back through the same function the guard consumes rather than
+    // by counting the write's own `changes`, which says a row was touched and
+    // not what is in it.
+    assertCorruptAndReachable(db, corrupt);
+  });
+  fillTerminal(state, RETAIN);
 
-  runSweep(state);
+  // Reaching this line at all is half the assertion: without the guard the sweep
+  // throws `malformed JSON` and every background submission on the machine fails.
+  const { deleted } = runSweep(state);
 
-  for (const seq of seqs.slice(0, 2)) {
-    assert.equal(existsSync(ackPath(state, seq)), false, `${seq}.cancel-ack outlived its row`);
-  }
-  assert.equal(
-    existsSync(ackPath(state, seqs[seqs.length - 1])),
-    true,
-    'and one belonging to a job that was kept is not touched',
-  );
+  // Never the corrupt row's own fate, which differs between `IS` and `=` and
+  // would make this test answer a second question badly.
+  assert.ok(deleted.includes(victim), 'an ordinary over-cap row is still collected');
+  assert.equal(readJob(state, 'victim'), null);
 });
 
-test('an acknowledgement whose log is already gone is still enumerated and swept', { skip: NEEDS_SQLITE }, () => {
+test('an abandoned row does not consume one of the places kept for ordinary history', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // Also what creates the logs directory, so the fixture below writes somewhere
-  // real rather than reporting its own absence as the sweep's answer.
-  const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
-  writeFileSync(ackPath(state, live), 'someid\n');
-  // The leak this scan key exists to close: every unlink here tolerates failure,
-  // so a job whose log went while its acknowledgement did not is exactly the
-  // residue a `<seq>.log`-keyed scan can never see again. There is no log at all
-  // for 8888 — if the sweep still finds it, it is not keying on one.
-  writeFileSync(ackPath(state, 8888), 'someid\n');
-  writeFileSync(join(state, 'logs', 'notes.txt'), 'not ours\n');
+  // The other half of the exemption, and the half the fixture above cannot see.
+  // Measured during OAI-161: with the exempt row as the OLDEST, the clause in the
+  // inner `SELECT` and the same clause moved to the outer `DELETE` return an
+  // identical `deleted` — a row below the cutoff can never displace anything. It
+  // discriminates only from the other end, where sparing the row while still
+  // spending its slot evicts the oldest ordinary one behind it.
+  const kept = fillTerminal(state, RETAIN + 1);
+  const abandoned = insertSynthetic(state, {
+    id: 'abandoned', state: 'failed', startedAgoMs: 60_000, failure: { reason: 'operator-abandoned' },
+  });
 
-  const { logs } = runSweep(state);
+  assert.equal(readJobs(state).length, RETAIN + 2, 'all RETAIN + 2 fixture rows landed — a short fill and the arrangement stops discriminating');
 
-  assert.deepEqual(logs, [8888], 'an orphan with no log is an orphan');
-  assert.equal(existsSync(ackPath(state, 8888)), false);
-  assert.equal(existsSync(ackPath(state, live)), true, "a running job's acknowledgement is not an orphan");
-  assert.equal(existsSync(join(state, 'logs', 'notes.txt')), true, 'and the widened key took nothing extra');
+  const { deleted } = runSweep(state);
+
+  // ONE ordinary row over the ceiling, so the correct statement takes exactly it.
+  // Asserting `deleted` is EMPTY would have been the obvious shape and is a check
+  // that cannot fail: a `PRUNE` that deleted nothing at all satisfies it too.
+  // Placement still discriminates — the exempt row counted would push a second
+  // ordinary row out — and inertness no longer passes.
+  assert.deepEqual(deleted, [kept[0]], 'an uncounted row costs the oldest ordinary row nothing but its own place');
+  assert.ok(readJob(state, 'abandoned'));
+  assert.equal(readJobs(state).length, RETAIN + 1, 'the 50 kept, none evicted to make room for the exempt one');
 });
 
-test('a name the unlink could not address again is not swept, and takes nothing with it', { skip: NEEDS_SQLITE }, () => {
+test('an active job does not consume one of those places either', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
-  writeLog(state, live);
-  const named = (name) => join(state, 'logs', name);
-  // Three shapes, because the regex alone closes only the first. Each is a name
-  // whose `Number` conversion does NOT round-trip, so the path the unlink builds is
-  // a different string from the file that was listed.
-  writeFileSync(named('0002.cancel-ack'), 'leading zero\n');
-  writeFileSync(named('9007199254740993.log'), 'past MAX_SAFE_INTEGER\n');
-  writeFileSync(named('1000000000000000000000.cancel-ack'), 'becomes 1e+21\n');
-  // The bystander, and the sharpest half of this witness: `Number` turns the name
-  // above into `1e+21`, so a sweep that keyed on the number would unlink THIS —
-  // deleting an unrelated file rather than merely leaking the listed one.
-  writeFileSync(named('1e+21.log'), 'not addressed by any sequence\n');
-  // A SECOND bystander, because without it the fixture above it is inert: on its own
-  // `9007199254740993.log` rounds to a path that does not exist, both unlinks fail,
-  // and every assertion passes with the check removed. This is the file that rounding
-  // would take. A fixture that cannot fail inside a witness that can is the same
-  // defect one layer down.
-  writeFileSync(named('9007199254740992.log'), 'what the rounding would hit\n');
-  // Past SQLite's maximum sequence, so no row can ever own it — and it DOES survive
-  // the round trip, which is why the round trip is not the whole check.
-  writeFileSync(named('9223372036854776000.log'), 'beyond any legal sequence\n');
+  // The third exemption, and it had the same blind spot as the other two: the
+  // test above asserts `deleted.length === 5` with the active rows OLDEST, which
+  // holds identically whether `state IN (…)` sits in the inner `SELECT` or the
+  // outer `DELETE`. Every exemption in `PRUNE` now has a witness at the end where
+  // placement decides something, so the module's "EVERY exemption belongs in the
+  // inner SELECT" is pinned rather than asserted.
+  const kept = fillTerminal(state, RETAIN + 1);
+  insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid, startedAgoMs: 1000 });
 
-  const { logs } = runSweep(state);
+  assert.equal(readJobs(state).length, RETAIN + 2, 'all RETAIN + 2 fixture rows landed — a short fill and the arrangement stops discriminating');
 
-  assert.deepEqual(logs, [], 'a name that does not survive the conversion is not this sweep\'s to collect');
-  const survivors = [
-    '0002.cancel-ack', '9007199254740993.log', '1000000000000000000000.cancel-ack',
-    '1e+21.log', '9007199254740992.log', '9223372036854776000.log',
-  ];
-  for (const name of survivors) {
-    assert.equal(existsSync(named(name)), true, `${name} was taken by a sweep that could not address it`);
-  }
-  assert.equal(existsSync(logPath(state, live)), true);
+  const { deleted } = runSweep(state);
+
+  assert.deepEqual(deleted, [kept[0]], 'a job still running does not evict a second finished one to make room');
+  assert.ok(readJob(state, 'live'));
+});
+
+test('a row a newer plugin wrote does not consume one of those places either', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // The same blind spot, in the exemption that predates this one: the test above
+  // it asserts only that a foreign row is never DELETED, and holds identically
+  // whether its clause sits in the inner `SELECT` or the outer `DELETE`. Added
+  // beside that test rather than replacing it, so the two halves of the promise
+  // have separate witnesses and separate mutations.
+  const kept = fillTerminal(state, RETAIN + 1);
+  insertSynthetic(state, { id: 'foreign', state: 'completed', version: 99 });
+
+  assert.equal(readJobs(state).length, RETAIN + 2, 'all RETAIN + 2 fixture rows landed — a short fill and the arrangement stops discriminating');
+
+  const { deleted } = runSweep(state);
+
+  assert.deepEqual(deleted, [kept[0]], 'a machine that ran a newer plugin does not silently shorten this build\'s history');
+  assert.ok(readJob(state, 'foreign'));
+});
+
+test('a row abandoned before it ever ran is pruned like any other', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // The narrowing the exemption was given: `claimJob` sets `started_at` atomically
+  // with `running`, before the worker can reach the server, so a row abandoned
+  // while still queued provably sent nothing and has no paid-for answer to keep.
+  // Exempting it would grow the kept set for no gain.
+  //
+  // Two rows in the same position, differing in nothing but `started_at`.
+  const neverRan = insertSynthetic(state, {
+    id: 'neverran', state: 'failed', failure: { reason: 'operator-abandoned' },
+  });
+  const ranAndAbandoned = insertSynthetic(state, {
+    id: 'ranthen', state: 'failed', startedAgoMs: 60_000, failure: { reason: 'operator-abandoned' },
+  });
+  writeLog(state, neverRan);
+  writeLog(state, ranAndAbandoned);
+  fillTerminal(state, RETAIN);
+
+  const { deleted } = runSweep(state);
+
+  assert.deepEqual(deleted, [neverRan], 'the queued one goes');
+  assert.equal(readJob(state, 'neverran'), null);
+  assert.ok(readJob(state, 'ranthen'));
+  assert.equal(existsSync(logPath(state, neverRan)), false, 'and its log with it — there is no answer in there');
+  assert.equal(existsSync(logPath(state, ranAndAbandoned)), true);
 });
 
 test('a deleted sequence is never reused, so a later job cannot sort ahead of an earlier one', { skip: NEEDS_SQLITE }, () => {

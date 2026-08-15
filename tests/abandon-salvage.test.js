@@ -14,11 +14,13 @@
 // the `false`-return arm, which is the one `/oai:abandon` created.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { withBusyRetry } from '../scripts/lib/job-busy.mjs';
 import { isAlive } from '../scripts/lib/job-liveness.mjs';
-import { NEEDS_SQLITE, readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { sweep } from '../scripts/lib/job-retention.mjs';
+import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
 /**
  * A scenario of its own, gating the HTTP REPLY.
@@ -93,6 +95,16 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     const workerPid = readJob(scenario.state, id).worker_pid;
     assert.ok(workerPid, 'the worker must have registered before this test means anything');
 
+    // The positive control for the sweep below, inserted HERE rather than beside
+    // it: `insertSynthetic` writes through `withStore` with no busy retry, and
+    // this is the quieter window — after the worker has registered, before the
+    // abandon. A `completed` row with no pids is invisible to `decide`'s two
+    // rungs, so it cannot disturb the one-job-at-a-time queue this test drives.
+    const controlSeq = insertSynthetic(scenario.state, {
+      id: 'ordinary', state: 'completed', outcome: { content: 'ok' },
+    });
+    writeFileSync(join(scenario.state, 'logs', `${controlSeq}.log`), 'ordinary history\n');
+
     // `--force` is required and is the honest scenario: a worker mid-request is
     // beating, so a plain abandon exits 1 `beating`, the row never goes terminal,
     // `finish()` succeeds, and no salvage ever happens.
@@ -104,13 +116,66 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     assert.equal(row.state, 'failed');
     assert.equal(row.failure.reason, 'operator-abandoned');
 
-    // Now let the model answer. The worker collects it, calls `finish()`, and its
-    // CAS matches nothing — the row is already terminal.
-    scenario.release();
-
     // Built by hand: `logPathFor` resolves OAI_PLUGIN_STATE at call time, so from
     // this process it would point at the developer's real state directory.
     const log = join(scenario.state, 'logs', `${row.seq}.log`);
+
+    // Retention, run against the real row while its worker is still holding the
+    // model call — the exact window OAI-161 exists to close, and the only place it
+    // is exercised end to end. `tests/retention.test.js` proves the exemption on
+    // synthetic rows; this proves the file the live worker was handed as its
+    // stdout descriptor survives a real sweep of the row it belongs to.
+    //
+    // `retain: 0` is maximally hostile: every non-exempt terminal row goes. On
+    // its own that is not enough to conclude anything — a `PRUNE` that deleted
+    // NOTHING would satisfy "the row survived" identically — so the ordinary row
+    // above is asserted GONE in the same breath. That is what makes this a
+    // measurement of the exemption rather than of the sweep having run at all.
+    //
+    // Through `withStore` because `sweep()` resolves the logs directory from
+    // ambient OAI_PLUGIN_STATE rather than from the handle it is given — called
+    // bare from this process it would sweep the developer's own state directory.
+    // `withBusyRetry` because the worker beats every few seconds and a beat is a
+    // write: this `DELETE … RETURNING` can collide with one. Production's own
+    // caller tolerates `SQLITE_BUSY` by skipping the sweep entirely
+    // (`task-submit.mjs` `sweepQuietly`), which is not available here — skipping
+    // would turn the witness into a no-op that reports success.
+    //
+    // **Both numbers are set, because the budget alone does not bound the wait.**
+    // `budgetMs` is a floor on when giving up begins, not a ceiling on how long
+    // it takes, and `openStore` hands back a handle carrying
+    // `PRAGMA busy_timeout = 10000` — so ONE attempt can sit in SQLite for ten
+    // seconds before the budget is consulted at all. Left at its 30s default that
+    // is ~40s of blocked event loop in the process that also HOSTS the fake
+    // server, against a worker whose own 30s first-byte clock is running in
+    // another process: it would time out, retry, and hit the deliberate
+    // `unexpected second request` above. 250ms attempts under a 2s budget bound
+    // the whole thing to ~2.25s, far inside that headroom.
+    //
+    // It covers the sweep statement; the `openStore` ahead of it is bounded by
+    // its own budget rather than by this wrapper.
+    const swept = withStore(scenario.state, (db) => {
+      db.exec('PRAGMA busy_timeout = 250');
+      return withBusyRetry(() => sweep(db, { retain: 0 }), { budgetMs: 2_000 });
+    });
+    // One assertion carrying both facts: the sweep was LIVE, and the abandoned
+    // row was not in what it took.
+    assert.deepEqual(swept.deleted, [controlSeq], 'the ordinary row went; the abandoned one did not');
+    assert.ok(readJob(scenario.state, id), 'the row survived a sweep that took everything else');
+    assert.equal(existsSync(log), true, 'and so did the file the worker is about to write its answer into');
+    // The file half, which is the actual OAI-161 harm. Without the control here,
+    // "the abandoned log survived" is indistinguishable from "`orphanSeqs`
+    // collected nothing at all".
+    assert.ok(swept.logs.includes(controlSeq), 'the orphan sweep ran and collected the control');
+    assert.equal(
+      existsSync(join(scenario.state, 'logs', `${controlSeq}.log`)),
+      false,
+      "the control's log went with its row, so unlinking was reachable in this run",
+    );
+
+    // Now let the model answer. The worker collects it, calls `finish()`, and its
+    // CAS matches nothing — the row is already terminal.
+    scenario.release();
     const salvaged = await until(
       () => { try { const t = readFileSync(log, 'utf8'); return t.includes('SALVAGED_OUTCOME') ? t : null; } catch { return null; } },
       { what: 'the worker to salvage its outcome to the job log' },

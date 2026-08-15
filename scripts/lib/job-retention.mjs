@@ -2,7 +2,7 @@
 // `DELETE` and nothing else — the filesystem design needed tombstones, a
 // high-water marker and a reclamation protocol to say the same thing.
 //
-// Three rows are never touched, and the exemptions are not symmetrical:
+// Three CLASSES of row are never touched, and the exemptions are not symmetrical:
 //
 // 1. **An active job is exempt however old it is.** Age is not evidence about a
 //    job; a run that has been going for a day is still going.
@@ -28,6 +28,8 @@
 //    **Narrowed to `started_at`** because `claimJob` sets it atomically with
 //    `running`, before the worker can reach the server — so a row abandoned while
 //    still queued provably sent nothing and has no paid-for answer to protect.
+//    The narrowing is pinned: `tests/retention.test.js` prunes a row abandoned
+//    before it ever ran, against a ran-and-abandoned control that stays.
 //
 //    **Its growth is unbounded and that is accepted, not overlooked.** Nothing
 //    clears an exempt row, so the kept set grows with every forced abandonment —
@@ -73,15 +75,16 @@ const STATES = TERMINAL_STATES.map(() => '?').join(',');
  *   submission, not merely misfile a row. The guard turns it into a NULL.
  *
  * On this build both are reachable only when `started_at IS NOT NULL` — measured
- * with a control, the same unguarded query throwing on a malformed payload whose
- * row has a `started_at` and not throwing on one without. **That is the planner's
- * evaluation order, not a guarantee SQLite documents**, so the `CASE` is not
- * conditional on it: if the order ever changed, the guard is what keeps a corrupt
- * payload from throwing here, and only the reachability note above goes stale.
+ * against a control **in OAI-161's probe record, not in the suite beside this
+ * file**: the same unguarded query threw on a malformed payload whose row had a
+ * `started_at` and did not on one without. The tests carry only the
+ * `started_at`-present half, so do not go looking for that pair. **That is the
+ * planner's evaluation order, not a guarantee SQLite documents**, so the `CASE` is
+ * not conditional on it: if the order ever changed, the guard is what keeps a
+ * corrupt payload from throwing here, and only the reachability note goes stale.
  *
- * Neither is currently pinned by a test — the controls were cut with the rest of
- * this feature's test matrix, recorded against OAI-161 rather than left to be
- * discovered.
+ * Both are pinned by `tests/retention.test.js`, as is each exemption's placement
+ * (OAI-166). Which fixture pins what is written there and not restated here.
  */
 const PRUNE = `
   DELETE FROM jobs WHERE seq IN (
