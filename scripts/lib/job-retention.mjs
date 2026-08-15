@@ -2,7 +2,7 @@
 // `DELETE` and nothing else — the filesystem design needed tombstones, a
 // high-water marker and a reclamation protocol to say the same thing.
 //
-// Two rows are never touched, and the exemptions are not symmetrical:
+// Three rows are never touched, and the exemptions are not symmetrical:
 //
 // 1. **An active job is exempt however old it is.** Age is not evidence about a
 //    job; a run that has been going for a day is still going.
@@ -11,9 +11,31 @@
 //    loss dressed up as housekeeping. Never *counted* toward the ceiling either,
 //    or a machine that had run a newer plugin would silently evict this build's
 //    own history to make room for rows it cannot even read.
+// 3. **A row an operator abandoned AFTER it started running is exempt, and is
+//    not counted either.** `/oai:abandon` created the one thing this module was
+//    built to assume away: a TERMINAL row whose worker may still be alive. That
+//    worker's `finish()` misses its compare-and-set and writes the answer to its
+//    job log as `SALVAGED_OUTCOME` instead — and `job-spawn.mjs` gave it that log
+//    as its stdout descriptor, so pruning the row unlinks the file underneath a
+//    live writer and the answer dies with the process (OAI-161).
+//
+//    **It reads no pid, deliberately.** Keying on whether the worker is still
+//    alive would be cheaper and is wrong twice over: the exemption would end when
+//    the process exits, which is exactly when the log stops being rewritable and
+//    starts being the only copy; and it would inherit OAI-162, where a malformed
+//    pid reads as dead and the row would prune anyway.
+//
+//    **Narrowed to `started_at`** because `claimJob` sets it atomically with
+//    `running`, before the worker can reach the server — so a row abandoned while
+//    still queued provably sent nothing and has no paid-for answer to protect.
+//
+//    **Its growth is unbounded and that is accepted, not overlooked.** Nothing
+//    clears an exempt row, so the kept set grows with every forced abandonment —
+//    a rare, deliberate operator action on a one-job-at-a-time queue. A window or
+//    a second cap would restore the loss further away rather than remove it.
 import { readdirSync, unlinkSync } from 'node:fs';
 import { cancelAckPathFor } from './cancel-ack.mjs';
-import { TERMINAL_STATES } from './job-record.mjs';
+import { OPERATOR_ABANDONED, TERMINAL_STATES } from './job-record.mjs';
 import { ROW_SCHEMA_VERSION, logPathFor, logsPath } from './job-store.mjs';
 
 /** How many finished jobs are kept. Enough to look back over a day's work. */
@@ -29,11 +51,44 @@ const STATES = TERMINAL_STATES.map(() => '?').join(',');
  *
  * `LIMIT -1 OFFSET ?` is SQLite's "all but the first N": order the deletable
  * rows newest first, skip the ones being kept, and delete the tail.
+ *
+ * **Every exemption belongs in the inner `SELECT`, never the outer `DELETE`, and
+ * that placement is what makes an exempt row UNCOUNTED as well as undeleted.**
+ * Excluded here, it never enters the ordering, so it cannot consume one of the
+ * kept places and evict an innocent row behind it. Moved to the `DELETE`, the
+ * same clause would spare the row and still spend its slot — the abandonment
+ * exemption would then quietly shorten this build's own history.
+ *
+ * Two things about the abandonment clause are load-bearing and neither is
+ * obvious from reading it:
+ *
+ * - **`IS`, not `=`.** `json_extract` yields NULL for a row with no failure, and
+ *   `NULL = 'operator-abandoned'` is NULL, not false — `NOT (1 AND NULL)` is NULL,
+ *   a WHERE clause drops it, and every genuinely-run completed row would fall out
+ *   of the candidate set and never be pruned again. `IS` is SQLite's null-safe
+ *   comparison and answers false there.
+ * - **The `CASE WHEN json_valid`.** `json_extract` THROWS on an unparseable
+ *   payload, and `sweep()` runs in `task-submit.mjs` before anything is inserted
+ *   or spawned — so one corrupt `failure` on this machine would sink every
+ *   submission, not merely misfile a row. The guard turns it into a NULL.
+ *
+ * On this build both are reachable only when `started_at IS NOT NULL` — measured
+ * with a control, the same unguarded query throwing on a malformed payload whose
+ * row has a `started_at` and not throwing on one without. **That is the planner's
+ * evaluation order, not a guarantee SQLite documents**, so the `CASE` is not
+ * conditional on it: if the order ever changed, the guard is what keeps a corrupt
+ * payload from throwing here, and only the reachability note above goes stale.
+ *
+ * Neither is currently pinned by a test — the controls were cut with the rest of
+ * this feature's test matrix, recorded against OAI-161 rather than left to be
+ * discovered.
  */
 const PRUNE = `
   DELETE FROM jobs WHERE seq IN (
     SELECT seq FROM jobs
       WHERE state IN (${STATES}) AND schema_version <= ?
+        AND NOT (started_at IS NOT NULL
+                 AND (CASE WHEN json_valid(failure) THEN json_extract(failure, '$.reason') END) IS ?)
       ORDER BY seq DESC
       LIMIT -1 OFFSET ?
   )
@@ -43,7 +98,7 @@ const PRUNE = `
 function prune(db, retain) {
   return db
     .prepare(PRUNE)
-    .all(...TERMINAL_STATES, ROW_SCHEMA_VERSION, retain)
+    .all(...TERMINAL_STATES, ROW_SCHEMA_VERSION, OPERATOR_ABANDONED, retain)
     .map((row) => Number(row.seq));
 }
 

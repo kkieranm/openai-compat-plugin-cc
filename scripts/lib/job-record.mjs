@@ -21,6 +21,18 @@ export function isTerminal(state) {
 }
 
 /**
+ * The failure reason `/oai:abandon` writes, named here because two modules must
+ * agree on it and neither owns the other.
+ *
+ * `job-abandon.mjs` writes it; `job-retention.mjs` reads it to decide what it
+ * may never delete. A reader and a writer agreeing by coincidence of spelling is
+ * the defect this repo converts to a constant every time it appears — and here a
+ * silent disagreement would not fail loudly, it would simply resume deleting the
+ * rows the exemption exists to keep.
+ */
+export const OPERATOR_ABANDONED = 'operator-abandoned';
+
+/**
  * The columns that hold JSON. Parsed on the way out and stringified on the way
  * in, in one place, so no caller has to remember which is which.
  */

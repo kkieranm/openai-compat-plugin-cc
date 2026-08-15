@@ -150,12 +150,15 @@ function publishFailure(db, seq, error) {
 /**
  * The last place an answer can go when its row will not take it.
  *
- * **Its durability is bounded by the row's, and since `/oai:abandon` that bound
- * is reachable.** An abandoned row is terminal while this worker may still be
- * running, so once 50 newer terminal rows exist the retention sweep prunes it and
- * unlinks the log this process still holds open — the salvaged line then lives
- * only in an unlinked inode and goes when the process exits. Narrow (it needs 50
- * subsequent completions on a one-at-a-time queue) but real: **OAI-161**.
+ * **Its durability is bounded by the row's, and the row now outlives the sweep.**
+ * `job-retention.mjs` exempts an `operator-abandoned` row that reached `running`
+ * from pruning entirely, precisely so this line cannot be unlinked underneath a
+ * worker still writing it — the loss that made **OAI-161**. So the answer lasts
+ * as long as the row, and the row is kept indefinitely.
+ *
+ * What that does NOT buy: this is still not a store. Nothing indexes the line,
+ * nothing expires it, and the only reader is a person following the log path
+ * `/oai:result` prints.
  *
  * **Not durable persistence, and deliberately not.** It opens nothing, defines
  * no schema and adds no reader: it writes to the descriptor this worker was

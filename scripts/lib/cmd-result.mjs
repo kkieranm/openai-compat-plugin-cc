@@ -106,7 +106,8 @@ export async function runResult(argv) {
   // job was lost rather than aged out.
   if (!job) {
     throw new UserError(`No job with id "${id}".`, {
-      hint: `Run /oai:status --all to list what there is. Only the newest ${RETAIN} finished jobs are kept.`,
+      hint: `Run /oai:status --all to list what there is. The newest ${RETAIN} finished jobs are kept`
+        + ' (a job written off by /oai:abandon after it started running is kept indefinitely).',
     });
   }
   if (job.state !== 'completed') refuse(job);

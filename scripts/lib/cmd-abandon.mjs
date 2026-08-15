@@ -121,9 +121,13 @@ function report({ state, couldDrain, reason }, job) {
         ? 'Nothing could be judged about its process — its pid or timestamps could not be read — so'
           + ' whether anything is in flight is unknowable and an overlap cannot be ruled out.'
         : (job.cancel_requested_at
-          // Bounded by the row's own lifetime, and saying so costs one clause:
-          // once retention prunes this row, `cancelRequested` reads false and a
-          // worker that wakes later never sees the request (OAI-161).
+          // Bounded by the row's own lifetime, and saying so costs one clause.
+          // That bound used to be short: retention would prune this row, and a
+          // worker waking afterwards would read `cancelRequested` as false. For a
+          // row that RAN it is now indefinite — retention exempts an
+          // `operator-abandoned` row with a `started_at` (OAI-161). A row
+          // abandoned while queued is still pruned on the ordinary schedule, and
+          // it is the one that never had a worker to tell.
           ? 'A cancellation was already pending, and it still stands while this row lasts: if its'
             + ' process is alive it will see that at its next check-in and exit.'
           : 'Its process was never asked to stop')

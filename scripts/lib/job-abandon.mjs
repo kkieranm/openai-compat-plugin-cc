@@ -17,7 +17,7 @@ import { beatIsStale, livenessOf, relevantPid } from './job-liveness.mjs';
 import { couldDrain } from './job-drain.mjs';
 import { inImmediateTransaction } from './job-queue.mjs';
 import { reconcile } from './job-reconcile.mjs';
-import { finish, isKnownVersion, jobById } from './job-record.mjs';
+import { OPERATOR_ABANDONED, finish, isKnownVersion, jobById } from './job-record.mjs';
 import { errorReport } from './review-report.mjs';
 
 /**
@@ -166,7 +166,10 @@ function abandonFailure(row, liveness) {
       + ` ${running ? 'worker' : 'waiter'} (${pid ?? 'unknown'}) answered a liveness probe taken`
       + ' during the decision.';
   return errorReport({
-    reason: 'operator-abandoned',
+    // The constant, not the literal: `job-retention.mjs` keys its exemption on
+    // this exact value, and a rename that touched only one side would quietly
+    // resume deleting the rows that exemption protects.
+    reason: OPERATOR_ABANDONED,
     message: `${observed} Nothing was signalled, so this says what happened to the ROW and nothing`
       + ' about the process.',
     // The hint branches with the message. Batch 3 split the message and left this

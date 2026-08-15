@@ -33,9 +33,13 @@ Handling failures:
   command later is what gets the answer — do not resubmit the task.
 - A failed job's message and hint come from the run itself; the job's log file is named alongside
   them and holds whatever the worker printed.
-- An id that no longer resolves may simply have aged out: only the newest 50 finished jobs are kept.
+- An id that no longer resolves may simply have aged out: the newest 50 finished jobs are kept.
   Retrieve an answer you want to keep, or copy it somewhere, rather than treating the job list as
   storage.
+- Two kinds of row are never discarded and are not counted against those 50: one a newer version of
+  the plugin wrote, and one `/oai:abandon` wrote off **after it had started running**. The second is
+  kept because its worker may still have been alive and may have salvaged an answer into its log, so
+  discarding the row would take that log with it.
 - Background jobs need `node:sqlite`. Node.js provides it unflagged from 22.13 (23.4 on the 23.x
   line), but a build compiled without SQLite, or one started with `--no-experimental-sqlite`, lacks it
   at any version. On a runtime that does not provide it the script exits 1 saying so, and

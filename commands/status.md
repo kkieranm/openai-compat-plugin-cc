@@ -76,6 +76,13 @@ History is bounded: the newest 50 finished jobs are kept, and older ones are dis
 their logs the next time a job is submitted. A job that has not finished is never discarded, however
 long it has been waiting, so nothing here loses work that is still going.
 
+Two kinds of finished job are exempt from that ceiling and are not counted against it: one a newer
+version of the plugin wrote, and one `/oai:abandon` wrote off **after it had started running**. The
+second is kept because its worker may have been alive when the row was written off, and may have
+salvaged its answer into the job log; discarding the row would unlink that log underneath it. Those
+rows accumulate — there is no way to clear one — which is the accepted cost of not destroying an
+answer that was paid for.
+
 Background jobs need `node:sqlite`. Node.js provides it unflagged from 22.13 (23.4 on the 23.x
 line), but a build compiled without SQLite or a process started with `--no-experimental-sqlite` lacks
 it at any version. On a runtime that does not provide it this command exits 1 saying so, and

@@ -79,6 +79,38 @@ test('a row a newer plugin wrote is never deleted, and is not counted toward the
   assert.ok(readJob(state, 'foreign'), 'erasing a newer build\'s completed job is data loss, not housekeeping');
 });
 
+test('a row an operator abandoned after it ran is never deleted, and keeps its log', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // Two `failed` rows in the same position — the two oldest of all — differing in
+  // nothing but the reason recorded on them. That is what attributes the two
+  // verdicts to the reason rather than to age or to order.
+  //
+  // `startedAgoMs` is what makes the abandoned row the shape under test: the
+  // exemption is narrowed to rows that reached `running`, since `claimJob` sets
+  // `started_at` atomically with the state before the worker can reach the
+  // server. A row abandoned while queued sent nothing and has no answer to keep.
+  const abandoned = insertSynthetic(state, {
+    id: 'abandoned', state: 'failed', startedAgoMs: 60_000, failure: { reason: 'operator-abandoned' },
+  });
+  const control = insertSynthetic(state, {
+    id: 'died', state: 'failed', startedAgoMs: 60_000, failure: { reason: 'worker-died' },
+  });
+  writeLog(state, abandoned);
+  writeLog(state, control);
+  fillTerminal(state, RETAIN);
+
+  const { deleted } = runSweep(state);
+
+  assert.deepEqual(deleted, [control], 'the reconciled row of the same age goes; the abandoned one stays');
+  assert.ok(readJob(state, 'abandoned'), 'an abandoned row may still have a live worker writing to its log');
+  // The point of the whole exemption. Deleting the row is not itself the harm —
+  // unlinking the log is, because `job-spawn.mjs` handed that file to the worker
+  // as its stdout descriptor, and a worker that later salvages its answer into an
+  // unlinked inode loses it when the process exits (OAI-161).
+  assert.equal(existsSync(logPath(state, abandoned)), true, 'the salvaged answer lives in this file');
+  assert.equal(existsSync(logPath(state, control)), false, "and the control's log went with its row");
+});
+
 test("a deleted job's log goes with it, while a surviving job's log stays", { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const seqs = fillTerminal(state, RETAIN + 2);
