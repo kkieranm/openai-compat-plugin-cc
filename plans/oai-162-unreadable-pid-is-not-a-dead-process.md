@@ -84,8 +84,13 @@ into the payload. The user chose to strip.
   documented in `commands/status.md` and `commands/abandon.md`.
 - **An unrecognised `state` is not routed to `malformed`** in `displayOf`.
 
-Everything else in the plan shipped. The three withdrawn pieces and the defects behind them are filed
-as tracker items.
+Everything else in the plan shipped. **Whether each withdrawn piece became a tracker item was
+re-adjudicated at close-out on 2026-08-16 rather than assumed, and only ONE did**: the exit not being
+named beside the row is filed as OAI-174. Preserving the recorded value and routing an unrecognised
+`state` to `malformed` were both dropped — neither is reachable from anything this build writes, and
+this section is itself the durable record of the decision, which is what a tracker item would have
+duplicated. The defects the review found in code that PRE-DATED this change are filed separately
+(OAI-172, OAI-173, OAI-175, and an amendment to OAI-160).
 
 ## Approach
 

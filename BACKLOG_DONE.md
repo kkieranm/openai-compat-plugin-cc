@@ -1,3 +1,69 @@
+## 2026-08-16 — OAI-162 closed (`d1f3e2c`)
+
+- **OAI-162** — **An unreadable pid is not a dead process.** Closed 2026-08-16 by `d1f3e2c`. Plan:
+  [`plans/oai-162-unreadable-pid-is-not-a-dead-process.md`](plans/oai-162-unreadable-pid-is-not-a-dead-process.md),
+  with `pre-build-round-4-threaded.md` beside it as the one approving-round archive.
+
+  **What shipped.** `pidLiveness` answers `live`, `gone` or `unreadable`; `isAlive` becomes a
+  projection of it; `livenessOf` routes `unreadable` to the existing `malformed` verdict. Only `ESRCH`
+  reads as dead. Both `running` and `queued` rows, since both read a pid. 16 files, four of them
+  documentation, and no new module.
+
+  **The shape check runs before the probe, and that order turned out to be the load-bearing part.**
+  `kill(0, 0)` signals the process group and `kill(-1, 0)` every process the user may signal — both
+  SUCCEED, so a `0` or `-1` in the column would have read `live`, which is worse than the defect being
+  fixed. The catch-all arm's whole reachable population is a positive integer `2**31` or above, which
+  Node's own validator rejects with `ERR_INVALID_ARG_TYPE` **before any syscall**, so no message
+  downstream may say a probe was attempted and came back inconclusive. That is written into the module
+  because the obvious guard for "an error we do not interpret" is `if (!error.code)`, which is false
+  for a `TypeError` carrying a Node code rather than a POSIX errno.
+
+  **Proved at the CLI, not only in the suite.** A seeded `running` row with `worker_pid = "garbage"`
+  and a `queued` row with `waiter_pid = -1` both render `malformed` with distinct sentences; the
+  flagless `/oai:abandon` refuses (exit 1); `--force` writes `failed` / `operator-abandoned` and the
+  stored record attributes no probe and no pid. **The positive control is the same run with
+  `pidLiveness` reverted to the old collapse**: both rows then auto-terminalize as `failed` — *"The
+  worker for job X exited without recording an outcome"* — and `/oai:abandon` reports *"already
+  settled by ordinary recovery: recorded as worker-died"*, about a pid of `"garbage"`. Source restored
+  and proved identical to backup by `diff`. Suite 964/964 in the working tree and again in a fresh
+  clone of the commit.
+
+  **Three plan phases were withdrawn by the user AFTER approval**, at review pass 4, on Codex's scope
+  review: the diff had reached 25 files and three modules against a plan naming 16 and one, and
+  roughly 700 of ~960 new lines served two mechanisms the filed defect did not require. One of the
+  three reversed a refuse-to-ship finding Codex itself had raised at the plan gate. The plan records
+  each and why. Filing them was then re-adjudicated rather than assumed: only the exit-discovery one
+  is live, as OAI-174.
+
+  **What the review cost, and the one thing it found late.** Ten passes. The dominant finding class
+  was *claiming more than was established* — the same defect OAI-162 is about — which recurred in five
+  successive wordings of one sentence. A pass-7 documentation edit **silently no-op'd**: a `str.replace`
+  whose needle an earlier edit in the same run had already rewritten matched nothing, wrote nothing,
+  and the batch still reported green. Found by the next pass's fork; every subsequent replacement
+  carried an `assert old in s` guard, which then tripped twice for real.
+
+  **Residue, after Codex re-checked every proposed entry against the source.** Filed: **OAI-172**
+  (two false descriptions in the abandon command, merged), **OAI-173** (the reconciler's failure
+  vocabulary retyped with nothing pinning the copies), **OAI-174** (the status listing never names the
+  exit for a malformed row — the one live withdrawn piece), **OAI-175** (`status.md` never names
+  `starting`). **OAI-160 was AMENDED rather than duplicated**: it already named `displayOf`'s
+  `dead`/`never-started` arms as *"reachable only for a row a newer plugin wrote"*, and that premise is
+  false — an ordinary row renders `! written by a newer plugin (row schema 1)` whenever only the
+  DATABASE pragma is too new, a sentence that contradicts itself in its own parentheses. **It stays in
+  tier 11**: it was briefly moved to tier 1 and moved back the same day, because the row that branch
+  mislabels is `dead` or `never-started` — the label is wrong, but no live work is at risk, and tier 1
+  is for live work. Tier 1 is now empty and kept as a closure record; the priority view starts at
+  tier 2.
+
+  **Three candidate items were dropped on review rather than filed**, recorded so the judgement is not
+  re-made from scratch: preserving the unreadable value in the failure record and routing an
+  unrecognised `state` to `malformed` are both recoverable from the committed plan and neither is
+  reachable from anything this build writes; extracting `abandonFailure` is already forced by the size
+  ratchet at the moment it matters. A fourth — "a readable row in a too-new database has no exit" —
+  was **withdrawn as wrong**: the block is `cmd-abandon.mjs`'s deliberate `DatabaseTooNewError`, not a
+  version conflation, and the documented remedy (use the newer plugin) is a remedy. It was drafted on
+  a mechanism I had mis-traced, and Codex refuted it against the source.
+
 ## 2026-08-15 — OAI-166 closed (`7f65ac6`)
 
 - **OAI-166** — **The fixtures OAI-161's scope cut left are built, and the two silent traps are

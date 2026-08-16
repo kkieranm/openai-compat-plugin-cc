@@ -66,21 +66,32 @@ two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-
 to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
 never ran — re-read that item against this convention before working it.
 
-**Tier 1 — a background job kills, loses or misreports live work.** **OAI-162**. It is
-OAI-69's residue, filed 2026-08-15 when `/oai:abandon` shipped, and is about the seam that item
-opened: a terminal row whose worker may still be alive is a category this queue did not have
-before. **OAI-161 closed 2026-08-15 (`6d06f6c`)** — it could destroy a paid-for answer, and retention now
-exempts an operator-abandoned row that reached `running`. **OAI-166 closed 2026-08-15 (`7f65ac6`)** —
-the fixtures that cut left it are built, and the two silent SQL traps are pinned. OAI-162 is a
-misattribution rather than a loss, and it is the last thing in this tier that is wrong today.
+**Tier 1 — a background job kills, loses or misreports live work. EMPTY as of 2026-08-16, and kept
+as a closure record rather than deleted.** All three members closed in two days:
+**OAI-161 (`6d06f6c`, 2026-08-15)** — retention could destroy a paid-for answer, and now exempts an
+operator-abandoned row that reached `running`. **OAI-166 (`7f65ac6`, 2026-08-15)** — the fixtures its
+scope cut left are built and the two silent SQL traps are pinned. **OAI-162 (`d1f3e2c`, 2026-08-16)** —
+an unreadable pid no longer reads as a dead process, and such a row fails closed as `malformed` in
+both states.
+**Nothing was promoted in to keep the tier populated, and that was a deliberate call.** OAI-162's
+review found one wrong branch in the display layer and it was folded into OAI-160 as an amendment;
+OAI-160 stayed in tier 11 where its other eleven entries belong, because the row that branch mislabels
+is `dead` or `never-started` — not live work, which is what this tier is for. A tier heading with no
+entry list is structurally fine (verified against `tests/backlog-structure.test.js` by emptying this
+one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
+forces an occupant. **The top of the priority view is therefore tier 2.**
 
-**Tier 2 — the suite says something false about itself.** **OAI-167**, **OAI-168**, **OAI-170**. All
-three are OAI-166's residue. OAI-167 is five comments that deny a failure mode, two of them turning an
+**Tier 2 — the suite says something false about itself.** **OAI-167**, **OAI-168**, **OAI-170**,
+**OAI-172**. The first three are OAI-166's residue; OAI-172 is OAI-162's and is the same class one
+level out — not a test that cannot fail, but a comment and a command document that describe behaviour
+the code does not have. OAI-167 is five comments that deny a failure mode, two of them turning an
 I/O fault into a claim of benign absence — read by whoever next debugs that fault. OAI-168 is the
 general rule that feature paid for twice: a positive control is a check that cannot fail until
 something witnesses it firing. OAI-170 is one unrun mutation, and the cheapest item in this file.
 
-**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**. OAI-169 is two
+**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-173**.
+OAI-173 is OAI-162's residue: two copies of the reconciler's failure vocabulary with nothing asserting
+they agree, where drift exits 1 at an operator whose queue is already free. OAI-169 is two
 constants whose removal shows as an intermittent stall rather than silent wrongness, which is what
 makes leaving them unpinned defensible. OAI-171 is a toolchain observation with no proposed fix: a
 skill loaded into a session is a snapshot, nothing says when it goes stale, and OAI-166's ladder spent
@@ -184,7 +195,13 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165**.
+**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175**.
+**OAI-174 and OAI-175 are OAI-162's residue and both belong to this tier's "may close as no" half.**
+OAI-174 asks whether naming `/oai:abandon --force` beside a malformed row in the status listing is
+product work at all — the exit is already in both command documents and in the command's own refusal,
+so this is discoverability, and it was withdrawn from OAI-162's plan by the user on exactly that
+ground. OAI-175 is one paragraph of documentation and is filed at the bar's edge, said so in its own
+body.
 **OAI-165 sits here rather than with the sweep's own residue** because what it needs first is a
 decision — is `bench/review-sweep.mjs` this repo's instrument or a tool other repos run — and only one
 answer makes any of the work worth doing.
@@ -352,8 +369,13 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 **Tier 11 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
 **OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**, **OAI-150**,
-**OAI-160**. The last of those is coverage debt in the same subsystem, filed by OAI-64's confirmation
-pass and owned by nothing else.
+**OAI-160**. OAI-160 is coverage debt in the same subsystem, filed by OAI-64's confirmation pass and
+owned by nothing else — **but it was AMENDED on 2026-08-16 and one of its twelve entries is no longer
+merely untested.** `displayOf`'s `dead`/`never-started` arms are reachable for an ordinary row this
+build understands, not only for one a newer plugin wrote, and the note they render names the row's own
+schema while attributing it to a newer plugin. It leads the tier's tail for that reason. It stays here
+rather than moving up because the row it mislabels is dead or never-started: the label is wrong, and
+no live work is at risk from it.
 **OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
 Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
 lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
@@ -364,8 +386,9 @@ the same day Codex reversed its own refusal when asked as a scheduling question 
 verdict point. What survives is the defect itself, and OAI-106 was re-scoped so its cheap half — the
 message stops asserting something false, with no new lifecycle state — is separable from the
 `persistence-pending` state that may never be worth building.
-The rest are last because nothing is broken today: each fires only under contention that has never
-been observed outside an injected test. They are here at all because ADR 020 exists to remove a
+The rest are last because nothing is broken today — **with the one exception noted above**, OAI-160's
+mislabelled render, which is wrong right now and is why that item leads this tail: each fires only
+under contention that has never been observed outside an injected test. They are here at all because ADR 020 exists to remove a
 comment that claimed a property the code did not have, and each is a smaller instance of that shape —
 an exclusion resting on an untested argument (OAI-105), a rescue whose own guard has no witness and
 one unreachable-today hole (OAI-109), a count restated where nothing holds it to the code (OAI-110),
@@ -2729,20 +2752,26 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   because the branch itself is untouched.
   *Enumerated by a scout against a fixed manifest, each entry checked by grepping the test tree rather
   than assumed.*
-
-- **OAI-162** — **A corrupt `worker_pid` reads as a dead process, so a row is auto-terminalized on
-  evidence that proves nothing.** Filed 2026-08-15 from `/oai:abandon`'s review, raised by Codex as a
-  refuse-to-ship and adjudicated by the user as file-whole-change-nothing.
-  `isAlive` (`job-liveness.mjs`) returns `false` for every invalid pid and for every probe error except
-  `EPERM` — verified by execution: `-1`, `0`, `1.5`, `2**40` and `"garbage"` all answer `false`.
-  `livenessOf` turns that into `dead`, reconciliation terminalizes the row, and `/oai:abandon` reports
-  "its process was already gone" about a pid that never denoted a process. The contract says only
-  `ESRCH` proves disappearance.
-  **The honest fix is `malformed`, not `dead`** — which is what `commands/abandon.md` promises for a
-  pid that "cannot be read" — but it changes `job-liveness.mjs`, shared by `decide`, `reconcile` and
-  `/oai:status`, so reconciliation would stop collecting such rows and they would wedge until forced.
-  That is a queue-core behaviour change needing its own plan. The doc was narrowed instead, so nothing
-  ships promising what the code does not do.
+  **AMENDED 2026-08-16 from OAI-162's review — this item is no longer coverage-only, because the
+  premise two of its entries rest on is FALSE.** `displayOf`'s `dead`/`never-started` arms and
+  `noteFor`'s matching note are described above as "reachable only for a row a newer plugin wrote".
+  They are also reachable for an ORDINARY row whose own `schema_version` this build understands, when
+  only the DATABASE's `PRAGMA user_version` is too new: `cmd-status.mjs` then skips reconciliation
+  entirely, so a genuinely dead worker's row is never collected and renders `dead`. Proved by
+  execution against the real CLI on a seeded row — a `schema_version: 1` row with a reaped
+  `worker_pid` under `user_version = 2` renders `! written by a newer plugin (row schema 1), so this
+  build will not touch it.` That sentence contradicts itself in its own parentheses: it names the
+  row's schema as `1`, which is exactly what this build understands, while attributing the row to a
+  newer plugin. The unconditional text is `job-render.mjs`'s `noteFor`. So the work is: correct the
+  branch to say which version is too new, then pin it — not merely pin what is there. This is the
+  `PRAGMA user_version` / `schema_version` conflation the repo elsewhere insists on keeping separate,
+  landing at the one place a user reads it.
+  **Two entries above moved or aged, recorded so the item stays actionable.** `isAlive`'s `EPERM` arm
+  is now `pidLiveness`'s (OAI-162) and is still reached by no test — `grep -rn EPERM tests/` returns
+  nothing. And `STARTUP_GRACE_MS` is now referenced BY NAME in three test files
+  (`abandon-record.test.js`, `abandon.test.js`, `abandon-transaction.test.js`), so the "pinned by
+  nothing that names them" claim needs re-checking for that constant specifically before it is worked;
+  `STALE_BEAT_MS` is unaffected.
 
 - **OAI-163** — **A healthy model that reasons without answering is recorded as a SERVER OUTAGE, and
   three in a row would abort the night.** Filed 2026-08-15 from the qwen3.8 characterisation sweep;
@@ -2885,3 +2914,52 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   every step; a version stamp compared at each invocation) each have costs this run is not evidence
   enough to judge. What the run does establish is the cost of not knowing — two discovery passes,
   roughly ten subagents and four Codex calls, spent on prose.
+
+- **OAI-172** — **Two sentences in the abandon command describe behaviour it does not have.** Filed
+  2026-08-16 from OAI-162's review; both verified pre-existing at HEAD, and merged into one item
+  because one change corrects and pins both.
+  (1) `abandonDecision` returns `{ allowed: true, reason: 'forced' }` from TWO rungs — `no-beat`
+  (a beat that is absent or will not parse) and `beating` (a beat that is genuinely fresh) — while
+  `job-abandon.mjs` and `commands/abandon.md` both gloss the forced case as the one where "the beat
+  was fresh and the operator overrode a worker that was checking in". That is false for the first
+  rung. **The consequence is NOT established and the item does not claim one**: the suppressed sleep
+  caveat is about a beat looking *stale* after the machine slept, which is not true of an absent beat
+  either, so suppressing it there may well be right. The defect filed is the false description and the
+  collapse of two grounds into one reason code, not a missing caveat.
+  (2) `cmd-abandon.mjs`'s `REFUSALS` docblock says `gone` "is absent deliberately" and that "every
+  other reason `abandonDecision` can return must appear here". `dead` is also absent, and legitimately
+  — a dead or never-started row is handed to ordinary recovery before the table is consulted — but
+  only `tests/abandon-cli.test.js` records why. A reader checking the table against the vocabulary
+  finds a missing key the comment says cannot exist.
+
+- **OAI-173** — **The reconciler's failure vocabulary is retyped as literals with nothing pinning the
+  two copies together.** Filed 2026-08-16 from OAI-162's review; verified pre-existing at HEAD.
+  `job-abandon.mjs`'s `RECONCILER_FAILURE_REASONS` is `new Set(['worker-died', 'cancel-unconfirmed',
+  'worker-never-started'])` — the failure reasons `job-reconcile.mjs` writes on a `failed` row,
+  retyped, with no shared constant and no test asserting the two agree. (`reconcile` also returns
+  `cancelled`, which is a state rather than a failure reason and is handled by its own arm in
+  `recoveryOwned`.) The set decides that a `failed` row was settled by recovery and may be reported
+  idempotently rather than refused. A fourth failure reason added to the reconciler without being
+  added here would make `/oai:abandon` exit 1 at an operator whose queue recovery had in fact just
+  freed — precisely the outcome the idempotent arm exists to prevent — and nothing would go red.
+
+- **OAI-174** — **The rendered status output never names the exit for a malformed row.** Filed
+  2026-08-16 from OAI-162's build, where it was planned and then WITHDRAWN by the user after approval
+  (recorded in that item's plan). `remedyFor` is gated on `liveness !== 'live'`, so no `/oai:status`
+  note names a command for any malformed shape, and `malformedNote` deliberately names none either:
+  the operator is told the row will not be collected and left to find `/oai:abandon --force`
+  themselves. **The gap is discovery from the listing, not documentation and not the exit** — both
+  `commands/status.md` and `commands/abandon.md` name the flag, and the abandon command's own refusal
+  names it when run. It was cut because naming a command beside a row is only correct where the
+  command would work, and that condition is a second rule the note would have to carry: a row whose
+  own `schema_version` is too new, or any row in a database that is, is refused with no flag able to
+  lift it. Worth doing only if status-output discoverability counts as product work.
+
+- **OAI-175** — **`commands/status.md` never names the `starting` display state.** Filed 2026-08-16
+  from OAI-162's review; verified pre-existing at HEAD. The "Reading the states" list covers `queued`,
+  `running`, `stalled`, `overdue`, `cancelling`, `malformed` and the four terminal states.
+  `livenessOf` also answers `starting` — the ordinary window between a row being committed and its
+  worker registering, which every normal submission passes through, and which `blockingSeqFor` treats
+  as positive evidence that a local job is waiting. Borderline against the filing bar and said to be:
+  it is one paragraph of documentation, filed because the omission is in the document whose whole
+  purpose is to enumerate the states.
