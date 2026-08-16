@@ -6,11 +6,11 @@
 // the sweep LEAVES ALONE: a running job's log, a name of a shape this plugin does
 // not write, and a name whose sequence the unlink could not address again.
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RETAIN } from '../scripts/lib/job-retention.mjs';
-import { NEEDS_SQLITE, insertSynthetic, stateDir } from './job-helpers.mjs';
+import { RETAIN, sweep } from '../scripts/lib/job-retention.mjs';
+import { NEEDS_SQLITE, insertSynthetic, stateDir, withStore } from './job-helpers.mjs';
 import { ackPath, fillTerminal, logPath, runSweep, writeLog } from './retention-helpers.mjs';
 
 test("a deleted job's log goes with it, while a surviving job's log stays", { skip: NEEDS_SQLITE }, () => {
@@ -70,7 +70,7 @@ test("a deleted job's cancellation acknowledgement goes with its log", { skip: N
 test('an acknowledgement whose log is already gone is still enumerated and swept', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Also what creates the logs directory, so the fixture below writes somewhere
-  // real rather than reporting its own absence as the sweep's answer.
+  // real.
   const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
   writeFileSync(ackPath(state, live), 'someid\n');
   // The leak this scan key exists to close: every unlink here tolerates failure,
@@ -109,8 +109,8 @@ test('a name the unlink could not address again is not swept, and takes nothing 
   // would take. A fixture that cannot fail inside a witness that can is the same
   // defect one layer down.
   writeFileSync(named('9007199254740992.log'), 'what the rounding would hit\n');
-  // Past SQLite's maximum sequence, so no row can ever own it — and it DOES survive
-  // the round trip, which is why the round trip is not the whole check.
+  // It DOES survive the round trip, which is why the round trip is not the
+  // whole check.
   writeFileSync(named('9223372036854776000.log'), 'beyond any legal sequence\n');
   // The positive control, and without it the whole witness is inert: an
   // `orphanSeqs` that returned nothing at all satisfies an empty `logs` and every
@@ -130,5 +130,18 @@ test('a name the unlink could not address again is not swept, and takes nothing 
     assert.equal(existsSync(named(name)), true, `${name} was taken by a sweep that could not address it`);
   }
   assert.equal(existsSync(logPath(state, live)), true);
+});
+
+test('a `logs/` that cannot be listed fails the sweep instead of reading as empty', { skip: NEEDS_SQLITE }, () => {
+  // `runSweep`/`openStore` would `mkdirSync` this path and throw EEXIST before
+  // `sweep` is ever reached — the wrong failure for what this test checks —
+  // so `withStore` is used directly to call `sweep` once `logs/` is already a
+  // file rather than a directory.
+  const state = stateDir();
+  withStore(state, (db) => {
+    rmSync(join(state, 'logs'), { recursive: true });
+    writeFileSync(join(state, 'logs'), '');
+    assert.throws(() => sweep(db), { code: 'ENOTDIR' }, 'a directory read fault must reach the caller, not read as an empty logs/');
+  });
 });
 

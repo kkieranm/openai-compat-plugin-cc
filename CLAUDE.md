@@ -119,7 +119,9 @@ than as a tidy cancellation; a `queued` one provably sent nothing and needs no a
 before its log so that a crash in between leaves an orphan the same sweep already collects, and every
 exemption sits in `PRUNE`'s inner `SELECT` — which is what makes an exempt row uncounted as well as
 undeleted — including the `OPERATOR_ABANDONED` row that reached `running`, whose worker may still be
-salvaging an answer into the log a prune would unlink. What the
+salvaging an answer into the log a prune would unlink. `orphanSeqs` does not catch a `logs/` it cannot
+list (OAI-167) — that fault reaches `sweepQuietly`'s existing rethrow rather than reading as an empty
+directory. What the
 model sees is frozen at submission as `request.messages`, so the worker never reads the filesystem.
 **Blocking is relational, not a state**, so `job-queue.mjs` `scanQueued` is the one definition of the
 queue's head — `decide` dispatches on it, and `job-view.mjs` `blockingSeqFor` walks `decide`'s own two

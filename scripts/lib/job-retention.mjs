@@ -134,11 +134,6 @@ const OWNED_NAME = /^([1-9]\d*)\.(?:log|cancel-ack)$/;
  * that cannot change an answer is a check that cannot fail, which is the one thing
  * this repo will not ship, so only the deciding term is kept.
  *
- * That asymmetry is also why the round trip could not have been kept INSTEAD:
- * `9223372036854776000.log` survives it and is `2^63`, past SQLite's maximum
- * sequence, so no row could ever own it and the unlink would take an unrelated
- * file.
- *
  * **This is a stated NARROWING, not a complete characterisation.** The accepted
  * range stops at `2^53` while a legal `AUTOINCREMENT` sequence runs to `2^63 - 1`,
  * so a name in between is refused rather than swept. Reaching one needs about nine
@@ -157,10 +152,9 @@ function ownedSeq(name) {
  *
  * **The directory is listed BEFORE the rows are read, and that order is the
  * whole safety argument — WHILE SEQUENCES CANNOT BE REUSED.** A log is created
- * only after its row exists, so anything in this listing already had a row when
- * the listing was taken, and a row set read *afterwards* is guaranteed to contain
- * it. Read the rows first and a job submitted in the gap looks like an orphan, and
- * the sweep would unlink the log of a worker that is still writing to it.
+ * only after its row exists. Read the rows first and a job submitted in the gap
+ * looks like an orphan, and the sweep would unlink the log of a worker that is
+ * still writing to it.
  *
  * **That precondition is not unconditional, and saying so is the point.** `seq` is
  * `AUTOINCREMENT` per database, so deleting `jobs.db` while `logs/` survives
@@ -184,16 +178,15 @@ function ownedSeq(name) {
  * the scan keyed on logs — leaking permanently in the one directory whose
  * survival past a database recreation is what `cancel-ack.mjs` names as its
  * accepted residual.
+ *
+ * **`readdirSync` is not caught here (OAI-167).** A `logs/` that cannot be
+ * listed is not an empty one, and `sweepQuietly` is the one place this repo
+ * decided what to do about a broken sweep: rethrow, unless the fault is
+ * contention. That decision would be defeated by tolerating the fault a step
+ * earlier.
  */
 function orphanSeqs(db) {
-  let names;
-  try {
-    names = readdirSync(logsPath());
-  } catch {
-    // No logs directory: nothing has ever been spawned here, which is an answer
-    // rather than a failure.
-    return [];
-  }
+  const names = readdirSync(logsPath());
   const known = new Set(db.prepare('SELECT seq FROM jobs').all().map((row) => Number(row.seq)));
   const found = new Set(names.map(ownedSeq).filter((seq) => seq !== null));
   return [...found].filter((seq) => !known.has(seq));
@@ -207,7 +200,7 @@ function unlinkQuietly(path) {
     // Already gone, or never written: a job abandoned before its worker was
     // spawned has no log at all, one that was never cancelled has no
     // acknowledgement, and a concurrent sweep may have reached this one first.
-    // None is a problem — the file is absent either way.
+    // None is a problem.
     return false;
   }
 }

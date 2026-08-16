@@ -5,9 +5,9 @@
 // destroyed: when the worker finally calls `finish()` and its CAS matches
 // nothing, it writes the outcome to its own log as `SALVAGED_OUTCOME` instead.
 //
-// That promise was written, reviewed six times, and never once executed. This
-// drives it end to end across two real processes: a worker held mid-request, an
-// abandon from the CLI, then the reply released.
+// That promise was written and never once executed. This drives it end to end
+// across two real processes: a worker held mid-request, an abandon from the
+// CLI, then the reply released.
 //
 // It is a different branch from `job-busy-placement.test.js`, which reaches the
 // same salvage line by injecting a storage THROW in-process. This one reaches
