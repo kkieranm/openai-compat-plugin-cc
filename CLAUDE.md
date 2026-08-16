@@ -99,7 +99,16 @@ collapsing them made every legitimately queued job look abandoned.** Two version
 separately because one number cannot mean both: `PRAGMA user_version` describes the table and a newer
 one is refused for all mutations, while a row's `schema_version` describes its payload, and a row this
 build cannot read is never mutated and never deleted. `job-liveness.mjs` decides death by pid and only
-corroborates with the heartbeat — a worker's last act is to beat — and nothing here ever signals a
+corroborates with the heartbeat — and `pidLiveness` answers `live`, `gone` or `unreadable` rather than
+a boolean, because **only `ESRCH` proves a process gone**: a value that is not a pid, and an errno this
+build does not interpret, are both `malformed` — a verdict nothing collects — so a queued row holding
+one can never be attached by `registerWaiter`, no automatic path collects it, and `/oai:abandon
+--force` can write it off where this build can read the row at all — `unknown-version` refuses above
+the malformed rung and no flag lifts that. **The
+unreadable value is never quoted in the failure record and no command is named beside the row**:
+keeping it and advertising the exit were both cut as separate work rather than grown inside this
+change (`finish` NULLs `worker_pid` and only that, so a queued row's `waiter_pid` outlives the write,
+though nothing displays it once the row is terminal) — a worker's last act is to beat — and nothing here ever signals a
 process it cannot verify, which `tests/queue-guards.test.js` enforces structurally; cancel is
 therefore cooperative, and **a dead pid says the process is gone, never why** — so
 `scripts/lib/cancel-ack.mjs` has the exiting worker announce itself in a file beside the job log
@@ -143,10 +152,10 @@ be readable and fresh — `live` proves only that a pid number is occupied, so a
 reproduce inside this command the very defect it exists to fix. That bar is deliberately stricter than
 `decide`'s own eligibility, so it under-claims rather than lies. **Liveness is resolved inside that transaction and passed into the decision**, so the probe the stored
 message cites is the one the write was authorised on; the guard asserts at least one `livenessOf` call
-inside the lock. The pid survives in the failure message because `finish` NULLs the column — recorded
-as **evidence and never as a target**, since the inability to prove that number still belongs to the
-job is the reason this command exists at all, and the message says the probe answered *during the
-decision* rather than implying the process is alive now. `/oai:status` names the
+inside the lock. `abandonFailure` is what the row says afterwards, in **two arms**: a `malformed` row was never probed
+at all — no pid recorded, timestamps that will not parse, or a value that is not a pid — and only the
+readable-pid arm may say a probe answered, citing the pid as **evidence and never as a target**, since
+the inability to prove that number still belongs to the job is why this command exists. `/oai:status` names the
 remedy only where it would work — a live owner, a stale beat, a known row version and a writable
 database — and says nothing at all for a blocker the command would refuse.
 

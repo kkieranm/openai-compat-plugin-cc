@@ -44,10 +44,11 @@ What it does not do:
 
 - **Nothing is signalled.** The plugin never sends a signal to a process it cannot prove is its own.
   If that process is alive it stays alive.
-- The pid is recorded in the job's failure message as **evidence, not as a target**. This build cannot
-  prove that number still belongs to this job — that inability is the whole reason the command exists —
-  so it may since have been reused by something unrelated. It is there to say what was observed, not to
-  tell you what to stop.
+- A **readable** pid is recorded in the job's failure message as **evidence, not as a target**. This
+  build cannot prove that number still belongs to this job — that inability is the whole reason the
+  command exists — so it may since have been reused by something unrelated. It is there to say what was
+  observed, not to tell you what to stop. A pid that cannot be READ is not recorded there at all; see
+  the malformed row below.
 - Because of that, writing off a `running` row gives up the guarantee that one background job runs at
   a time: the abandoned process may still have a model request in flight while the queue starts the
   next job, and the two will overlap on this machine's memory. The command says so when it applies.
@@ -78,8 +79,13 @@ Handling failures:
   honours it at once, and if none ever does the row is collected as `never-started` when the grace
   expires. Neither command stops it sooner.
 - `--force` overrides any beat-related refusal and a **malformed** row — one with no pid recorded at
-  all, or timestamps that cannot be read. A pid that is present but corrupt is NOT this case: it reads
-  as a dead process and is handled by ordinary recovery (OAI-162). It does **not**
+  all, one whose timestamps cannot be read, or one holding a value that is recorded but cannot be read
+  as a pid. That last shape is the one `--force` matters most for: a queued row in it can take no new
+  registration (the registration only ever fills an empty pid column) and ordinary recovery does not
+  collect it, so this command is what writes it off. A worker that registered BEFORE the value was
+  corrupted may still be alive and checking in; it cannot start the job, but it can time the row out.
+  The row's failure message records that no liveness judgement was possible and does not quote the
+  unreadable value; for a running row `finish` then clears the column too, so nothing keeps it. It does **not**
   override a job that has already finished, a row written by a newer version of the plugin, one still
   inside its startup grace, or one whose process is simply **gone** — that last is ordinary recovery's
   work, and the command performs it and says so instead of writing your verdict over it. For any refusal it

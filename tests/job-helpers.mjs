@@ -90,6 +90,12 @@ export function readJob(state, id) {
  * Reaped before it is returned, so the OS considers it free. A synthetic
  * out-of-range number would not do — `isAlive` would reject it on shape and the
  * test would pass without ever asking the OS anything.
+ *
+ * That avoided fixture is now a subject in its own right rather than a hazard:
+ * since OAI-162 an unreadable pid is `malformed`, not `dead`, and
+ * `tests/liveness-unreadable-pid.test.js` covers the shape case ON PURPOSE. This
+ * helper is still what the `dead` verdict must be asked with — it is the only one
+ * that reaches `ESRCH`.
  */
 export async function deadPid() {
   const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });

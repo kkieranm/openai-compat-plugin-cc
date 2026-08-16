@@ -12,6 +12,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { abandonDecision } from '../scripts/lib/job-abandon.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';
+import { breakStamps } from './blocker-helpers.mjs';
 
 const STALE = 90_000;
 const FRESH = 1_000;
@@ -224,4 +225,36 @@ test('the decision vocabulary this file pins is the one the module exports', { s
   };
   assert.equal(abandonDecision(starting, now).reason, 'starting');
   assert.equal(abandonDecision(starting, now, { override: true }).reason, 'starting', '--force must not lift it');
+});
+
+test('the malformed refusal tells a queued operator the truth about THIS row, both branches', { skip: NEEDS_SQLITE }, async () => {
+  // The one operator instruction OAI-162's plan gate required be changed that no
+  // suite pinned. Both branches of the ternary matter and they say opposite
+  // things, so each is the other's positive control: an assertion on one alone
+  // would pass against a `REFUSALS.malformed` that had stopped emitting the
+  // suffix entirely.
+  const scenario = await queueScenario();
+  try {
+    // Branch one — a pid IS recorded and cannot be read. `registerWaiter` carries
+    // `AND waiter_pid IS NULL`, so nothing can ever attach to this row.
+    insertSynthetic(scenario.state, { id: 'held', state: 'queued', waiterPid: 'garbage' });
+    const held = await scenario.run(['abandon', 'held']);
+    assert.equal(held.status, 1, 'a refusal exits 1');
+    // The refusal is a `UserError`, so it lands on stderr AFTER the row
+    // descriptor has gone to stdout — matching stdout alone finds nothing.
+    assert.match(held.stderr, /Ordinary recovery will not collect a row in this shape/);
+    assert.doesNotMatch(held.stderr, /can still attach and run it/,
+      'this row takes no new registration, so the reassuring sentence would misdescribe it');
+
+    // Branch two — no pid recorded, timestamps unreadable. A late worker CAN
+    // still attach here, which is why the reassurance is correct for it.
+    insertSynthetic(scenario.state, { id: 'stamps', state: 'queued', waiterPid: null });
+    breakStamps(scenario.state, 'stamps');
+    const stamps = await scenario.run(['abandon', 'stamps']);
+    assert.equal(stamps.status, 1);
+    assert.match(stamps.stderr, /can still attach and run it/);
+    assert.doesNotMatch(stamps.stderr, /Ordinary recovery will not collect a row in this shape/);
+  } finally {
+    await scenario.server.close();
+  }
 });

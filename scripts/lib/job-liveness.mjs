@@ -68,20 +68,58 @@ export function beatIsStale(row, nowMs) {
 }
 
 /**
- * Alive, as far as the OS will say.
+ * What the OS will say about a pid: `live`, `gone`, or `unreadable`.
  *
- * `EPERM` means the process exists and belongs to someone else, which is still
- * alive — reading it as dead would let one user's plugin terminalize another's
- * running job. Only `ESRCH` means gone.
+ * **Three facts, not two, and collapsing them was OAI-162.** `EPERM` means the
+ * process exists and belongs to someone else, which is still alive — reading it
+ * as dead would let one user's plugin terminalize another's running job. Only
+ * `ESRCH` means gone. Everything else is an absence of evidence: a value that is
+ * not a pid at all, and an errno this build does not interpret. Reporting either
+ * as death auto-terminalizes a row on nothing.
+ *
+ * **The shape check runs BEFORE the probe, and that order is load-bearing** —
+ * `kill(0, 0)` signals the whole process group and `kill(-1, 0)` every process
+ * the user may signal, so both SUCCEED and would read as `live`. It catches
+ * `-1`, `0`, `1.5` and `'garbage'`, none of which ever reaches `process.kill`.
+ *
+ * **What the catch-all actually catches, measured rather than assumed.** For
+ * signal 0 the OS gives only `EPERM` and `ESRCH`, so its whole reachable
+ * population is a POSITIVE INTEGER outside the range Node will accept as a pid —
+ * anything from `2 ** 31` up — which Node's own argument validator rejects
+ * **before any syscall is made**. So no message downstream may say a probe was
+ * attempted and came back inconclusive: nothing was asked. What is true of every
+ * value that lands here is only that this build could not read it as a pid, and a
+ * genuinely uninterpretable errno would be indistinguishable from that if one
+ * ever occurred.
+ *
+ * **That rejection is a `TypeError` carrying `code: 'ERR_INVALID_ARG_TYPE'` — a
+ * NODE error code, not a POSIX errno.** Written out because the obvious guard for
+ * "an error we do not interpret" is `if (!error.code)`, which would be false here
+ * and would send every such value down the `EPERM`/`ESRCH` comparisons instead.
+ * The arms below test for the two errnos by name for exactly that reason.
  */
-export function isAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+export function pidLiveness(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return 'unreadable';
   try {
     process.kill(pid, 0);
-    return true;
+    return 'live';
   } catch (error) {
-    return error?.code === 'EPERM';
+    if (error?.code === 'EPERM') return 'live';
+    if (error?.code === 'ESRCH') return 'gone';
+    return 'unreadable';
   }
+}
+
+/**
+ * Alive, as far as the OS will say.
+ *
+ * A projection of `pidLiveness` kept because two test helpers ask exactly this
+ * yes/no question of a real pid. It answers `false` for `gone` and `unreadable`
+ * alike, so it must not be used where the difference decides anything — which is
+ * the mistake it existed as for its whole life before OAI-162.
+ */
+export function isAlive(pid) {
+  return pidLiveness(pid) === 'live';
 }
 
 /**
@@ -98,14 +136,55 @@ export function relevantPid(row) {
 }
 
 /**
+ * Was a pid recorded for this row at all — as opposed to readable?
+ *
+ * The question that separates the two queued `malformed` shapes, and it is asked
+ * at three sites in three files — `cmd-abandon.mjs`, `job-render.mjs`, and
+ * `livenessOf` below — so it is defined once rather than written three ways.
+ * **`livenessOf`'s use of it is a pure identity substitution that no mutation can
+ * prove**: `relevantPid` has already normalised `undefined` to `null` there, so
+ * the two forms cannot disagree and nothing would go red if this one were wrong.
+ * A consistency edit, and saying so is cheaper than implying a verification that
+ * did not happen. Lives beside `relevantPid` because that is what feeds it.
+ *
+ * **`!== null`, never truthiness.** A recorded `0` is a pid that cannot be read,
+ * not a pid that is absent, and `if (pid)` files it under the wrong one — which
+ * is OAI-162's own defect wearing a different hat. Takes the VALUE, so a caller
+ * reading a raw column passes the column and a caller holding a view passes
+ * `view.pid`; `relevantPid` has already normalised `undefined` to `null` for the
+ * ones that go through it.
+ */
+export function pidWasRecorded(pid) {
+  return pid !== null && pid !== undefined;
+}
+
+/**
  * What the row's owner is doing: `live`, `dead`, `starting`, `never-started` or
  * `malformed`.
  *
- * `malformed` covers two shapes this build cannot produce and will not guess at:
- * a `running` row with no pid (state and pid are written in one statement here,
- * so it is legacy or corrupt), and a timestamp that will not parse. Both are
- * surfaced rather than reconciled — failing closed costs a stuck queue the user
- * is told about, where guessing costs someone's live run.
+ * `malformed` covers three shapes this build cannot produce and will not guess
+ * at: a `running` row with no pid (state and pid are written in one statement
+ * here, so it is legacy or corrupt), a timestamp that will not parse, and — since
+ * OAI-162 — a pid that IS recorded and cannot be read as one. All are surfaced
+ * rather than reconciled: failing closed costs a stuck queue the user is told
+ * about, where guessing costs someone's live run.
+ *
+ * **The third shape is PERMANENT where the timestamp one is transient, and no
+ * caller may treat them alike.** `registerWaiter` carries `AND waiter_pid IS
+ * NULL`, so a queued row whose timestamps will not parse can still have a late
+ * worker attach to it and become `live`, while a queued row holding an unreadable
+ * `waiter_pid` can take no NEW registration and is never collected either.
+ * `/oai:abandon --force` is what writes it off. **That is not the same as the only
+ * thing that can END it**, and no message may say so: `finish` is keyed on `seq`
+ * and state, never on the pid, so a worker that registered before the column was
+ * corrupted can still time out or cancel its own row. It cannot PUBLISH one —
+ * `claimJob`'s `AND waiter_pid = ?` can never match the corrupted value, so no
+ * path in this build takes such a queued row to `running`. What is proved is that
+ * no AUTOMATIC path collects it. Where a message DOES distinguish the two queued shapes — the
+ * status note and `/oai:abandon`'s refusal, not the stored failure record, which
+ * says one thing for every malformed row — it branches on whether a pid was
+ * RECORDED, a `pid !== null` test and never truthiness, because a recorded `0` is
+ * a pid that cannot be read rather than an absent one.
  *
  * **What they block is not the same, and saying "both block the queue" was
  * wrong.** Neither blocks a caller that never reaches the scans: `job-queue.mjs`
@@ -118,7 +197,12 @@ export function relevantPid(row) {
  */
 export function livenessOf(row, nowMs) {
   const pid = relevantPid(row);
-  if (pid !== null) return isAlive(pid) ? 'live' : 'dead';
+  if (pidWasRecorded(pid)) {
+    const verdict = pidLiveness(pid);
+    if (verdict === 'live') return 'live';
+    if (verdict === 'gone') return 'dead';
+    return 'malformed';
+  }
   if (row.state === 'running') return 'malformed';
 
   // Queued, and no worker has ever registered. `spawned_at` when the child was

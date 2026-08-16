@@ -26,9 +26,16 @@ export const realWorkspace = (tag) => realpathSync(mkdtempSync(join(tmpdir(), `o
  * The two stamps `livenessOf` reads, corrupted.
  *
  * Raw SQL because `insertSynthetic` builds every timestamp through `ago()`,
- * which always yields a parseable ISO string — so the one shape that reaches
- * `malformed` through the *queued* branch cannot be inserted by the helper at
- * all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
+ * which always yields a parseable ISO string — so the TIMESTAMP shape that
+ * reaches `malformed` through the *queued* branch cannot be inserted by the
+ * helper at all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
+ *
+ * **It is no longer the only queued malformed shape.** Since OAI-162 a queued row
+ * holding an unreadable `waiter_pid` is malformed too, and that one IS reachable
+ * through `insertSynthetic` — `waiterPid: 'garbage'` binds straight through a
+ * prepared statement into a non-`STRICT` column. The two are not
+ * interchangeable fixtures: this one can still have a worker attach to it, and
+ * that one never can.
  */
 export function breakStamps(state, id) {
   withStore(state, (db) =>

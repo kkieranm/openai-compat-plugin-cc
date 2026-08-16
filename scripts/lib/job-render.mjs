@@ -2,7 +2,7 @@
 // database or writes to stdout, which is the same split `render.mjs` keeps and
 // for the same reason: a renderer that also decides things cannot be tested by
 // handing it a row.
-import { beatIsStale } from './job-liveness.mjs';
+import { beatIsStale, pidWasRecorded } from './job-liveness.mjs';
 import { isKnownVersion } from './job-record.mjs';
 import { logPathFor } from './job-store.mjs';
 import { requestTextOf } from './prompt.mjs';
@@ -52,6 +52,64 @@ export function excerptOf(row) {
 }
 
 /**
+ * What a row this build cannot interpret is told.
+ *
+ * Split by STATE first, because a queued row is not running and — unlike the
+ * running shape — holds the line only when it is the first row the queue's scan
+ * does not skip, which one row cannot know about itself; saying "it blocks the
+ * queue" there would be a relational claim made by a function with no caller to
+ * be relational about.
+ *
+ * Then split by whether a pid was RECORDED, because since OAI-162 the two queued
+ * shapes no longer have the same future. `registerWaiter` carries `AND waiter_pid
+ * IS NULL`, so a row with unparseable timestamps and no pid can still have a
+ * worker attach and start running, while one already holding a value that cannot
+ * be read as a pid can take no NEW registration — so the reassuring sentence is
+ * false for it. It says nothing about a worker that registered BEFORE the value
+ * was corrupted: that one may be alive and beating, and `claimJob`'s `AND
+ * waiter_pid = ?` is what stops even it reaching `running`. `!== null`, not
+ * truthiness: a recorded `0` is a pid that cannot be read, not an absent one.
+ *
+ * **No command is named here.** `remedyFor` is the one place this file advises an
+ * action, and it is gated on two conditions a note has no access to: whether the
+ * database is writable, and whether the row's schema version is one this build
+ * understands. Naming `/oai:abandon --force` from here would advertise it on rows
+ * the command refuses outright.
+ */
+function malformedNote(view) {
+  const recorded = pidWasRecorded(view.pid);
+  // **A row a newer plugin wrote says so, whatever else is wrong with it.** It
+  // used to: such a row reached `displayOf`'s `dead`/`never-started` arm, whose
+  // note names its schema. Since OAI-162 an unreadable pid resolves `malformed`
+  // FIRST, which took that arm — and with it the one fact an operator could act
+  // on, because `/oai:abandon` refuses an unknown version above its malformed
+  // rung and no flag lifts it.
+  //
+  // **It names the schema and stops there.** An earlier revision went on to
+  // promise that "a build that understands that row schema" could clear it —
+  // but `schema_version` is an INTEGER column in a non-STRICT table, so the same
+  // foreign writer that put a non-pid in `worker_pid` can put a non-number here,
+  // and then no build satisfies that advice. The number is the fact; what to do
+  // with it is not, and this clause must not grow one.
+  const foreign = isKnownVersion(view) ? '' : ` Its row schema is`
+    + ` ${JSON.stringify(view.schema_version)}, which this build does not understand, so it will`
+    + ' neither collect nor write off this row.';
+  if (view.state === 'queued') {
+    return (recorded
+      ? 'malformed: queued, and the value recorded for its waiter cannot be read as a pid.'
+        + ' No NEW worker can register against it while that value stays unreadable, and ordinary'
+        + ' recovery does not collect it.'
+      : 'malformed: queued with a timestamp this build cannot read.'
+        + ' While it stays in this shape, this build will neither start it nor collect it.') + foreign;
+  }
+  return (recorded
+    ? 'malformed: running, and the value recorded for its worker cannot be read as a pid.'
+      + ' It blocks the queue and this build will not guess at it.'
+    : 'malformed: running with no worker pid recorded. It blocks the queue and this build will not guess at it.')
+    + foreign;
+}
+
+/**
  * The one line a row earns beyond its summary, or `null`.
  *
  * Only states that call for an action say anything. A running job that is simply
@@ -59,19 +117,7 @@ export function excerptOf(row) {
  * reads.
  */
 function noteFor(view, nowMs) {
-  if (view.display === 'malformed') {
-    // Split by state, because `displayOf` reaches `malformed` from two shapes and
-    // the old single sentence described one of them. A malformed QUEUED row is
-    // not running, and — unlike the running shape — it holds the line only when
-    // it is the first row the queue's scan does not skip, which one row cannot
-    // know about itself. Saying "it blocks the queue" here would be a relational
-    // claim made by a function that has no caller to be relational about.
-    if (view.state === 'queued') {
-      return 'malformed: queued with a timestamp this build cannot read.'
-        + ' While it stays in this shape, this build will neither start it nor collect it.';
-    }
-    return 'malformed: running with no worker pid recorded. It blocks the queue and this build will not guess at it.';
-  }
+  if (view.display === 'malformed') return malformedNote(view);
   if (view.display === 'overdue') {
     return `past its own ${Math.round((view.deadline - Date.parse(view.started_at)) / 1000)}s cap, and pid ${view.pid} is still alive.`;
   }

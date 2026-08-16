@@ -166,13 +166,20 @@ test('the way out is named on the blocker only when taking it would work', { ski
   });
 });
 
-test('a MALFORMED blocker is named but no remedy is offered for it', { skip: NEEDS_SQLITE }, () => {
+test('a malformed blocker with NO pid recorded is named, and gets no command at all', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // A running row with no worker pid and a stale, PARSEABLE beat. `theirHead`
   // cannot build it — that helper sets a live waiter pid on a queued row — and a
   // `starting` row would not discriminate, because it has no beat at all so
   // `beatIsStale` already suppresses the remedy. This is the only shape that
   // reaches the liveness gate as the single deciding predicate.
+  //
+  // **The universe here is malformed rows with NO PID RECORDED, not every
+  // malformed row** — the title used to claim the latter while the fixture only
+  // ever covered the former. A recorded-but-unreadable pid gets a different
+  // SENTENCE, covered by the two tests below, but the same silence about
+  // commands: `remedyFor` returns null for any row that is not `live`, so no
+  // malformed row of any shape is offered one.
   insertSynthetic(state, {
     id: 'theirs', state: 'running', workerPid: null, workspace: THERE,
     startedAgoMs: 600_000, beatAgoMs: 90_000,
@@ -222,4 +229,56 @@ test('the remedy reaches the real CLI, and a too-new database withholds it', { s
   } finally {
     await scenario.server.close();
   }
+});
+
+test('a queued row with an unreadable pid is told the truth about its future, not the timestamp shape\'s', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // The two queued malformed shapes have opposite futures, and before OAI-162
+  // they shared one sentence. `registerWaiter` carries `AND waiter_pid IS NULL`,
+  // so a row already holding a value can never be attached by anything —
+  // telling the operator a worker might still pick it up argues them out of the
+  // only action that clears it.
+  theirHead(state, { waiterPid: 'garbage' });
+  myJob(state);
+
+  viewHere(state, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    assert.match(text, /cannot be read as a pid/);
+    assert.match(text, /No NEW worker can register against it/);
+    // No command is named from a note: `remedyFor` is the one place this file
+    // advises an action, and it is gated on conditions a note cannot see.
+    assert.doesNotMatch(text, /oai:abandon/);
+    // The sentence that belongs to the OTHER queued shape, and is false here.
+    assert.doesNotMatch(text, /a timestamp this build cannot read/);
+    assert.doesNotMatch(text, /While it stays in this shape/);
+  });
+
+  // The positive control, in the same run: the sentence this row may not carry
+  // is exactly what the timestamp shape still says. Without it, both
+  // `doesNotMatch` assertions above would pass against a `noteFor` that had
+  // stopped producing any queued note at all.
+  const stamps = stateDir();
+  theirHead(stamps, { waiterPid: null });
+  breakStamps(stamps, 'theirs');
+  myJob(stamps);
+  viewHere(stamps, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    assert.match(text, /a timestamp this build cannot read/);
+    assert.match(text, /While it stays in this shape/);
+    assert.doesNotMatch(text, /cannot be read as a pid/);
+  });
+});
+
+test('a RUNNING row with an unreadable pid says so without quoting the value', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  insertSynthetic(state, { id: 'theirs', state: 'running', workspace: THERE, workerPid: 2 ** 40 });
+  myJob(state);
+
+  viewHere(state, (view) => {
+    const text = renderList(view, { cwd: HERE, all: false });
+    assert.match(text, /cannot be read as a pid/);
+    assert.match(text, /It blocks the queue/, 'a running row DOES hold every caller, unlike a queued one');
+    // The no-pid wording, which is false of a row that recorded one.
+    assert.doesNotMatch(text, /running with no worker pid recorded/);
+  });
 });

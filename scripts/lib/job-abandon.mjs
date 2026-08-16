@@ -92,19 +92,17 @@ function recoveryOwned(row) {
  * work, and recording `operator-abandoned` over it would attribute a death to an
  * operator who merely asked. `abandonRow` turns this one into a recovery.
  *
- * **`malformed` is liftable, deliberately.** A `running` row with no pid, or a
- * queued one whose timestamps will not parse, is a shape this build will not
- * guess at — but refusing it outright would leave a corrupt row wedging the queue
- * with no operator escape at all, which is the whole defect this command exists
- * to remove. So it is refused by default and `--force` lifts it, and the stored
- * message must not claim a probe that could not run.
+ * **`malformed` is liftable, deliberately.** `livenessOf` enumerates the shapes;
+ * what matters here is that refusing one outright would leave a corrupt row
+ * wedging the queue with no operator escape at all, which is the whole defect
+ * this command exists to remove. So it is refused by default, `--force` lifts it,
+ * and the stored message must not claim a probe that could not run.
  *
- * `no-beat` fails CLOSED, which is the opposite of what `beatIsStale` does with
- * the same input. Note what it now covers: `registerWaiter` and `claimJob` each
- * write a pid and a beat in ONE statement and `finish` never nulls a beat, so a
- * row with a live pid and no beat at all cannot be produced by this build — the
- * reachable case is a beat that will not PARSE, which is why the refusal claims
- * no knowledge rather than an absence of check-ins.
+ * `no-beat` fails CLOSED, the opposite of what `beatIsStale` does with the same
+ * input. `registerWaiter` and `claimJob` each write a pid and a beat in ONE
+ * statement and `finish` never nulls a beat, so a live pid with no beat at all
+ * cannot be produced here — the reachable case is a beat that will not PARSE,
+ * which is why the refusal claims no knowledge rather than absent check-ins.
  */
 export function abandonDecision(row, nowMs, { override = false, liveness } = {}) {
   if (!row) return { allowed: false, reason: 'gone' };
@@ -144,26 +142,29 @@ export function abandonDecision(row, nowMs, { override = false, liveness } = {})
  * must not read as a tidy cancellation, and this stop is confirmed by less than
  * any of those — the process was never even asked. The reason names the ROW's
  * fate rather than the worker's, because the worker's is exactly what is unknown.
+ *
+ * **Two arms.** A `malformed` row was never probed at all — no pid recorded,
+ * timestamps that will not parse, or (OAI-162) a value that is not a pid. Only
+ * the readable-pid arm may say a probe answered, and only it names the pid. The
+ * UNREADABLE-pid shape's value is never quoted in the record; the item says why.
  */
 function abandonFailure(row, liveness) {
-  const running = row.state === 'running';
-  // **The pid goes in the MESSAGE because the write destroys the column** —
-  // `finish` sets `worker_pid = NULL` — and it is recorded as EVIDENCE, never as
-  // an instruction. This whole command exists because a recorded pid cannot be
-  // proved to still belong to its job; telling the operator to go and stop that
-  // number would hand them the exact mistake the plugin refuses to make itself.
-  // So the message says which pid was recorded and that it may since be
-  // something else, and stops there.
+  const owner = row.state === 'running' ? 'worker' : 'waiter';
+  // **The pid goes in the MESSAGE because the write may destroy the column** —
+  // `finish` NULLs `worker_pid`, so a running row's is gone once this payload is
+  // stored (a queued row's `waiter_pid` survives, so no message may claim the
+  // column is always cleared). Evidence, never an instruction: this build refuses
+  // to signal a pid it cannot prove is its own, so telling the OPERATOR to go and
+  // stop that number would hand them the exact mistake it will not make itself.
   const pid = relevantPid(row);
-  // Two arms, keyed on what the transaction actually resolved. The probe wording
-  // is only available when a probe happened: a `malformed` row forced through has
-  // no pid to probe, or timestamps that cannot be read, and claiming otherwise
-  // put a false sentence in the permanent record for a supported recovery.
+  // Keyed on what the transaction resolved: the probe wording is available only
+  // when a probe happened, and claiming otherwise put a false sentence in a
+  // permanent record.
   const observed = liveness === 'malformed'
     ? `Job ${row.id} was written off by an operator. Its pid or timestamps could not be read, so no`
       + ' liveness judgement was possible for it at all.'
     : `Job ${row.id} was written off by an operator while the pid recorded for its`
-      + ` ${running ? 'worker' : 'waiter'} (${pid ?? 'unknown'}) answered a liveness probe taken`
+      + ` ${owner} (${pid ?? 'unknown'}) answered a liveness probe taken`
       + ' during the decision.';
   return errorReport({
     // The constant, not the literal: `job-retention.mjs` keys its exemption on

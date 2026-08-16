@@ -60,11 +60,19 @@ Reading the states:
   next check-in. It then reads `cancelled` only if the worker confirms that is why it stopped; a
   worker that dies without confirming reads `failed`, with the reason `cancel-unconfirmed`. A job
   showing `stalled` instead will never see the request — use `/oai:abandon` for that one.
-- `malformed` — a row this build cannot have produced, reported rather than guessed at. Two shapes,
-  and they do not block the same people. A **running** row with no worker pid blocks every job waiting
-  for a turn, until it is dealt with. A **queued** row whose timestamps will not parse holds the line only
-  while it is the first row the queue does not skip — behind another blocker it stops nobody — and it
-  is stuck only while it stays in that shape: a worker that registers against it can still pick it up.
+- `malformed` — a row this build cannot have produced, reported rather than guessed at. These shapes neither
+  block the same people nor end the same way. A **running** row — with no worker pid, or with a value
+  recorded that cannot be read as a pid — blocks every job waiting for a turn, until it is dealt with.
+  A **queued** row holds the line only while it is the first row the queue does not skip; behind
+  another blocker it stops nobody. Which queued shape it is decides whether it can recover: one whose
+  **timestamps** will not parse is stuck only while it stays in that shape, because a worker that
+  registers against it can still pick it up, whereas one holding an **unreadable waiter pid** can take
+  no new registration.
+  Ordinary recovery does not collect a row while it stays malformed, whichever shape it is. For a
+  known-version row in a writable database `/oai:abandon --force` can write one off — though on the
+  timestamp shape that may write off a job a worker was about to start, which the command says when it
+  refuses. Against a row a newer plugin wrote, or a database it wrote, the command refuses and no flag
+  lifts the refusal; the row itself says which schema it carries.
 - `completed`, `failed`, `cancelled`, `queue-timeout` — finished. `queue-timeout` means the job gave
   up waiting for its turn under `--max-wait` and never contacted the model.
 

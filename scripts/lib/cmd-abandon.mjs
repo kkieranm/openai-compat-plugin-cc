@@ -13,7 +13,7 @@
 import { assertNoFlagsInPrompt, parseCommandLine } from './args.mjs';
 import { UserError } from './errors.mjs';
 import { abandonRow } from './job-abandon.mjs';
-import { STARTUP_GRACE_MS, relevantPid } from './job-liveness.mjs';
+import { STARTUP_GRACE_MS, pidWasRecorded, relevantPid } from './job-liveness.mjs';
 import { excerptOf, relativeAge } from './job-render.mjs';
 import { DatabaseTooNewError } from './job-store.mjs';
 import { openJobs } from './job-view.mjs';
@@ -71,14 +71,23 @@ const REFUSALS = {
   malformed: (job) =>
     `Job ${job.id} is a shape this build will not guess at — its pid or its timestamps cannot be read,`
     + ' so no liveness judgement is possible for it. Pass --force to write the row off anyway.'
-    // NOT "nothing else will ever clear it". True of a running row with no pid;
-    // FALSE of a queued one with unreadable timestamps, because `registerWaiter`
-    // never inspects them — a late worker can still attach and run the job. The
-    // absolute version of this sentence advised writing off work that was starting.
-    + (job.state === 'queued'
+    // Branches on whether a pid was RECORDED, not on the state, because the two
+    // queued shapes differ: `registerWaiter` never inspects timestamps, so a
+    // queued row with unreadable ones can still have a late worker attach and run
+    // the job, while its `AND waiter_pid IS NULL` means one already holding an
+    // unreadable pid can take no NEW registration. `!== null`, not
+    // truthiness — a recorded `0` is a pid that cannot be read, not an absent one.
+    //
+    // The else-arm names the COLLECTOR rather than claiming anything about the
+    // future. "Nothing else will clear it" is unproven: `finish` is keyed on `seq`
+    // and state, never on the pid, so a worker that registered before the value
+    // was corrupted can still time its own row out — and for a RUNNING row it can
+    // publish outright. What is checkable is that ordinary recovery skips it:
+    // `reconcile` returns null for `malformed`.
+    + (job.state === 'queued' && !pidWasRecorded(job.waiter_pid)
       ? ' Note it is queued: a worker that has not registered yet can still attach and run it, so'
         + ' forcing may write off work that was about to start.'
-      : ' Nothing else will clear a running row in this shape.'),
+      : ' Ordinary recovery will not collect a row in this shape.'),
   'unknown-version': (job) =>
     `Job ${job.id} was written by a newer version of the plugin. This build will not modify it, and`
     + ' --force will not change that — an older build guessing at a newer one\'s columns is how state'

@@ -91,3 +91,26 @@ test('a dead pid is a refusal, not an abandonment', { skip: NEEDS_SQLITE }, asyn
   assert.deepEqual(abandonDecision(gone, now, { override: true }), { allowed: false, reason: 'dead' },
     '--force must not turn a death into an abandonment');
 });
+
+test('a pid that is recorded but unreadable is malformed, not a death', { skip: NEEDS_SQLITE }, () => {
+  const now = Date.now();
+  // OAI-162's whole subject. Each of these reached `isAlive` and came back
+  // `false`, which `livenessOf` read as `dead` — so the row was handed to
+  // ordinary recovery and terminalized, and the operator was told its process
+  // was already gone about a value that never denoted a process.
+  for (const pid of [-1, 0, 1.5, 2 ** 40, 'garbage']) {
+    const running = { state: 'running', schema_version: 1, worker_pid: pid, last_beat_at: null };
+    assert.deepEqual(abandonDecision(running, now), { allowed: false, reason: 'malformed' },
+      `running row holding ${JSON.stringify(pid)}`);
+    assert.deepEqual(abandonDecision(running, now, { override: true }), { allowed: true, reason: 'forced-malformed' },
+      `--force must be the exit for a running row holding ${JSON.stringify(pid)}`);
+
+    // The queued arm matters more, not less: nothing can ever attach to it and
+    // no automatic path collects it, so this lift is its ONLY exit.
+    const queued = { state: 'queued', schema_version: 1, waiter_pid: pid, spawned_at: new Date(now - 600_000).toISOString() };
+    assert.deepEqual(abandonDecision(queued, now), { allowed: false, reason: 'malformed' },
+      `queued row holding ${JSON.stringify(pid)}`);
+    assert.deepEqual(abandonDecision(queued, now, { override: true }), { allowed: true, reason: 'forced-malformed' },
+      `--force must be the exit for a queued row holding ${JSON.stringify(pid)}`);
+  }
+});

@@ -161,12 +161,21 @@ export function viewOf(row, nowMs = Date.now()) {
  * read as no. For a row that truly has no waiter the sentence is not vacuously
  * true but FALSE: that job cannot proceed whatever clears ahead of it.
  *
- * **Two limits, both real, neither fixable here.** A `malformed` row is not
- * permanently caller-less — `registerWaiter` can still attach a worker to it,
- * after which it reads `live` — so excluding it hides the blocker for that
- * window: a transient false negative, accepted because the alternative is a
- * confident false accusation. And `live` proves only that the pid NUMBER exists
- * (`job-liveness.mjs` `isAlive`), so a dead worker whose pid was recycled passes
+ * **What excluding these rows costs, and one exclusion that costs nothing —
+ * none of it fixable here.** A `malformed` row with NO pid
+ * recorded is not permanently caller-less — `registerWaiter` can still attach a
+ * worker to it, after which it reads `live` — so excluding it hides the blocker
+ * for that window: a transient false negative, accepted because the alternative
+ * is a confident false accusation. By contrast, **a row holding an unreadable pid is excluded
+ * PERMANENTLY, and correctly** (OAI-162): `registerWaiter`'s `AND waiter_pid IS
+ * NULL` can never match it and `claimJob`'s `AND waiter_pid = ?` can never match
+ * it either, so no path here takes it to `running` — which is the rule three
+ * paragraphs up applying exactly as written, not an exception to it. Such a row
+ * cannot proceed whatever clears ahead of it, so naming a blocker on its behalf
+ * would be false. And `live` proves only that the pid NUMBER exists
+ * (`job-liveness.mjs` `pidLiveness`, which is what `livenessOf` calls — `isAlive`
+ * is a projection of it with no production caller), so a dead worker whose pid
+ * was recycled passes
  * condition 5 and the marker can still blame a healthy foreign job. That is the
  * recycled-pid wedge this whole item exists downstream of, not something a
  * display predicate can close.
