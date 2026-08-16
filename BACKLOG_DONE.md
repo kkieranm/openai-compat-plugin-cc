@@ -1,3 +1,50 @@
+## 2026-08-16 — OAI-167 closed (`6b3fead`)
+
+- **OAI-167** — **A comment that denies a failure mode, and the catch that made it true.** Closed
+  2026-08-16 by `6b3fead`. Plan:
+  [`plans/oai-167-a-comment-that-denies-a-failure-mode.md`](plans/oai-167-a-comment-that-denies-a-failure-mode.md),
+  with `1-round-1-blind.md` beside it as the one approving-round archive.
+
+  **What shipped.** `orphanSeqs`'s bare `readdirSync` catch — deleted outright, not narrowed to
+  ENOENT. A `logs/` read fault now reaches `sweepQuietly`'s existing rethrow (`task-submit.mjs`)
+  instead of being swallowed as an empty list, proven by a new test that replaces `logs/` with a
+  regular file and asserts `sweep()` throws `{code:'ENOTDIR'}`, using `withStore` directly because
+  `runSweep`/`openStore` would throw `EEXIST` first. Five originally-named false comments struck,
+  never rewritten, per this repo's delete-only rule for adjudicated-false descriptive prose: a wrong
+  `2^63` gloss on a literal 192 off from the true value, a "guaranteed to contain it" containment
+  claim falsified on every ordinary sweep (`prune` runs before the listing, not only under a race),
+  `unlinkQuietly`'s "the file is absent either way", and `abandon-salvage.test.js`'s unverifiable
+  "reviewed six times".
+
+  **The scope decision that mattered most wasn't in the plan.** The probe found the readdir catch was
+  the exact blanket catch `task-submit.mjs`'s own docblock forbids — Codex's plan-gate steer,
+  scoped to `job-retention.mjs` alone, recommended deferring the catch deletion to its own item;
+  the user sided with deleting it now, on evidence Codex hadn't been shown (`task-submit.mjs:91-93`'s
+  stated policy, and `openStore`'s unconditional `mkdirSync` making the ENOENT arm near-unreachable).
+
+  **Review found the diff had already touched what the plan said to leave alone.** The plan deferred
+  a sixth false clause — `orphanSeqs`'s "anything in this listing already had a row when the listing
+  was taken" — as pre-existing and out of scope, on the premise that it was a different sentence from
+  the five named ones. A review-ladder stage found that premise false: the diff's own edit had
+  already split that exact sentence, shipping the false half. Confirmed independently (`sweep()` runs
+  `prune()` before `orphanSeqs()`, and the file's own `sweep()` docblock says a pruned row's log is
+  collected as an orphan by the same sweep — no race required) and by a second, unrelated false claim
+  in the same file (`ownedSeq`'s docblock argued the round-trip check was unsafe because "the unlink
+  would take an unrelated file", which is false for the literal cited — it round-trips to itself) with
+  a twin in the test fixture. Codex offered a rescue reading of the second claim; rejected as
+  inconsistent with how the same phrase is used two lines earlier in the same docblock for a case
+  where it IS true. All three were a widening beyond the approved plan — taken to Codex for a steer
+  (batch-now) and then to the user, who chose to batch all three rather than defer.
+
+  **Ladder cost.** One full pass (guaranteed, first), five stages, one retry (`fork-opener`'s first
+  invocation echoed the orchestrator's own "waiting on siblings" transcript framing instead of
+  reviewing — filed as **OAI-176**). Dual approval on the same digest after the widening batch;
+  Codex and the Claude verdict subagent each independently re-verified all nine changed clauses
+  against the bytes on disk rather than the prior stages' summaries. Suite 965/965 throughout;
+  mutation-proven non-vacuous (catch reintroduced → the new test alone reddens → restored clean).
+
+  **Residue.** **OAI-176** — the `fork-opener` retry, one observed instance, no measured mechanism.
+
 ## 2026-08-16 — OAI-162 closed (`d1f3e2c`)
 
 - **OAI-162** — **An unreadable pid is not a dead process.** Closed 2026-08-16 by `d1f3e2c`. Plan:

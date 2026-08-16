@@ -81,11 +81,11 @@ entry list is structurally fine (verified against `tests/backlog-structure.test.
 one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
 forces an occupant. **The top of the priority view is therefore tier 2.**
 
-**Tier 2 — the suite says something false about itself.** **OAI-167**, **OAI-168**, **OAI-170**,
-**OAI-172**. The first three are OAI-166's residue; OAI-172 is OAI-162's and is the same class one
+**Tier 2 — the suite says something false about itself.** **OAI-168**, **OAI-170**,
+**OAI-172**. These are OAI-166's residue, save OAI-172 which is OAI-162's and is the same class one
 level out — not a test that cannot fail, but a comment and a command document that describe behaviour
-the code does not have. OAI-167 is five comments that deny a failure mode, two of them turning an
-I/O fault into a claim of benign absence — read by whoever next debugs that fault. OAI-168 is the
+the code does not have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`; its review
+filed **OAI-176**, a toolchain defect in the review-ladder's `fork-opener` stage itself. OAI-168 is the
 general rule that feature paid for twice: a positive control is a check that cannot fail until
 something witnesses it firing. OAI-170 is one unrun mutation, and the cheapest item in this file.
 
@@ -195,7 +195,11 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175**.
+**Tier 7 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175, OAI-176**.
+**OAI-176 is OAI-167's residue** — one observed instance of a `fork-opener` subagent echoing the
+orchestrator's own transcript framing instead of reviewing, with no measured mechanism and a candidate
+mitigation not yet worth standing instruction on one instance. Housekeeping, sorted last: it names no
+harm beyond the retried pass it cost, and needs a second instance before it is worth more than a note.
 **OAI-174 and OAI-175 are OAI-162's residue and both belong to this tier's "may close as no" half.**
 OAI-174 asks whether naming `/oai:abandon --force` beside a malformed row in the status listing is
 product work at all — the exit is already in both command documents and in the command's own refusal,
@@ -2847,24 +2851,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
   command against the caller's cwd. It is only the sweep harness that is pinned.
 
-- **OAI-167** — **Four comments in `job-retention.mjs` and one in `abandon-salvage.test.js` state
-  things that are false, and two of them convert an I/O failure into a claim of benign absence.**
-  Filed 2026-08-15 from OAI-166's review, which held them OUT of scope because that feature did not
-  author them — enumerated by a closed-inventory read of the whole file rather than sampled.
-  `orphanSeqs`'s `readdirSync` catch says "No logs directory: nothing has ever been spawned here",
-  but the same catch swallows a permission or I/O error; `unlinkQuietly` says "the file is absent
-  either way", and a permission failure leaves it present. Both turn a fault into a reassurance,
-  which is the shape that makes a sweep look healthy while it silently collects nothing.
-  Also: `9223372036854776000` is called "`2^63`" — it is 192 greater, and only its `Number` value is
-  `2^63`, which matters because the surrounding argument is precisely about values that do not
-  survive the conversion; and `orphanSeqs`'s ordering argument says a row set read afterwards is
-  "guaranteed to contain it", which a concurrent sweep deleting the row in between falsifies (the
-  safety argument may still hold — the file is then genuinely an orphan — but the containment claim
-  does not). `abandon-salvage.test.js` says its promise was "reviewed six times and never executed",
-  unverifiable history in a test header.
-  **Not a behaviour defect in any case** — every one is prose. Filed because a comment that denies a
-  failure mode is read by whoever next debugs that failure mode.
-
 - **OAI-168** — **A positive control is itself a check that cannot fail until something witnesses it
   firing, and this repo has now paid for that twice in one feature.** Filed 2026-08-15 from OAI-166.
   That feature's review found three assertions satisfied by an inert implementation and added
@@ -2963,3 +2949,21 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   as positive evidence that a local job is waiting. Borderline against the filing bar and said to be:
   it is one paragraph of documentation, filed because the omission is in the document whose whole
   purpose is to enumerate the states.
+
+- **OAI-176** — **A `fork-opener` subagent's first invocation, mid-review-ladder, returned a status
+  message about its OWN siblings instead of performing its assigned review.** Filed 2026-08-16 from
+  OAI-167's review-ladder pass. A fork inherits the whole calling session's transcript, and the
+  transcript at launch time ended with the orchestrator's own "waiting on Group A subagents" narration
+  plus a `ListAgents` call showing the fork itself as `running`. The fork's reply was that same
+  narration verbatim — "Still waiting on the three Group A subagents... I'll pick this back up as soon
+  as they report in" — not a review of the frozen artifact it was handed. Treated as a non-clean stage
+  result and retried once, per the ladder's retry rule; the retry, with an explicit instruction to
+  ignore ambient waiting-status framing in the transcript, produced a real review. **Not reproduced
+  deliberately, and no root cause is established** — the working hypothesis is that a fork launched
+  while the orchestrator's most recent turns are themselves about waiting for sibling agents can latch
+  onto that framing as if it were its own instruction, but this is one observed instance, not a
+  measured mechanism. Filed as a toolchain observation for the review-ladder skill's `fork-opener`
+  stage, with a candidate mitigation worth evaluating rather than assumed: a fork-opener prompt could
+  open by explicitly disclaiming any waiting/status framing already in the transcript as not being its
+  own task, the way the retry prompt did successfully here — but one success against one failure is
+  not enough evidence to make that a standing instruction.
