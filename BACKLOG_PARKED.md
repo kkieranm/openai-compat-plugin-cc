@@ -1,3 +1,38 @@
+## 2026-08-17 — parked by the backlog sweep's worth bar
+
+One item, `not worth doing` — **never `refuted`**. The framing is correct: the duplication is real
+and verified. It named no dated instance of drift, only a scenario ("a fourth failure reason added
+without being added here") that has never occurred — the two vocabularies agree exactly at HEAD.
+Checked against the silence exception and it does not qualify: when this does drift, the failure is
+operator-visible (a wrongful `exit 1` from `/oai:abandon`), not evidence-destroying by nature.
+Second-verdict from `codex-rescue` on 2026-08-17 concurred independently. **The reopening bar is an
+INSTANCE, not an argument.**
+
+### OAI-173 — parked, `not worth doing`
+
+**Why parked:** No dated instance. `job-abandon.mjs`'s `RECONCILER_FAILURE_REASONS` set and
+`job-reconcile.mjs`'s independently-written failure-reason literals currently agree exactly — verified
+against disk 2026-08-17. The item's own stated consequence is conditional on a reconciler change that
+has never happened.
+
+**Reopening bar (an instance, with a date):** `job-reconcile.mjs` gains a new failure reason that
+`job-abandon.mjs`'s `RECONCILER_FAILURE_REASONS` does not carry, and an operator observes `/oai:abandon`
+exit 1 against a row whose queue recovery had in fact already freed it. Record the reason string added,
+the commit, and the operator-visible symptom.
+
+*Filing kept verbatim:*
+
+- **OAI-173** — **The reconciler's failure vocabulary is retyped as literals with nothing pinning the
+  two copies together.** Filed 2026-08-16 from OAI-162's review; verified pre-existing at HEAD.
+  `job-abandon.mjs`'s `RECONCILER_FAILURE_REASONS` is `new Set(['worker-died', 'cancel-unconfirmed',
+  'worker-never-started'])` — the failure reasons `job-reconcile.mjs` writes on a `failed` row,
+  retyped, with no shared constant and no test asserting the two agree. (`reconcile` also returns
+  `cancelled`, which is a state rather than a failure reason and is handled by its own arm in
+  `recoveryOwned`.) The set decides that a `failed` row was settled by recovery and may be reported
+  idempotently rather than refused. A fourth failure reason added to the reconciler without being
+  added here would make `/oai:abandon` exit 1 at an operator whose queue recovery had in fact just
+  freed — precisely the outcome the idempotent arm exists to prevent — and nothing would go red.
+
 ## 2026-08-14 — parked by the backlog sweep's worth bar
 
 Two items, both `not worth doing` — **never `refuted`**. Each framing is correct. The bar was applied
