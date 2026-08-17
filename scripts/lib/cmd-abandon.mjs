@@ -55,11 +55,26 @@ function graceLeft(job) {
  * Why a refusal happened, and whether `--force` is any use — said plainly, so
  * nobody retries with a flag that cannot help.
  *
- * `gone` is absent deliberately: it is intercepted before this table is reached,
- * because "no such job" is not a refusal to abandon. Every other reason
- * `abandonDecision` can return must appear here, which `tests/abandon-cli.test.js`
- * pins against the decision's own vocabulary — a reason added there without an
- * entry here would otherwise be a `TypeError` and exit 2 rather than a message.
+ * This table is consulted only at the `REFUSALS[outcome.reason]` call below —
+ * so the actual invariant is narrower than "every reason `abandonDecision` can
+ * return": it is every reason that reaches THAT call. Five reasons never do,
+ * for three different sorts of exclusion. `forced`, `forced-malformed` and
+ * `stale` are ALLOWED outcomes (`decision.allowed === true`), so `abandonRow`
+ * never even produces an `outcome: 'refused'` for them. `dead` IS
+ * refusal-shaped in `abandonDecision`, but `abandonRow` intercepts it first and
+ * hands the row to ordinary recovery instead — the literal stays in
+ * `job-abandon.mjs` as that routing key, only its message is gone. `gone` is
+ * different again: `abandonRow` genuinely returns `outcome: 'refused', reason:
+ * 'gone'` for it, but `runAbandon` (below, before this table is ever reached)
+ * intercepts that specific reason and throws its own message, because "no such
+ * job" is not a refusal to abandon. Every reason that reaches the
+ * `REFUSALS[outcome.reason]` call must appear here, which
+ * `tests/abandon-cli.test.js` pins against the decision's own vocabulary —
+ * deleting `forced`, `forced-malformed`, `dead` and `stale` from the
+ * comparison set, and separately marking `gone` as covered rather than
+ * deleting it, since it IS a refusal reason, just one this table never sees —
+ * a reason added there without an entry here would otherwise be a `TypeError`
+ * and exit 2 rather than a message.
  */
 const REFUSALS = {
   beating: (job) =>
@@ -142,10 +157,15 @@ function report({ state, couldDrain, reason }, job) {
           : 'Its process was never asked to stop')
           + ' and it may still have a model request in flight. If another job'
           + ' starts, the two will overlap on this machine\'s memory.')
-      // Only where the beat is what permitted this. On a forced row the beat was
-      // FRESH — the operator overrode a worker that was checking in — and
-      // explaining why silence can be misleading there is a non-sequitur that
-      // dilutes the sentence above it.
+      // Only where the beat is what permitted this. `reason === 'forced'` covers
+      // TWO grounds (`abandonDecision`'s `no-beat` and `beating` rungs, both
+      // collapsed to one reason code) — a beat that is genuinely FRESH (the
+      // operator overrode a worker that was checking in) and a beat whose
+      // recency could not be checked at all (its pid still answered its own
+      // liveness probe in `abandonRow`; only the timestamp was unreadable). The
+      // sleep caveat below is specifically about a beat that looks STALE, which
+      // is true of neither, so explaining it here would be a non-sequitur
+      // regardless of which ground applied.
       + (reason === 'stale'
         ? ' A beat also looks stale after the machine slept, and the worker may simply resume.'
         : ''),

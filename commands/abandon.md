@@ -52,10 +52,17 @@ What it does not do:
 - Because of that, writing off a `running` row gives up the guarantee that one background job runs at
   a time: the abandoned process may still have a model request in flight while the queue starts the
   next job, and the two will overlap on this machine's memory. The command says so when it applies.
-- When the row was allowed through on a **stale beat**, the reply adds that a beat also looks stale
-  after the machine slept and the worker may simply resume — the case where "silent" is least likely
-  to mean "gone". It is not printed on a `--force`d row, where the beat was fresh and the operator
-  overrode a worker that was checking in.
+- On a `running` row allowed through because its beat was genuinely **stale**, the reply adds that a
+  beat also looks stale after the machine slept and the worker may simply resume — the case where
+  "silent" is least likely to mean "gone". This depends on WHY the row was allowed through, not on
+  whether `--force` was passed: a stale beat already permits abandonment without `--force`, and if
+  `--force` is passed anyway on an already-stale row the caveat still prints. It is not printed when
+  `--force` is what actually did the work — overriding a beat that was either genuinely fresh (the
+  operator overrode a worker that was checking in) or one whose recency could not be checked at all
+  (its pid still answered its own liveness probe; only the timestamp was unreadable) — since the
+  caveat is specifically about a beat that looks stale, which is true of neither. Scoped to `running`
+  rows only, like the overlap warning above it — a `queued` row never gets this caveat, for the same
+  reason it never gets that one: below.
 - A `queued` row carries none of that risk — it had not started, so no request was sent and none will
   be.
 
@@ -68,10 +75,13 @@ Handling failures:
   SUBMITTER failed at launch is not that — it is an ordinary refusal, because the reply would
   otherwise credit ordinary recovery with a verdict it did not write. It makes no
   claim about whether the queue will now move; run `/oai:status` for that.
-- Without `--force` the command refuses a job that is still checking in, or that has never checked in
-  at all, and says so. A worker beats every few seconds, so a job silent for a minute is one whose
-  process is not running its event loop — suspended, wedged, gone, **or on a machine that slept**, in
-  which case the worker may simply resume. Sleep is also when pids get reused, so the two arrive
+- Without `--force` the command refuses a job that is still checking in, or whose last check-in cannot
+  be read at all — and for the second case it deliberately does NOT say "never checked in": a beat
+  that will not parse could be one that was never written or one that was written and corrupted, and
+  the refusal claims no knowledge rather than a specific history it cannot prove. A worker beats every
+  few seconds, so a job silent for a minute is one whose process is not running its event loop —
+  suspended, wedged, gone, **or on a machine that slept**, in which case the worker may simply resume.
+  Sleep is also when pids get reused, so the two arrive
   together.
 - A job submitted moments ago whose worker has not registered yet is refused, and `--force` will not
   lift that: the startup grace exists for exactly that window, and the refusal says how much of it is
