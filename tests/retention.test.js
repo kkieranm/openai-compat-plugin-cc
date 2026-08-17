@@ -50,6 +50,21 @@ test('a row a newer plugin wrote is never deleted', { skip: NEEDS_SQLITE }, () =
   // Two finished rows in the same position — the two oldest of all — differing
   // in nothing but the version stamped on them. That is what makes the two
   // verdicts attributable to the version rather than to age or to order.
+  //
+  // OAI-166 mutation-tested the sibling below ("not counted"), never this one
+  // ("never deleted") — an assumed, not measured, witness. Measured 2026-08-17
+  // (OAI-170): dropping `schema_version <= ?` from `PRUNE`'s WHERE alone breaks
+  // bind arity (`prune()` binds positionally), so this is two coordinated edits
+  // — the clause AND the `ROW_SCHEMA_VERSION` argument to `.all(...)` — each
+  // landed and proved separately. Reddened this test as predicted: `deleted`
+  // gained the foreign row, so `deepEqual` below throws and `readJob(state,
+  // 'foreign')` is never reached. It also reached "a row a newer plugin wrote
+  // does not consume one of those places either" below, by a DIFFERENT
+  // mechanism — there the foreign row consumes a kept place instead of being
+  // deleted, so `deleted` gains a different ordinary row and that test's own
+  // `readJob` is equally never reached. OAI-166 tested that sibling by
+  // relocating the clause; this removes it outright, reaching both. Restored,
+  // `npm test` green.
   insertSynthetic(state, { id: 'foreign', state: 'completed', version: 99 });
   const ours = insertSynthetic(state, { id: 'ours', state: 'completed', version: 1 });
   fillTerminal(state, RETAIN);
