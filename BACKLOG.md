@@ -41,16 +41,17 @@ entry list is structurally fine (verified against `tests/backlog-structure.test.
 one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
 forces an occupant. **The top of the priority view is therefore tier 2.**
 
-**Tier 2 — the suite says something false about itself.** **OAI-172**. OAI-162's residue, the same
-class one level out — not a test that cannot fail, but a comment and a command document that describe
-behaviour the code does not have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`;
-its review filed **OAI-176**, a toolchain defect in the review-ladder's `fork-opener` stage itself.
-**OAI-168 closed 2026-08-17, outside this repo (`72c91bf` in `~/Code/dotfiles`)** — the general rule
-that feature paid for twice (a positive control is a check that cannot fail until something witnesses
-it firing) is generic test methodology, so it lives beside `review-ladder`'s same-batch conditional
-rule rather than here; see `BACKLOG_DONE.md`. **OAI-170 closed 2026-08-17 (`feeab6d`)** — see
-`BACKLOG_DONE.md`; its own review filed **OAI-177**, the same unmeasured-witness gap in this file's
-other two exemptions.
+**Tier 2 — the suite says something false about itself. EMPTY as of 2026-08-17, and kept as a
+closure record rather than deleted.** **OAI-167 closed 2026-08-16 (`6b3fead`)** — see
+`BACKLOG_DONE.md`; its review filed **OAI-176**, a toolchain defect in the review-ladder's
+`fork-opener` stage itself. **OAI-168 closed 2026-08-17, outside this repo (`72c91bf` in
+`~/Code/dotfiles`)** — the general rule that feature paid for twice (a positive control is a check
+that cannot fail until something witnesses it firing) is generic test methodology, so it lives
+beside `review-ladder`'s same-batch conditional rule rather than here; see `BACKLOG_DONE.md`.
+**OAI-170 closed 2026-08-17 (`feeab6d`)** — see `BACKLOG_DONE.md`; its own review filed **OAI-177**,
+the same unmeasured-witness gap in this file's other two exemptions. **OAI-172 closed 2026-08-17
+(`81a019e`)** — see `BACKLOG_DONE.md`; its verdict-point review found a further false claim in its
+own round-1 rewrite, filed as residue below.
 
 **Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-177**.
 OAI-169 is two constants whose removal shows as an intermittent stall rather than silent wrongness, which is
@@ -166,7 +167,9 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180, OAI-181**.
+**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180, OAI-181, OAI-182**.
+**OAI-182 is OAI-172's residue** — two non-blocking documentation completeness gaps its verdict-point
+review found and left open; see its own body.
 **OAI-181 is a direct user request, not a "may close as no" item** — it sits here only because it
 needs a probe (does relaxing `agents/oai-delegate.md`'s no-`--model` rule undo the reason it exists)
 before it can be planned; see its own body.
@@ -2845,23 +2848,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   enough to judge. What the run does establish is the cost of not knowing — two discovery passes,
   roughly ten subagents and four Codex calls, spent on prose.
 
-- **OAI-172** — **Two sentences in the abandon command describe behaviour it does not have.** Filed
-  2026-08-16 from OAI-162's review; both verified pre-existing at HEAD, and merged into one item
-  because one change corrects and pins both.
-  (1) `abandonDecision` returns `{ allowed: true, reason: 'forced' }` from TWO rungs — `no-beat`
-  (a beat that is absent or will not parse) and `beating` (a beat that is genuinely fresh) — while
-  `job-abandon.mjs` and `commands/abandon.md` both gloss the forced case as the one where "the beat
-  was fresh and the operator overrode a worker that was checking in". That is false for the first
-  rung. **The consequence is NOT established and the item does not claim one**: the suppressed sleep
-  caveat is about a beat looking *stale* after the machine slept, which is not true of an absent beat
-  either, so suppressing it there may well be right. The defect filed is the false description and the
-  collapse of two grounds into one reason code, not a missing caveat.
-  (2) `cmd-abandon.mjs`'s `REFUSALS` docblock says `gone` "is absent deliberately" and that "every
-  other reason `abandonDecision` can return must appear here". `dead` is also absent, and legitimately
-  — a dead or never-started row is handed to ordinary recovery before the table is consulted — but
-  only `tests/abandon-cli.test.js` records why. A reader checking the table against the vocabulary
-  finds a missing key the comment says cannot exist.
-
 - **OAI-174** — **The rendered status output never names the exit for a malformed row.** Filed
   2026-08-16 from OAI-162's build, where it was planned and then WITHDRAWN by the user after approval
   (recorded in that item's plan). `remedyFor` is gated on `liveness !== 'live'`, so no `/oai:status`
@@ -2974,3 +2960,18 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   re-read before deciding whether it still holds. Needs a probe before a plan: whether this is a
   one-line relaxation of that agent's own rule, or whether the rule exists for a reason that a per-call
   override would defeat.
+
+- **OAI-182** — **`commands/abandon.md`'s stale-beat caveat bullet is non-exhaustive about which
+  `--force` cases skip it, and a separate bullet never mentions the malformed-running case at all.**
+  Filed 2026-08-17 from OAI-172's verdict-point review (round 2, independent Claude verdict subagent)
+  — both non-blocking, both left open rather than folded into OAI-172's fix.
+  (1) The bullet's enumeration of when `--force` is what actually did the work — a fresh beat, or a
+  beat whose recency couldn't be checked — omits `forced-malformed` (`abandonDecision`'s `malformed`
+  rung), a third case where `--force` also did the work and the caveat is likewise absent. The
+  operative claim (the caveat is keyed on `reason === 'stale'`) stays true regardless, but a reader
+  may take the two-case enumeration as exhaustive.
+  (2) `cmd-abandon.mjs`'s `report()` has a distinct `forced-malformed` message in its `running` arm
+  ("Nothing could be judged about its process... an overlap cannot be ruled out") that `abandon.md`
+  never describes at all — not wrong, just missing.
+  Both are small, additive documentation completeness gaps, not correctness defects — the reviewer's
+  own framing: "the operative claim stays true... outside this round's scope."

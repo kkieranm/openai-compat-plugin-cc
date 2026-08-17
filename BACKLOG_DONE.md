@@ -1,3 +1,30 @@
+## 2026-08-17 — OAI-172 closed (`81a019e`)
+
+- **OAI-172** — **Two sentences in the abandon command described behaviour it did not have.** Filed
+  2026-08-16 from OAI-162's review; both verified pre-existing at HEAD, and merged into one item
+  because one change corrected and pinned both.
+  (1) `abandonDecision` returns `{ allowed: true, reason: 'forced' }` from TWO rungs — `no-beat`
+  (a beat that is absent or will not parse) and `beating` (a beat that is genuinely fresh) — while
+  `job-abandon.mjs` and `commands/abandon.md` both glossed the forced case as the one where "the beat
+  was fresh and the operator overrode a worker that was checking in". False for the first rung. Fixed
+  to describe both grounds, and to key the sleep caveat on the reason CODE (`stale`) rather than on
+  whether `--force` was passed — a `--force`'d row whose beat was already stale still gets `reason:
+  'stale'` and still gets the caveat, which the first rewrite of this sentence also got wrong (caught
+  at the verdict point, round 1) before being corrected (round 2).
+  (2) `cmd-abandon.mjs`'s `REFUSALS` docblock said `gone` "is absent deliberately" and that "every
+  other reason `abandonDecision` can return must appear here". `dead` is also absent, and legitimately
+  — a dead or never-started row is handed to ordinary recovery before the table is consulted. Fixed to
+  name both `gone` and `dead`, and to state the actual invariant (every reason that reaches the
+  `REFUSALS[outcome.reason]` call), since `forced`, `forced-malformed` and `stale` are ALLOWED
+  outcomes that never produce a refusal at all — a third, distinct kind of exclusion the original
+  "every other reason" phrasing didn't accommodate.
+  A third, adjacent pre-existing false claim was also caught and fixed in the same pass (round 1's
+  verdict-point review): `commands/abandon.md` said the command refuses a job "that has never checked
+  in at all, and says so" — the actual no-beat refusal message deliberately avoids that claim ("no
+  evidence either way about its process"), since an unparseable beat could mean several things.
+  Dual-approved (Codex + independent Claude verdict subagent) on digest `1aa0deae31cc` after two
+  verdict-point rounds. Residue: OAI-182.
+
 ## 2026-08-17 — OAI-165 closed (`c13696d`)
 
 - **OAI-165** — **`--repo <path>` and `--include <prefix>` let the overnight review sweep run against
