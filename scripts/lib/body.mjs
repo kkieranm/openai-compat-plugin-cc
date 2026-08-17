@@ -2,9 +2,10 @@ import { UserError } from './errors.mjs';
 
 /**
  * Reading a response body. Separate from `http.mjs` (which makes the request)
- * and from `sse.mjs` (which frames an event stream), because the size ratchet
- * in tests/structure.test.js is a design instrument, not an obstacle: one
- * module per question — send it, read it, frame it.
+ * and from `sse.mjs` (which frames an event stream) — the size ratchet that
+ * used to be in tests/structure.test.js (retired 2026-08-17) was a design
+ * instrument, not an obstacle, when this split was made: one module per
+ * question — send it, read it, frame it.
  */
 
 /**

@@ -1,6 +1,6 @@
 // The per-commit wall-clock cap's DEFAULT, which nothing could see change.
 //
-// Its own file because `review-sweep.test.js` sits at the size ratchet, and
+// Its own file because `review-sweep.test.js` sat at the size ratchet (retired 2026-08-17), and
 // because this guards a different thing from the classification tests there: not
 // what a reply means, but whether a constant this harness's coverage depends on
 // actually reaches the process that enforces it.
