@@ -25,6 +25,20 @@ test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50',
   assert.deepEqual(left, seqs.slice(5), 'and what remains is exactly the newest 50');
 });
 
+// OAI-177: the "never deleted" (existence) half of this exemption was, like
+// the two below it, unmeasured until now. Measured 2026-08-17 by
+// widening `STATES` to also bind 'queued' and 'running' (and the `.all(...)`
+// call to match — a coordinated edit, same bind-arity reason as OAI-170's):
+// reddened this test as predicted, on `assert.ok(!deleted.includes(queued))`
+// below — the FIRST assertion, same as the operator-abandoned test below it.
+// `readJob(state, 'ancientq')`/`readJob(state, 'ancientr')` are consequently
+// never reached under this mutation, for the same structural reason OAI-170
+// recorded for the foreign-version pair: a `DELETE ... RETURNING seq` cannot
+// disagree with the row it deleted, so the `deleted` array always fails first.
+// The same mutation also reddens this exemption's own placement-half sibling,
+// "an active job does not consume one of those places either" — by the
+// counted-not-deleted mechanism that test exists to pin, not this one.
+// Restored, `npm test` green.
 test('a job that is still active is exempt however old it is', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const month = 30 * 24 * 60 * 60 * 1000;
@@ -75,6 +89,27 @@ test('a row a newer plugin wrote is never deleted', { skip: NEEDS_SQLITE }, () =
   assert.ok(readJob(state, 'foreign'), 'erasing a newer build\'s completed job is data loss, not housekeeping');
 });
 
+// OAI-177: this exemption's "never deleted" (existence) half was the other
+// unmeasured one OAI-170 left open. Measured 2026-08-17 by removing the
+// `AND NOT (started_at IS NOT NULL AND (CASE ...) IS ?)` clause from `PRUNE`
+// and its bind argument together (bind-arity, same as OAI-170's schema_version
+// mutation): reddened this test as predicted, on `assert.deepEqual(deleted,
+// [control], ...)` below — the FIRST assertion. `readJob(state, 'abandoned')`
+// is consequently never reached under this mutation, for the same structural
+// reason OAI-170 recorded for the foreign-version pair (a `DELETE ...
+// RETURNING seq` cannot disagree with the row it deleted). The same mutation
+// also reddened two siblings, for the SAME exemption but two DIFFERENT
+// mechanisms — a first draft of this note wrongly called both "the same
+// reason", caught by an independent verdict-point review. "An abandoned
+// row does not consume one of the places kept for ordinary history" below
+// reddens by this exemption's OWN placement half — a formerly-uncounted
+// abandoned row is counted and evicts an ordinary one, not deleted directly.
+// "A row abandoned before it ever ran is pruned like any other" reddens by a
+// different mechanism again: removing the exemption clause also removes the
+// `started_at` narrowing it carries, so that test's own formerly-exempt
+// `ranAndAbandoned` row is DELETED directly, the same mechanism as this test,
+// not the placement one — it documents the narrowing, not this exemption's
+// placement. Restored, `npm test` green.
 test('a row an operator abandoned after it ran is never deleted, and keeps its log', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Two `failed` rows in the same position — the two oldest of all — differing in
