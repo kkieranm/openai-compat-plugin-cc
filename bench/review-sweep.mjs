@@ -17,7 +17,7 @@
 // What a reply MEANS lives in `lib/sweep-outcome.mjs`; this file decides what to
 // do next.
 import { execFileSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
@@ -35,7 +35,7 @@ const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
 export const SPEC = {
   valueFlags: [
     'until', 'minutes', 'from', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
-    'abort-after', 'model', 'provider', 'base-url', 'out-dir',
+    'abort-after', 'model', 'provider', 'base-url', 'out-dir', 'repo',
   ],
   booleanFlags: ['diff-only'],
   repeatableFlags: ['include'],
@@ -107,12 +107,12 @@ function reviewArgs(sha, options) {
  * that is not tidiness. Without `code` an `ENOBUFS` (this harness's own 64MB
  * capture ceiling) is indistinguishable from the child dying, and without
  * `stderr` a crashed commit reaches the morning with nothing saying why, on the
- * one path where no envelope exists to say it.
+ * one path where no envelope exists to say it. `cwd` is the repo REVIEWED.
  */
-function invoke(args) {
+function invoke(args, cwd = ROOT) {
   try {
     const stdout = execFileSync(process.execPath, [COMPANION, ...args], {
-      cwd: ROOT, encoding: 'utf8', maxBuffer: 64e6, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd, encoding: 'utf8', maxBuffer: 64e6, stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { status: 0, stdout, stderr: '' };
   } catch (error) {
@@ -220,10 +220,75 @@ function positive(value, flag, fallback) {
   return n;
 }
 
+/**
+ * `--include <prefix>` normalized to what `touchesIncluded` actually compares
+ * against — a bare git-relative segment, no leading `./` and no trailing `/`.
+ * Without this, `--include src/` or `--include ./src` parse, pass the
+ * non-empty check below, and then match NOTHING (adversarial review): the
+ * exact silent hollow-sweep failure OAI-165 exists to prevent, one flag over.
+ *
+ * Stripping the one leading `./` is not enough (agent-closer, same pass): git
+ * never emits a path that is absolute, that is exactly `.` or `..`, that is a
+ * traversal (`../x`), or that a POSIX normalize would rewrite (an internal
+ * `/./` or `//`) — `--include .` (the most plausible way to type "review
+ * everything") and `--include ../x` both parsed, passed a bare non-empty
+ * check, and matched nothing. All of those shapes are refused here.
+ *
+ * Trimmed FIRST, and the trimmed value is what both validation and the
+ * returned entry use (Codex, same pass): a surrounding-whitespace value like
+ * `--include 'src '` used to validate against a trimmed copy but return the
+ * untrimmed one, matching nothing — the same silent-hollow-sweep failure one
+ * character over. `..startsWith('..')` also used to refuse a legitimate name
+ * like `..config`, which shares no path-traversal meaning with `../x` — only
+ * an exact `..` or a `../` prefix is traversal.
+ */
+function normalizedInclude(raw) {
+  const cleaned = raw.map((entry) => entry.trim().replace(/^\.\//, '').replace(/\/+$/, ''));
+  const bad = cleaned.filter((entry) => {
+    if (entry === '' || entry === '.' || entry === '..' || entry.startsWith('../') || entry.startsWith('/')) return true;
+    return posix.normalize(entry) !== entry;
+  });
+  if (bad.length) {
+    throw new UserError(`--include was given ${bad.length} value(s) that cannot match a real git-relative path (${bad.map((v) => JSON.stringify(v)).join(', ')}) — empty, ".", "..", an absolute path, or a "./"/"//"-containing segment matches nothing, silently reviewing nothing under it.`, { hint: 'Pass a real path prefix relative to the target repo\'s root, e.g. --include src.' });
+  }
+  return cleaned;
+}
+
+// `--repo` resolves to `options.repo`, what `git()`/`invoke()` root at
+// (OAI-165: both hardcoded ROOT). `DEFAULTS.include` is THIS repo's layout,
+// so a --repo resolving to a FOREIGN path with no --include is refused, not
+// defaulted — naming this tool's own root back is a no-op, not a footgun
+// (adversarial review: comparing syntactic presence, not resolved identity,
+// made `--repo <ROOT>` refuse for no reason and misreport why). `--repo`
+// given as an empty/whitespace value is refused rather than silently read as
+// "not given" — a mistyped `--repo=` must not fall back to self-review.
+// **DEFERRED, not missed**: `resolve()` compares lexical paths, not git
+// identity, so `--repo` naming this tool through a symlink or a subdirectory
+// still reads as foreign and asks for `--include` unnecessarily — the same
+// "no preflight repo-identity check" cut this item's plan already made, one
+// path-comparison deeper. `--include` handles a false "foreign" harmlessly;
+// only a false negative (a real foreign repo missing the guard) would be a
+// defect, and lexical resolve() never produces one.
+//
+// **Trimmed once, and the trimmed value is what both the empty check AND
+// `resolve()` use (Codex + fork-opener, pass 4)** — the same failure class
+// `normalizedInclude` had: validating a trimmed copy but resolving the
+// UNTRIMMED original made `--repo ' /tmp/target'` pass the empty guard and
+// then resolve to a bogus path with a literal space segment, failing later
+// with an opaque git/ENOENT error instead of the clear refusal.
 export function optionsFrom(parsed, startMs, root = ROOT) {
+  const trimmedRepo = parsed.repo !== undefined ? parsed.repo.trim() : parsed.repo;
+  if (trimmedRepo === '') {
+    throw new UserError('--repo was given an empty value.', { hint: 'Pass a real path, or omit --repo to sweep this tool\'s own repo.' });
+  }
+  const repo = trimmedRepo ? resolve(trimmedRepo) : root;
+  const foreignRepo = repo !== resolve(root);
+  if (foreignRepo && !parsed.include?.length) {
+    throw new UserError(`--repo points at a different repository (${repo}), so --include must be given explicitly — this tool's own defaults (${DEFAULTS.include.join(', ')}) describe this repo's layout, not the target's.`, { hint: 'Pass one or more --include <path-prefix> flags naming the target repo\'s own directories worth reviewing.' });
+  }
   return {
     deadline: resolveDeadline(parsed, startMs),
-    include: parsed.include?.length ? parsed.include : DEFAULTS.include,
+    include: parsed.include?.length ? normalizedInclude(parsed.include) : DEFAULTS.include,
     maxCommits: positive(parsed['max-commits'], '--max-commits', DEFAULTS.maxCommits),
     scanLimit: positive(parsed['scan-limit'], '--scan-limit', DEFAULTS.scanLimit),
     maxSeconds: positive(parsed['max-seconds'], '--max-seconds', DEFAULTS.maxSeconds),
@@ -235,11 +300,16 @@ export function optionsFrom(parsed, startMs, root = ROOT) {
     provider: parsed.provider,
     'base-url': parsed['base-url'],
     outDir: parsed['out-dir'] ?? join(root, 'bench', 'results'),
+    repo,
+    // ONE definition of "is this a foreign repo", consumed by `main()` below —
+    // not recomputed there (adversarial review: two independent comparisons
+    // of the same fact only agreed by construction, not by a shared source).
+    foreignRepo,
   };
 }
 
-function git(args) {
-  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64e6 });
+function git(args, cwd = ROOT) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64e6 });
 }
 
 function main() {
@@ -255,10 +325,12 @@ function main() {
   }
   const startMs = Date.now();
   const options = optionsFrom(parsed, startMs);
+  const gitAtRepo = (args) => git(args, options.repo); // rooted at the repo actually being swept
   // Pin first, then enumerate from the resolved SHA, so the record and the
   // report name the revision that was actually walked.
-  options.from = resolvePin(options.from, git);
-  const commits = enumerateCommits(options, git);
+  options.from = resolvePin(options.from, gitAtRepo);
+  const commits = enumerateCommits(options, gitAtRepo);
+  if (options.foreignRepo) process.stderr.write(`Reviewing ${options.repo}\n`);
   process.stderr.write(`Sweeping ${commits.filter((c) => c.eligible).length} eligible of ${commits.length} enumerated commits.\n`);
   // Stamped from the START, not from the end as this once was: the ledger must
   // be named before the first review, and the report it may become has to carry
@@ -270,7 +342,7 @@ function main() {
   // Announced before the loop, because for the next several hours this path is
   // the only thing a watcher can read.
   process.stderr.write(`Ledger: ${ledger.path}\n`);
-  const { entries, stoppedBecause } = runSweep(commits, options, { sink: ledger.entry });
+  const { entries, stoppedBecause } = runSweep(commits, options, { sink: ledger.entry, execute: (args) => invoke(args, options.repo) });
   const { reportPath, recordPath } = writeSweep(options.outDir, stamp, {
     ...envelope,
     endedAt: new Date().toISOString(),

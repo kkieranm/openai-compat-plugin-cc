@@ -53,8 +53,7 @@ const ADVISOR_DISCIPLINE =
  * request that returned nothing at all. It is not a measured threshold, and the
  * caveat it triggers is worded to claim no more than that.
  *
- * Compared with `>`, so exactly at the ceiling does not caveat — the same
- * convention `tests/structure.test.js` uses against its own line budget.
+ * Compared with `>`, so exactly at the ceiling does not caveat.
  */
 const ADVISOR_CEILING_TOKENS = 8000;
 

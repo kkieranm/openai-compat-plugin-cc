@@ -1,7 +1,5 @@
-// Structural invariants: size ratchet.
-// A recurring defect class graduates from reviewer prompts to a test here;
-// size/growth is the first such class. Raising a ceiling in ALLOWLIST is a
-// deliberate commit — the entry must say why the item earns its size.
+// Structural invariants.
+// A recurring defect class graduates from reviewer prompts to a test here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -9,18 +7,11 @@ import { join, relative } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
-const DEFAULT_MAX_LINES = 300; // per source file
-const MAX_FUNCTION_LINES = 60;
-
-// path -> { max, reason } — every entry needs a one-line design-call reason.
-const ALLOWLIST = {};
-
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.claude']);
 // Skipped by path rather than by bare name, which would skip any directory
 // called `cases` anywhere in the tree. The benchmark corpus is data, not
 // source: historical blobs kept byte-identical *because* they contain known
-// defects. A size budget over them would measure 2026's commits, and the
-// harness code beside them stays under the ratchet like everything else.
+// defects, and running today's guards over them would measure 2026's commits.
 const SKIP_PATHS = new Set(['bench/cases']);
 const SOURCE_EXT = /\.(js|mjs|cjs|ts|jsx|tsx|sh)$/;
 
@@ -46,51 +37,9 @@ function* sourceFiles(dir) {
   }
 }
 
-test('no source file exceeds its size budget', () => {
-  const failures = [];
-  for (const file of sourceFiles(ROOT)) {
-    const rel = relative(ROOT, file);
-    const lines = readFileSync(file, 'utf8').split('\n').length;
-    const budget = ALLOWLIST[rel]?.max ?? DEFAULT_MAX_LINES;
-    if (lines > budget) failures.push(`${rel}: ${lines} lines > budget ${budget}`);
-  }
-  assert.deepEqual(failures, []);
-});
-
-// Spans are measured from a declaration at column 0 to the first line that is
-// exactly "}". Counting braces instead would misfire on braces inside strings,
-// template literals and regex literals. Known limitation: only `function`
-// declarations are measured, not arrow functions assigned to a const.
-test('no top-level function exceeds the function size budget', () => {
-  const declaration = /^(?:export\s+)?(?:async\s+)?function\s/;
-  const failures = [];
-
-  for (const file of sourceFiles(ROOT)) {
-    const rel = relative(ROOT, file);
-    if (ALLOWLIST[rel]) continue;
-    const lines = readFileSync(file, 'utf8').split('\n');
-    let start = -1;
-
-    lines.forEach((line, index) => {
-      if (start === -1) {
-        if (declaration.test(line)) start = index;
-        return;
-      }
-      if (line === '}') {
-        const span = index - start + 1;
-        if (span > MAX_FUNCTION_LINES) {
-          failures.push(`${rel}:${start + 1}: function spans ${span} lines > ${MAX_FUNCTION_LINES}`);
-        }
-        start = -1;
-      }
-    });
-  }
-  assert.deepEqual(failures, []);
-});
-
-// Confirmed twice, so promoted from a reviewer's prompt to a guard. Extracting a
-// function under the size ratchet means inserting one above an existing
-// declaration, and twice now the new function has landed *between* a docblock
+// Confirmed twice, so promoted from a reviewer's prompt to a guard. Extracting
+// a function means inserting one above an existing declaration, and twice now
+// the new function has landed *between* a docblock
 // and the function that docblock described — leaving the old comment attached to
 // unrelated code and its subject with none. It reads as harmless placement and
 // is not: the orphaned block in `review-report.mjs` ended "Exported for the
@@ -175,12 +124,6 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
 test('the test runner is scoped, so corpus snapshots are not discovered as tests', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.test, /tests\//, 'an unscoped `node --test` would run bench/cases snapshots');
-});
-
-test('allowlist entries all carry a reason', () => {
-  for (const [path, entry] of Object.entries(ALLOWLIST)) {
-    assert.ok(entry.reason?.length > 10, `${path} allowlisted without a real reason`);
-  }
 });
 
 /**

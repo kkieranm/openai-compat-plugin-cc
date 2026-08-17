@@ -702,7 +702,8 @@ false: moving `capBudgets` below `ledger.begin` turns `tests/failure-shape.test.
 narrow mid-window case is reachable by replacing `globalThis.performance`, which `capBudgets` reads
 bare. OAI-25 then reproduced the class **in its own fix**, shipping a comment that read "No mutation
 distinguishes the two placements" — a claim about all possible mutations derived from one experiment,
-caught in review. A third instance survives at `tests/structure.test.js:279,287` ("nothing
+caught in review. A third instance survives at `tests/structure.test.js:222,230` (moved from
+`:279,287` when the ratchet retirement deleted 57 lines above them, 2026-08-17) ("nothing
 behavioural can pin it", "A test cannot make Node drop the code on demand"), filed as OAI-30.
 
 The class is not "the guard is wrong" — all three guards are correct and earn their place. It is

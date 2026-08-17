@@ -225,6 +225,9 @@ function header(record) {
     // has no end, and the last thing observed is stated in `stoppedBecause`
     // where it can be labelled as an observation rather than an ending.
     `- **Started** ${record.startedAt} · **ended** ${record.endedAt ?? 'not observed'}`,
+    // Always, even for a self-review: its ABSENCE is exactly what let a
+    // foreign --repo run's artifact go unattributed (OAI-165 review).
+    `- **Repository** \`${record.repo ?? '(not recorded)'}\``,
     `- **Stopped because** ${record.stoppedBecause}`,
     `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
     `- **Enumerated** ${enumerated} commits · **reviewed** ${reviewed} · **no review** ${enumerated - reviewed}`,

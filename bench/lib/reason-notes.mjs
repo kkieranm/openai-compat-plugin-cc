@@ -38,9 +38,9 @@
  * Headroom note for whoever adds the field after this one: the prediction above
  * came true — OAI-35 added `serverResponded`, the enumeration test went red on
  * exactly the edit below, and the split it prescribed is the file you are reading.
- * The same rule applies again. Split at a seam the code already draws rather than
- * raising the ceiling; there is no allowlist entry to reach for, and adding one
- * would also silently drop this file's 60-line per-function budget.
+ * The size ratchet that prescribed it was retired 2026-08-17 — split at a seam
+ * the code already draws when a file grows unwieldy regardless; there is no
+ * enforced ceiling to raise or allowlist against any more.
  */
 export const RECORD_FIELDS = [
   ['index', 'its index'],

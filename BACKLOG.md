@@ -139,11 +139,17 @@ mutation, and the sharper of the two because its stakes are disclosure. Both lea
 they are *wrong today*, where OAI-53 and OAI-54 are Stage 1's stated gaps needing a design decision
 before code, which is why they are not higher despite being small.
 
-**Tier 7 — coverage the ladders found missing, and the ratchet that blocks it.** **OAI-28, OAI-40,
-OAI-73, OAI-52, OAI-79, OAI-75, OAI-39, OAI-45**. OAI-28 leads because it now carries the ratchet
-decision (see the redirect table): `tests/structure.test.js` is at **exactly 300 of 300** and cannot
-accept another guard. **OAI-40 is batchable with it** — its fix lands in `bench-reliability.test.js`,
-the other file OAI-28's split touches, and that file has six lines of headroom. **OAI-79 may never be
+**Tier 7 — coverage the ladders found missing.** **OAI-28, OAI-40,
+OAI-73, OAI-52, OAI-79, OAI-75, OAI-39, OAI-45**. **The size ratchet that used to block OAI-28 was
+RETIRED 2026-08-17 at the user's direction** ("we're no longer using ratchets") — `tests/structure.test.js`'s
+per-file and per-function line-count guards and `ALLOWLIST` are deleted outright, not raised, so
+OAI-28's part (A) (the ratchet itself) is now moot and parts (B) (`http.mjs`'s two untested transport
+writes) and (C) (`tests/structure.test.js`'s overclaiming doc comment) are both unblocked with no split
+required first. **OAI-40 was filed alongside it for a reason that is now moot**: both needed headroom in
+a test file under the ratchet, which no longer applies — OAI-40's own fixes land in
+`bench-reliability.test.js` and `bench-reason-notes.test.js`, neither of which OAI-28's remaining scope
+(`http.mjs` and `tests/structure.test.js`) touches, so the two no longer share a reason to run in one
+feature pass and can be worked independently. **OAI-79 may never be
 worked at all** — its own body says the three sharp edges are *deleted* by moving the delegate's
 lifecycle out of agent shell, which is OAI-74 with OAI-76 in tier 4, so check whether it is still live
 before opening it. OAI-75 is an unidentified intermittent whose next step is capture, not reasoning.
@@ -160,7 +166,9 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175, OAI-176**.
+**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175, OAI-176**. OAI-165's own decision is
+already made and implemented — see its body — it sits here as housekeeping pending review-ladder
+close-out, not as an open "may close as no" item.
 **OAI-176 is OAI-167's residue** — one observed instance of a `fork-opener` subagent echoing the
 orchestrator's own transcript framing instead of reviewing, with no measured mechanism and a candidate
 mitigation not yet worth standing instruction on one instance. Housekeeping, sorted last: it names no
@@ -171,9 +179,9 @@ product work at all — the exit is already in both command documents and in the
 so this is discoverability, and it was withdrawn from OAI-162's plan by the user on exactly that
 ground. OAI-175 is one paragraph of documentation and is filed at the bar's edge, said so in its own
 body.
-**OAI-165 sits here rather than with the sweep's own residue** because what it needs first is a
-decision — is `bench/review-sweep.mjs` this repo's instrument or a tool other repos run — and only one
-answer makes any of the work worth doing.
+**OAI-165 sits here rather than with the sweep's own residue** — its decision (the sweep is a tool
+other repos run) is already made and implemented; it stays in this tier as housekeeping until the
+review-ladder pass approves and it moves to `BACKLOG_DONE.md`.
 **OAI-159 leads the tier from 2026-08-14**: 78 citations across 37 live items point at the `adr/`
 corpus deleted in `d1ad2aa`, and the deletion commit records that `BACKLOG*.md` was *"deliberately not
 touched"* — so the convention chosen for code comments was never adjudicated for the one file where a
@@ -380,8 +388,8 @@ Every ID this file has ever issued still resolves; nothing was deleted. **Two di
 
 | Was | Now | Why |
 | --- | --- | --- |
-| **OAI-30** | **OAI-28** | The same edit twice, one line apart in `http.mjs`, blocked by the same ratchet. |
-| **OAI-41** | **OAI-28** | The ratchet decision that blocks OAI-28 and OAI-30; it is now their leading half. |
+| **OAI-30** | **OAI-28** | Now OAI-28's part (C) — its own justification is still live and unresolved, not closed; it used to be blocked from starting by the ratchet (headroom), which was closed as moot 2026-08-17, see part (A). |
+| **OAI-41** | **OAI-28** | The ratchet decision that used to block OAI-28 and OAI-30 — closed as moot 2026-08-17, see OAI-28's part (A). |
 | **OAI-38** | **OAI-28** | Withdrawn 2026-08-04 as a duplicate on the day it was filed; never independent. |
 | **OAI-71** | **OAI-59** | One added `outcome` field, one shape-drift decision, one `/oai:result` render. |
 | **OAI-6** | *shipped* | Streaming output for `/oai:task`. **Recovered 2026-08-13 by the sweep**, which found it cited by OAI-13 and resolving NOWHERE — it predates the done-file convention. Shipped: `scripts/lib/stream-collect.mjs`, and `http.mjs:157` requests `text/event-stream`. |
@@ -780,33 +788,20 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `provider.mjs`. If it finds nothing, the trigger list stands as written and this closes as a
   recorded judgement rather than an open question.
 
-- **OAI-28** — **Make room in the two test files that are full, then give `http.mjs`'s two untested
-  transport writes the coverage they have never had.** **Merged 2026-08-05 by the backlog sweep from
-  OAI-28, OAI-30 and OAI-41** — one feature run ships all of it, because the ratchet blocks both edits
-  and both edits land one line apart in the same file. **The ratchet is the leading half**: it is the
-  only part that is wrong *today*, and neither of the others can start until it is done.
+- **OAI-28** — **Give `http.mjs`'s two untested transport writes the coverage they have never had.**
+  **Merged 2026-08-05 by the backlog sweep from OAI-28, OAI-30 and OAI-41** — one feature run ships all
+  of it. **The ratchet was the leading half**: it was the only part of the three at its own limit (the
+  guard compares with `>`, and `tests/structure.test.js` sat at exactly 300 of 300 — binding, not yet
+  violated, and with zero headroom for any further edit) rather than merely *incomplete* (coverage or a
+  comment not yet written), and it blocked the other two from starting by leaving no room to edit in —
+  now closed as moot, see (A) below, so (B) and (C) are both unblocked.
 
-  **(A) The ratchet, formerly OAI-41. Filed 2026-08-04; re-measured 2026-08-05 and unchanged.**
-  `tests/structure.test.js` is at **exactly 300 lines** against a `DEFAULT_MAX_LINES = 300` ceiling
-  compared with `>` (`tests/structure.test.js:12,55`) — **zero headroom** — and
-  `tests/bench-reliability.test.js` is at **294**, six lines. (`split('\n').length`, the way the
-  ratchet counts; one more than `wc -l`.) OAI-35 put ~140 of those lines there.
-  **The ratchet is being eaten, not merely full, and the dates say so:** OAI-30 recorded
-  `structure.test.js` at **299 of 300 on 2026-08-01** and warned whoever picked it up to make room
-  first; it was at **300 on 2026-08-04** and is at 300 today. One line consumed in three days, and the
-  file has been at the ceiling ever since.
-  This is the size-growth rule working as designed — the ceiling is meant to force a split rather than
-  be raised — but it is now due, and due *before* the next person needs it: `structure.test.js` is the
-  file whose whole job is holding structural guards and it cannot accept another one.
-  The seams are visible. `bench-reliability.test.js` mixes attempt ACCOUNTING (which bucket, which
-  denominator) with report RENDERING (what the markdown says) — the same split
-  `bench-reason-notes.test.js` was carved off along in OAI-31, so the precedent and the naming already
-  exist. `structure.test.js` mixes the size ratchet with the other structural guards it has
-  accumulated.
-  **Do NOT solve this with an `ALLOWLIST` entry.** `tests/structure.test.js:70` (`if (ALLOWLIST[rel])
-  continue;`) makes an allowlisted file skip the 60-line per-function budget too, so buying headroom
-  silently drops a second guard — the trap OAI-35 avoided by splitting `reason-notes.mjs` out instead.
-  Raising the ceiling is the one option that needs a stated reason, per the ratchet's own rule.
+  **(A) The ratchet, formerly OAI-41 — CLOSED as moot, 2026-08-17.** Filed 2026-08-04 as a headroom
+  problem (`tests/structure.test.js` at exactly 300 of 300, `bench-reliability.test.js` at 294 of 300),
+  it was never solved by a split: the user retired the ratchet mechanism outright the same day this
+  note was written, so `tests/structure.test.js` no longer has a per-file or per-function line budget,
+  and `ALLOWLIST` is gone. Nothing here needs headroom any more. Left in place rather than deleted, per
+  this repo's convention that a plan/backlog entry records what was believed at the time.
 
   **(B) The `!response.complete` branch, the original OAI-28. Filed 2026-08-01.** That branch — a
   socket cut mid-body ending the iteration with **no** `'error'` event — is the most retryable shape
@@ -838,8 +833,9 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **(C) The last "cannot be tested" justification, formerly OAI-30. Filed 2026-08-01** from the OAI-25
   ladder (Codex adversarial, low/0.97, pass 3 — the no-mutation pass, so recorded rather than fixed; a
   fix there would have shipped unreviewed). The guard is OAI-22's, it is correct, and nothing about
-  `delivered: true` is in doubt. What overclaims is its doc comment at `tests/structure.test.js:279`
-  and `:287`: "nothing behavioural can pin it" and "A test cannot make Node drop the code on demand"
+  `delivered: true` is in doubt. What overclaims is its doc comment at `tests/structure.test.js:222`
+  and `:230` (moved from `:279`/`:287` when the ratchet retirement deleted 57 lines above them,
+  2026-08-17): "nothing behavioural can pin it" and "A test cannot make Node drop the code on demand"
   (both quoted verbatim from disk, 2026-08-05). The evidence behind those sentences is narrower than
   they are — it establishes that on Node 26.3 a real mid-body cut *happened* to carry `ECONNRESET`,
   not that no test can exercise the code-less path. **The fix is known and cheap**: drive `bodyStream`
@@ -848,9 +844,10 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   from (B): that is the `!response.complete` branch, this is the catch below it. Third confirmed
   instance of the class recorded in `.claude/REPO_TRAPS.md`; the other two were OAI-25's subject and
   OAI-25's own first draft.
-  **Note the ordering trap this half creates**: the honest replacement comment is *longer* than what it
-  replaces, in the file with zero headroom. (A) first, always. OAI-25's comment rewrites there were
-  net-neutral by construction for exactly this reason.
+  **Historical note, now moot:** at filing, the honest replacement comment was *longer* than what it
+  replaces, in a file that then had zero headroom under the ratchet — so (A) had to be done first, and
+  OAI-25's comment rewrites there were net-neutral by construction for exactly that reason. The ratchet
+  is retired (see (A)); there is no headroom constraint left to sequence around.
 
   **(D) OAI-38 resolves here. Withdrawn 2026-08-04, the same day it was filed, as a duplicate of (B)**
   — which had covered it since 2026-08-01, and covered it better: (B) records that **both** obvious
@@ -864,9 +861,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   searched for in `BACKLOG.md`. **Verifying a finding is not the same as checking whether it is
   already tracked.**
 
-  **Batchable, not merged: OAI-40.** Its two fixes land in `bench-reliability.test.js`, the same file
-  (A) splits, and that file has the six lines of headroom (A) measured. It closes independently, so it
-  keeps its own ID — but do it in the same sitting or (A) will be paid for twice.
 - **OAI-29** — Let the transport ARM from a recomputed remaining budget, without letting it refuse.
   Filed 2026-08-01 from the OAI-22 adversarial review (Codex, medium/0.96), where the finding was
   accepted as a *claim* correction and its recommendation deliberately not taken. The claim: OAI-22
@@ -1370,8 +1364,9 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   that stops a late worker double-dispatching; (c) the `starting` branch of `job-liveness.mjs:87`,
   which no test drives inside a paused publication/spawn window.
   Also recorded, not defects: `tests/job-store.test.js` and `tests/structure-jobs.test.js` (plan:435-436)
-  were never created — their function is discharged by `queue-guards.test.js` and the generic ratchet;
-  and the plan asked for the wall clock the new tests add, which was never reported (only the count).
+  were never created — their function was discharged by `queue-guards.test.js` and, at the time, the
+  generic size ratchet (retired 2026-08-17 — see Tier 7); and the plan asked for the wall clock the new
+  tests add, which was never reported (only the count).
 
 - **OAI-74** — Enforce the attachment boundary for **every** caller, not just the delegate's recipe.
   **Narrowed 2026-08-05 by OAI-5's second review pass: the delegate path is now enforced.** Its recipe
@@ -2507,7 +2502,9 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 - **OAI-147** — **`tests/structure.test.js`'s orphaned-doc-comment guard is blind to a file's FIRST
   function, which is where the defect it exists for is most likely to be.** Filed 2026-08-12 from
   OAI-67's review pass 3, and **measured rather than argued**. The guard tracks `seenFunction` and only
-  reports once a `function` declaration has been passed (`tests/structure.test.js:120,125`), so two
+  reports once a `function` declaration has been passed (`tests/structure.test.js:69,74`, moved from
+  `:120,125` when the ratchet retirement deleted 51 lines above them, 2026-08-17 — the file lost 57
+  lines total, but 6 of those sat below this site), so two
   adjacent doc blocks ABOVE a module's first function are invisible to it. That is exactly the shape
   `acceptance-audit` found by eye in `scripts/lib/job-launch-outcome.mjs`, where the module's own
   contract had detached onto a one-line stderr writer and the exported function carried no docstring at
@@ -2819,25 +2816,22 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   record, ledger, `run.sh` and `provenance.txt` recording the served id, both context figures, the
   artifact identity and the `lms` CLI commit.
 
-- **OAI-165** — **The overnight sweep can only ever review THIS repo, and the default path filter
-  would silently hollow out a run against any other.** Filed 2026-08-15 from a question about whether
-  it can be pointed at another repo yet. It cannot. `bench/review-sweep.mjs` derives `ROOT` from the
-  script's own location (`:29`) and there is no `--repo` in `SPEC` (`:36`), so both `execFileSync`
-  call sites are pinned to it: `git()` walks this repo's history (`:242`) and `invoke()` runs the
-  companion in this repo's working tree (`:115`). `optionsFrom(parsed, startMs, root = ROOT)` (`:223`)
-  already takes a root, but `main` never passes one — it is a test seam, not a CLI knob.
-  **The path filter is the part that would fail quietly rather than loudly.** `DEFAULTS.include` is
-  `['scripts', 'bench', 'tests']` (`:45`), this repo's own layout. Pointed elsewhere with that
-  default, `touchesIncluded` would reject most commits as ineligible and the morning report would
-  show coverage over almost nothing — reading as a quiet night rather than as a misconfigured one.
-  `--include` is already a repeatable flag, so the knob exists; the DEFAULT is what is wrong off-site.
-  **Not a defect in what shipped** — the sweep is documented as this repo's instrument, in CLAUDE.md's
-  Commands table, and `README.md` never mentions it, so nothing on disk is currently false. It becomes
-  a documentation question only if this is built.
-  **The decision this needs first, and it may close as "no":** whether the sweep is an instrument for
-  this repo or a tool other repos run. Only the second justifies `--repo`, a portable `--include`
-  default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
-  command against the caller's cwd. It is only the sweep harness that is pinned.
+- **OAI-165** — **IMPLEMENTED, pending review-ladder approval.** Filed 2026-08-15 from a question about
+  whether the overnight sweep can be pointed at another repo yet — at filing it could not:
+  `bench/review-sweep.mjs` derived `ROOT` from the script's own location with no `--repo` in `SPEC`, so
+  both `git()` and `invoke()` (the two call sites that actually touch the filesystem/subprocess) were
+  pinned to this repo, and `DEFAULTS.include` — this repo's own layout — would have silently hollowed
+  out a run pointed anywhere else. The decision (converged with Codex before implementation) was that
+  the sweep is a tool other repos can run, not only this repo's own instrument.
+  **What shipped:** `--repo <path>` and `--include <prefix>` in `SPEC`; both `git()` and `invoke()`
+  root at `options.repo`; a foreign `--repo` with no `--include` is refused loudly rather than falling
+  back to this repo's defaults; `normalizedInclude()` refuses `--include` values that parse but can
+  never match a real git-relative path; the sweep's JSON record and rendered report both name the repo
+  swept. Documented in CLAUDE.md's `bench/review-sweep.mjs` paragraph and Commands table.
+  **Deferred, not missed:** relocating the output artifact into the target repo (it stays under this
+  tool's own `bench/results`); a preflight check that `--repo` names a real git identity rather than a
+  lexical path (a symlink or subdirectory alias still reads as "foreign" and asks for `--include`
+  unnecessarily — harmless, since `--include` handles a false positive, never a false negative).
 
 - **OAI-169** — **`tests/abandon-salvage.test.js`'s `busy_timeout` and retry budget are unpinned:
   delete either and the suite stays green.** Filed 2026-08-15 from OAI-166.

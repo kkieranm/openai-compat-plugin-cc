@@ -158,6 +158,11 @@ export function envelopeFor(options, commits, startMs) {
     // The threshold the health section states. Without it a reader is told a
     // streak reached two and has no idea whether that was nearly an abort.
     abortAfter: options.abortAfter,
+    // The repo actually swept — `null` when the caller didn't record one (e.g.
+    // `recover-sweep.mjs`'s own synthesized envelope), never assumed to be this
+    // tool's own. OAI-165: without this, a foreign --repo run's ledger, record
+    // and report carry commit SHAs and subjects with no repo attribution.
+    repo: options.repo ?? null,
     include: options.include,
     // Which window was enumerated. A report that cannot say this cannot be
     // compared with another one, which is the whole reason the flag exists.

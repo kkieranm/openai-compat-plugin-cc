@@ -224,7 +224,10 @@ marker profile is evidence quality, **not** Stage 2's economic gate.
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
 the real CLI via `--json` and matched on a quoted anchor line.
 
-`bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it, and
+`bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it,
+against **this** repo by default or `--repo <path>` for another one — which requires an explicit
+`--include`, since `DEFAULTS.include` is this repo's own layout and would silently review almost
+nothing else pointed elsewhere (OAI-165); `git()` and `invoke()` both root at `options.repo`, and
 `bench/lib/sweep-outcome.mjs` `classify` builds every report-derived entry through one mapping so each
 carries the envelope fields that change what a reader should believe (`analysisCut`, `atCap`,
 `hunksOnly`, `skippedUnsizedWindow`, `dropped`, `reason`) — leaving each commit disposed of exactly once across the report's
@@ -252,6 +255,10 @@ commit.
   here rather than left implicit, and required rather than skipped, because a suite that silently
   shrinks its shell matrix is a check that has stopped being able to fail.
 - Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
+- Overnight review sweep: `node bench/review-sweep.mjs --minutes N|--until HH:MM [--repo <path> --include <prefix>...] [...]`
+  (opt-in, needs a real model). With no `--repo`, sweeps this repo under its own defaults. Pointed at
+  another repo, `--include` is **required** — one or more path prefixes in the target's own layout —
+  or the command refuses rather than reviewing almost nothing under this repo's defaults.
 - Recover an interrupted sweep: `node bench/recover-sweep.mjs [--out-dir DIR] [--force] <review-sweep-<stamp>.ledger.jsonl>`
   — turns the ledger a crashed run left behind into the report it never wrote. **Options come BEFORE the
   ledger path** (`parseArgs` stops reading flags at the first positional; the other order is refused
@@ -316,10 +323,10 @@ Domain:
 - Prove changes with the repo `verify` skill (`.claude/skills/verify/SKILL.md`).
 - Review runs the `review-ladder` skill's stage table — read the stages there; this file does not
   restate them. The built-in `/code-review` stays available at `medium` when typed by hand.
-- Every recurring defect class graduates from a reviewer's prompt to a structural test — size/growth
-  is itself such a class and is guarded by `tests/structure.test.js` (ratchet allowlist; raising a
-  ceiling is a deliberate commit that says why). `tests/plugin.test.js` guards the markdown command
-  surface, which nothing else notices when it rots.
+- Every recurring defect class graduates from a reviewer's prompt to a structural test —
+  `tests/structure.test.js` holds the ones found so far (no file/function size ratchet — retired
+  2026-08-17, see BACKLOG.md). `tests/plugin.test.js` guards the markdown command surface, which
+  nothing else notices when it rots.
 - Commit gate: tests green + verify skill passed before committing.
 
 ## Work tracker

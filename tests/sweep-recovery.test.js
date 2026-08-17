@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { readLedger, ledgerPathFor, envelopeFor } from '../bench/lib/sweep-ledger.mjs';
+import { renderSweep } from '../bench/lib/sweep-report.mjs';
 import { mergeManifest, recoveredRecord, stampFrom } from '../bench/recover-sweep.mjs';
 import { runSweep } from '../bench/review-sweep.mjs';
 
@@ -43,6 +44,19 @@ test('a recovered record refuses to claim an end it never saw', () => {
   assert.match(record.stoppedBecause, /DID NOT FINISH/);
   assert.match(record.stoppedBecause, /1 enumerated commit\(s\) have no ledger entry/);
   assert.match(record.stoppedBecause, /Last activity observed at 2026-08-13T01:10:00\.000Z/);
+});
+
+// OAI-165 (adversarial review): every header this codebase WRITES now carries
+// `repo` via `envelopeFor`, so every fixture built from it does too — which
+// means the "no `repo` key at all" shape a PRE-OAI-165 ledger actually has on
+// disk was never exercised. Built by hand, deliberately without the key,
+// rather than by calling `envelopeFor`.
+test('a header from before OAI-165, with no `repo` key at all, recovers and renders without crashing', () => {
+  const header = { maxSeconds: 900, abortAfter: 3, include: ['scripts'], from: 'abc', requestedCommits: 1, eligible: 1, scanLimit: 200, walked: 1, enumerated: 1, commits: [{ sha: 'a', eligible: true }] };
+  assert.ok(!('repo' in header), 'the fixture must omit the key, not merely set it to null');
+  const record = recoveredRecord({ header, entries: [{ sha: 'a', outcome: 'clean' }], discarded: 0 });
+  assert.equal(record.repo, undefined);
+  assert.match(renderSweep(record), /\*\*Repository\*\* `\(not recorded\)`/);
 });
 
 test('a run killed before its first review still recovers into a report', () => {
