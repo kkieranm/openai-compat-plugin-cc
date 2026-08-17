@@ -81,13 +81,15 @@ entry list is structurally fine (verified against `tests/backlog-structure.test.
 one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
 forces an occupant. **The top of the priority view is therefore tier 2.**
 
-**Tier 2 — the suite says something false about itself.** **OAI-168**, **OAI-170**,
-**OAI-172**. These are OAI-166's residue, save OAI-172 which is OAI-162's and is the same class one
-level out — not a test that cannot fail, but a comment and a command document that describe behaviour
-the code does not have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`; its review
-filed **OAI-176**, a toolchain defect in the review-ladder's `fork-opener` stage itself. OAI-168 is the
-general rule that feature paid for twice: a positive control is a check that cannot fail until
-something witnesses it firing. OAI-170 is one unrun mutation, and the cheapest item in this file.
+**Tier 2 — the suite says something false about itself.** **OAI-170**, **OAI-172**. These are
+OAI-166's residue, save OAI-172 which is OAI-162's and is the same class one level out — not a test
+that cannot fail, but a comment and a command document that describe behaviour the code does not
+have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`; its review filed **OAI-176**,
+a toolchain defect in the review-ladder's `fork-opener` stage itself. **OAI-168 closed 2026-08-17,
+outside this repo (`72c91bf` in `~/Code/dotfiles`)** — the general rule that feature paid for twice
+(a positive control is a check that cannot fail until something witnesses it firing) is generic test
+methodology, so it lives beside `review-ladder`'s same-batch conditional rule rather than here; see
+`BACKLOG_DONE.md`. OAI-170 is one unrun mutation, and the cheapest item in this file.
 
 **Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-173**.
 OAI-173 is OAI-162's residue: two copies of the reconciler's failure vocabulary with nothing asserting
@@ -2850,21 +2852,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   this repo or a tool other repos run. Only the second justifies `--repo`, a portable `--include`
   default, and a home for the docs. `/oai:review` itself already works from any repo — it is a plugin
   command against the caller's cwd. It is only the sweep harness that is pinned.
-
-- **OAI-168** — **A positive control is itself a check that cannot fail until something witnesses it
-  firing, and this repo has now paid for that twice in one feature.** Filed 2026-08-15 from OAI-166.
-  That feature's review found three assertions satisfied by an inert implementation and added
-  positive controls to each. The controls were then themselves unwitnessed — no mutation made
-  `PRUNE` or `orphanSeqs` inert — so for one pass the fix was in the same class as the defect.
-  Closed for OAI-166 by two mutations (`AND 0` in the inner `WHERE`; `orphanSeqs` returning nothing),
-  and the general rule is what is worth keeping: **mutation-test production predicates and any
-  positive control whose result passes through production branching; stop at direct pre-action reads
-  of fixture state, provided each gate is asserted independently AND the read path is independent of
-  the production path.** That last clause is the one that stops the regress from being infinite and
-  the one that stops it being vacuous.
-  **This is a candidate for `.claude/REPO_TRAPS.md` rather than a fix.** It is filed here rather than
-  written there because a `REPO_TRAPS` entry is normative prose that a later session executes, so it
-  is production surface and wants its own review rather than landing as post-approval residue.
 
 - **OAI-169** — **`tests/abandon-salvage.test.js`'s `busy_timeout` and retry budget are unpinned:
   delete either and the suite stays green.** Filed 2026-08-15 from OAI-166.

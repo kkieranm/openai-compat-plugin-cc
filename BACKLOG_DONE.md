@@ -1,3 +1,32 @@
+## 2026-08-17 — OAI-168 closed, outside this repo (`72c91bf` in `~/Code/dotfiles`)
+
+- **OAI-168** — **A positive control is itself a check that cannot fail until something witnesses it
+  firing, and this repo had paid for that twice in one feature.** Filed 2026-08-15 from OAI-166, whose
+  review found three assertions satisfied by an inert implementation, added a positive control to
+  each, and then found the controls themselves unwitnessed — no mutation made `PRUNE` or `orphanSeqs`
+  inert, so for one pass the fix was in the same class as the defect. Closed for OAI-166 by two
+  mutations (`AND 0` in the inner `WHERE`; `orphanSeqs` returning nothing).
+
+  **The item drafted itself as a `.claude/REPO_TRAPS.md` entry here; the routing decision went the
+  other way.** Put to Codex and the user's advisor as a fork (repo traps file vs. dotfiles process
+  machinery): Codex argued the rule belongs beside `review-ladder`'s existing "a fix that ADDS a
+  conditional is mutation-checked in the SAME batch" paragraph, since that is the moment a reviewer
+  executes it, and that dotfiles' own trap 32 and the global CLAUDE.md bullet already state adjacent
+  halves without covering this one; the advisor argued for the rule in dotfiles plus an instance-only
+  pointer here. The user chose dotfiles-only: the rule is generic test methodology with nothing
+  repo-specific in it, the instance is already recorded in OAI-166's commit message, and a second copy
+  here would be the cross-artifact drift class both files warn against.
+
+  **What shipped**: one paragraph in `agents/skills/review-ladder/SKILL.md` (`~/Code/dotfiles`,
+  `72c91bf`) — a fix that adds a positive control is witnessed in the same batch, on the production
+  predicate the control exists to catch, never on the control itself; and the regress-stopping clause
+  verbatim from the item (mutation-test production predicates and any control whose result passes
+  through production branching; stop at a direct pre-action read of fixture state, provided each gate
+  is asserted independently AND the read path is independent of the production path). No change landed
+  in this repo. Verified by `bash tests/run-gate.sh` in dotfiles (12 guards green); no mutation check —
+  normative prose with no invariant a single edit can break, stated and skipped rather than guarded by
+  an inert grep.
+
 ## 2026-08-16 — OAI-167 closed (`6b3fead`)
 
 - **OAI-167** — **A comment that denies a failure mode, and the catch that made it true.** Closed
