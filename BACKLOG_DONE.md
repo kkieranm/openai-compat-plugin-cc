@@ -1,3 +1,52 @@
+## 2026-08-17 — OAI-165 closed (`c13696d`)
+
+- **OAI-165** — **`--repo <path>` and `--include <prefix>` let the overnight review sweep run against
+  a repo other than this tool's own.** Filed 2026-08-15 from a question about whether it can be
+  pointed at another repo yet — at filing it could not: `bench/review-sweep.mjs` derived `ROOT` from
+  the script's own location with no `--repo` in `SPEC`, so both `git()` and `invoke()` (the two call
+  sites that actually touch the filesystem/subprocess) were pinned to this repo, and `DEFAULTS.include`
+  — this repo's own layout — would have silently hollowed out a run pointed anywhere else. The decision
+  (converged with Codex before implementation) was that the sweep is a tool other repos can run, not
+  only this repo's own instrument.
+  **What shipped:** `--repo <path>` and `--include <prefix>` in `SPEC`; both `git()` and `invoke()`
+  root at `options.repo`; a foreign `--repo` with no `--include` is refused loudly rather than falling
+  back to this repo's defaults; `normalizedInclude()` refuses `--include` values that parse but can
+  never match a real git-relative path, trimming whitespace first; `--repo` itself is also trimmed
+  before its empty-value check and `resolve()`; the sweep's JSON record and rendered report both name
+  the repo swept. Documented in CLAUDE.md's `bench/review-sweep.mjs` paragraph and Commands table.
+  **Unrelated, shipped in the same commit at the user's explicit mid-task direction:** this repo's
+  file/function line-count "size ratchet" (`tests/structure.test.js`'s per-file/per-function budgets
+  and `ALLOWLIST`) is retired outright — not raised, not exempted further — and every place in the
+  tracked repo that referenced it as a live rule is reworded to history.
+  **Took 5 review-ladder passes and 4 verdict-point rounds** — an unusually long run, worth recording
+  honestly rather than smoothing over:
+  - Passes 1-4 each mutated mid-pass (findings from one review group were fixed before the next group
+    or the closer ran), which the ladder's own rules treat as re-running the pass rather than a
+    shortcut; pass 5 ran clean, no mid-pass mutation, and converged with one small doc-pointer finding
+    from its closer, fixed as a wholly exempt (prose-only, no-behavior-change) batch.
+  - Passes found and fixed, cumulatively: repo attribution missing from sweep artifacts; a
+    self-reference footgun comparing `--repo`'s syntactic presence instead of resolved path identity;
+    duplicate is-this-foreign logic that only agreed by construction; a whitespace-trim bug in
+    `--include` validation (validated a trimmed copy, used the untrimmed original) and the identical
+    bug independently in `--repo`; an overly-broad `..`-prefix rejection that wrongly refused
+    legitimate names like `..config`; a backward-compatibility gap for pre-existing sweep ledgers with
+    no `repo` key; test isolation from the ambient machine/config; and repeated `BACKLOG.md` prose left
+    contradicting itself after the ratchet retirement, most seriously a mislabeled absorbed-ID mapping
+    (OAI-30 wrongly said to map to OAI-28's closed part (A) when it maps to the still-open part (C)).
+  - The verdict point itself needed 4 rounds: round 1's Codex `CHANGES-REQUIRED` was a real but
+    out-of-scope, pre-existing contradiction in an unrelated tracker item (OAI-176), verified via
+    `git merge-base --is-ancestor` to predate this diff entirely — ruled out of scope rather than
+    fixed here, filed as OAI-180. Round 2's Codex finding was real and in-scope (BACKLOG.md overclaimed
+    the ratchet was "actively violated" when the file sat at exactly 300/300 with a `>` comparison —
+    binding, not violated) and was fixed. Round 3's Codex approval was followed by an independent
+    Claude verdict subagent finding an arithmetic error Codex had missed (a line-shift count of 57
+    where the true figure, for that particular citation, was 51) — fixed. Round 4: both approvers,
+    independently, verified the corrected arithmetic themselves rather than trusting the description,
+    and both approved on digest `62f99a340680`.
+  **Residue filed:** OAI-178 (misleading error on a bad `--repo` path), OAI-179 (a latent, unreachable
+  default-argument gap in `runSweep`), OAI-180 (OAI-176's own pre-existing tracker inconsistency,
+  surfaced but out of scope here).
+
 ## 2026-08-17 — OAI-170 closed (`feeab6d`)
 
 - **OAI-170** — **Mutation-test the foreign-version "never deleted" witness.** Filed 2026-08-15 from

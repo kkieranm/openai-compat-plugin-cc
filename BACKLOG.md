@@ -166,9 +166,11 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-165, OAI-174, OAI-175, OAI-176**. OAI-165's own decision is
-already made and implemented — see its body — it sits here as housekeeping pending review-ladder
-close-out, not as an open "may close as no" item.
+**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180**.
+**OAI-178, OAI-179 and OAI-180 are OAI-165's residue** — a misleading error message on a bad `--repo`
+path, a latent default-argument gap in `runSweep` with no reachable caller, and a pre-existing
+inconsistency in OAI-176's own text that OAI-165's verdict-point review surfaced but ruled out of
+scope. All three are small and non-blocking.
 **OAI-176 is OAI-167's residue** — one observed instance of a `fork-opener` subagent echoing the
 orchestrator's own transcript framing instead of reviewing, with no measured mechanism and a candidate
 mitigation not yet worth standing instruction on one instance. Housekeeping, sorted last: it names no
@@ -179,9 +181,6 @@ product work at all — the exit is already in both command documents and in the
 so this is discoverability, and it was withdrawn from OAI-162's plan by the user on exactly that
 ground. OAI-175 is one paragraph of documentation and is filed at the bar's edge, said so in its own
 body.
-**OAI-165 sits here rather than with the sweep's own residue** — its decision (the sweep is a tool
-other repos run) is already made and implemented; it stays in this tier as housekeeping until the
-review-ladder pass approves and it moves to `BACKLOG_DONE.md`.
 **OAI-159 leads the tier from 2026-08-14**: 78 citations across 37 live items point at the `adr/`
 corpus deleted in `d1ad2aa`, and the deletion commit records that `BACKLOG*.md` was *"deliberately not
 touched"* — so the convention chosen for code comments was never adjudicated for the one file where a
@@ -2816,23 +2815,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   record, ledger, `run.sh` and `provenance.txt` recording the served id, both context figures, the
   artifact identity and the `lms` CLI commit.
 
-- **OAI-165** — **IMPLEMENTED, pending review-ladder approval.** Filed 2026-08-15 from a question about
-  whether the overnight sweep can be pointed at another repo yet — at filing it could not:
-  `bench/review-sweep.mjs` derived `ROOT` from the script's own location with no `--repo` in `SPEC`, so
-  both `git()` and `invoke()` (the two call sites that actually touch the filesystem/subprocess) were
-  pinned to this repo, and `DEFAULTS.include` — this repo's own layout — would have silently hollowed
-  out a run pointed anywhere else. The decision (converged with Codex before implementation) was that
-  the sweep is a tool other repos can run, not only this repo's own instrument.
-  **What shipped:** `--repo <path>` and `--include <prefix>` in `SPEC`; both `git()` and `invoke()`
-  root at `options.repo`; a foreign `--repo` with no `--include` is refused loudly rather than falling
-  back to this repo's defaults; `normalizedInclude()` refuses `--include` values that parse but can
-  never match a real git-relative path; the sweep's JSON record and rendered report both name the repo
-  swept. Documented in CLAUDE.md's `bench/review-sweep.mjs` paragraph and Commands table.
-  **Deferred, not missed:** relocating the output artifact into the target repo (it stays under this
-  tool's own `bench/results`); a preflight check that `--repo` names a real git identity rather than a
-  lexical path (a symlink or subdirectory alias still reads as "foreign" and asks for `--include`
-  unnecessarily — harmless, since `--include` handles a false positive, never a false negative).
-
 - **OAI-169** — **`tests/abandon-salvage.test.js`'s `busy_timeout` and retry budget are unpinned:
   delete either and the suite stays green.** Filed 2026-08-15 from OAI-166.
   `db.exec('PRAGMA busy_timeout = 250')` and `withBusyRetry(…, { budgetMs: 2_000 })` exist because
@@ -2947,3 +2929,32 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   halves: an assertion whose own sensitivity can never be measured by this instrument at all, which a
   fix here should either accept explicitly or restructure around (e.g. asserting non-deletion by a
   route `deleted` cannot pre-empt).
+
+- **OAI-178** — **A nonexistent or non-git `--repo` path fails on a misleading `--from did not resolve
+  to a commit` error, not a clear "bad repo" message.** Filed 2026-08-17 from OAI-165's review-ladder
+  pass 2 (`agent-closer`), non-blocking, deferred at the time. `bench/review-sweep.mjs`'s `optionsFrom`
+  validates `--repo` is non-empty and resolves it lexically, but never checks the path exists or is a
+  git working tree before `main()` calls `resolvePin`/`enumerateCommits` against it — the first git
+  command against a bad path fails with a message about the `--from` ref, which does not name the real
+  problem. Small: a clearer message at the first `git` call's failure, or a preflight `git rev-parse
+  --git-dir` check in `optionsFrom`.
+
+- **OAI-179** — **`bench/review-sweep.mjs`'s `runSweep` silently reviews this tool's own repo if called
+  with no `execute` and a foreign `options.repo`.** Filed 2026-08-17, an observation from OAI-165's
+  verdict-point review (round 4, independent Claude verdict). `runSweep(commits, options, { execute =
+  invoke, ... })` defaults `execute` to the module's `invoke`, whose own default `cwd` is `ROOT` — so a
+  caller passing `options.repo` but no `execute` would review at this tool's own root regardless.
+  **Latent only**: `main()` is the only real call site and always passes `execute: (args) =>
+  invoke(args, options.repo)`; every test that omits `execute` passes its own stub instead. No observed
+  or reachable defect today — filed so a future caller of `runSweep` doesn't rediscover it.
+
+- **OAI-180** — **`BACKLOG.md`'s Tier 9 line and OAI-176's own body disagree on how many instances of
+  the `fork-opener` echo defect have been observed.** Filed 2026-08-17 from OAI-165's verdict-point
+  review (round 1, Codex) — flagged there, ruled out of scope for OAI-165 since it predates that diff
+  entirely (the second-instance text was committed 2026-08-17 in `711c66a`, before OAI-165's own
+  baseline). The tier summary (line ~169, before this file's OAI-165 edits) still says "one observed
+  instance... needs a second instance before it is worth more than a note," while OAI-176's own body
+  (~line 2916, "Second instance, 2026-08-17, from OAI-170's review-ladder pass") already records that
+  second instance and says it **refutes** the candidate mitigation rather than confirming it. This is
+  OAI-176's own residue, not OAI-165's — reword the tier summary to match the body, and decide whether
+  a refuted mitigation still counts toward "worth more than a note."
