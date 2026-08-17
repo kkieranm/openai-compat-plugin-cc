@@ -166,7 +166,10 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180**.
+**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180, OAI-181**.
+**OAI-181 is a direct user request, not a "may close as no" item** — it sits here only because it
+needs a probe (does relaxing `agents/oai-delegate.md`'s no-`--model` rule undo the reason it exists)
+before it can be planned; see its own body.
 **OAI-178, OAI-179 and OAI-180 are OAI-165's residue** — a misleading error message on a bad `--repo`
 path, a latent default-argument gap in `runSweep` with no reachable caller, and a pre-existing
 inconsistency in OAI-176's own text that OAI-165's verdict-point review surfaced but ruled out of
@@ -2958,3 +2961,16 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   second instance and says it **refutes** the candidate mitigation rather than confirming it. This is
   OAI-176's own residue, not OAI-165's — reword the tier summary to match the body, and decide whether
   a refuted mitigation still counts toward "worth more than a note."
+
+- **OAI-181** — **Let a caller pick which model a delegated call uses, per call.** Filed 2026-08-17
+  from a direct user request ("we should be able to specify per call what model to use"). `--model` is
+  already a per-call flag on `/oai:task` and `/oai:review` (`commands/task.md:3,18`,
+  `commands/review.md:21`) and reaches `planSelection` in `scripts/lib/model-selection.mjs`. **The gap
+  is `agents/oai-delegate.md`**, the context-broker agent this repo's advisor-delegation path runs
+  through (session focus area 1: local models as an advisor): its own text says "You do not choose the
+  model: it is the provider profile's... Never pass `--model` to work around it"
+  (`agents/oai-delegate.md:185-189`) — a deliberate constraint at filing, whose reason (a slow model's
+  prefill making the choice moot, or a footgun being worked around) is not restated here and should be
+  re-read before deciding whether it still holds. Needs a probe before a plan: whether this is a
+  one-line relaxation of that agent's own rule, or whether the rule exists for a reason that a per-call
+  override would defeat.
