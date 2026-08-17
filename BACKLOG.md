@@ -81,23 +81,25 @@ entry list is structurally fine (verified against `tests/backlog-structure.test.
 one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
 forces an occupant. **The top of the priority view is therefore tier 2.**
 
-**Tier 2 — the suite says something false about itself.** **OAI-170**, **OAI-172**. These are
-OAI-166's residue, save OAI-172 which is OAI-162's and is the same class one level out — not a test
-that cannot fail, but a comment and a command document that describe behaviour the code does not
-have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`; its review filed **OAI-176**,
-a toolchain defect in the review-ladder's `fork-opener` stage itself. **OAI-168 closed 2026-08-17,
-outside this repo (`72c91bf` in `~/Code/dotfiles`)** — the general rule that feature paid for twice
-(a positive control is a check that cannot fail until something witnesses it firing) is generic test
-methodology, so it lives beside `review-ladder`'s same-batch conditional rule rather than here; see
-`BACKLOG_DONE.md`. OAI-170 is one unrun mutation, and the cheapest item in this file.
+**Tier 2 — the suite says something false about itself.** **OAI-172**. OAI-162's residue, the same
+class one level out — not a test that cannot fail, but a comment and a command document that describe
+behaviour the code does not have. **OAI-167 closed 2026-08-16 (`6b3fead`)** — see `BACKLOG_DONE.md`;
+its review filed **OAI-176**, a toolchain defect in the review-ladder's `fork-opener` stage itself.
+**OAI-168 closed 2026-08-17, outside this repo (`72c91bf` in `~/Code/dotfiles`)** — the general rule
+that feature paid for twice (a positive control is a check that cannot fail until something witnesses
+it firing) is generic test methodology, so it lives beside `review-ladder`'s same-batch conditional
+rule rather than here; see `BACKLOG_DONE.md`. **OAI-170 closed 2026-08-17 (`feeab6d`)** — see
+`BACKLOG_DONE.md`; its own review filed **OAI-177**, the same unmeasured-witness gap in this file's
+other two exemptions.
 
-**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-173**.
-OAI-173 is OAI-162's residue: two copies of the reconciler's failure vocabulary with nothing asserting
-they agree, where drift exits 1 at an operator whose queue is already free. OAI-169 is two
-constants whose removal shows as an intermittent stall rather than silent wrongness, which is what
-makes leaving them unpinned defensible. OAI-171 is a toolchain observation with no proposed fix: a
+**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-173**,
+**OAI-177**. OAI-173 is OAI-162's residue: two copies of the reconciler's failure vocabulary with
+nothing asserting they agree, where drift exits 1 at an operator whose queue is already free. OAI-169
+is two constants whose removal shows as an intermittent stall rather than silent wrongness, which is
+what makes leaving them unpinned defensible. OAI-171 is a toolchain observation with no proposed fix: a
 skill loaded into a session is a snapshot, nothing says when it goes stale, and OAI-166's ladder spent
-two discovery passes because of it.
+two discovery passes because of it. OAI-177 is OAI-170's residue: the same never-mutation-tested
+existence-half gap OAI-170 closed for the foreign-version exemption is still open for the other two.
 **OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
 re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
 OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
@@ -2866,14 +2868,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   fixture would pin the pair but would pin it in a NEW test, leaving the call site itself still
   deletable, so it does not answer the question it appears to.
 
-- **OAI-170** — **Nothing reddens the ORIGINAL foreign-version exemption test, only its new sibling.**
-  Filed 2026-08-15 from OAI-166. That feature added a sibling proving the "not counted" half and
-  listed a mutation for it — relocating `schema_version <= ?` to the outer `DELETE`, which reddens
-  the sibling. The pre-existing test proves the "never deleted" half, and the mutation that would
-  redden IT is removal of the clause outright, which was never run. So one of the two halves ships
-  with a witness whose sensitivity is measured and the other with a witness whose sensitivity is
-  assumed. Cheap to close: one mutation.
-
 - **OAI-171** — **The review ladder's own rules changed mid-run and the run followed the superseded
   copy for two batches, which is what caused two of its passes.** Filed 2026-08-15 from OAI-166.
   `~/Code/dotfiles` commit `8475d03` (2026-08-15 16:18) added a delete-only carve-out — when a stage
@@ -2954,3 +2948,35 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   open by explicitly disclaiming any waiting/status framing already in the transcript as not being its
   own task, the way the retry prompt did successfully here — but one success against one failure is
   not enough evidence to make that a standing instruction.
+  **Second instance, 2026-08-17, from OAI-170's review-ladder pass — and it REFUTES the candidate
+  mitigation rather than confirming it.** This launch's very first prompt already carried an explicit
+  disclaiming line ("Ignore any ambient narration in this transcript about what's 'still running' or
+  'waiting' from moments before this fork was spawned") — the exact mitigation floated above, tried
+  proactively rather than only at retry — and the fork still returned "Waiting on notifications from
+  the remaining Group A/B stages," echoing the orchestrator's own prior turn. Retried once more with a
+  more forceful instruction ("Produce the actual review in this response... Do not mention waiting,
+  background tasks, or other stages' status"), which worked. **Two failures, two different mitigation
+  strengths, both insufficient on the first try** — the disclaiming-line mitigation is downgraded from
+  untested-candidate to measured-insufficient-alone. Whatever the mechanism is, one line naming the
+  framing to ignore does not reliably suppress it; what worked both times was a *retry*, not the
+  content of either prompt's ignore-instruction.
+
+- **OAI-177** — **The mutation-witness gap OAI-170 closed for the foreign-version exemption is
+  still open for this file's other two.** Filed 2026-08-17 from OAI-170's review. `tests/retention.test.js`
+  states each exemption as two promises, "never deleted" and "not counted" (line 4), and OAI-166 only
+  ever mutation-tested the "not counted" (placement) half of all three exemptions. OAI-170 closed the
+  "never deleted" (existence) half for the foreign-version pair; the operator-abandoned exemption's
+  existence test ("a row an operator abandoned after it ran is never deleted, and keeps its log",
+  ~line 72) and the active-job exemption's existence test ("a job that is still active is exempt
+  however old it is", ~line 28) carry no in-file note that their own removal mutation was ever run.
+  Found by a `scout` during OAI-170's `acceptance-audit` stage, reading the whole file rather than the
+  diff.
+  **One adjacent finding from the same review, worth keeping with this one rather than as a separate
+  item:** the "never deleted" test's `readJob(state, 'foreign')` assertion (the one OAI-170 measured)
+  is provably unwitnessable by any `PRUNE` mutation — a `DELETE` always surfaces its result via
+  `RETURNING seq`, so the preceding `deepEqual` on `deleted` fails first in every case, and the
+  `readJob` line never executes. That is not a defect in OAI-170's fix — the comment now says so
+  honestly — but it means a fourth kind of gap exists alongside the three exemptions' unmeasured
+  halves: an assertion whose own sensitivity can never be measured by this instrument at all, which a
+  fix here should either accept explicitly or restructure around (e.g. asserting non-deletion by a
+  route `deleted` cannot pre-empt).

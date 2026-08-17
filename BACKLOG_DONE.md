@@ -1,3 +1,40 @@
+## 2026-08-17 — OAI-170 closed (`feeab6d`)
+
+- **OAI-170** — **Mutation-test the foreign-version "never deleted" witness.** Filed 2026-08-15 from
+  OAI-166; closed 2026-08-17. Plan:
+  [`plans/oai-170-witness-the-foreign-version-mutation.md`](plans/oai-170-witness-the-foreign-version-mutation.md),
+  with `1-round-1-blind.md` beside it as the approving-round archive (round 2 — round 1's digest was
+  superseded solely by adding the required `provenance:` header, both approvers re-verified rather
+  than rubber-stamping).
+
+  **What shipped.** `tests/retention.test.js`'s pre-existing "a row a newer plugin wrote is never
+  deleted" test — unlike its OAI-166 sibling, never mutation-tested — is now recorded as measured.
+  Measured, not assumed as the tracker item had it: the tracker's own "Cheap to close: one mutation"
+  was wrong. Removing `schema_version <= ?` from `PRUNE`'s inner WHERE alone breaks bind arity
+  (`prune()` binds positionally), so the real fault is **two coordinated edits** — the clause and
+  `prune()`'s `ROW_SCHEMA_VERSION` bind argument, each landed and proved separately via
+  `mutation-landed.py`. Both this test and its OAI-166 sibling reddened, each by a different
+  mechanism (this one: `deleted` gains the foreign row itself; the sibling: the foreign row survives
+  but consumes a kept place, evicting a different ordinary row) — and in both, the `readJob(state,
+  'foreign')` assertion is provably never reached, since the preceding `deepEqual` throws first.
+  Restored, proved by diff; no production code changed.
+
+  **The review ladder itself caught two real defects in the fix's own wording**, both in the
+  durable comment recording the measurement: a stale line-number self-reference (the sibling's line
+  number shifted when this diff inserted lines above it — caught by three independent readers plus
+  Codex adversarial review) and a false claim that the ORIGINAL test's own `readJob` assertion
+  "failed too" (it is equally never reached — caught by the verdict-point reviewers themselves, one
+  of whom reproduced the mutation empirically before approving). Both fixed as exempt, comment-only
+  edits within the same pass; dual approval closed at digest `c4c4601c4320`.
+
+  **What was left behind.** OAI-177 — the same never-mutation-tested existence-half gap is still
+  open for this file's other two exemptions (operator-abandoned, active-job), and a related
+  observation that the measured assertion's own sensitivity may be structurally unwitnessable by any
+  `PRUNE` mutation. OAI-176 gained a second, evidence-refining instance: this pass's `fork-opener`
+  echoed ambient "waiting" narration on its first launch even with an explicit ignore-instruction
+  already in the prompt, which downgrades that instruction from untested candidate to
+  measured-insufficient-alone.
+
 ## 2026-08-17 — OAI-168 closed, outside this repo (`72c91bf` in `~/Code/dotfiles`)
 
 - **OAI-168** — **A positive control is itself a check that cannot fail until something witnesses it
