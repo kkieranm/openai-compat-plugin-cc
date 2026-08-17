@@ -1,3 +1,30 @@
+## 2026-08-17 — OAI-177 closed (`8baf283`)
+
+- **OAI-177** — **The mutation-witness gap OAI-170 closed for the foreign-version exemption was
+  still open for this file's other two.** Filed 2026-08-17 from OAI-170's review. `tests/retention.test.js`
+  states each exemption as two promises, "never deleted" and "not counted" (line 4), and OAI-166 only
+  ever mutation-tested the "not counted" (placement) half of all three exemptions. OAI-170 closed the
+  "never deleted" (existence) half for the foreign-version pair; the operator-abandoned exemption's
+  existence test ("a row an operator abandoned after it ran is never deleted, and keeps its log")
+  and the active-job exemption's existence test ("a job that is still active is exempt however old it
+  is") carried no in-file note that their own removal mutation was ever run. Found by a `scout` during
+  OAI-170's `acceptance-audit` stage, reading the whole file rather than the diff.
+  **What shipped:** both mutated (operator-abandoned's `AND NOT (...)` clause; active-job's `STATES`
+  bind list widened to include `queued`/`running`, each a coordinated bind-arity edit like OAI-170's),
+  both reddened as predicted on the `deleted` array assertion, and both carry the same "the `readJob`
+  assertion is structurally unreachable" note OAI-170 recorded for the foreign-version pair — a
+  `DELETE ... RETURNING seq` cannot disagree with the row it deleted, so an earlier assertion on that
+  array always fails first. This is the "adjacent finding" OAI-170 flagged (a fourth kind of gap: an
+  assertion whose own sensitivity can never be measured by this instrument), now confirmed to hold for
+  all three exemptions uniformly rather than accepted or restructured per-instance.
+  **Residue from the verdict point, not filed separately — recorded here instead:** two consecutive
+  verdict-point rounds each caught a different inaccuracy in a comparative claim attempting to
+  characterize how the active-job exemption's implementation differs structurally from the other two
+  (round 1: a false "no removable clause" claim; round 2: a false "base candidate domain vs layered
+  condition" distinction, contradicted by the file's own placement doctrine). Round 3 deleted the
+  comparative claim outright rather than attempting a third characterization — the measured mutation
+  result stands without it. Dual-approved on digest `36e378fd460f`.
+
 ## 2026-08-17 — OAI-172 closed (`81a019e`)
 
 - **OAI-172** — **Two sentences in the abandon command described behaviour it did not have.** Filed

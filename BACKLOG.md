@@ -53,12 +53,14 @@ the same unmeasured-witness gap in this file's other two exemptions. **OAI-172 c
 (`81a019e`)** — see `BACKLOG_DONE.md`; its verdict-point review found a further false claim in its
 own round-1 rewrite, filed as residue below.
 
-**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**, **OAI-177**.
+**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-169**, **OAI-171**.
 OAI-169 is two constants whose removal shows as an intermittent stall rather than silent wrongness, which is
 what makes leaving them unpinned defensible. OAI-171 is a toolchain observation with no proposed fix: a
 skill loaded into a session is a snapshot, nothing says when it goes stale, and OAI-166's ladder spent
-two discovery passes because of it. OAI-177 is OAI-170's residue: the same never-mutation-tested
-existence-half gap OAI-170 closed for the foreign-version exemption is still open for the other two.
+two discovery passes because of it. **OAI-177 closed 2026-08-17 (`8baf283`)** — see `BACKLOG_DONE.md`;
+the existence-half gap it closed for the other two exemptions took three verdict-point rounds, each
+of the first two catching a different inaccuracy in a comparative claim between exemptions, resolved
+by deleting the claim rather than rewriting it a third time.
 **OAI-173 was PARKED 2026-08-17** by the sweep's worth bar, `not worth doing` — its two vocabularies
 currently agree exactly, and it named no dated instance of drift, only a future-risk scenario. See
 `BACKLOG_PARKED.md`.
@@ -2898,26 +2900,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   untested-candidate to measured-insufficient-alone. Whatever the mechanism is, one line naming the
   framing to ignore does not reliably suppress it; what worked both times was a *retry*, not the
   content of either prompt's ignore-instruction.
-
-- **OAI-177** — **The mutation-witness gap OAI-170 closed for the foreign-version exemption is
-  still open for this file's other two.** Filed 2026-08-17 from OAI-170's review. `tests/retention.test.js`
-  states each exemption as two promises, "never deleted" and "not counted" (line 4), and OAI-166 only
-  ever mutation-tested the "not counted" (placement) half of all three exemptions. OAI-170 closed the
-  "never deleted" (existence) half for the foreign-version pair; the operator-abandoned exemption's
-  existence test ("a row an operator abandoned after it ran is never deleted, and keeps its log",
-  ~line 72) and the active-job exemption's existence test ("a job that is still active is exempt
-  however old it is", ~line 28) carry no in-file note that their own removal mutation was ever run.
-  Found by a `scout` during OAI-170's `acceptance-audit` stage, reading the whole file rather than the
-  diff.
-  **One adjacent finding from the same review, worth keeping with this one rather than as a separate
-  item:** the "never deleted" test's `readJob(state, 'foreign')` assertion (the one OAI-170 measured)
-  is provably unwitnessable by any `PRUNE` mutation — a `DELETE` always surfaces its result via
-  `RETURNING seq`, so the preceding `deepEqual` on `deleted` fails first in every case, and the
-  `readJob` line never executes. That is not a defect in OAI-170's fix — the comment now says so
-  honestly — but it means a fourth kind of gap exists alongside the three exemptions' unmeasured
-  halves: an assertion whose own sensitivity can never be measured by this instrument at all, which a
-  fix here should either accept explicitly or restructure around (e.g. asserting non-deletion by a
-  route `deleted` cannot pre-empt).
 
 - **OAI-178** — **A nonexistent or non-git `--repo` path fails on a misleading `--from did not resolve
   to a commit` error, not a clear "bad repo" message.** Filed 2026-08-17 from OAI-165's review-ladder
