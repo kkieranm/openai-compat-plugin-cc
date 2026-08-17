@@ -72,9 +72,13 @@ BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to ne
 mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
-**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-65, OAI-72,
-OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved on the wire,
-not argued. OAI-65 is next because its load-bearing half is a directory mode nothing re-tightens, so
+**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-183, OAI-185,
+OAI-65, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved
+on the wire, not argued. **OAI-183 is OAI-63's own confirmed apiKeyEnv variant, split out because it
+needs a different mechanism (a credential-identity pin, not an endpoint compare) rather than a bigger
+diff on the same fix. OAI-185 is a sibling split from OAI-63's own review — a path-embedded secret in
+the AUTHORIZED endpoint's own baseUrl, reachable through pre-existing connection-error wording, not
+the authorization gate.** OAI-65 is next because its load-bearing half is a directory mode nothing re-tightens, so
 every later WAL file inherits it. Then the three that are one decision apiece (OAI-72's config mode
 and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 with OAI-76
 are one decision viewed twice** (where the boundary lives, and what verb the agent is allowed) and
@@ -169,7 +173,7 @@ gate however it performs. The arms did settle something the tier had been chasin
 **the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
 and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
 
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180, OAI-181, OAI-182**.
+**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-29, OAI-42, OAI-46, OAI-174, OAI-175, OAI-176, OAI-178, OAI-179, OAI-180, OAI-181, OAI-182, OAI-184**.
 **OAI-182 is OAI-172's residue** — two non-blocking documentation completeness gaps its verdict-point
 review found and left open; see its own body.
 **OAI-181 is a direct user request, not a "may close as no" item** — it sits here only because it
@@ -1265,9 +1269,10 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-A
   path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-B   <-- leak
   ```
-  Confirmed variants: the query form (`?tenant=a` endpoint, key from the `?tenant=b` profile), and an
-  **`apiKeyEnv` swap** — `baseUrl` untouched, env var repointed, and the worker sent an unrelated
-  inherited secret. **The three-term check validates *where*, never *which secret*.**
+  Confirmed variants: the query form (`?tenant=a` endpoint, key from the `?tenant=b` profile) —
+  **FIXED 2026-08-17, both this and the path form, by comparing the freshly resolved profile's
+  `baseUrl`/`query` against the already-persisted `job.transport`, which needed no schema change**:
+  `transport` was already stored on every row for the unrelated reason of making the request at all.
   **Against the ADR, precisely:** `adr/014:147-152` states the rule as three *origins*, so this is not
   a violation of its letter — but `adr/014:143-145` **explicitly notices** that "an origin drops the
   `/v1` path, the query string" as its reason for storing the transport whole. The asymmetry was seen
@@ -1277,20 +1282,37 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   legitimate user. Second-order: `task-submit.mjs:2-7` promises submission validates "in front of the
   user"; it validated `/tenant-a` with KEY-A and the worker sent KEY-B, so **that guarantee does not
   cover the credential**.
-  **Why this is not a batch fix:** comparing the full normalised endpoint means persisting an
-  authorized *endpoint* instead of `authorizedOrigin` — a payload change, so a `schema_version`
-  decision plus a migration story for rows already written, which is the repo's own grilling-checklist
-  item.
+  **The other confirmed variant — an `apiKeyEnv` swap, `baseUrl` untouched, env var repointed — is
+  NOT fixed by the above and remains open, split out as [OAI-183](#).** The endpoint-vs-endpoint
+  compare this fix adds cannot see it: the endpoint is unchanged, only the secret behind it moved.
+  **The three-term check validates *where*, never *which secret* — that half of the finding stands.**
 
-  **The same root cause one layer up — moved here 2026-08-05 from OAI-72(c), because it is not a
-  second item.** `config.mjs:187`'s `sameOrigin` withholding is origin-only too, so
-  `--provider prod --base-url <same origin, different path>` keeps prod's key — executed:
-  `apiKey: "KEY-PROD"`, `credentialWithheld: false`. Both halves are the single decision "does
-  authority attach to an origin or to an endpoint", and answering it in one place and not the other
-  leaves the leak reachable by the other route. `config.mjs` predates `e74eb2c^`, so this half is
-  outside the OAI-3 range and cannot be closed by a fix scoped to it — which is the reason it was
-  filed separately and the reason it must not stay that way. **OAI-72 keeps its ID and its other two
-  claims**, which are about file modes and stdout and share nothing with this.
+  **A second raw-value leak in this same fix's own refusal messages, closed the same day —
+  `resolveCredential`'s refusals only; a THIRD, sibling leak through the connection-error path is
+  separate and still open, filed as [OAI-185](#).** The
+  endpoint-mismatch refusal in `resolveCredential` originally interpolated both raw `baseUrl` values
+  (and, in an earlier revision, the raw `query` values) directly into its thrown message — which
+  persists into the job's failure record. `normalizeBaseUrl` does nothing to forbid a credential
+  embedded in the URL **path** (only userinfo is refused), so a path-multiplexed gateway that puts a
+  token in the path leaked it verbatim. **This was flagged once during review (pass 2 of this fix's
+  ladder) and wrongly dismissed** on the reasoning that `baseUrl` is already shown unredacted
+  elsewhere in this codebase (e.g. `/oai:setup`'s provider table) — which conflated a live,
+  operator's-own-terminal display with a value persisted into a shared, longer-lived failure record
+  (subject to [OAI-65](#)'s WAL-mode file-mode gap). It was independently re-raised and reproduced at
+  the final verdict-point check and fixed the same way as the sibling config-resolution leak: the
+  message is now fully static, naming only the provider and pointing at `/oai:setup`, never
+  interpolating either endpoint's raw value.
+
+  **The same root cause one layer up — moved here 2026-08-05 from OAI-72(c), because it was not a
+  second item. FIXED 2026-08-17 in the same pass as the worker-side half above.** `config.mjs`'s
+  `sameOrigin` withholding was origin-only too, so `--provider prod --base-url <same origin,
+  different path>` used to keep prod's key. `sameOrigin` is now `sameEndpoint`, comparing normalised
+  `baseUrl` **and** `query`, and `resolveProfile`'s `--base-url` override branch withholds the
+  credential (`credentialWithheld: true`) on any endpoint mismatch, not just an origin mismatch —
+  covered by `tests/config.test.js`'s same-host-different-path and same-host-different-query cases.
+  Both halves were the single decision "does authority attach to an origin or to an endpoint", and
+  both are now answered the same way. **OAI-72 keeps its ID and its other two claims**, which are
+  about file modes and stdout and share nothing with this.
 
 - **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
   `0644`.** Four related defects in the state directory's posture, all observed with controls.
@@ -1302,6 +1324,24 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `job-store.mjs:136-137` states the contract in its own words — the file that holds the user's source
   is not the file that is protected. **Note for anyone re-checking: SQLite removes the WAL on a clean
   close, so a post-hoc `stat` sees nothing. Measure with a handle open, or after a crash.**
+  **Noted while reviewing OAI-63 (2026-08-17), and CLOSED AT THE SOURCE the same day rather than left
+  to (b) — by DELETING the leak, not scrubbing it.** A user who puts embedded credentials
+  (`user:pass@host`), a credential-carrying query string, or a credential-carrying fragment in a
+  provider's `baseUrl`, or a JSON syntax error near a secret in the config file itself, used to have
+  that raw content quoted verbatim into `resolveCredential`'s `credential-unavailable: …` refusal —
+  `job-auth.mjs`'s wrap of whatever `resolveProfile(loadConfig()…)` threw — which then persisted into
+  the job's failure record in the state DB this item's (a)/(b) cover. **A regex-based scrub of that
+  wrapped message was tried first and was defeated four times in successive review rounds by a
+  narrower shape each time** (a query string, embedded userinfo, a scheme-less credential with no
+  `//` to anchor on, a credential containing its own `@`) — and a fifth vector, a JSON-parse error
+  quoting a snippet of the config file, was never URL-shaped and could never have been caught by that
+  approach at all. **Fixed structurally instead**: the catch in `job-auth.mjs`'s `resolveCredential`
+  no longer forwards the underlying error's message at all — only the provider name (a config key,
+  already shown unredacted everywhere) and a pointer to `/oai:setup`, where the real reason surfaces
+  safely on the operator's own terminal. Nothing raw is quoted, so there is nothing left to scrub and
+  nothing left to bypass. Left as a note here rather than removed, since the file-mode boundary this
+  item owns is still the
+  right place to record that this particular record no longer needs it.
   **(b)** `mkdirSync(..., {mode})` at `job-store.mjs:222-223` *(line moved; verified again
   2026-08-17)* never re-applies a mode to an **existing** directory (observed:
   0755 before, 0755 after). Loosen all three and re-run `openStore()`: `jobs.db` self-heals to `0600`,
@@ -2957,3 +2997,71 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   never describes at all — not wrong, just missing.
   Both are small, additive documentation completeness gaps, not correctness defects — the reviewer's
   own framing: "the operative claim stays true... outside this round's scope."
+
+- **OAI-183** — **A worker can still send the wrong secret to the right endpoint.** Split from OAI-63
+  2026-08-17 by an independent reviewer during that item's review-ladder pass, after OAI-63's own
+  filed text ("Confirmed variants... an `apiKeyEnv` swap") turned out to already document this as a
+  proven variant, not a hypothetical. Reproduced against OAI-63's own patched `resolveCredential`:
+  `auth.profile`'s `baseUrl`/`query` stay frozen and unchanged between submission and execution, but
+  its `apiKeyEnv` is repointed to a different environment variable in `providers.json` — the
+  endpoint-vs-endpoint compare OAI-63 added passes (`current.baseUrl === transport.baseUrl`), and the
+  worker sends whatever secret the new env var now holds to the job's original, unmoved endpoint.
+  **Why this is not the same fix widened:** OAI-63's fix works because the endpoint is data already
+  frozen on the row (`job.transport`) for an unrelated reason, so comparing against it costs no schema
+  change. There is no equivalent already-persisted value for "the credential identity intended at
+  submission" — the credential itself is deliberately never stored (`job-auth.mjs`'s own header
+  comment). A pin would need either a new persisted field naming what was intended (e.g. the
+  `apiKeyEnv` name or a profile fingerprint, not the secret) or a hash of the resolved key at
+  submission time to compare against re-resolution — either way a `schema_version` bump and a
+  migration story for rows already written, exactly the payload decision OAI-63's own "why this is not
+  a batch fix" line described.
+  **The live design tension a fix here must resolve first:** a worker re-resolving the credential
+  fresh rather than storing it is the whole point of the current design (per the header comment above)
+  — and legitimate key rotation *is* "a different secret behind an unchanged endpoint". Any
+  value-identity pin that refuses on drift also refuses a rotated key, stranding every job still
+  queued across a rotation event. The reproduced exploit is an `apiKeyEnv` *repoint* (the config field
+  naming a different variable) rather than the same variable's value changing underneath it — which
+  is the one thing distinguishable from rotation without storing or fingerprinting the secret itself:
+  persist the `apiKeyEnv` **name** (never its value) in the auth policy at submission and compare names
+  at resolution. That is a candidate, not a decided plan — it still needs the schema/migration
+  decision above and a grill on whether name-drift is the right boundary or too narrow (it does not
+  catch a literal `apiKey` value edited in place, only an `apiKeyEnv` repoint).
+
+- **OAI-184** — **`cmd-task-worker.mjs`'s `runJob(db, seq, job)` never uses `db` or `seq`.** Found by
+  Codex during OAI-63's review-ladder pass 6, on a file OAI-63's diff only touched by one docblock
+  comment (`transportProfile`'s, unrelated to `runJob`) — confirmed pre-existing via `git diff HEAD`
+  on that file, not introduced by that fix. Both parameters are dead inside the function body; only
+  `job` is read. Left unfixed there rather than folded in, to keep that diff's "no more, no less"
+  scope discipline — a signature change also touches the call site (`:214`) and needs its own check
+  that nothing else (a test double, a future caller) depends on the current arity. Cosmetic, no
+  behavioural effect.
+
+- **OAI-185** — **The AUTHORIZED endpoint's own `baseUrl` can carry a secret, and a connection failure
+  echoes it verbatim into the persisted job record.** Found by Codex at OAI-63's final verdict-point
+  check, on a file (`scripts/lib/provider.mjs`) outside that fix's seven-file scope and untouched by
+  its diff. **Reproduced with executed evidence**: a profile with `baseUrl:
+  'http://127.0.0.1:1/PATH_SECRET_MARKER/v1'`, endpoint unchanged from what the job was authorized for
+  (so OAI-63's gate correctly passes it through), server unreachable —
+  `client.mjs`'s `chatCompletion` → `provider.mjs`'s `describeFailure` (`:64`) produces `Cannot reach
+  vendor at http://127.0.0.1:1/PATH_SECRET_MARKER/v1 — connection refused.`, and
+  `cmd-task-worker.mjs`'s `publishFailure` → `errorReport(error)` persists that string verbatim into
+  `row.failure.message` — the same failure record OAI-65's file modes protect.
+  **This is NOT the same defect class as OAI-63.** OAI-63 is "the right secret goes only to the
+  endpoint it was authorized for" — an authorization-gate defect. This is "the endpoint you are
+  *legitimately, correctly* talking to might itself be secret-shaped, and a connection diagnostic
+  says so." No authorization boundary is crossed; the leak is the job's own already-authorized
+  endpoint reaching its own failure record. `describeFailure`'s three `reword(...)` call sites
+  (`:64`, `:69`, `:74`) all interpolate `profile.baseUrl`, and this same function serves the
+  **foreground** CLI path too, where "Cannot reach X at Y — connection refused" quoting the endpoint
+  is the entire point of the message — there is no context-free string to swap in. **Why this is not a
+  quick fix, and not a scrub:** the fix needs to distinguish a *display* context (foreground, the
+  operator's own terminal, echoing their own config back to them) from a *persistence* context
+  (background, written into a shared failure record with its own file-mode exposure), which is a
+  design decision about how transport errors carry the endpoint — structured fields versus a
+  pre-formatted string, not a line edit. And regex-scrubbing `baseUrl` at the `errorReport` boundary is
+  explicitly ruled out: OAI-63's own history is five rounds of that exact approach being defeated by a
+  narrower bypass each time, on the same class of problem. **Do not cite "baseUrl is already shown
+  unredacted elsewhere in this codebase" (e.g. `/oai:setup`) as a reason to downgrade this** — that
+  argument was raised once during OAI-63's review, adjudicated wrong, and reversed: a live,
+  operator's-own-terminal display is not the same exposure as a value persisted into a shared,
+  longer-lived failure record.

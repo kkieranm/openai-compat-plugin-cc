@@ -124,7 +124,7 @@ async function reviewFlow(options, instructions, terminated) {
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
   if (profile.credentialWithheld) {
     process.stderr.write(
-      `Note: "${profile.name}" has a credential, but --base-url points at a different host, so it was not sent.\n`,
+      `Note: "${profile.name}" has a credential, but --base-url points at a different endpoint, so it was not sent.\n`,
     );
   }
 

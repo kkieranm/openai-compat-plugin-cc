@@ -53,7 +53,7 @@ test('--base-url outranks the named provider but keeps its other settings', () =
   assert.equal(profile.contextLength, 8192);
 });
 
-test('a credential is never forwarded to a different host via --base-url', () => {
+test('a credential is never forwarded to a different endpoint via --base-url', () => {
   const config = {
     defaultProvider: 'p',
     providers: { p: { baseUrl: 'https://real.example/v1', apiKey: 'sk-secret-123' } },
@@ -63,10 +63,34 @@ test('a credential is never forwarded to a different host via --base-url', () =>
   assert.equal(elsewhere.apiKey, undefined, 'key must not follow the request to another origin');
   assert.equal(elsewhere.credentialWithheld, true);
 
-  // Same host, different path: still the provider the key belongs to.
-  const samePlace = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v2' });
+  // OAI-63(c): same host, DIFFERENT path — on a path-multiplexed gateway
+  // (LiteLLM, Azure APIM, Cloudflare AI Gateway) that is a different tenant,
+  // not "still the provider the key belongs to". The key must not follow.
+  const samePath = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v2' });
+  assert.equal(samePath.apiKey, undefined, 'key must not follow the request to another path on the same origin');
+  assert.equal(samePath.credentialWithheld, true);
+
+  // The positive control this defect needed: the SAME endpoint, byte for byte
+  // after normalization — no trailing slash, no query — still gets the key.
+  const samePlace = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v1' });
   assert.equal(samePlace.apiKey, 'sk-secret-123');
   assert.equal(samePlace.credentialWithheld, false);
+
+  // Normalization must not itself create a false mismatch: a trailing slash
+  // and an implicit /v1 both canonicalize to the same endpoint as above.
+  const trailingSlash = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v1/' });
+  assert.equal(trailingSlash.apiKey, 'sk-secret-123');
+  assert.equal(trailingSlash.credentialWithheld, false);
+
+  const implicitV1 = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example' });
+  assert.equal(implicitV1.apiKey, 'sk-secret-123');
+  assert.equal(implicitV1.credentialWithheld, false);
+
+  // Same host and path, differing only in QUERY — a gateway that multiplexes
+  // tenants by query string. The key must not follow.
+  const sameQuery = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v1?tenant=b' });
+  assert.equal(sameQuery.apiKey, undefined, 'key must not follow the request to another query on the same origin and path');
+  assert.equal(sameQuery.credentialWithheld, true);
 });
 
 test('a mistyped --provider is rejected even when --base-url is given', () => {

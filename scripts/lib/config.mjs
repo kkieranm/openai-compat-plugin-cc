@@ -149,9 +149,22 @@ export function normalizeBaseUrl(raw) {
   return { baseUrl: `${url.origin}${path === '' ? '/v1' : path}`, query: url.search };
 }
 
-function sameOrigin(a, b) {
+/**
+ * Whether two base URLs name the same request target — not merely the same
+ * origin (OAI-63(c)). A credential belongs to the endpoint it was configured
+ * for, and on a path-multiplexed gateway (LiteLLM, Azure APIM, Cloudflare AI
+ * Gateway) two different tenants share an origin and differ only in path or
+ * query — `same.example/tenant-a` and `same.example/tenant-b` are the same
+ * origin and different secrets. Normalizes both sides through
+ * `normalizeBaseUrl` before comparing, the same canonicalization every
+ * profile's own `baseUrl` already goes through, so a trailing slash or an
+ * implicit `/v1` cannot make two equal endpoints compare unequal.
+ */
+function sameEndpoint(a, b) {
   try {
-    return new URL(a).origin === new URL(b).origin;
+    const na = normalizeBaseUrl(a);
+    const nb = normalizeBaseUrl(b);
+    return na.baseUrl === nb.baseUrl && na.query === nb.query;
   } catch {
     return false;
   }
@@ -223,10 +236,12 @@ export function resolveProfile(config, { provider, baseUrl } = {}) {
 
   if (baseUrl) {
     const overridden = { ...named, baseUrl };
-    // A credential belongs to the host it was configured for. Pointing
-    // --base-url somewhere else must not send that host's key to a new one.
-    const crossOrigin = named && !sameOrigin(named.baseUrl, baseUrl);
-    if (crossOrigin) {
+    // A credential belongs to the ENDPOINT it was configured for, not merely
+    // its origin (OAI-63(c)) — a same-origin, different-path override on a
+    // path-multiplexed gateway is a different tenant, not the same one with a
+    // longer URL.
+    const crossEndpoint = named && !sameEndpoint(named.baseUrl, baseUrl);
+    if (crossEndpoint) {
       delete overridden.apiKey;
       delete overridden.apiKeyEnv;
     }
@@ -238,7 +253,7 @@ export function resolveProfile(config, { provider, baseUrl } = {}) {
     // defect — a user may legitimately configure a provider CALLED "custom", which
     // reaches the branch below and never touches it.
     profile.adHoc = true;
-    profile.credentialWithheld = Boolean(crossOrigin && (named.apiKey || named.apiKeyEnv));
+    profile.credentialWithheld = Boolean(crossEndpoint && (named.apiKey || named.apiKeyEnv));
     return profile;
   }
 

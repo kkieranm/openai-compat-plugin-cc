@@ -35,7 +35,7 @@ const now = () => new Date().toISOString();
  * The endpoint comes from the row: re-deriving it from a provider name would let
  * a profile edited after submission redirect a job that was already validated
  * against somewhere else. Only the secret is looked up fresh, and only when the
- * three-way origin check permits it.
+ * frozen endpoint still matches what the profile resolves to now (OAI-63).
  */
 function transportProfile(job) {
   return {
