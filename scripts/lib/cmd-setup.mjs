@@ -1,16 +1,34 @@
 import { parseCommandLine } from './args.mjs';
-import { buildProfile, loadConfig } from './config.mjs';
+import { buildProfile, loadConfig, normalizeBaseUrl } from './config.mjs';
 import { describeProvider } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { effectiveWindow } from './model-info.mjs';
 import { renderSetupReport } from './render.mjs';
 
 /**
+ * The most this report will ever show for a baseUrl that failed to build a
+ * profile — never the raw string, which may carry a query-embedded credential
+ * (OAI-72(b)). `normalizeBaseUrl` is what the success path already uses to
+ * split that query out before display; run it here too rather than falling
+ * back to the untouched value. If the raw string isn't even a valid URL —
+ * plausibly why `buildProfile` itself threw — there is nothing safe to show.
+ */
+function fallbackBaseUrl(rawProfile) {
+  try {
+    return normalizeBaseUrl(rawProfile?.baseUrl).baseUrl;
+  } catch {
+    return rawProfile?.baseUrl ? '(unparseable baseUrl)' : '(no baseUrl)';
+  }
+}
+
+/**
  * setup is a report: one unusable profile must become a row with an error, not
  * abort the whole command. Profile construction can itself throw (bad baseUrl,
  * unset apiKeyEnv), so it happens inside the guard too.
+ *
+ * Exported for testing only — `runSetup` is the one real caller.
  */
-async function probeProvider(name, rawProfile) {
+export async function probeProvider(name, rawProfile) {
   let profile;
   try {
     profile = buildProfile(name, rawProfile);
@@ -18,7 +36,7 @@ async function probeProvider(name, rawProfile) {
     if (!(error instanceof UserError)) throw error;
     // `built: false` — nothing about this profile's credential was resolved, so
     // the report must not claim its key is missing.
-    return { profile: { name, baseUrl: rawProfile?.baseUrl ?? '(no baseUrl)' }, rawProfile, models: [], error, built: false };
+    return { profile: { name, baseUrl: fallbackBaseUrl(rawProfile) }, rawProfile, models: [], error, built: false };
   }
 
   try {

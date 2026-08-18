@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { UserError } from './errors.mjs';
@@ -36,24 +36,86 @@ const NON_DURATION_KEYS = new Set(['contextLength']);
 /** Measured throughput, which is a positive number rather than a whole one. */
 const RATE_KEYS = new Set(['prefillTokensPerSecond', 'generationTokensPerSecond']);
 
+// A dangling symlink at `path` makes `readFileSync` see ENOENT (the TARGET
+// doesn't exist) and `writeFileSync(..., {flag: 'wx'})` see EEXIST (the LINK
+// itself does) on every attempt — an unbounded recurse would spin forever.
+// Concurrent create/unlink churn can also cost more than one retry. Bounded
+// rather than infinite; exhausting it is reported, not crashed into a raw
+// stack-overflow RangeError.
+const MAX_CREATE_RACE_ATTEMPTS = 3;
+
 /** Read the config, seeding it with defaults the first time. */
 export function loadConfig() {
+  return loadConfigAttempt(0);
+}
+
+function loadConfigAttempt(attempt) {
   const path = configPath();
   let raw;
   try {
     raw = readFileSync(path, 'utf8');
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
+    if (attempt >= MAX_CREATE_RACE_ATTEMPTS) {
+      throw new UserError(`Could not create ${path}: something is there but cannot be read.`, {
+        hint: 'Check what is at that path — a broken symlink, or a permissions problem — and remove or fix it.',
+      });
+    }
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`);
+    // A profile may carry an inline `apiKey` (`apiKeyEnv` is preferred, but
+    // `apiKey` is a supported fallback) — this file can hold a secret from the
+    // moment it exists, so `mode` is passed at creation rather than left to a
+    // later repair (OAI-72(a), the same posture `job-store.mjs` gives `jobs.db`).
+    // `flag: 'wx'` rather than the default `'w'`: the ENOENT above only proves
+    // the file didn't exist at the READ a moment ago — a concurrent creator in
+    // the gap between that check and this write would otherwise have its file
+    // silently truncated here while keeping whatever mode IT gave the file,
+    // which defeats the 0600 this call exists to guarantee. On that race,
+    // `EEXIST` means someone else won it; re-enter (bounded, see above) to
+    // read what they wrote and let the repair below fix its mode.
+    try {
+      writeFileSync(path, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    } catch (raceError) {
+      if (raceError.code === 'EEXIST') return loadConfigAttempt(attempt + 1);
+      throw raceError;
+    }
     return { path, config: structuredClone(DEFAULT_CONFIG), created: true };
+  }
+
+  // Unconditional, immediately after a successful read and before validating
+  // its CONTENT — a file left loose by an older build (or widened by anything
+  // else) would otherwise stay that way for as long as it happens to be
+  // invalid JSON or the wrong shape, the same lesson OAI-65(b) drew for
+  // `jobs.db`'s containing directory. The file's mode is a property of the
+  // file, not of whether its content currently parses. Only `ENOSYS`
+  // ("chmod not implemented") and `EINVAL` (the mode argument itself refused
+  // as meaningless) are what a genuinely mode-less filesystem actually
+  // returns, so only those two are swallowed — everything else (`EPERM`,
+  // `EACCES`, `EROFS`, `EIO`, ...) is a real, mode-capable filesystem that
+  // refused or failed the repair, and continuing to read a possibly-secret-
+  // bearing file through a mode we could not verify would defeat the whole
+  // point of this repair, so those fail loud.
+  try {
+    chmodSync(path, 0o600);
+  } catch (error) {
+    if (error.code !== 'ENOSYS' && error.code !== 'EINVAL') {
+      throw new UserError(`Could not set the required 0600 permissions on ${path} (${error.code}).`, {
+        hint: 'Fix its ownership or permissions by hand, or delete it to have the defaults written back.',
+      });
+    }
   }
 
   let config;
   try {
     config = JSON.parse(raw);
-  } catch (error) {
-    throw new UserError(`Config at ${path} is not valid JSON: ${error.message}`, {
+  } catch {
+    // Never interpolate the parse error's own message (OAI-72(b), same
+    // discipline as `normalizeBaseUrl`'s throws below): V8's SyntaxError
+    // routinely quotes a slice of the surrounding raw text, not just a
+    // position — `JSON.parse('{"apiKey": sk-SECRET}')` throws a message
+    // containing `sk-SECRE`. A syntax slip near a hand-edited secret would
+    // otherwise echo a fragment of it into this UserError.
+    throw new UserError(`Config at ${path} is not valid JSON.`, {
       hint: 'Fix the file, or delete it to have the defaults written back.',
     });
   }
@@ -129,17 +191,26 @@ export function normalizeBaseUrl(raw) {
   try {
     url = new URL(raw);
   } catch {
-    throw new UserError(`"${raw}" is not a valid URL.`, { hint });
+    // Never interpolate `raw` into a thrown message (OAI-72(b)) — this
+    // function's whole job is validating a value the caller does not yet
+    // trust, so it is exactly the wrong place to echo that value back
+    // un-redacted. A malformed baseUrl reaches here carrying a query-string
+    // secret or embedded userinfo just as often as it reaches here at all,
+    // and this function has no way to know which. Structural, not a scrub:
+    // OAI-63 tried scrubbing a wrapped message like this and was defeated
+    // four times by a narrower shape each round; nothing raw is quoted here,
+    // so there is nothing to scrub and nothing to bypass.
+    throw new UserError('The configured baseUrl is not a valid URL.', { hint });
   }
   // "localhost:1234" parses as a URL with scheme "localhost:" and a null
   // origin, which would silently build nonsense request URLs.
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new UserError(`"${raw}" is not a valid http(s) URL.`, { hint });
+    throw new UserError('The configured baseUrl is not a valid http(s) URL.', { hint });
   }
   // Credentials in the URL would be dropped when we rebuild it below, and a
   // silently unauthenticated request is worse than a refusal.
   if (url.username || url.password) {
-    throw new UserError(`"${raw}" embeds credentials in the URL, which this plugin does not forward.`, {
+    throw new UserError('The configured baseUrl embeds credentials in the URL, which this plugin does not forward.', {
       hint: 'Put the key in the profile\'s "apiKeyEnv" (preferred) or "apiKey" instead.',
     });
   }

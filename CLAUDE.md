@@ -246,6 +246,12 @@ selecting attempted commits on `startedAt` — and its `timelineComplete` warnin
 timeline, so a missing **ineligible** commit does not raise it while coverage still disposes of that
 commit.
 
+`scripts/lib/config.mjs`'s `loadConfig()` gives `providers.json` the same posture `job-store.mjs` gives
+`jobs.db` — `0600` at creation and unconditionally repaired on every later load, since a profile may
+carry an inline `apiKey` — and `cmd-setup.mjs`'s `probeProvider` redacts a failed profile's `baseUrl`
+through the same `normalizeBaseUrl` the success path already uses, rather than falling back to the raw
+string a query-embedded credential could still be sitting inside.
+
 ## Commands
 
 - Test: `npm test` (`node --test` over `tests/**/*.test.js` — the path scope is load-bearing, see footguns).

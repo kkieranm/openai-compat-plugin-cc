@@ -27,6 +27,33 @@ test('credentials embedded in the URL are refused rather than dropped', () => {
   assert.throws(() => normalizeBaseUrl('https://user:pw@api.example.com/v1'), /embeds credentials in the URL/);
 });
 
+// OAI-72(b): a caller that displays or logs a UserError's message (cmd-setup.mjs's
+// report, or an uncaught throw reaching oai-companion.mjs's top-level stderr
+// write) must never end up echoing the raw input this function was asked to
+// validate — the whole reason it's being validated is that it isn't trusted
+// yet, and it may carry a query-string API key or embedded userinfo credentials.
+// Every throw site is exercised, not just the credentials one, since a
+// malformed URL can carry a query-string secret too.
+test('none of normalizeBaseUrl\'s error messages ever quote the raw input', () => {
+  const secret = 'https://user:CorrectHorseBatteryStaple@api.example.com/v1?api_key=LEAKED-SECRET-9999';
+  const cases = [
+    secret,
+    'not-a-url-but-has-a-fake-secret?api_key=LEAKED-SECRET-9999',
+    'localhost:1234?api_key=LEAKED-SECRET-9999',
+  ];
+  for (const raw of cases) {
+    assert.throws(
+      () => normalizeBaseUrl(raw),
+      (error) => {
+        assert.doesNotMatch(error.message, /LEAKED-SECRET-9999/);
+        assert.doesNotMatch(error.message, /CorrectHorseBatteryStaple/);
+        assert.doesNotMatch(error.message, new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+        return true;
+      },
+    );
+  }
+});
+
 test('rejects a malformed base URL', () => {
   // "localhost:1234" is a parseable URL (scheme "localhost:") with a null
   // origin, so it has to be caught by the protocol check, not by URL parsing.
