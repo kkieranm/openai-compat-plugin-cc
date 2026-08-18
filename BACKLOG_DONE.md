@@ -1,3 +1,25 @@
+## 2026-08-18 — OAI-180 closed by the backlog sweep
+
+- **OAI-180** — **`BACKLOG.md`'s Tier 9 line and OAI-176's own body disagree on how many instances of
+  the `fork-opener` echo defect have been observed.** Filed 2026-08-17 from OAI-165's verdict-point
+  review (round 1, Codex) — flagged there, ruled out of scope for OAI-165 since it predates that diff
+  entirely (the second-instance text was committed 2026-08-17 in `711c66a`, before OAI-165's own
+  baseline). The tier summary still said *"one observed instance... needs a second instance before it
+  is worth more than a note,"* while OAI-176's own body (*"Second instance, 2026-08-17, from OAI-170's
+  review-ladder pass"*) already recorded that second instance and said it **refutes** the candidate
+  mitigation rather than confirming it.
+  **Fixed 2026-08-18 by the backlog sweep, in the sweep's own diff.** The correction made, in full: the
+  Tier 9 OAI-176 paragraph now reads **two** observed instances and names both (2026-08-16 from
+  OAI-167's ladder, 2026-08-17 from OAI-170's); "a candidate mitigation not yet worth standing
+  instruction on one instance" is replaced with the body's own finding, that the disclaiming prompt line
+  was tried proactively at the second instance, the fork echoed anyway, and the mitigation is therefore
+  **measured-insufficient-alone** — what worked both times was the retry, not the content of either
+  ignore-instruction; and *"needs a second instance before it is worth more than a note"* is replaced
+  with the answer to this item's own second question — a standing instruction is not yet earned, because
+  the only mitigation proposed has now been refuted rather than confirmed, and the harm is still
+  bounded by the two retried passes it cost. The paragraph carries a dated parenthetical recording that
+  the correction was made by this sweep and why. OAI-176 itself stays LIVE in tier 9, unchanged.
+
 ## 2026-08-18 — OAI-65 and OAI-150 closed (`687ed70`)
 
 - **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar held the secrets,
