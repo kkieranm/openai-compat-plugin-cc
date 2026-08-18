@@ -72,13 +72,14 @@ BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to ne
 mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
-**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-63, OAI-183, OAI-185,
-OAI-65, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. OAI-63 leads on evidence: the leak is proved
-on the wire, not argued. **OAI-183 is OAI-63's own confirmed apiKeyEnv variant, split out because it
-needs a different mechanism (a credential-identity pin, not an endpoint compare) rather than a bigger
-diff on the same fix. OAI-185 is a sibling split from OAI-63's own review — a path-embedded secret in
-the AUTHORIZED endpoint's own baseUrl, reachable through pre-existing connection-error wording, not
-the authorization gate.** OAI-65 is next because its load-bearing half is a directory mode nothing re-tightens, so
+**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-65,
+OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** — see
+BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-183 is
+OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
+credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
+is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
+baseUrl, reachable through pre-existing connection-error wording, not the authorization gate.** OAI-65
+is next because its load-bearing half is a directory mode nothing re-tightens, so
 every later WAL file inherits it. Then the three that are one decision apiece (OAI-72's config mode
 and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 with OAI-76
 are one decision viewed twice** (where the boundary lives, and what verb the agent is allowed) and
@@ -1258,61 +1259,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Two lines of fix, and the feature skill's rule picks between them: one definition, or one guard.
   A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
   because the alternative is generating prose from a constant, which is worse than the problem.
-
-- **OAI-63** — **The credential model authorises by ORIGIN while every request is by FULL URL, and the
-  leak is proved on the wire.** `job-auth.mjs:28` stores `originOf(baseUrl)`, discarding path and
-  query; `:45,:59` compare origins only; `cmd-task-worker.mjs:38-45` then builds the profile from the
-  **frozen full endpoint** plus the **freshly resolved key**.
-  Executed end to end through the real CLI — two real `--background` submissions, real detached
-  workers, `providers.json` re-pointed while job 2 sat `queued`. What the server received:
-  ```
-  path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-A
-  path=/tenant-a/v1/chat/completions  authorization=Bearer KEY-TENANT-B   <-- leak
-  ```
-  Confirmed variants: the query form (`?tenant=a` endpoint, key from the `?tenant=b` profile) —
-  **FIXED 2026-08-17, both this and the path form, by comparing the freshly resolved profile's
-  `baseUrl`/`query` against the already-persisted `job.transport`, which needed no schema change**:
-  `transport` was already stored on every row for the unrelated reason of making the request at all.
-  **Against the ADR, precisely:** `adr/014:147-152` states the rule as three *origins*, so this is not
-  a violation of its letter — but `adr/014:143-145` **explicitly notices** that "an origin drops the
-  `/v1` path, the query string" as its reason for storing the transport whole. The asymmetry was seen
-  and not followed through, and the ADR's own justifying harm happens one path segment down.
-  Severity is deployment-shaped: near-inert on `localhost:1234`, real on path-multiplexed gateways
-  (LiteLLM, Azure APIM, Cloudflare AI Gateway). Not attacker-triggerable — a foot-gun for the
-  legitimate user. Second-order: `task-submit.mjs:2-7` promises submission validates "in front of the
-  user"; it validated `/tenant-a` with KEY-A and the worker sent KEY-B, so **that guarantee does not
-  cover the credential**.
-  **The other confirmed variant — an `apiKeyEnv` swap, `baseUrl` untouched, env var repointed — is
-  NOT fixed by the above and remains open, split out as [OAI-183](#).** The endpoint-vs-endpoint
-  compare this fix adds cannot see it: the endpoint is unchanged, only the secret behind it moved.
-  **The three-term check validates *where*, never *which secret* — that half of the finding stands.**
-
-  **A second raw-value leak in this same fix's own refusal messages, closed the same day —
-  `resolveCredential`'s refusals only; a THIRD, sibling leak through the connection-error path is
-  separate and still open, filed as [OAI-185](#).** The
-  endpoint-mismatch refusal in `resolveCredential` originally interpolated both raw `baseUrl` values
-  (and, in an earlier revision, the raw `query` values) directly into its thrown message — which
-  persists into the job's failure record. `normalizeBaseUrl` does nothing to forbid a credential
-  embedded in the URL **path** (only userinfo is refused), so a path-multiplexed gateway that puts a
-  token in the path leaked it verbatim. **This was flagged once during review (pass 2 of this fix's
-  ladder) and wrongly dismissed** on the reasoning that `baseUrl` is already shown unredacted
-  elsewhere in this codebase (e.g. `/oai:setup`'s provider table) — which conflated a live,
-  operator's-own-terminal display with a value persisted into a shared, longer-lived failure record
-  (subject to [OAI-65](#)'s WAL-mode file-mode gap). It was independently re-raised and reproduced at
-  the final verdict-point check and fixed the same way as the sibling config-resolution leak: the
-  message is now fully static, naming only the provider and pointing at `/oai:setup`, never
-  interpolating either endpoint's raw value.
-
-  **The same root cause one layer up — moved here 2026-08-05 from OAI-72(c), because it was not a
-  second item. FIXED 2026-08-17 in the same pass as the worker-side half above.** `config.mjs`'s
-  `sameOrigin` withholding was origin-only too, so `--provider prod --base-url <same origin,
-  different path>` used to keep prod's key. `sameOrigin` is now `sameEndpoint`, comparing normalised
-  `baseUrl` **and** `query`, and `resolveProfile`'s `--base-url` override branch withholds the
-  credential (`credentialWithheld: true`) on any endpoint mismatch, not just an origin mismatch —
-  covered by `tests/config.test.js`'s same-host-different-path and same-host-different-query cases.
-  Both halves were the single decision "does authority attach to an origin or to an endpoint", and
-  both are now answered the same way. **OAI-72 keeps its ID and its other two claims**, which are
-  about file modes and stdout and share nothing with this.
 
 - **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
   `0644`.** Four related defects in the state directory's posture, all observed with controls.
