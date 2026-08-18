@@ -73,17 +73,19 @@ mitigated the wedge without removing it, because `isAlive` proves only that a pi
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
 **Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-186,
-OAI-65, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** —
-see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-183 is
+OAI-187, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** —
+see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-65 and
+OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-183 is
 OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
 credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
 is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
 baseUrl, reachable through pre-existing connection-error wording, not the authorization gate. OAI-186
 is a smaller sibling found while fixing OAI-65 — the SAME shape of gap (an attacker-redirectable
 directory via a symlink) in the config directory rather than the state directory, out of scope there
-because it isn't the secret-bearing surface OAI-65's own posture doc names.** OAI-65 is next because
-its load-bearing half is a directory mode nothing re-tightens, so
-every later WAL file inherits it. Then the three that are one decision apiece (OAI-72's config mode
+because it isn't the secret-bearing surface OAI-65's own posture doc names. OAI-187 is a narrower
+sibling found while fixing OAI-65 — the state/logs DIRECTORIES are now guarded against being a
+symlink, but the database FILE itself (`jobs.db`) never is, on either opener.** OAI-72 is next: the
+three that are one decision apiece (OAI-72's config mode
 and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 with OAI-76
 are one decision viewed twice** (where the boundary lives, and what verb the agent is allowed) and
 should be decided together even though they close separately. OAI-77 and OAI-81 trail: both need
@@ -360,8 +362,10 @@ and larger to fix properly than the batch it arose in, since it means replacing 
 
 **Tier 18 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
 misdiagnosis, or a silence.** **OAI-106**, **OAI-105**, **OAI-109**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**, **OAI-150**,
-**OAI-160**. OAI-160 is coverage debt in the same subsystem, filed by OAI-64's confirmation pass and
+**OAI-108**, **OAI-111**, **OAI-145**, **OAI-146**, **OAI-147**, **OAI-148**, **OAI-149**,
+**OAI-160**. (**OAI-150 closed together with OAI-65 2026-08-18 (`687ed70`)** — see BACKLOG_DONE; it
+joined this tier from OAI-66's review alongside OAI-149, but its precondition turned out reachable
+through OAI-65's own directory-mode gap, not merely unobserved.) OAI-160 is coverage debt in the same subsystem, filed by OAI-64's confirmation pass and
 owned by nothing else — **but it was AMENDED on 2026-08-16 and one of its twelve entries is no longer
 merely untested.** `displayOf`'s `dead`/`never-started` arms are reachable for an ordinary row this
 build understands, not only for one a newer plugin wrote, and the note they render names the row's own
@@ -387,12 +391,13 @@ one unreachable-today hole (OAI-109), a count restated where nothing holds it to
 a stop request with no contention policy at all (OAI-107), and a fact that reaches a human on stderr
 but no machine through `--json` (OAI-108). OAI-111 is housekeeping the review fan-outs generate.
 **OAI-145** sits with them for the same reason and with one difference worth stating: its trigger has never been observed either, but unlike the rest it is a claim the code makes and cannot support, and OAI-67 already contained every destructive consequence of it.
-**OAI-149** and **OAI-150** joined from OAI-66's review on 2026-08-13 and belong here for the same
-reason again: each needs a precondition nobody has been observed to create — a recreated `jobs.db`
-beside a surviving `logs/`, or a permission chain that lets an attacker traverse the state directory
-and write `logs/` while `jobs.db` stays out of reach. Both are the
-MECHANISM halves of findings whose CLAIM halves shipped with OAI-66, so what is left standing today
-states its own residual rather than asserting safety.
+**OAI-149** joined from OAI-66's review on 2026-08-13 and belongs here for the same reason again: it
+needs a precondition nobody has been observed to create — a recreated `jobs.db` beside a surviving
+`logs/`. It is the MECHANISM half of a finding whose CLAIM half shipped with OAI-66, so what is left
+standing today states its own residual rather than asserting safety. (OAI-150 was the same shape's
+sibling — a permission chain letting an attacker traverse the state directory and write `logs/` while
+`jobs.db` stayed out of reach — but closed 2026-08-18 together with OAI-65, whose fix repairs that
+exact permission chain unconditionally on every open.)
 
 <!-- /tiers -->
 
@@ -1262,51 +1267,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Two lines of fix, and the feature skill's rule picks between them: one definition, or one guard.
   A guard is the cheaper of the two here — assert the rendered `RETAIN` appears in both files —
   because the alternative is generating prose from a constant, which is worse than the problem.
-
-- **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar holds the secrets at
-  `0644`.** Four related defects in the state directory's posture, all observed with controls.
-  **(a)** `job-store.mjs:266-271` *(line moved; verified again 2026-08-17)* chmods only
-  `databasePath()`. SQLite in WAL mode creates
-  `jobs.db-wal`/`-shm` itself at default mode. Measured under umask 022 with the real `openStore()` +
-  `insertJob()`: `jobs.db` `-rw-------` containing **neither** the secret nor the source, `jobs.db-wal`
-  `-rw-r--r--` containing **both**. It survives SIGKILL, and the worker runs up to 3600s.
-  `job-store.mjs:136-137` states the contract in its own words — the file that holds the user's source
-  is not the file that is protected. **Note for anyone re-checking: SQLite removes the WAL on a clean
-  close, so a post-hoc `stat` sees nothing. Measure with a handle open, or after a crash.**
-  **Noted while reviewing OAI-63 (2026-08-17), and CLOSED AT THE SOURCE the same day rather than left
-  to (b) — by DELETING the leak, not scrubbing it.** A user who puts embedded credentials
-  (`user:pass@host`), a credential-carrying query string, or a credential-carrying fragment in a
-  provider's `baseUrl`, or a JSON syntax error near a secret in the config file itself, used to have
-  that raw content quoted verbatim into `resolveCredential`'s `credential-unavailable: …` refusal —
-  `job-auth.mjs`'s wrap of whatever `resolveProfile(loadConfig()…)` threw — which then persisted into
-  the job's failure record in the state DB this item's (a)/(b) cover. **A regex-based scrub of that
-  wrapped message was tried first and was defeated four times in successive review rounds by a
-  narrower shape each time** (a query string, embedded userinfo, a scheme-less credential with no
-  `//` to anchor on, a credential containing its own `@`) — and a fifth vector, a JSON-parse error
-  quoting a snippet of the config file, was never URL-shaped and could never have been caught by that
-  approach at all. **Fixed structurally instead**: the catch in `job-auth.mjs`'s `resolveCredential`
-  no longer forwards the underlying error's message at all — only the provider name (a config key,
-  already shown unredacted everywhere) and a pointer to `/oai:setup`, where the real reason surfaces
-  safely on the operator's own terminal. Nothing raw is quoted, so there is nothing left to scrub and
-  nothing left to bypass. Left as a note here rather than removed, since the file-mode boundary this
-  item owns is still the
-  right place to record that this particular record no longer needs it.
-  **(b)** `mkdirSync(..., {mode})` at `job-store.mjs:222-223` *(line moved; verified again
-  2026-08-17)* never re-applies a mode to an **existing** directory (observed:
-  0755 before, 0755 after). Loosen all three and re-run `openStore()`: `jobs.db` self-heals to `0600`,
-  the state dir and `logs/` stay `0755` **forever**, and every subsequent WAL is created loose. So (a)'s
-  containment rests on one bit nothing re-tightens. **(b) is the load-bearing half — fix it as primary
-  and (a) as belt**, since SQLite recreates the WAL during the process's life and a one-time chmod
-  catches only the current one.
-  **(c)** `job-spawn.mjs:33` opens `logs/<seq>.log` with no `O_NOFOLLOW`, at a predictable sequential
-  path. Observed: the mode argument is ignored when the file exists, and the open **follows a symlink
-  and appends to its target**. Positive control in the same run: the identical open with `O_NOFOLLOW`
-  refused with `ELOOP`. Gated on (b), this is disclosure **plus an arbitrary-file-append primitive**.
-  Note `O_NOFOLLOW` does not cover a pre-existing *regular* file owned by another principal, so pair
-  it with (d).
-  **(d) ALREADY FIXED, execution-verified 2026-08-17 by the sweep** — OAI-67's submission reordering
-  discharged it; the residual is a race, now tracked as [OAI-149]. Full filing and verification:
-  [`evidence/65.md`](evidence/65.md).
 
 - **OAI-68** — **`PRAGMA user_version` is checked only when a connection opens, so an in-flight worker
   bypasses the newer-database refusal.** `applySchema` (`job-store.mjs:120-125`) reads it once inside
@@ -2551,26 +2511,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **The bar for it being real:** a witness that reproduces the interleaving — recreate the store, plant
   the residue, submit, and prove the live job's files survive. Without it this is a story about a race.
 
-- **OAI-150** — **the state directory's mode is requested at creation and never repaired, so the
-  cancellation acknowledgement's trust footing is weaker than "whoever can write here can write
-  `jobs.db`".** Filed 2026-08-13 from OAI-66's review (`codex-adversarial`, finding 3).
-  `job-store.mjs` passes `mode: 0o700` to `mkdirSync`, which is a no-op on a directory that already
-  exists — while `jobs.db` itself is explicitly chmod'ed `0600`.
-  **The precondition is the WHOLE permission chain, not a loose state directory** (corrected
-  2026-08-13 from the review's second pass, which showed the first wording wrong at both ends). It
-  fails exactly where an attacker can **traverse** the state directory, **write** `logs/`, and **not
-  write** `jobs.db`: state `0755`, logs `0777`, database `0600`. State `0755` over a plugin-created
-  `logs/` at `0700` is SAFE, and state `0777` lets that attacker replace `logs/` and `jobs.db` alike,
-  so the distinction the item rests on disappears rather than worsening. In the reachable middle case
-  they can plant a `<seq>.cancel-ack`, turning a worker's crash into a clean `cancelled`, without
-  being able to write the database the footing appeals to. The narrower claim OAI-66 actually rests
-  on — that model output cannot create files — is unaffected and was separately confirmed.
-  **The shape of the fix is checking the mode of an EXISTING state directory** and either repairing it
-  or refusing to use it, the same way the database file is already handled. Which of the two is right
-  is the open question: repairing silently changes permissions a user may have set deliberately.
-  **The bar for it being real:** a witness that precreates **both** directories with discriminating
-  modes — state `0755` / logs `0777` must trip whatever is chosen, and state `0755` / logs `0700`
-  must be left alone. A single-directory fixture cannot tell the two apart and would pass either way.
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
   SQLite", and deliberately not built there.
@@ -3038,3 +2978,26 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `jobs.db` and its directory is the open design question this item still needs a grill on — the
   config file is not currently chmod'ed at all, on either creation or a later load, which OAI-65 never
   claimed to touch.
+
+- **OAI-187** — **`job-store.mjs`'s new symlink guard covers the state directory and `logs/`, never
+  `jobs.db` itself.** Found by two independent reviewers during OAI-65's own review-ladder pass 4, and
+  sharpened by a closing reviewer at pass 8: `databasePath()` is never passed to `refuseSymlink`
+  anywhere, in either `openOnce()` or `openStoreForReading()` — only the containing directories are
+  checked. A symlink planted at the exact `jobs.db` path, while the directory was still loose
+  (pre-repair, from an older build or any other cause), is followed by `new Database(path)` and later
+  `chmodSync(path, 0o600)`. **Not merely a pre-repair window**: the directory's own `chmodSync` repairs
+  the directory's mode, not a symlink already sitting inside it, so a symlink planted at `jobs.db`
+  survives the directory repair and is followed on every subsequent open too — a standing gap, not a
+  bootstrap-only one.
+  **Why this stayed out of OAI-65's own fix:** Codex (consulted directly during that review) suggested
+  amending [OAI-95], but OAI-95's own text describes a different, withdrawn helper
+  (`state-permissions.mjs`'s `restrict()`), never this gap — confirmed by grep across BACKLOG.md before
+  filing here instead. Folding it into OAI-65 would have widened an already eight-pass ladder onto a
+  file-level guard with its own design questions (does a readonly opener's guard differ from a writing
+  one's; does this need the same two-check-per-operation TOCTOU narrowing OAI-65's directory guards
+  now have) rather than the directory-symlink shape OAI-65/OAI-150 were scoped to.
+  **The shape of the fix**, following OAI-65's own precedent directly: `refuseSymlink(path)` (or a
+  variant checking the file rather than a directory — `lstatSync` already inspects the link itself
+  regardless of what it resolves to) immediately before `new Database(path)`, in both `openOnce()` and
+  `openStoreForReading()`, mirroring the two-check-per-operation pattern OAI-65's fix established for
+  `state`/`logs`.

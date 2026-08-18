@@ -1,3 +1,54 @@
+## 2026-08-18 — OAI-65 and OAI-150 closed (`687ed70`)
+
+- **OAI-65** — **The `0600` protects the file that holds nothing; the WAL sidecar held the secrets,
+  and the state directory's own mode was never re-tightened.** Four related defects in the state
+  directory's posture.
+  **(a)** `job-store.mjs` chmod'd only `databasePath()`. SQLite in WAL mode creates `jobs.db-wal`/`-shm`
+  itself at default mode, which — under a loose containing directory — carried both the secret and the
+  source while `jobs.db` itself stayed `0600` and empty of either.
+  **Noted while reviewing OAI-63 (2026-08-17), and closed at the source that same day rather than left
+  to (b) — by deleting the leak, not scrubbing it**: a regex-based scrub of a credential-carrying error
+  message was tried and defeated four times by a narrower shape each round; fixed structurally instead
+  by never forwarding the underlying error's message at all. See OAI-63's own DONE entry.
+  **(b) — the load-bearing half.** `mkdirSync(..., {mode})` never re-applies a mode to an existing
+  directory (Node's own documented behaviour) — a state dir or `logs/` inherited loose from an older
+  build, or widened by anything else, stayed loose on every subsequent `openStore()` forever, and every
+  WAL file created inside it inherited that.
+  **(c)** `job-spawn.mjs` opened `logs/<seq>.log` with no `O_NOFOLLOW`, at a predictable sequential
+  path — a symlink planted there was followed and appended to.
+  **(d) already fixed** — OAI-67's submission reordering discharged it; the residual is a race, tracked
+  as [OAI-149].
+  **Fixed 2026-08-18, together with OAI-150 (the same underlying gap, reached through a different
+  exploit — see below), in one diff, `687ed70`:** a new `refuseSymlink()` guard (`job-store.mjs`),
+  checked immediately before every `mkdirSync`/`chmodSync`/database-open and re-checked across any
+  intervening operation, refuses rather than follows a symlink planted at the state directory or
+  `logs/`; both directories are now unconditionally `chmodSync`'d to `0700` on every open, the same way
+  `jobs.db` already was to `0600`, closing (a) as a consequence of (b) rather than by chmod'ing the WAL
+  files directly. `job-spawn.mjs`'s log open now uses `O_NOFOLLOW`, closing (c). Widened mid-review
+  (user-approved) to also guard `openStoreForReading()` — the read-only opener backing the frequently
+  polled `/oai:status`, previously unguarded entirely. Eight review-ladder passes; full history in the
+  commit and its evidence trail. The remaining check-to-use window (an attacker with write access to
+  the state directory's *parent* racing a check against the syscall right after it) is accepted and
+  documented in `refuseSymlink`'s own docblock, on the same terms as [OAI-149]. Residue filed as
+  [OAI-187] (the database file itself, `jobs.db`, is never checked for being a symlink — only its
+  containing directory).
+
+- **OAI-150** — **the state directory's mode was requested at creation and never repaired, so the
+  cancellation acknowledgement's trust footing was weaker than "whoever can write here can write
+  `jobs.db`".** It failed exactly where an attacker could traverse the state directory, write `logs/`,
+  and not write `jobs.db`: state `0755`, logs `0777`, database `0600` — the reachable middle case let
+  that attacker plant a `<seq>.cancel-ack`, turning a worker's crash into a falsely clean `cancelled`,
+  without ever touching the database the footing appealed to.
+  **Fixed 2026-08-18, together with OAI-65(b) (the same underlying gap), `687ed70`.** The open question
+  this item filed — repair or refuse a loose existing directory — was converged before implementation:
+  repair, unconditionally, matching the precedent this file's own code already set for `jobs.db`.
+  **The originally filed acceptance criterion ("state `0755`/logs `0700` is safe, leave it alone") was
+  superseded once OAI-65(a)'s WAL/SHM sidecars were factored in** — they live directly in the state
+  directory, so the state directory itself needed repairing unconditionally too, not just `logs/`. The
+  discriminating fixture this item specified (state `0755`/logs `0777` must trip; state `0755`/logs
+  `0700` must — under the superseded criterion — be left alone) is now asserted against the current,
+  stronger behaviour in `tests/job-store-modes.test.js`.
+
 ## 2026-08-18 — OAI-63 closed (`1657ba5`)
 
 - **OAI-63** — **The credential model authorises by ORIGIN while every request is by FULL URL, and the
