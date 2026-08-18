@@ -74,14 +74,20 @@ BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to ne
 mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
-**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-72,
-OAI-55, OAI-74, OAI-77**. **OAI-63 closed 2026-08-18
+**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-55,
+OAI-74, OAI-77, OAI-189, OAI-190**. **OAI-63 closed 2026-08-18
 (`1657ba5`)** — see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not
-argued. **OAI-65 and OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-183 is
+argued. **OAI-65 and OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-72
+closed 2026-08-18 (`cb5b225`), along with OAI-93 and OAI-102 (Tier 10) as the same fix** — see
+BACKLOG_DONE. **OAI-183 is
 OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
 credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
 is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
-baseUrl, reachable through pre-existing connection-error wording, not the authorization gate.**
+baseUrl, reachable through pre-existing connection-error wording, not the authorization gate. OAI-189
+and OAI-190 are two low-severity siblings found *inside OAI-72's own review*, disclosed and
+deliberately left out of that fix: an unsupported-protocol error in `http.mjs` that still interpolates
+a raw URL but is unreachable via any config-sourced input today, and `validateConfig`'s numeric-only
+config keys interpolating their raw value (a secret could only appear there via a misplaced key name).**
 **Four of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`
 and none refuted — OAI-186, OAI-187 and OAI-188 are the three siblings found *inside OAI-65's own
 review* (a symlink-followable config directory in `config.mjs`; `jobs.db` itself never passed to
@@ -89,13 +95,13 @@ review* (a symlink-followable config directory in `config.mjs`; `jobs.db` itself
 repair), each disclosed and deliberately left out of that fix, and none ever exploited; OAI-81 is a
 consequence of OAI-3's snapshot-at-submission design accepted at the time, with no retained job body
 observed costing anything. See `BACKLOG_PARKED.md`.
-OAI-72 is next: the
-three that are one decision apiece (OAI-72's config mode
-and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 now stands
+OAI-55 is next: a decision apiece (OAI-55's
+redaction), then the delegate's containment surface — **OAI-74 now stands
 alone**, since OAI-76 (the unscoped `Bash` grant, its paired half) was parked in the same sweep for
 naming no instance while OAI-74 carries the dated one. The boundary decision OAI-74 makes is still the
 decision OAI-76 was the second view of, so read the parked entry before designing it. OAI-77 trails: it
-needs local write access, and it has no path-shaped fix.
+needs local write access, and it has no path-shaped fix. OAI-189 and OAI-190 trail last: both are
+disclosed, low-severity, currently-unreachable-or-narrow residue, not a dated instance.
 
 **Tier 5 — `/oai:review` returns no answer at all, or throws away the one the model gave.**
 **OAI-115, OAI-116, OAI-156, OAI-113, OAI-114, OAI-112, OAI-59, OAI-70, OAI-57**.
@@ -234,12 +240,14 @@ in their own words. **OAI-33 closed the same day**: `plans/README.md` exists, ve
 rather than off the entry. What remains is genuinely open — OAI-42 carries a dated instance (OAI-35's
 own filing made the error the name invites).
 
-**Tier 10 — credential disclosure a ladder found and scoped out.** **OAI-102, OAI-93, OAI-95**.
-**OAI-102 leads and is the one to do first** — it is a one-function fix, and unlike everything else
-that was ever in this tier the code already knows the value is a credential at the moment it prints it:
-`config.mjs:141-145` builds its refusal from `raw` precisely because it identified a credential in
-there. OAI-93 follows: `providers.json` is created `0644` and never chmod'ed while holding a literal
-`apiKey`, and it should reuse whatever verified-chmod helper OAI-95 lands. OAI-95 is the withdrawn
+**Tier 10 — credential disclosure a ladder found and scoped out.** **OAI-95**.
+**OAI-102 and OAI-93 closed 2026-08-18 (`cb5b225`), as the same fix as OAI-72 (Tier 4)** — see
+BACKLOG_DONE: `config.mjs:141-145`'s (and its two siblings') refusal built its message from `raw`
+precisely because it identified a credential in it, fixed structurally by never quoting raw input in
+any of `normalizeBaseUrl`'s throws; and `providers.json` created `0644` and never chmod'ed while
+holding a literal `apiKey`, fixed by `loadConfig()`'s new 0600-at-creation-and-unconditional-repair
+posture — independent of the verified-chmod helper this tier's prose used to say OAI-93 should reuse
+from OAI-95; it shipped with its own inline error-code handling instead. OAI-95 is the withdrawn
 permission hardening and sits here rather than alongside the now-shipped OAI-94 because, unlike OAI-94,
 nothing regressed when it left: the pre-existing bare `chmodSync` is still in place, so the tree is
 where it was, not worse.
@@ -1186,30 +1194,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   escaped (the positive control proves the probe would have seen one). Diagnosability only —
   deliberately not inflated.
 
-- **OAI-72** — **Two credential-exposure defects OUTSIDE the OAI-3 range, filed because they undercut
-  it.** Both verified; `config.mjs` and `cmd-setup.mjs` predate `e74eb2c^`.
-  **(a)** `config.mjs:41-42` writes `providers.json` with **no mode**. Observed on this machine:
-  `-rw-r--r--`, under `~` at `drwxr-x---` and `~/.config` at `drwxr-x--x`, both group `staff`, with a
-  second local account in `staff`. `job-auth.mjs` deliberately stores no credential and defers to this
-  file, so the file's mode is what that decision rests on. **Two honesty caveats kept from the agent
-  that found it:** the read was *not* performed as the other user — this is mode arithmetic over
-  separately verified components — and it deliberately did not check whether the file currently holds
-  an `apiKey`. Mechanism confirmed; today's exposure unverified.
-  **(b)** `cmd-setup.mjs:21` builds its fallback row from the **un-normalised** `rawProfile?.baseUrl`,
-  query intact, and `render.mjs:111` / `cmd-setup.mjs:46` print it to **stdout**. Ran with a positive
-  control: the failing profile printed `…/v1?api_key=sk-QUERY-SECRET-9999`; the control (env var set,
-  so `buildProfile` succeeds) printed `…/v1` clean. Reachable via any `buildProfile` throw.
-  **(c) MOVED 2026-08-05 into [OAI-63](#)**, where it is the paragraph beginning "The same root cause
-  one layer up" — `config.mjs:187`'s origin-only
-  `sameOrigin` withholding. It is OAI-63's root cause one layer up and the two bodies both said to fix
-  them together, so it now lives where that decision is made. Nothing was lost: the executed evidence
-  (`apiKey: "KEY-PROD"`, `credentialWithheld: false`) went with it. **This item keeps its ID and (a)
-  and (b)**, which are a file mode and a stdout echo and share no decision with it.
-  **IN PROGRESS as of 2026-08-18, uncommitted:** a fix for (a) and (b) sits in the working tree —
-  `scripts/lib/config.mjs`, `scripts/lib/cmd-setup.mjs`, `tests/config-mode.test.js`,
-  `tests/cmd-setup-redaction.test.js`, with a plan at `plans/oai-72-config-mode-and-setup-echo.md`.
-  Left LIVE rather than closed because it is not committed; close it against the commit, not this note.
-
 - **OAI-74** — Enforce the attachment boundary for **every** caller, not just the delegate's recipe.
   **Narrowed 2026-08-05 by OAI-5's second review pass: the delegate path is now enforced.** Its recipe
   canonicalises per attachment — ~~`readlink -f`~~ **a `canon()` wrapping `realpathSync`, corrected
@@ -1397,21 +1381,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   nothing anywhere said so. Decide whether a manifest is a distinct thing from the delegate's existing
   `files` list before building anything.
 
-- **OAI-93** — **`providers.json` is created world-readable and holds the long-lived credential.**
-  `config.mjs:47-48` writes the config with **no mode argument** — directory `0755`, file `0644` — and
-  never chmods it, while that file can hold a literal `apiKey`. The whole job-state tree is hardened to
-  `0600`/`0700` (see `adr/018`), so the *ephemeral* copy of a credential is protected and the permanent
-  one is not. Pre-existing and outside the OAI-61 diff, which is why it was filed rather than folded
-  in; found by that feature's `security-review` stage, which measured the modes rather than reading
-  them. Fix is one `mode` argument plus a narrowing pass for configs that already exist, and it should
-  reuse whatever verified-chmod helper OAI-95 lands, rather than trusting `chmod` not to throw — an
-  earlier version of that helper was disproved on a FAT image, where the call silently no-ops.
-  **IN PROGRESS as of 2026-08-18, uncommitted:** the same working-tree change filed against OAI-72(a)
-  touches this file mode — `scripts/lib/config.mjs`, `scripts/lib/cmd-setup.mjs`,
-  `tests/config-mode.test.js`, `tests/cmd-setup-redaction.test.js`, plan at
-  `plans/oai-72-config-mode-and-setup-echo.md`. Left LIVE rather than closed because it is not
-  committed; close it against the commit, not this note.
-
 - **OAI-95** — **permission hardening for the job state tree, withdrawn from OAI-61 with its findings.**
   `job-store.mjs` chmods `jobs.db` to `0600` best-effort and swallows every failure, so hardening that
   fails does so silently. OAI-61's ladder built a `state-permissions.mjs` (`restrict`, `narrowOrWarn`)
@@ -1494,23 +1463,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the prompt — recoverable in freelist pages of a file whose permissions are the only protection.
   Deliberately separate from OAI-95: hardening the *modes* does not help once the bytes are readable by
   a process that legitimately opened the file.
-
-- **OAI-102** — **the refusal for a credential in a URL prints that credential.** `config.mjs:141-145`
-  rejects a `--base-url` carrying userinfo and builds the message from `raw` — the complete URL — so
-  `http://user:hunter2@host/v1` puts `hunter2` on stderr. **The other two exits from `normalizeBaseUrl`
-  echo `raw` too** and a fix that covers only the credentials branch is half-done: `:137` (non-http
-  scheme) is reachable with userinfo intact, and `:132` (unparseable) can hold one in a string that
-  never became a URL. This is the sharpest member of the tier, because the argument that protects the
-  others does not apply: OAI-94 declined to gate its notice on "does this look like a secret" since the
-  code cannot know — but here the code *does* know, since the branch printing the credential is the
-  branch that exists because it identified one. Found by OAI-94's `codex-adversarial` pass 4 at high
-  confidence and confirmed independently; filed rather than fixed there because `config.mjs` is
-  pre-existing code that diff does not touch, on exactly the reasoning that filed OAI-100.
-  **IN PROGRESS as of 2026-08-18, uncommitted:** the same working-tree change filed against OAI-72
-  touches `config.mjs`'s refusal wording — `scripts/lib/config.mjs`, `scripts/lib/cmd-setup.mjs`,
-  `tests/config-mode.test.js`, `tests/cmd-setup-redaction.test.js`, plan at
-  `plans/oai-72-config-mode-and-setup-echo.md`. Left LIVE rather than closed because it is not
-  committed; close it against the commit, not this note.
 
 - **OAI-106** — **the row is still wrong about why a salvaged job ended, and the CHEAP HALF is separable
   from the expensive one.** Narrowed by OAI-62, which originally filed this as the whole defect — a
@@ -2474,3 +2426,21 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   argument was raised once during OAI-63's review, adjudicated wrong, and reversed: a live,
   operator's-own-terminal display is not the same exposure as a value persisted into a shared,
   longer-lived failure record.
+
+- **OAI-189** — **`http.mjs`'s unsupported-protocol refusal still interpolates a raw URL, but nothing
+  currently reaches it that way.** `send()`'s unsupported-protocol branch (`http.mjs:246`) builds its
+  `UserError` from the full `url`, which would include a query string. Disclosed, not fixed, at OAI-72's
+  final verdict point: both `provider.mjs:121` and `model-info.mjs:36` — the only two callers — always
+  pass a URL already protocol-validated by `normalizeBaseUrl` upstream, which restricts to http/https
+  before this point is ever reached, so the branch is currently dead for any config-sourced input.
+  Worth a fix only if a future caller of `send()` bypasses `normalizeBaseUrl`; until then this is a
+  one-line note, not a dated instance.
+
+- **OAI-190** — **`config.mjs`'s `validateConfig` interpolates raw values for its numeric config keys.**
+  Seven enumerated keys (`contextLength`, `timeoutSeconds`, `idleSeconds`, `maxSeconds`,
+  `retrySeconds`, `prefillTokensPerSecond`, `generationTokensPerSecond`) have their raw value
+  interpolated into a `UserError` when validation fails, via `JSON.stringify(value)` or `value`
+  directly. Disclosed, not fixed, at OAI-72's final verdict point: this is a narrower, different shape
+  than OAI-72 addressed (baseUrl/JSON content) — a secret could only leak here if hand-misplaced under
+  one of these specific numeric key names, which none of these keys are named or documented to accept.
+  Low enough probability and severity that it was left as a note rather than fixed alongside OAI-72.

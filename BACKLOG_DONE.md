@@ -1,3 +1,50 @@
+## 2026-08-18 — OAI-72, OAI-93, and OAI-102 closed (`cb5b225`)
+
+- **OAI-72** — **Two credential-exposure defects outside the OAI-3 range.** **(a)** `config.mjs`'s
+  `loadConfig()` wrote `providers.json` with no mode on first run and never repaired a pre-existing
+  loose file on later reads — the same shape OAI-65(b) closed for `jobs.db`'s directory. Fixed:
+  `writeFileSync(..., {mode: 0o600, flag: 'wx'})` at creation, and an unconditional `chmodSync(path,
+  0o600)` on every successful read, before content validation. **(b)** `cmd-setup.mjs`'s `probeProvider`
+  built its `buildProfile`-failure fallback row from the raw, un-normalized `rawProfile.baseUrl` —
+  reachable on any `buildProfile` throw (a missing `apiKeyEnv` value, most commonly) — and
+  `render.mjs` printed it to stdout verbatim, including any query-embedded credential. Fixed: a
+  `fallbackBaseUrl()` helper redacts through `normalizeBaseUrl` first, falling back to a static
+  placeholder only if that itself throws.
+  **(c)** moved into OAI-63 on 2026-08-05; closed there.
+  A three-round review-ladder chain on the mode-repair logic surfaced and closed four further gaps
+  before this shipped: the read-path chmod repair silently swallowed `EPERM`/`EACCES` (a file the
+  process could not protect stayed loose and was used anyway) — fixed to re-throw for anything except
+  `ENOSYS`/`EINVAL` (what a genuinely mode-less filesystem actually returns; the first attempt at this
+  had the polarity backwards, wrongly treating `EROFS`/`EIO` as "no modes here"); the create-path write
+  used the default truncating flag, so a concurrent creator racing the `ENOENT` check could have its
+  file silently truncated — fixed with `flag: 'wx'` and an `EEXIST`-recurse; that recurse was itself
+  unbounded, and a dangling symlink at the config path (`readFileSync` sees `ENOENT` on the missing
+  target, the `wx` write sees `EEXIST` on the link itself, on every attempt) recursed to a raw
+  stack-overflow `RangeError` — bounded via `MAX_CREATE_RACE_ATTEMPTS = 3`, with `loadConfig()` now a
+  zero-arg wrapper around `loadConfigAttempt(attempt)`, throwing a clear `UserError` on exhaustion.
+  All four fixes and their tests are mutation-proven; two structural test pins were themselves found
+  checking substring order rather than branch membership (a branch-swap mutant would have passed them)
+  and rewritten anchored on single contiguous regexes, whitespace-normalized against reformatting.
+  Live-checked: a hand-loosened real `providers.json` (`chmod 644`) was repaired to `0600` by a real
+  `/oai:setup` run, and a scratch config with a query-embedded fake secret and an unset `apiKeyEnv`
+  produced no leak anywhere in the output.
+  **Disclosed, accepted, non-blocking residue, not fixed here** — see the three live entries below:
+  `http.mjs`'s unsupported-protocol branch still interpolates a raw URL but is unreachable via any
+  config-sourced input (filed as **OAI-189**); `validateConfig`'s numeric-only interpolation (filed as
+  **OAI-190**); the JSON-parse-leak test's marker check is V8-version-dependent in principle but the
+  test also asserts the exact static message, so the vacuity (if any) is benign (not filed — no action
+  possible against a hypothetical future V8 behavior).
+
+- **OAI-93** — **`providers.json` is created world-readable and holds the long-lived credential.**
+  The exact same defect as OAI-72(a), filed separately before the two were recognised as one; closed
+  by the same fix in the same commit.
+
+- **OAI-102** — **The refusal for a credential in a URL prints that credential.** `normalizeBaseUrl`'s
+  three throw sites (unparseable, non-http scheme, embedded userinfo) all built their message from the
+  raw input. The exact fix OAI-72(b)'s own review chain produced for the same function, landed in the
+  same commit: none of the three now interpolates any raw input, structurally rather than by scrubbing
+  a wrapped message (OAI-63 tried scrubbing and was defeated four times by a narrower shape each round).
+
 ## 2026-08-18 — OAI-180 closed by the backlog sweep
 
 - **OAI-180** — **`BACKLOG.md`'s Tier 9 line and OAI-176's own body disagree on how many instances of
