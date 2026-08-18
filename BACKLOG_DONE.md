@@ -31,7 +31,9 @@
   the state directory's *parent* racing a check against the syscall right after it) is accepted and
   documented in `refuseSymlink`'s own docblock, on the same terms as [OAI-149]. Residue filed as
   [OAI-187] (the database file itself, `jobs.db`, is never checked for being a symlink — only its
-  containing directory).
+  containing directory) and [OAI-188] (two smaller robustness gaps in `openStoreForReading()`/
+  `openJobs()`, disclosed at this fix's own verdict point). Full filing and verification for OAI-65's
+  original four sub-findings: [`evidence/65.md`](evidence/65.md).
 
 - **OAI-150** — **the state directory's mode was requested at creation and never repaired, so the
   cancellation acknowledgement's trust footing was weaker than "whoever can write here can write

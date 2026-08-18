@@ -73,9 +73,9 @@ mitigated the wedge without removing it, because `isAlive` proves only that a pi
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
 **Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-186,
-OAI-187, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** —
-see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-65 and
-OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-183 is
+OAI-187, OAI-188, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18
+(`1657ba5`)** — see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not
+argued. **OAI-65 and OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-183 is
 OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
 credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
 is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
@@ -84,7 +84,10 @@ is a smaller sibling found while fixing OAI-65 — the SAME shape of gap (an att
 directory via a symlink) in the config directory rather than the state directory, out of scope there
 because it isn't the secret-bearing surface OAI-65's own posture doc names. OAI-187 is a narrower
 sibling found while fixing OAI-65 — the state/logs DIRECTORIES are now guarded against being a
-symlink, but the database FILE itself (`jobs.db`) never is, on either opener.** OAI-72 is next: the
+symlink, but the database FILE itself (`jobs.db`) never is, on either opener. OAI-188 is two smaller
+robustness gaps in the same reading opener OAI-65 widened to guard — a leaked handle on a rare pragma
+failure, and a schema-mismatch branch that skips mode repair — disclosed at OAI-65's own verdict point
+rather than folded in.** OAI-72 is next: the
 three that are one decision apiece (OAI-72's config mode
 and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 with OAI-76
 are one decision viewed twice** (where the boundary lives, and what verb the agent is allowed) and
@@ -3001,3 +3004,25 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   regardless of what it resolves to) immediately before `new Database(path)`, in both `openOnce()` and
   `openStoreForReading()`, mirroring the two-check-per-operation pattern OAI-65's fix established for
   `state`/`logs`.
+
+- **OAI-188** — **Two small robustness gaps in `job-store.mjs`'s `openStoreForReading()`/`job-view.mjs`'s
+  `openJobs()`, found during OAI-65's own review-ladder pass 7-8 and disclosed to (but not fixed by)
+  that fix's dual-approval verdict point.**
+  **(a)** `openStoreForReading()`'s `db.exec('PRAGMA busy_timeout = 10000')` has no try/catch-and-close
+  on failure, unlike `openOnce()`'s equivalent statements — a rare pragma failure leaks the just-opened
+  read-only database handle rather than closing it before rethrowing.
+  **(b)** When a database has a newer `schema_version` than this build understands, `openJobs()`
+  returns the read-only handle from `openStoreForReading()` directly, without ever calling the hardened
+  `openStore()` — so the unconditional directory-mode repair OAI-65 added never runs on that branch. A
+  state directory that's loose and paired with a newer-schema `jobs.db` stays loose on every
+  `/oai:status` for as long as that condition holds. Narrower than it sounds: `openStoreForReading()`
+  now carries the same symlink guard `openOnce()` does (OAI-65's fix), so this is a MODE-repair gap
+  specifically, not a symlink-following one.
+  **The structural tests' comment-stripping regex** (`/\/\/.*$/gm` in `tests/job-store-modes.test.js`,
+  pinning the check-ordering OAI-65 added) only strips `//` line comments, not `/* */` block comments —
+  a latent gap with no live trigger in the file today, noted here rather than filed separately since
+  it's the same "found during OAI-65's review, disclosed, not fixed" shape.
+  **The shape of the fix**: (a) wrap the pragma call the same way `openOnce()` wraps its own; (b) either
+  call `openOnce()`'s repair unconditionally before returning on the newer-schema branch, or accept and
+  document that a newer-schema database is read-only territory this build cannot safely mutate anyway —
+  a design question, not a mechanical fix.
