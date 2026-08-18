@@ -3,7 +3,7 @@
 // This is the one place in the repo that launches a process meant to survive its
 // parent, and every line of it is load-bearing.
 import { spawn } from 'node:child_process';
-import { closeSync, openSync } from 'node:fs';
+import { closeSync, constants, openSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { logPathFor } from './job-store.mjs';
 
@@ -30,7 +30,16 @@ const COMPANION = fileURLToPath(new URL('../oai-companion.mjs', import.meta.url)
  * function exists to catch.
  */
 export async function spawnWorker(seq) {
-  const log = openSync(logPathFor(seq), 'a', 0o600);
+  // `O_NOFOLLOW`: this path is predictable (`logs/<seq>.log`), so a symlink
+  // planted there ahead of the worker would otherwise be followed and
+  // appended to (OAI-65(c)). No `O_EXCL` — a pre-existing REGULAR file at this
+  // path is a different, already-closed concern (OAI-65(d)/OAI-67), not what
+  // this flag guards against.
+  const log = openSync(
+    logPathFor(seq),
+    constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW,
+    0o600,
+  );
   let child;
   try {
     child = spawn(process.execPath, [COMPANION, 'task-worker', '--seq', String(seq)], {

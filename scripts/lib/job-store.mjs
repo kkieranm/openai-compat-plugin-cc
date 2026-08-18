@@ -7,9 +7,9 @@
 // `AUTOINCREMENT` and a guarded `UPDATE` answer all three, and the OS releases
 // the locks when a process dies — which is the one primitive node core does not
 // otherwise offer. See ADR 014.
-import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { UserError } from './errors.mjs';
 import { withBusyRetry } from './job-busy.mjs';
 
@@ -216,12 +216,118 @@ export function openStore() {
   return withBusyRetry(openOnce, { budgetMs: OPEN_BUDGET_MS });
 }
 
+/**
+ * Refuse a symlink at exactly this path, rather than follow it.
+ *
+ * `mkdirSync(..., {recursive: true})` treats a path that RESOLVES to a
+ * directory as already satisfied — it never checks whether the path itself is
+ * a symlink — and `chmodSync` sets the mode of whatever the link resolves to,
+ * not the link. So a symlink planted at the state directory or `logs/` ahead
+ * of a first run would have both calls silently "succeed" against a directory
+ * an attacker controls, while every guarantee this file makes (0700/0600,
+ * repaired on every open) gets applied to THEIR directory, not a check on
+ * whether this process should be writing there at all. `lstatSync` is the one
+ * call that inspects the link itself rather than its target.
+ *
+ * **Residual race, narrowed rather than eliminated.** Called again immediately
+ * before each `chmodSync` below (see `repairDir`), not just once up front, and
+ * `openOnce` re-checks `state` itself again before `repairDir(logs)` and again
+ * before the database is opened — `logsPath()`/`databasePath()` are both
+ * subpaths of `state`, so a symlink swap of `state` alone (its own contents
+ * never touched) would otherwise make `refuseSymlink(logs)` inspect an
+ * entirely attacker-owned tree without ever seeing a symlink itself. What's
+ * left is a per-operation check-to-use gap: an attacker with write access to
+ * `state`'s PARENT can still win a race between one of these checks and the
+ * syscall right after it. This does not need precise kernel-level timing to
+ * exploit — an attacker need not win any single attempt, only retry across
+ * repeated invocations of this plugin until one lands inside a window, which
+ * is why a world-writable parent (e.g. `OAI_PLUGIN_STATE` pointed at `/tmp`)
+ * is a realistic condition, not a theoretical one. Closing it fully needs
+ * file-descriptor-based directory operations (`O_DIRECTORY|O_NOFOLLOW` plus
+ * `fchmodSync`, and `mkdirat`/`openat`/`fchmodat` equivalents Node's
+ * synchronous `fs` API does not expose), not attempted here. Accepted on the
+ * same terms as this repo's other documented narrow local races (OAI-149).
+ *
+ * Exported for testing only — `openOnce` and `openStoreForReading` are the
+ * real callers. A non-ENOENT
+ * lstat failure (EACCES, ENOTDIR: not "missing" but genuinely unreadable or
+ * blocked) can't be witnessed through `openStore()` itself: the same
+ * underlying condition also blocks the `mkdirSync` that follows just as
+ * surely, so an end-to-end test can't tell "this function rethrew" from "this
+ * function swallowed it and the next call failed anyway" — this needs to be
+ * called directly. (ENOENT is the one case that does NOT transfer this way:
+ * `mkdirSync(..., {recursive: true})` creates a missing ancestor rather than
+ * failing on it, so a missing path is not a stand-in for a blocked one.)
+ */
+export function refuseSymlink(path) {
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    // Only ENOENT means "not there yet, nothing to refuse" — anything else
+    // (EACCES, EIO, ENOTDIR: a parent segment is itself not a directory) is a
+    // real problem this guard exists to surface, not swallow. Silently
+    // treating every failure as absence would let exactly the kind of fault
+    // this function is for pass through unexamined.
+    if (error.code !== 'ENOENT') throw error;
+    return;
+  }
+  if (stat.isSymbolicLink()) {
+    throw new UserError(
+      `${path} is a symlink, and this plugin will not follow it for its state directory.`,
+      { hint: 'Remove the symlink, or point OAI_PLUGIN_STATE somewhere else, then retry.' },
+    );
+  }
+}
+
+/**
+ * Create (if needed) and unconditionally repair one directory's mode, with
+ * the symlink guard immediately adjacent to both operations that trust the
+ * path — not a single check shared across a longer sequence. See
+ * `refuseSymlink`'s docblock for what this narrows and what it still accepts.
+ */
+function repairDir(dir) {
+  refuseSymlink(dir);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  refuseSymlink(dir);
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    // Best effort, same reasoning as the database's chmod below: a
+    // filesystem that does not carry Unix modes is not a reason to refuse
+    // to run.
+  }
+}
+
 function openOnce() {
   const Database = requireDatabaseSync();
   const path = databasePath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  mkdirSync(join(statePath(), 'logs'), { recursive: true, mode: 0o700 });
+  const state = statePath();
+  const logs = logsPath();
+  // `mkdirSync`'s `mode` is a no-op on a directory that already exists (Node's
+  // own documented behaviour), so a pre-existing state dir or `logs/` looser
+  // than `0700` — from an older build, or widened by anything else — stayed
+  // that way on every subsequent run before this fix. Repaired unconditionally
+  // by `repairDir`, the same way `jobs.db` itself is repaired below: the
+  // WAL/SHM sidecars SQLite creates under WAL mode live directly in this
+  // directory and hold the same prompt/source data `jobs.db` does, so a loose
+  // directory defeats the file-level chmod regardless of it (OAI-65). This is
+  // also what closes OAI-150: a state dir at `0755` with `logs/` at `0777` let
+  // another local principal plant a forged `<seq>.cancel-ack` without ever
+  // touching `jobs.db`.
+  repairDir(state);
+  // `logs` and `path` are both subpaths of `state` — string joins computed
+  // once above, not filesystem lookups — so what they resolve to depends on
+  // what `state` points at when each is actually used, not on when the
+  // string was built. The repair call just above confirmed `state` itself a
+  // moment ago, but confirms nothing about what it still points at NOW.
+  // Re-checked immediately before each subsequent use, not assumed to still
+  // hold: see the symlink guard's own docblock for what this narrows and
+  // what it still accepts.
+  refuseSymlink(state);
+  repairDir(logs);
 
+  refuseSymlink(state);
   const db = new Database(path);
   try {
     // FIRST, before anything that takes a lock — but SHORT, because this whole
@@ -290,7 +396,25 @@ function openOnce() {
 export function openStoreForReading() {
   const Database = requireDatabaseSync();
   const path = databasePath();
+  // `job-view.mjs`'s `openJobs()` calls this FIRST, unconditionally, on every
+  // `/oai:status` — the most frequently run command this plugin has — before
+  // the hardened `openOnce()` (with its own `refuseSymlink` checks) ever runs.
+  // Without this, a symlink planted at `statePath()` would be followed here
+  // silently: the same attack `openOnce()` exists to refuse, on a path hit far
+  // more often. Checked BEFORE `existsSync`, not after: `existsSync` itself
+  // follows the symlink, and an attacker directory with no `jobs.db` inside it
+  // would otherwise make this function return `null` — quietly, no throw —
+  // without the guard ever running at all. Guards `state`, not `path` (the
+  // database file itself) — that narrower gap is a separate, pre-existing
+  // condition this fix does not fold in.
+  // `existsSync` is itself a syscall a state-directory swap can land inside,
+  // exactly like the gap `repairDir`'s own two checks (before `mkdirSync` and
+  // again before `chmodSync`) exist to narrow — so this re-checks the same
+  // way, immediately before the database open, rather than trusting the one
+  // check above across `existsSync` too.
+  refuseSymlink(statePath());
   if (!existsSync(path)) return null;
+  refuseSymlink(statePath());
   const db = new Database(path, { readOnly: true });
   db.exec('PRAGMA busy_timeout = 10000');
   return { db, version: db.prepare('PRAGMA user_version').get().user_version };

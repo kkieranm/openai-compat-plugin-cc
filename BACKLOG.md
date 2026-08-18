@@ -72,14 +72,17 @@ BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to ne
 mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
 shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
 
-**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-65,
-OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** — see
-BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-183 is
+**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-186,
+OAI-65, OAI-72, OAI-55, OAI-74, OAI-76, OAI-77, OAI-81**. **OAI-63 closed 2026-08-18 (`1657ba5`)** —
+see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not argued. **OAI-183 is
 OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
 credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
 is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
-baseUrl, reachable through pre-existing connection-error wording, not the authorization gate.** OAI-65
-is next because its load-bearing half is a directory mode nothing re-tightens, so
+baseUrl, reachable through pre-existing connection-error wording, not the authorization gate. OAI-186
+is a smaller sibling found while fixing OAI-65 — the SAME shape of gap (an attacker-redirectable
+directory via a symlink) in the config directory rather than the state directory, out of scope there
+because it isn't the secret-bearing surface OAI-65's own posture doc names.** OAI-65 is next because
+its load-bearing half is a directory mode nothing re-tightens, so
 every later WAL file inherits it. Then the three that are one decision apiece (OAI-72's config mode
 and query echo; OAI-55's redaction), then the delegate's containment surface — **OAI-74 with OAI-76
 are one decision viewed twice** (where the boundary lives, and what verb the agent is allowed) and
@@ -3011,3 +3014,27 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   argument was raised once during OAI-63's review, adjudicated wrong, and reversed: a live,
   operator's-own-terminal display is not the same exposure as a value persisted into a shared,
   longer-lived failure record.
+
+- **OAI-186** — **`config.mjs`'s `loadConfig` creates the plugin's config directory the same
+  symlink-following way `job-store.mjs` used to create the state directory.** Found by an independent
+  reviewer during OAI-65's review-ladder pass 2, on a file outside that fix's four-file scope and
+  untouched by its diff. `config.mjs:47-48`: on `ENOENT`, `mkdirSync(dirname(path), {recursive:
+  true})` then `writeFileSync(path, ...)` — no `lstatSync` guard before either call, so a symlink
+  planted at `~/.config/oai-plugin` (or wherever `configPath()` resolves) ahead of the plugin's first
+  run would be walked into by `mkdirSync`'s own EEXIST-recovery stat, and the seeded default config
+  would be written inside whatever directory the symlink points at.
+  **Why this is a smaller, different-shaped item than OAI-65's fix, not a fold-in of it:** OAI-65's
+  posture doc (`job-store.mjs:207-208`, "`0700` on the directory and `0600` on the file") explicitly
+  names the state directory as secret-bearing — prompts and the full text of every attached source
+  file. The config directory holds `providers.json`: provider names, base URLs, and (only when
+  `apiKey` rather than the preferred `apiKeyEnv` is used) a credential — a real but narrower and
+  differently-shaped exposure than OAI-65's threat model was scoped to close. The reviewer that found
+  this explicitly did not treat it as reopening OAI-65: "outside this fix's stated threat model... flag
+  as a possible separate backlog item, not a reason to hold this change."
+  **The shape of the fix**, following OAI-65(b)'s own precedent directly: an `lstatSync`-based guard
+  before `mkdirSync`, refusing rather than following a symlink at the config directory — the same
+  `refuseSymlink` helper `job-store.mjs` now has, either reused or duplicated. Whether `providers.json`
+  itself also needs the same `0600`/`0700` unconditional-repair treatment `job-store.mjs` now gives
+  `jobs.db` and its directory is the open design question this item still needs a grill on — the
+  config file is not currently chmod'ed at all, on either creation or a later load, which OAI-65 never
+  claimed to touch.
