@@ -1,3 +1,48 @@
+## 2026-08-19 — OAI-55 shipped: named-profile query credential no longer persisted raw (`581ac7b`)
+
+- **OAI-55** — The item's original filed framing had two halves: the secret persisting into
+  `jobs.db`, and leaking via the delegate's unredirected stderr into the session transcript. Probing
+  this session found the transcript-leak half already fixed on disk (`noteEndpointPersistence()`
+  takes no argument and interpolates nothing; nothing renders `transport.query`). The remaining,
+  real defect was plaintext-at-rest: a named `providers.json` profile's query string (a real
+  credential, e.g. `?api_key=...`) persisted raw in `jobs.db` for the life of a job row. The user
+  chose to fix the fixable case (named profiles) and leave ad hoc `--base-url` and path-embedded
+  credentials as documented, accepted residue — the command line is their only copy, and re-invoking
+  the CLI with it in `argv` is worse (visible in `ps`).
+  **Shipped**: `job-auth.mjs`'s `authPolicyFor`/`resolveCredential` extend the existing `apiKey`
+  doctrine (never persist, re-resolve from live config at worker time, bind to the frozen endpoint —
+  OAI-63) to a profile's query string. A named, non-`adHoc`, non-empty query now stores only a salted
+  SHA-256 commitment (`queryCommitment`/`querySalt`) in `transport`, not the raw value; the worker
+  re-resolves the query fresh from config and verifies it against the commitment, refusing on drift
+  exactly as the raw path did. Key authorization and profile provenance are tracked as two separate
+  facts (`apiKeyAuthorized`) so a query-only credential can be re-resolved without ever authorizing a
+  key nothing granted at submission — the escalation a query-only profile that later *gains* an
+  `apiKey` would otherwise create. `ROW_SCHEMA_VERSION` bumped 1→2 for a legacy-default fallback that
+  is scoped to `schemaVersion === 1`, not to "the field is missing", so a malformed v2 row can't
+  silently inherit the fail-open default (a HIGH-severity finding from the review ladder's
+  `codex-adversarial` stage). Ad hoc `--base-url` and path-embedded credentials are unchanged, and
+  `noteEndpointPersistence()`'s wording now states that residue explicitly rather than implying full
+  coverage.
+  **Review-ladder: 3 discovery passes converged on zero remaining code defects** (2 real fixes: the
+  `queryHash` presence-vs-truthiness discriminator, and the schemaVersion-scoped legacy default),
+  **then 7 verdict-point rounds** before dual approval — rounds 1-4 were genuine artifact-completeness
+  gaps in the frozen file manifest (each real, each fixed: missing consumers of changed exports,
+  missing files naming a changed path); round 5 was a scope-of-search-method disagreement (imports
+  only vs. all textual mentions) that an advisor consult resolved in Codex's favor — the ladder's
+  "found by searching, not by judgement" rule explicitly includes docs, and a judgement-based
+  narrowing to "functional dependents" is exactly what it forbids; rounds 6-7 were mechanical: a
+  locally-aliased `grep` (`ugrep --ignore-files`) was silently applying `.gitignore` and dropping the
+  entire `bench/results/` tree, and an over-broad `--exclude-dir=.claude` excluded more than the
+  authorized `.claude/worktrees`. The final 162-file manifest (`command grep`, exactly `.git` and
+  `.claude/worktrees` excluded, nothing else by judgment) approved on both sides with zero code
+  findings across the last 5 rounds. Suite: 1040/1040 green.
+  **Accepted residue, confirmed still true after shipping**: ad hoc `--base-url` still stores its
+  query raw; a credential embedded in the URL *path* (not the query) still persists raw and renders
+  via `job-render.mjs`, for named profiles as much as ad hoc ones — a strictly wider problem than
+  this item, out of scope by design (no credential-shape detection, per the settled fork). Neither is
+  a new tracker item: both were pre-declared, documented scope limits in the plan, not defects found
+  during the ship.
+
 ## 2026-08-19 — OAI-138 shipped: doubled `--max-seconds`, added salvage (`64ce8e2`)
 
 - **OAI-138** — **Half the eligible corpus was being lost to a per-commit deadline that was never

@@ -31,14 +31,12 @@ open plan and uncommitted diff in the tree at review time). It has since shipped
 review-ladder, dual-approved) and moved to `BACKLOG_DONE.md`.
 
 **Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
-certain, not merely theoretical.** **OAI-55, OAI-183, OAI-185**.
-OAI-55 fires on ordinary use of a query-string credential in `--base-url`: the secret persists into
-`jobs.db` and, via the delegate's unredirected stderr, into the session transcript on every
-`--background` submission — not attacker-triggerable, just how the code behaves. OAI-183 and OAI-185
+certain, not merely theoretical.** **OAI-183, OAI-185**.
+OAI-55 shipped 2026-08-19 (`BACKLOG_DONE.md`) and is dropped from this tier. OAI-183 and OAI-185
 are OAI-63's confirmed siblings, each reproduced by execution against the shipped fix: a worker can
 still send the wrong secret to the right endpoint (an `apiKeyEnv` repoint), and the authorized
 endpoint's own `baseUrl` can itself be secret-shaped and echo into a persisted failure record on
-connection failure. All three park-reviewed and kept because they are demonstrated, not merely
+connection failure. Both park-reviewed and kept because they are demonstrated, not merely
 foot-guns — contrast the credential items parked below (OAI-74, OAI-77, OAI-189, OAI-190), none of
 which is attacker-triggerable or reachable today.
 
@@ -675,39 +673,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   [ADR 014](adr/014-async-jobs.md) where the claim is made.
   **(3) is superseded by OAI-62**, which found the property is not merely untested but false at two
   sites, one of which kills a running worker.
-
-- **OAI-55** — Redact a credential carried in a `--base-url` query string. `normalizeBaseUrl`
-  preserves `url.search` verbatim, so `--base-url 'https://host/v1?api_key=…'` persists a **real
-  secret** into `jobs.db` and into the `transport` column every `/oai:status` reads. OAI-3 warns at
-  submission and relies on `0600`/`0700`, which was the user's explicit decision ("warn is fine, keep
-  going") and is recorded as such in [ADR 014](adr/014-async-jobs.md) — the alternative of refusing
-  outright would break a legitimate provider whose auth is query-string-only. The fix is to store the
-  query in two forms: what to send, and what to show. **Note the claim it repairs**: without the
-  warning, "the credential is never persisted" was simply untrue, and that sentence had been in the
-  plan for fourteen rounds before the gate caught it.
-  **Widened and part-corrected 2026-08-05 by the OAI-58 ladder, in three ways.**
-  **(1) ~~The warning itself prints the secret.~~ FIXED — verified against disk 2026-08-14 by the
-  backlog sweep.** `task-submit.mjs` `noteEndpointPersistence()` now takes **no argument** and
-  interpolates nothing: it describes the storage rather than the credential, because the code cannot
-  know which part of a URL is a secret. The sub-claim below is kept as the record of what was wrong.
-  ~~`task-submit.mjs:37-40` interpolates `profile.query`
-  verbatim. Executed: `Note: the base URL's query string (?api-key=sk-SUPER-SECRET-1234) is stored…`.~~
-  **The consumer, cited rather than assumed:** `commands/task.md:5` declares `allowed-tools: Bash(node:*)`
-  and `:57` invokes the companion with **no stderr redirection**, and the Bash tool returns stderr as
-  conversation content — the same channel the plugin deliberately uses for `substitutionNotice` and
-  `progress.mjs:76`. So the secret leaves the `0600` database and enters the session transcript, and the
-  model provider, on every subsequent turn. **The mitigation this item relies on (`0600`/`0700`) does not
-  apply to the channel the warning uses.** (Not determined: whether that tool result is persisted at
-  rest under `~/.claude/projects/**`. That bounds the blast radius, not whether it leaks.)
-  **(2) It is not a `--base-url`-only problem.** `buildProfile` splits the query off **any** profile's
-  `baseUrl` (`config.mjs:125,149-153`), so a `providers.json` profile with a query-string key triggers
-  this on every `--background` submission — where the secret was never on the command line and never in
-  the conversation, and this warning is what puts it there. For the `--base-url` form the echo adds
-  little, since `commands/task.md` already interpolates `$ARGUMENTS` verbatim.
-  **(3) This item overstates the display side.** "into the `transport` column every `/oai:status` reads"
-  is wrong about the reading: `job-render.mjs:243` *(line moved since filing; verified again
-  2026-08-17)* prints `transport.baseUrl`, which is query-free. The column holds the secret; nothing
-  renders it.
 
 - **OAI-56** — The prefill-overlap bound: a cancelled or dead job can hold the server for the
   remainder of its prefill after the queue has moved on. **Measured, not assumed** — LM Studio says so
