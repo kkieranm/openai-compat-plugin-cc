@@ -92,8 +92,21 @@ export function requireDatabaseSync() {
  */
 export const USER_VERSION = 1;
 
-/** The payload version stamped on rows this build writes. */
-export const ROW_SCHEMA_VERSION = 1;
+/**
+ * The payload version stamped on rows this build writes.
+ *
+ * Bumped to 2 for OAI-55: a `transport` may now carry `queryHash`/`querySalt`
+ * instead of a raw `query`, and an `auth` blob may now carry
+ * `apiKeyAuthorized`. No table change accompanies this — `USER_VERSION` stays
+ * 1, because `transport`/`auth` are JSON blob columns and this is a payload
+ * version, not a schema one. The justification is a better failure report,
+ * not a new safety property: an older build refusing a v2 row already refused
+ * it correctly under v1's own checks (`current.query !== ''` on the raw
+ * compare, or the missing key on the query-only case) — this bump just makes
+ * that refusal name the actual reason instead of reporting "no longer
+ * supplies a credential".
+ */
+export const ROW_SCHEMA_VERSION = 2;
 
 /**
  * Mirrors the shape of `configPath()` rather than sharing it: state is not

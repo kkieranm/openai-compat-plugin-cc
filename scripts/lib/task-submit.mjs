@@ -7,7 +7,7 @@
 // than turning into a job that fails quietly minutes later.
 import { randomUUID } from 'node:crypto';
 import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
-import { authPolicyFor } from './job-auth.mjs';
+import { authPolicyFor, queryCommitment, querySalt } from './job-auth.mjs';
 import { insertJob, markSpawned } from './job-record.mjs';
 import { terminalizeSpawnFailure } from './job-launch-outcome.mjs';
 import { persistRequest } from './job-request.mjs';
@@ -28,11 +28,19 @@ function digestsOf(files) {
 /**
  * Said out loud, because the alternative is a claim this plugin cannot make.
  *
- * `buildJob` persists the EFFECTIVE endpoint, so a `--base-url` carrying a
- * credential — `?api_key=…`, or a token sitting in the path, which
- * `normalizeBaseUrl` keeps in `baseUrl` — puts a real secret into persisted
- * state. Three things about this notice are deliberate, and each replaces a
- * wording an execution path falsified (`adr/019`):
+ * `buildJob` persists the EFFECTIVE endpoint, so an ad hoc `--base-url`
+ * carrying a credential — `?api_key=…`, or a token sitting in the path, which
+ * `normalizeBaseUrl` keeps in `baseUrl` regardless of how the endpoint was
+ * named — puts a real secret into persisted state. A query string on an
+ * endpoint resolved from `providers.json` no longer does: `buildJob` commits
+ * it instead of storing it raw (OAI-55). **"Named profile" is not the
+ * discriminator** — `--provider vendor --base-url <that vendor's own
+ * endpoint>?api_key=…` is a named profile whose query still lands on the raw
+ * path, because it takes `resolveProfile`'s `baseUrl` branch and comes back
+ * `adHoc`. The notice below is worded around where the endpoint came from,
+ * not around whether a provider was named. Three things about this notice are
+ * deliberate, and each replaces a wording an execution path falsified
+ * (`adr/019`):
  *
  * It takes **no argument**, because a function handed the URL is a function
  * that will eventually interpolate it: the version this replaces printed the
@@ -58,9 +66,31 @@ function digestsOf(files) {
  */
 function noteEndpointPersistence() {
   process.stderr.write(
-    'Note: if this submission creates a job record, its full endpoint — including any query string — ' +
-      'will be written to jobs.db; a later worker-start failure does not remove it.\n',
+    'Note: if this submission creates a job record, its endpoint will be written to jobs.db — a ' +
+      'query string on an endpoint given as --base-url, or a credential sitting in the URL path, is ' +
+      'written whole; a query string on an endpoint resolved from providers.json is committed, not ' +
+      'stored. A later worker-start failure does not remove it.\n',
   );
+}
+
+/**
+ * The raw-vs-commitment choice, made HERE where `prep.profile.adHoc` is still
+ * available — it can never be re-derived from the row later (`profile.adHoc`
+ * is not itself persisted). Non-`adHoc` implies a real `providers.json` entry
+ * (`requireProvider` throws otherwise), which is what makes re-resolving the
+ * query at worker time safe. An empty query always stays on the raw path even
+ * for a named profile: hashing it too would force a live config
+ * re-resolution — and therefore a drift refusal on an edited or removed
+ * profile — onto the no-auth-at-all case, which is the ordinary local setup;
+ * an empty string carries no credential to protect.
+ */
+function transportFor(profile) {
+  const query = profile.query ?? '';
+  if (!profile.adHoc && query) {
+    const salt = querySalt();
+    return { name: profile.name, baseUrl: profile.baseUrl, queryHash: queryCommitment(salt, query), querySalt: salt };
+  }
+  return { name: profile.name, baseUrl: profile.baseUrl, query };
 }
 
 function buildJob(prep) {
@@ -71,7 +101,7 @@ function buildJob(prep) {
     // The EFFECTIVE endpoint, not an origin: an origin drops the `/v1` path, the
     // query parameters and an explicit `--base-url`, so a worker rebuilding from
     // the provider name alone would call somewhere submission never validated.
-    transport: { name: prep.profile.name, baseUrl: prep.profile.baseUrl, query: prep.profile.query ?? '' },
+    transport: transportFor(prep.profile),
     auth: authPolicyFor(prep.profile),
     model: prep.model,
     contextLength: prep.contextLength,

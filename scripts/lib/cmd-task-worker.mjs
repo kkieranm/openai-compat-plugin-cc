@@ -36,13 +36,35 @@ const now = () => new Date().toISOString();
  * a profile edited after submission redirect a job that was already validated
  * against somewhere else. Only the secret is looked up fresh, and only when the
  * frozen endpoint still matches what the profile resolves to now (OAI-63).
+ *
+ * **On the commitment path the query itself comes from the resolver, not from
+ * the row** — `job.transport.query` does not exist there; the row carries only
+ * `queryHash`/`querySalt`. `resolveCredential` re-resolves the live query as
+ * part of its one config resolution, and this is where that re-resolved value
+ * finally reaches the request.
+ *
+ * **Fails closed if the resolved query comes back falsy on that path.** This
+ * is unambiguous rather than a guess: an empty query never takes the
+ * commitment path in the first place (`task-submit.mjs`'s `transportFor`
+ * keeps it raw), so `queryHash` present but a falsy resolved query always
+ * means a real failure — including the hand-edited row that carries
+ * `queryHash` under `auth.mode === 'none'`, where `resolveCredential` returns
+ * early and this is the only check left standing between that row and a
+ * silently unauthenticated request.
  */
 function transportProfile(job) {
+  const resolved = resolveCredential(job.auth, job.transport, job.schema_version);
+  const onHashPath = job.transport.queryHash !== undefined;
+  if (onHashPath && !resolved?.query) {
+    throw new UserError(
+      `credential-unavailable: job ${job.id} needs its query re-resolved but none came back. Run /oai:setup to see why.`,
+    );
+  }
   return {
     name: job.transport.name,
     baseUrl: job.transport.baseUrl,
-    query: job.transport.query || '',
-    apiKey: resolveCredential(job.auth, job.transport),
+    query: onHashPath ? resolved.query : job.transport.query || '',
+    apiKey: resolved?.apiKey,
   };
 }
 

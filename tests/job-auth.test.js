@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { writeFileSync } from 'node:fs';
-import { authPolicyFor, resolveCredential } from '../scripts/lib/job-auth.mjs';
+import { authPolicyFor, queryCommitment, querySalt, resolveCredential } from '../scripts/lib/job-auth.mjs';
 import { finish } from '../scripts/lib/job-record.mjs';
 import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
@@ -48,8 +48,38 @@ const TRANSPORT = { name: 'vendor', baseUrl: 'https://real.example/v1', query: '
 test('the policy records where a key was authorised, never the key', () => {
   const policy = authPolicyFor({ name: 'vendor', baseUrl: 'https://real.example/v1?tenant=7', apiKey: 'sk-a' });
 
-  assert.deepEqual(policy, { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example' });
+  assert.deepEqual(policy, {
+    mode: 'profile',
+    profile: 'vendor',
+    authorizedOrigin: 'https://real.example',
+    apiKeyAuthorized: true,
+  });
   assert.ok(!JSON.stringify(policy).includes('sk-a'), 'the credential must not reach the row');
+});
+
+// The widening this item adds: a profile with NO apiKey but a non-empty query
+// (and not ad hoc) still gets `mode: 'profile'`, so a worker can re-resolve the
+// query later — but `apiKeyAuthorized` records that no key was ever authorised,
+// which is the fact that stops a key gained later from being sent.
+test('a query-only profile is widened to carry provenance, with the key marked unauthorised', () => {
+  const policy = authPolicyFor({ name: 'vendor', baseUrl: 'https://real.example/v1', query: '?tenant=7' });
+
+  assert.deepEqual(policy, {
+    mode: 'profile',
+    profile: 'vendor',
+    authorizedOrigin: 'https://real.example',
+    apiKeyAuthorized: false,
+  });
+});
+
+// The widening is keyed on `!adHoc && query`, never on the query alone — an ad
+// hoc `--base-url` carrying any query string must stay `mode: 'none'`, or a
+// worker later sends its synthetic `custom` profile through `resolveProfile`
+// and fails every such job with `Unknown provider "custom"`.
+test('an ad hoc profile carrying a query string is never widened', () => {
+  const policy = authPolicyFor({ name: 'custom', baseUrl: 'http://127.0.0.1:1/v1', query: '?api-version=2024-02-01', adHoc: true });
+
+  assert.deepEqual(policy, { mode: 'none' });
 });
 
 test('no key at submission means no key later, whatever the config says by then', () => {
@@ -64,7 +94,45 @@ test('no key at submission means no key later, whatever the config says by then'
 
 test('the profile still pointing where the job was authorised supplies the key', () => {
   withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
-    assert.equal(resolveCredential(AUTHORISED, TRANSPORT), 'sk-a');
+    // AUTHORISED is the legacy (pre-`apiKeyAuthorized`) shape, so schemaVersion 1
+    // is what makes the legacy default apply and return the key.
+    assert.deepEqual(resolveCredential(AUTHORISED, TRANSPORT, 1), { apiKey: 'sk-a', query: '' });
+  });
+});
+
+// The fail-open regression two review rounds were spent finding: `AUTHORISED`
+// is the un-updated `{mode, profile, authorizedOrigin}` shape, with no
+// `apiKeyAuthorized` field at all — exactly what every row written before that
+// field existed looks like. Read literally against the new rule
+// (`auth.apiKeyAuthorized ?? (auth.mode === 'profile')` done wrong, or omitted),
+// such a row would return no key AND raise no refusal: an unauthenticated
+// request sent to an endpoint that was authorised with a key, reported
+// `completed` if the server answers. The legacy default must read this shape as
+// authorised. This must not be "fixed" by adding `apiKeyAuthorized: true` to
+// `AUTHORISED` — doing so would remove the only fixture this repo has for a
+// pre-field row and let a fail-open implementation pass silently.
+test('a legacy v1 auth blob with no apiKeyAuthorized still yields its key — the fail-open regression', () => {
+  assert.ok(
+    !('apiKeyAuthorized' in AUTHORISED),
+    'AUTHORISED must stay the un-updated legacy shape for this test to mean anything',
+  );
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    // The legacy default is scoped to schemaVersion === 1 — pass it explicitly,
+    // since that scoping is exactly what this test exists to prove.
+    assert.deepEqual(resolveCredential(AUTHORISED, TRANSPORT, 1), { apiKey: 'sk-a', query: '' });
+  });
+});
+
+// The legacy default is scoped to `schemaVersion === 1`, not to "the field is
+// missing" — a v2 row can legitimately carry `mode: 'profile'` with
+// `apiKeyAuthorized: false` (a query-only credential), so treating any missing
+// field as legacy-safe would silently authorize a key on a malformed,
+// partially written or hand-edited v2 row, reproducing the escalation one
+// layer down. `AUTHORISED` here stands in for such a row: same shape as the
+// v1 fixture above, but read with schemaVersion 2.
+test('a v2 auth blob missing apiKeyAuthorized does NOT fall back to the legacy default', () => {
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.deepEqual(resolveCredential(AUTHORISED, TRANSPORT, 2), { apiKey: undefined, query: '' });
   });
 });
 
@@ -115,7 +183,67 @@ test('identical nonempty queries on both sides still authorise', () => {
   const authorisedQuery = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example' };
   const transportQuery = { name: 'vendor', baseUrl: 'https://real.example/v1', query: '?tenant=a' };
   withConfig(vendorConfig('https://real.example/v1?tenant=a', 'sk-a'), () => {
-    assert.equal(resolveCredential(authorisedQuery, transportQuery), 'sk-a');
+    // Legacy-shaped auth (no apiKeyAuthorized) — schemaVersion 1 is what makes
+    // the default apply.
+    assert.deepEqual(resolveCredential(authorisedQuery, transportQuery, 1), { apiKey: 'sk-a', query: '?tenant=a' });
+  });
+});
+
+// The commitment path's own positive and negative controls: the raw-query
+// fixtures above exercise `transport.query` directly, but a row whose query was
+// committed at submission carries `queryHash`/`querySalt` instead, and nothing
+// above ever builds one.
+test('the commitment path authorises a matching query without the row ever storing it raw', () => {
+  const salt = querySalt();
+  const authorisedQuery = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example', apiKeyAuthorized: true };
+  const transportQuery = {
+    name: 'vendor',
+    baseUrl: 'https://real.example/v1',
+    queryHash: queryCommitment(salt, '?tenant=a'),
+    querySalt: salt,
+  };
+  withConfig(vendorConfig('https://real.example/v1?tenant=a', 'sk-a'), () => {
+    assert.deepEqual(resolveCredential(authorisedQuery, transportQuery), { apiKey: 'sk-a', query: '?tenant=a' });
+  });
+});
+
+test('the commitment path refuses a drifted query, same as the raw path', () => {
+  const salt = querySalt();
+  const authorisedQuery = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example', apiKeyAuthorized: true };
+  const transportQuery = {
+    name: 'vendor',
+    baseUrl: 'https://real.example/v1',
+    queryHash: queryCommitment(salt, '?tenant=a'),
+    querySalt: salt,
+  };
+  withConfig(vendorConfig('https://real.example/v1?tenant=b', 'sk-b'), () => {
+    assert.throws(
+      () => resolveCredential(authorisedQuery, transportQuery),
+      /credential-unavailable: provider "vendor" now resolves to a different endpoint than this job was authorised for/,
+    );
+  });
+});
+
+// `queryHash` must be tested for PRESENCE, not truthiness — a hand-edited row
+// carrying an empty-but-present hash must still take the commitment path and
+// refuse on a mismatch. Under truthiness this falls through to the raw
+// compare (`current.query !== (transport.query ?? '')`), and against a
+// query-less live profile that compare is `'' !== ''` — passing, and handing
+// back a key with no query ever having been verified at all.
+test('an empty but PRESENT queryHash still takes the commitment path, not the raw fallback', () => {
+  const authorisedQuery = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example', apiKeyAuthorized: true };
+  const transportQuery = {
+    name: 'vendor',
+    baseUrl: 'https://real.example/v1',
+    queryHash: '',
+    querySalt: '',
+  };
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.throws(
+      () => resolveCredential(authorisedQuery, transportQuery),
+      /credential-unavailable: provider "vendor" now resolves to a different endpoint than this job was authorised for/,
+      'a present-but-empty queryHash must refuse on a commitment mismatch, not fall through to the raw compare and silently authorise',
+    );
   });
 });
 
@@ -159,7 +287,9 @@ test('a profile that has since moved QUERY, same origin and path, cannot lend it
 test('an old-shape transport with no query field still matches a query-less profile', () => {
   withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
     const oldShapeTransport = { name: 'vendor', baseUrl: 'https://real.example/v1' };
-    assert.equal(resolveCredential(AUTHORISED, oldShapeTransport), 'sk-a');
+    // An old-shape TRANSPORT and an old-shape AUTH blob are the same row —
+    // schemaVersion 1.
+    assert.deepEqual(resolveCredential(AUTHORISED, oldShapeTransport, 1), { apiKey: 'sk-a', query: '' });
   });
 });
 
@@ -241,7 +371,10 @@ test('a profile deleted or stripped of its key since submission is a refusal, no
     assert.throws(() => resolveCredential(AUTHORISED, TRANSPORT), /provider "vendor" could not be resolved from the current config/);
   });
   withConfig(vendorConfig('https://real.example/v1', undefined), () => {
-    assert.throws(() => resolveCredential(AUTHORISED, TRANSPORT), /provider "vendor" no longer supplies a credential/);
+    // schemaVersion 1: without it, an un-authorized-for-key legacy row would
+    // now correctly return no key rather than throw — this test needs the
+    // "was authorized, key vanished" case specifically.
+    assert.throws(() => resolveCredential(AUTHORISED, TRANSPORT, 1), /provider "vendor" no longer supplies a credential/);
   });
 });
 
@@ -252,13 +385,17 @@ test('a profile deleted or stripped of its key since submission is a refusal, no
  * The blocker is a synthetic `running` row naming this test process as its
  * worker: a live pid blocks the queue and no reconciler will touch it, so the
  * window is opened and closed by hand rather than by a timer.
+ *
+ * `configFor` defaults to the keyed, query-less profile every existing caller
+ * relies on; a caller wanting a query-bearing or query-only profile passes its
+ * own, which is what puts a query-bearing job on the commitment path at all.
  */
-async function heldScenario() {
+async function heldScenario({ configFor = (server) => vendorConfig(server.baseUrl, 'key-a') } = {}) {
   const server = await startFakeServer((request, response) => {
     if (!request.url.includes('chat/completions')) respondJson(response, modelList('test-model'));
     else respondJson(response, completion('ok'));
   });
-  const { path: configPath } = writeConfig(vendorConfig(server.baseUrl, 'key-a'));
+  const { path: configPath } = writeConfig(configFor(server));
   const state = stateDir();
   const blocker = insertSynthetic(state, { id: 'blocker', state: 'running', workerPid: process.pid, beatAgoMs: 0 });
   const env = { OAI_PLUGIN_STATE: state };
@@ -342,5 +479,157 @@ test('the same fixture, config left alone, reaches the model carrying the key', 
     assert.equal(chats[0].headers.authorization, 'Bearer key-a');
   } finally {
     await scenario.server.close();
+  }
+});
+
+// A query-bearing sibling of the positive control just above: that one uses a
+// query-less `baseUrl`, so it only ever exercises the unchanged raw path. This
+// puts the job on the commitment path end to end — the row must carry
+// `queryHash`/`querySalt` rather than a raw query, and the worker must still
+// re-resolve and send the real query alongside the key.
+test('a query-bearing profile also reaches the model, carrying both the key and the re-resolved query', { skip: NEEDS_SQLITE }, async () => {
+  const scenario = await heldScenario({ configFor: (server) => vendorConfig(`${server.baseUrl}?tenant=a`, 'key-a') });
+  try {
+    const submitted = await scenario.submit();
+    assert.equal(submitted.status, 0, submitted.stderr);
+    const id = submitted.stdout.trim();
+    await waitForWaiter(scenario.state, id);
+    scenario.release();
+
+    const row = await waitForState(scenario.state, id, ['completed', 'failed']);
+    assert.equal(row.state, 'completed', JSON.stringify(row.failure));
+    assert.ok(row.transport.queryHash, `expected the commitment shape: ${JSON.stringify(row.transport)}`);
+    assert.ok(!('query' in row.transport), `a query-bearing named profile must not also store it raw: ${JSON.stringify(row.transport)}`);
+
+    const chats = scenario.chats();
+    assert.equal(chats.length, 1);
+    assert.equal(chats[0].headers.authorization, 'Bearer key-a');
+    assert.ok(chats[0].url.includes('tenant=a'), `expected the re-resolved query on the request: ${chats[0].url}`);
+  } finally {
+    await scenario.server.close();
+  }
+});
+
+// The escalation `authPolicyFor`'s widening must not honour: a query-only
+// profile (no `apiKey` at submission) that GAINS one while the job sits queued
+// must still send no key. "Sent no key" is satisfiable by a job that never
+// reached the model at all, which is the defect the positive control above
+// exists to close — so this needs the same anchor: `completed`, exactly one
+// chat completion, and no `authorization` header on it.
+test('a query-only profile that later gains an apiKey still sends no key', { skip: NEEDS_SQLITE }, async () => {
+  const scenario = await heldScenario({ configFor: (server) => vendorConfig(`${server.baseUrl}?tenant=q`, undefined) });
+  try {
+    const submitted = await scenario.submit();
+    assert.equal(submitted.status, 0, submitted.stderr);
+    const id = submitted.stdout.trim();
+    await waitForWaiter(scenario.state, id);
+
+    // Same endpoint, same query — only a key is added, exactly as an operator
+    // adding `apiKey` to `providers.json` between submission and the worker's
+    // turn would do.
+    writeFileSync(scenario.configPath, JSON.stringify(vendorConfig(`${scenario.server.baseUrl}?tenant=q`, 'sk-late')));
+    scenario.release();
+
+    const row = await waitForState(scenario.state, id, ['completed', 'failed']);
+    assert.equal(row.state, 'completed', JSON.stringify(row.failure));
+
+    const chats = scenario.chats();
+    assert.equal(chats.length, 1, `expected exactly one chat completion: ${JSON.stringify(scenario.server.requests.map((r) => r.url))}`);
+    assert.equal(chats[0].headers.authorization, undefined, `the late key leaked into the request: ${JSON.stringify(chats[0].headers)}`);
+  } finally {
+    await scenario.server.close();
+  }
+});
+
+// The hash-path fail-closed guard `transportProfile` carries, exercised end to
+// end: a hand-edited row can carry `queryHash` under `auth.mode === 'none'`
+// (`resolveCredential` returns early for that mode, resolving nothing), which
+// would otherwise be the one path left standing that could silently send an
+// unauthenticated request to an endpoint whose auth IS the query string.
+test('a hand-edited row carrying queryHash under auth.mode "none" fails closed rather than running unauthenticated', { skip: NEEDS_SQLITE }, async () => {
+  const server = await startFakeServer((request, response) => {
+    if (!request.url.includes('chat/completions')) respondJson(response, modelList('test-model'));
+    else respondJson(response, completion('ok'));
+  });
+  const state = stateDir();
+  const previous = process.env.OAI_PLUGIN_STATE;
+  process.env.OAI_PLUGIN_STATE = state;
+  try {
+    const salt = querySalt();
+    const seq = insertSynthetic(state, {
+      id: 'hand-edited',
+      transport: JSON.stringify({
+        name: 'vendor',
+        baseUrl: server.baseUrl,
+        queryHash: queryCommitment(salt, '?tenant=x'),
+        querySalt: salt,
+      }),
+      auth: JSON.stringify({ mode: 'none' }),
+    });
+
+    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    await assert.rejects(
+      () => runTaskWorker(['--seq', String(seq)]),
+      /credential-unavailable: job hand-edited needs its query re-resolved but none came back/,
+    );
+
+    assert.equal(
+      server.requests.filter((request) => request.url.includes('chat/completions')).length,
+      0,
+      'must never have reached the model',
+    );
+  } finally {
+    if (previous === undefined) delete process.env.OAI_PLUGIN_STATE;
+    else process.env.OAI_PLUGIN_STATE = previous;
+    await server.close();
+  }
+});
+
+// A v1 row is a raw `{name, baseUrl, query}` shape, WITH a key — and it must
+// still be executed correctly by this build. This needs a real worker, not a
+// unit test of `resolveCredential` alone: `transportProfile` is not exported,
+// so a `resolveCredential`-only test would never exercise the branch actually
+// being changed (`onHashPath ? resolved.query : job.transport.query || ''`).
+// "Executed correctly" is otherwise vacuously satisfiable — a job can complete
+// while sending neither the key nor the query — so this anchors on both
+// landing on the actual request.
+test('a v1 row with a raw query and a key is still executed correctly by a real worker', { skip: NEEDS_SQLITE }, async () => {
+  const server = await startFakeServer((request, response) => {
+    if (!request.url.includes('chat/completions')) respondJson(response, modelList('test-model'));
+    else respondJson(response, completion('ok'));
+  });
+  const query = '?tenant=v1';
+  const { path: configPath } = writeConfig(vendorConfig(`${server.baseUrl}${query}`, 'key-v1'));
+  const state = stateDir();
+  const previousConfig = process.env.OAI_PLUGIN_CONFIG;
+  const previousState = process.env.OAI_PLUGIN_STATE;
+  process.env.OAI_PLUGIN_CONFIG = configPath;
+  process.env.OAI_PLUGIN_STATE = state;
+  try {
+    const seq = insertSynthetic(state, {
+      id: 'v1-raw-query',
+      // The un-updated legacy `auth` shape too — no `apiKeyAuthorized` field —
+      // so this is also live coverage of the fail-open default reading a real
+      // row, not just the hand-built fixture above.
+      transport: JSON.stringify({ name: 'vendor', baseUrl: server.baseUrl, query }),
+      auth: JSON.stringify({ mode: 'profile', profile: 'vendor', authorizedOrigin: new URL(server.baseUrl).origin }),
+    });
+
+    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    await runTaskWorker(['--seq', String(seq)]);
+
+    const row = readJob(state, 'v1-raw-query');
+    assert.equal(row.state, 'completed', JSON.stringify(row.failure));
+
+    const chats = server.requests.filter((request) => request.url.includes('chat/completions'));
+    assert.equal(chats.length, 1);
+    assert.equal(chats[0].headers.authorization, 'Bearer key-v1', `the frozen row's key never reached the request: ${JSON.stringify(chats[0].headers)}`);
+    assert.ok(chats[0].url.includes('tenant=v1'), `the frozen raw query never reached the request: ${chats[0].url}`);
+  } finally {
+    if (previousConfig === undefined) delete process.env.OAI_PLUGIN_CONFIG;
+    else process.env.OAI_PLUGIN_CONFIG = previousConfig;
+    if (previousState === undefined) delete process.env.OAI_PLUGIN_STATE;
+    else process.env.OAI_PLUGIN_STATE = previousState;
+    await server.close();
   }
 });

@@ -190,11 +190,15 @@ one caught dynamic import classified at first use, so a runtime without that bui
 jobs alone instead of every command, and an unrecognised fault keeps its cause instead of being
 relabelled a stale Node.
 
-`task-submit.mjs` `noteEndpointPersistence()` warns that a background submission persists its whole
+`task-submit.mjs` `noteEndpointPersistence()` warns that a background submission persists its
 endpoint by **taking no argument, gating on nothing, and running before anything else writes to
 stderr** — the code cannot know which part of a URL is a secret, and `process.exit(2)` discards
 undrained stderr, so the notice describes the storage rather than the credential and is emitted where
-no preamble can crowd it out.
+no preamble can crowd it out. A query string on an endpoint resolved from `providers.json` is
+committed via `job-auth.mjs`'s `queryCommitment`/`querySalt` rather than stored (OAI-55), with
+key-authorization (`apiKeyAuthorized`) tracked separately from profile provenance so a query-only
+credential can be re-resolved without ever authorizing a key nothing granted at submission; a query
+on an endpoint given as `--base-url`, or a credential sitting in the URL path, is still written whole.
 
 `agents/oai-delegate.md` delegates as a **context broker rather than a forwarder** — it picks the
 smallest sufficient file set itself, spends at most two `task` submissions on at most one accepted

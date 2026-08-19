@@ -2,6 +2,7 @@
 //
 // The credential itself is never stored. What is stored is the *authorization
 // decision* — which is a different thing, and the difference is the whole point.
+import { randomBytes, createHash } from 'node:crypto';
 import { loadConfig, resolveProfile } from './config.mjs';
 import { UserError } from './errors.mjs';
 
@@ -14,6 +15,23 @@ function originOf(url) {
 }
 
 /**
+ * The one hash used by both the writer (`task-submit.mjs`) and the verifier
+ * below, so the two sides cannot drift. Not cryptographic in the sense of
+ * hiding the query forever — the commitment is only ever compared for
+ * equality, so any preimage-hiding function serves; the salt only makes each
+ * row cost its own offline search instead of falling to one precomputed
+ * table. `randomUUID` is the only other `node:crypto` use in this repo; this
+ * establishes the first hashing convention rather than assuming one exists.
+ */
+export function querySalt() {
+  return randomBytes(16).toString('hex');
+}
+
+export function queryCommitment(salt, query) {
+  return createHash('sha256').update(salt + query).digest('hex');
+}
+
+/**
  * Turn a resolved profile into a policy a worker can act on later.
  *
  * `mode: 'none'` covers both an open server and the case where `resolveProfile`
@@ -22,10 +40,29 @@ function originOf(url) {
  * profile will not be in `providers.json` when the worker looks — recording
  * `mode: 'profile'` there would turn a perfectly valid invocation into a
  * failure.
+ *
+ * **Profile provenance and key authorization are two separate facts.** A
+ * profile authenticated by query string alone has no `apiKey`, so it used to
+ * take the `mode: 'none'` branch above and lose the provenance a worker needs
+ * to re-resolve that query. Widening straight to `mode: 'profile'` would be a
+ * privilege escalation instead: a query-only profile that *gains* an `apiKey`
+ * while the job sits queued would then have that key sent, though none was
+ * authorized at submission. So this records `apiKeyAuthorized` alongside
+ * provenance rather than folding it into the mode, and the widening is keyed
+ * on `!profile.adHoc && profile.query` — never on the query alone, which
+ * would send an ad hoc `--base-url` row's synthetic `custom` profile through
+ * `resolveProfile` and fail every ad hoc job carrying any query string at all.
  */
 export function authPolicyFor(profile) {
-  if (!profile.apiKey) return { mode: 'none' };
-  return { mode: 'profile', profile: profile.name, authorizedOrigin: originOf(profile.baseUrl) };
+  if (profile.apiKey || (!profile.adHoc && profile.query)) {
+    return {
+      mode: 'profile',
+      profile: profile.name,
+      authorizedOrigin: originOf(profile.baseUrl),
+      apiKeyAuthorized: Boolean(profile.apiKey),
+    };
+  }
+  return { mode: 'none' };
 }
 
 /**
@@ -47,8 +84,37 @@ export function authPolicyFor(profile) {
  * needs no new persisted field: `transport` is already stored on every job for
  * an unrelated reason (making the request at all), so this closes the leak
  * without a schema change.
+ *
+ * **Resolves the profile exactly ONCE and returns `{apiKey, query}` together**
+ * — never a bare string, and never two separate calls into `resolveProfile`.
+ * A second call would risk a `providers.json` edit landing between the two,
+ * letting a job send one snapshot's key with another snapshot's query; the
+ * whole point of the frozen-endpoint binding is that the credential and the
+ * query it travels with came from the same resolution.
+ *
+ * **Key authorization and profile provenance are checked separately, per
+ * `authPolicyFor`.** `apiKeyAuthorized` is read with a legacy default —
+ * `auth.apiKeyAuthorized ?? (schemaVersion === 1 && auth.mode === 'profile')`
+ * — because every row written before this field existed encoded "a key was
+ * authorized" in the mode alone: `authPolicyFor` wrote `mode: 'profile'`
+ * only when `profile.apiKey` existed. Reading the field literally against
+ * such a row would make `Boolean(undefined)` false and return no key AND
+ * raise no refusal — an unauthenticated request sent where a key was
+ * authorized, which is the exact harm the refusal below exists to prevent.
+ * When no key was authorized at submission, a query-only profile that has
+ * since gained one still returns `apiKey: undefined` with no refusal — the
+ * escalation `authPolicyFor`'s docblock names.
+ *
+ * **The default is scoped to `schemaVersion === 1`, not to "the field is
+ * missing", on purpose** — a v2 row can legitimately carry `mode: 'profile'`
+ * with `apiKeyAuthorized: false` (a query-only credential), so treating any
+ * *missing* field as legacy-safe would silently authorize a key on a
+ * malformed, partially written or hand-edited v2 row, reproducing the exact
+ * escalation this field exists to close, one layer down. The caller supplies
+ * `schemaVersion` from the row it read; there is no route to it from `auth`
+ * or `transport` alone.
  */
-export function resolveCredential(auth, transport) {
+export function resolveCredential(auth, transport, schemaVersion) {
   if (!auth || auth.mode === 'none') return undefined;
 
   const target = originOf(transport?.baseUrl);
@@ -77,11 +143,16 @@ export function resolveCredential(auth, transport) {
     );
   }
 
-  // `transport.query` is always a string on a row written by this build, but a
-  // row from before `transport` carried `query` at all must not false-mismatch
-  // on `undefined !== ''`.
-  const transportQuery = transport.query ?? '';
-  if (current.baseUrl !== transport.baseUrl || current.query !== transportQuery) {
+  // `queryHash` present is a positive discriminator no historical row shape
+  // can carry, so it is tested for PRESENCE, not truthiness, and takes
+  // priority on a hand-edited row that somehow carries both. Absent, this is
+  // the unchanged raw compare — `transport.query` is always a string on a row
+  // written by this build, but a row from before `transport` carried `query`
+  // at all must not false-mismatch on `undefined !== ''`.
+  const queryMatches = transport.queryHash !== undefined
+    ? queryCommitment(transport.querySalt, current.query) === transport.queryHash
+    : current.query === (transport.query ?? '');
+  if (current.baseUrl !== transport.baseUrl || !queryMatches) {
     // Neither endpoint's raw value is echoed: some gateways embed a credential
     // in the PATH itself (not just the query), which normalizeBaseUrl does
     // nothing to forbid — the same "quote nothing raw" principle as the
@@ -91,8 +162,12 @@ export function resolveCredential(auth, transport) {
       `credential-unavailable: provider "${auth.profile}" now resolves to a different endpoint than this job was authorised for. Run /oai:setup to see why.`,
     );
   }
-  if (!current.apiKey) {
-    throw new UserError(`credential-unavailable: provider "${auth.profile}" no longer supplies a credential.`);
+  const apiKeyAuthorized = auth.apiKeyAuthorized ?? (schemaVersion === 1 && auth.mode === 'profile');
+  if (apiKeyAuthorized) {
+    if (!current.apiKey) {
+      throw new UserError(`credential-unavailable: provider "${auth.profile}" no longer supplies a credential.`);
+    }
+    return { apiKey: current.apiKey, query: current.query };
   }
-  return current.apiKey;
+  return { apiKey: undefined, query: current.query };
 }

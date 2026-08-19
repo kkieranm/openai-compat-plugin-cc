@@ -108,7 +108,7 @@ const SYNTHETIC = `
   INSERT INTO jobs (id, kind, state, schema_version, workspace, transport, auth, request, attachments,
                     created_at, spawned_at, started_at, last_beat_at, waiter_pid, worker_pid, model,
                     outcome, failure, cancel_requested_at)
-  VALUES (?, 'task', ?, ?, ?, '{"name":"fake","baseUrl":"http://127.0.0.1:1/v1","query":""}', '{"mode":"none"}',
+  VALUES (?, 'task', ?, ?, ?, ?, ?,
           ?, '[]', ?, ?, ?, ?, ?, ?, 'test-model', ?, ?, ?)
 `;
 
@@ -130,6 +130,15 @@ export function insertSynthetic(state, {
   waiterPid = null,
   workerPid = null,
   workspace = '/tmp',
+  // Both take an override so a caller can insert a row carrying a real
+  // credential-bearing `auth` blob (a legacy v1 shape, or a commitment
+  // carrying `queryHash`/`querySalt`) rather than the inert `mode: 'none'`
+  // default, which returns from `resolveCredential` at its first line and so
+  // exercises none of the authorization logic a test may want to drive a real
+  // worker through. Every existing caller omits both and keeps the literals
+  // below unchanged.
+  transport = '{"name":"fake","baseUrl":"http://127.0.0.1:1/v1","query":""}',
+  auth = '{"mode":"none"}',
   request = { messages: [{ role: 'user', content: 'synthetic' }] },
   startedAgoMs = null,
   beatAgoMs = null,
@@ -140,7 +149,7 @@ export function insertSynthetic(state, {
   const stamp = ago(agedMs);
   return withStore(state, (db) => {
     db.prepare(SYNTHETIC).run(
-      id, jobState, version, workspace, JSON.stringify(request),
+      id, jobState, version, workspace, transport, auth, JSON.stringify(request),
       stamp, stamp, ago(startedAgoMs), ago(beatAgoMs), waiterPid, workerPid,
       outcome && JSON.stringify(outcome), failure && JSON.stringify(failure), ago(cancelAgoMs),
     );
