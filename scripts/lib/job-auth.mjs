@@ -52,14 +52,29 @@ export function queryCommitment(salt, query) {
  * on `!profile.adHoc && profile.query` — never on the query alone, which
  * would send an ad hoc `--base-url` row's synthetic `custom` profile through
  * `resolveProfile` and fail every ad hoc job carrying any query string at all.
+ *
+ * **`credentialSource` is written only when a key was authorized (OAI-183), and the field
+ * is absent entirely — not `undefined`-valued — when it was not.** A query-only profile has
+ * no credential source to pin, and the existing escalation guard in `resolveCredential`
+ * already handles "no key was authorized" without needing one. Written unconditionally
+ * *within* the key-authorized arm, never via a conditional spread over the whole branch.
  */
 export function authPolicyFor(profile) {
-  if (profile.apiKey || (!profile.adHoc && profile.query)) {
+  if (profile.apiKey) {
     return {
       mode: 'profile',
       profile: profile.name,
       authorizedOrigin: originOf(profile.baseUrl),
-      apiKeyAuthorized: Boolean(profile.apiKey),
+      apiKeyAuthorized: true,
+      credentialSource: profile.credentialSource,
+    };
+  }
+  if (!profile.adHoc && profile.query) {
+    return {
+      mode: 'profile',
+      profile: profile.name,
+      authorizedOrigin: originOf(profile.baseUrl),
+      apiKeyAuthorized: false,
     };
   }
   return { mode: 'none' };
@@ -166,6 +181,39 @@ export function resolveCredential(auth, transport, schemaVersion) {
   if (apiKeyAuthorized) {
     if (!current.apiKey) {
       throw new UserError(`credential-unavailable: provider "${auth.profile}" no longer supplies a credential.`);
+    }
+    // **The credential SOURCE gate (OAI-183).** Placed after the refusal above, not before —
+    // a v3 row whose profile was stripped of its key keeps the more informative "no longer
+    // supplies a credential" message rather than this one.
+    //
+    // Legacy pass-through is scoped to the OLD version numbers LITERALLY (never `< 3` and
+    // never "the pin is missing"), mirroring `apiKeyAuthorized`'s own legacy default above and
+    // for the same reason: a malformed or future-version row must not fall into this path by
+    // accident. A row from schema_version 1 or 2 predates this field and keeps exactly
+    // today's behaviour — no source check at all.
+    if (schemaVersion !== 1 && schemaVersion !== 2) {
+      const pin = auth.credentialSource;
+      const pinValid = pin?.kind === 'inline'
+        || (pin?.kind === 'env' && typeof pin.name === 'string' && pin.name !== '');
+      // A missing or malformed pin fails closed rather than defaulting to the current
+      // source — defaulting would silently reproduce the OAI-183 gap under a migration or
+      // hand-edited-row gap. This can only fire on a corrupt or hand-edited row: a
+      // legitimately submitted key-authorized row always carries a pin, because
+      // `authPolicyFor` writes one exactly when `resolveApiKey` returned a key.
+      //
+      // The name compare is gated on the PIN's kind, never `current`'s — gating on
+      // `current`'s kind would let a defeated `kind` compare still refuse on a stale
+      // `pin.name`, which is not what this compare is for. `current.credentialSource` is
+      // read through optional chaining: a row that reaches here with no key at all would
+      // otherwise throw a `TypeError` instead of the intended refusal.
+      const kindMatches = pinValid && pin.kind === current.credentialSource?.kind;
+      const sourceMatches = kindMatches
+        && (pin.kind !== 'env' || pin.name === current.credentialSource?.name);
+      if (!sourceMatches) {
+        throw new UserError(
+          `credential-unavailable: provider "${auth.profile}" now resolves its credential from a different source than this job was authorised for. Run /oai:setup to see why.`,
+        );
+      }
     }
     return { apiKey: current.apiKey, query: current.query };
   }

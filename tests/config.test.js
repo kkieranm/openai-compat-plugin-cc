@@ -1,6 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBaseUrl, resolveProfile } from '../scripts/lib/config.mjs';
+import { loadConfig, normalizeBaseUrl, resolveProfile } from '../scripts/lib/config.mjs';
+import { writeConfig } from './helpers.mjs';
+
+/** Load the config with a scratch OAI_PLUGIN_CONFIG, restoring the env var after. */
+function tryLoadConfig(config) {
+  const { path } = writeConfig(config);
+  const previous = process.env.OAI_PLUGIN_CONFIG;
+  process.env.OAI_PLUGIN_CONFIG = path;
+  try {
+    return loadConfig();
+  } finally {
+    if (previous === undefined) delete process.env.OAI_PLUGIN_CONFIG;
+    else process.env.OAI_PLUGIN_CONFIG = previous;
+  }
+}
 
 const CONFIG = {
   defaultProvider: 'lmstudio',
@@ -139,4 +153,24 @@ test('apiKeyEnv reads the environment and fails loudly when unset', () => {
   assert.equal(resolveProfile(config, {}).apiKey, 'secret-value');
   delete process.env.OAI_TEST_KEY;
   assert.throws(() => resolveProfile(config, {}), /apiKeyEnv "OAI_TEST_KEY" but that variable is empty/);
+});
+
+// OAI-183: `apiKeyEnv` must be validated as a non-empty string at LOAD, not at
+// resolution — `resolveProfile` deletes `apiKeyEnv` before `buildProfile` runs
+// on the cross-endpoint `--base-url` path, so a check placed in `resolveApiKey`
+// would never see it there. `loadConfig` runs on every command, so this must
+// fire through it (`validateConfig`), not merely through `resolveProfile`.
+test('a non-string apiKeyEnv is refused at config load', () => {
+  const config = { providers: { p: { baseUrl: 'http://x.test/v1', apiKeyEnv: 7 } }, defaultProvider: 'p' };
+  assert.throws(() => tryLoadConfig(config), /Provider "p".*"apiKeyEnv": 7 — expected a non-empty string/);
+});
+
+test('an empty-string apiKeyEnv is refused at config load — keyed on presence, not truthiness', () => {
+  const config = { providers: { p: { baseUrl: 'http://x.test/v1', apiKeyEnv: '' } }, defaultProvider: 'p' };
+  assert.throws(() => tryLoadConfig(config), /Provider "p".*"apiKeyEnv": "" — expected a non-empty string/);
+});
+
+test('a profile with no apiKeyEnv at all still loads — the check is presence-gated, not always-on', () => {
+  const config = { providers: { p: { baseUrl: 'http://x.test/v1' } }, defaultProvider: 'p' };
+  assert.doesNotThrow(() => tryLoadConfig(config));
 });

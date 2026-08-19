@@ -105,8 +105,28 @@ export const USER_VERSION = 1;
  * compare, or the missing key on the query-only case) — this bump just makes
  * that refusal name the actual reason instead of reporting "no longer
  * supplies a credential".
+ *
+ * Bumped to 3 for OAI-183: an `auth` blob whose key was authorized may now
+ * carry `credentialSource` (`{kind:'env', name}` or `{kind:'inline'}`),
+ * pinning which credential SOURCE `resolveCredential` may use — closing a gap
+ * where a `providers.json` `apiKeyEnv` repoint, with the endpoint unchanged,
+ * could send a different secret to a job's authorized endpoint. Same posture
+ * as the 1→2 bump: no table change, no `USER_VERSION` change, no migration
+ * code (none exists in this repo; old rows stay readable via
+ * `isKnownVersion`'s `<=` and a read-time default scoped to the literal old
+ * version numbers). Downgrade posture is narrow, not blanket: an older build
+ * refuses to *abandon* a v3 row (`job-abandon.mjs`'s `isKnownVersion` gate),
+ * to *reconcile* one (`job-reconcile.mjs`), and treats it as `blocks` rather
+ * than `head` in the queue (`job-queue.mjs`) — those three are the only sites
+ * where `isKnownVersion` gates a MUTATION or a QUEUE decision. It does
+ * **not** refuse every mutation: that predicate does not gate
+ * `registerWaiter`, `markSpawned` or `finish`. Two further sites read it for
+ * DISPLAY, not enforcement — `job-render.mjs`'s foreign-version label and its
+ * `/oai:abandon` remedy line — and a foreign-version row is separately never
+ * pruned, via `job-retention.mjs`'s own `schema_version <= ?` clause rather
+ * than this predicate.
  */
-export const ROW_SCHEMA_VERSION = 2;
+export const ROW_SCHEMA_VERSION = 3;
 
 /**
  * Mirrors the shape of `configPath()` rather than sharing it: state is not

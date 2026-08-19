@@ -42,17 +42,48 @@ const vendorConfig = (baseUrl, apiKey) => ({
   },
 });
 
+const vendorEnvConfig = (baseUrl, apiKeyEnv) => ({
+  defaultProvider: 'vendor',
+  providers: {
+    vendor: { baseUrl, apiKeyEnv, defaultModel: 'test-model', contextLength: 8192, timeoutSeconds: 5 },
+  },
+});
+
+/**
+ * Set an env var for the duration of one call, restoring whatever was there
+ * before — `await`s `fn()` itself, since an async `fn` returns a pending
+ * promise synchronously and a bare `finally` would restore the env var before
+ * the awaited body (a real background submission and worker, for the OAI-183
+ * end-to-end case) ever runs.
+ */
+async function withEnv(name, value, fn) {
+  const previous = process.env[name];
+  process.env[name] = value;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  }
+}
+
 const AUTHORISED = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example' };
 const TRANSPORT = { name: 'vendor', baseUrl: 'https://real.example/v1', query: '' };
 
 test('the policy records where a key was authorised, never the key', () => {
-  const policy = authPolicyFor({ name: 'vendor', baseUrl: 'https://real.example/v1?tenant=7', apiKey: 'sk-a' });
+  const policy = authPolicyFor({
+    name: 'vendor',
+    baseUrl: 'https://real.example/v1?tenant=7',
+    apiKey: 'sk-a',
+    credentialSource: { kind: 'inline' },
+  });
 
   assert.deepEqual(policy, {
     mode: 'profile',
     profile: 'vendor',
     authorizedOrigin: 'https://real.example',
     apiKeyAuthorized: true,
+    credentialSource: { kind: 'inline' },
   });
   assert.ok(!JSON.stringify(policy).includes('sk-a'), 'the credential must not reach the row');
 });
@@ -136,6 +167,108 @@ test('a v2 auth blob missing apiKeyAuthorized does NOT fall back to the legacy d
   });
 });
 
+// OAI-183: the credential SOURCE gate. A repointed `apiKeyEnv` (or an
+// env/inline transition) between submission and execution must be refused,
+// but a legitimate rotation — a new value behind the SAME source — must not.
+const AUTHORISED_ENV_A = {
+  mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
+  apiKeyAuthorized: true, credentialSource: { kind: 'env', name: 'OAI183_KEY_A' },
+};
+const AUTHORISED_INLINE = {
+  mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
+  apiKeyAuthorized: true, credentialSource: { kind: 'inline' },
+};
+
+test('an apiKeyEnv repointed to a different variable, endpoint unchanged, is refused', async () => {
+  await withEnv('OAI183_KEY_A', 'sk-a', () => withEnv('OAI183_KEY_B', 'sk-b', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_B'), () => {
+      assert.throws(
+        () => resolveCredential(AUTHORISED_ENV_A, TRANSPORT, 3),
+        /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
+      );
+    });
+  }));
+});
+
+test('the same apiKeyEnv name with a rotated value still authorises', async () => {
+  await withEnv('OAI183_KEY_A', 'sk-a-rotated', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+      assert.deepEqual(resolveCredential(AUTHORISED_ENV_A, TRANSPORT, 3), { apiKey: 'sk-a-rotated', query: '' });
+    });
+  });
+});
+
+test('an inline apiKey edited in place still authorises — the documented scope boundary', () => {
+  withConfig(vendorConfig('https://real.example/v1', 'sk-edited'), () => {
+    assert.deepEqual(resolveCredential(AUTHORISED_INLINE, TRANSPORT, 3), { apiKey: 'sk-edited', query: '' });
+  });
+});
+
+test('an env-to-inline transition is refused', () => {
+  withConfig(vendorConfig('https://real.example/v1', 'sk-now-inline'), () => {
+    assert.throws(
+      () => resolveCredential(AUTHORISED_ENV_A, TRANSPORT, 3),
+      /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
+    );
+  });
+});
+
+test('an inline-to-env transition is refused', async () => {
+  await withEnv('OAI183_KEY_A', 'sk-now-env', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+      assert.throws(
+        () => resolveCredential(AUTHORISED_INLINE, TRANSPORT, 3),
+        /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
+      );
+    });
+  });
+});
+
+test('a v1 row with no source pin still authorises — legacy pass-through', () => {
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.deepEqual(resolveCredential(AUTHORISED, TRANSPORT, 1), { apiKey: 'sk-a', query: '' });
+  });
+});
+
+test('a v2 row with no source pin still authorises — legacy pass-through', () => {
+  const v2Authorised = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example', apiKeyAuthorized: true };
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.deepEqual(resolveCredential(v2Authorised, TRANSPORT, 2), { apiKey: 'sk-a', query: '' });
+  });
+});
+
+test('a v3 row with apiKeyAuthorized true and no source pin fails closed', () => {
+  const v3NoPin = { mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example', apiKeyAuthorized: true };
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.throws(
+      () => resolveCredential(v3NoPin, TRANSPORT, 3),
+      /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
+    );
+  });
+});
+
+test('a v3 row with a malformed source pin (bad kind) fails closed', () => {
+  const malformed = {
+    mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
+    apiKeyAuthorized: true, credentialSource: { kind: 'bogus' },
+  };
+  withConfig(vendorConfig('https://real.example/v1', 'sk-a'), () => {
+    assert.throws(() => resolveCredential(malformed, TRANSPORT, 3), /now resolves its credential from a different source/);
+  });
+});
+
+test('a v3 row with an env pin carrying an empty name fails closed', async () => {
+  const emptyName = {
+    mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
+    apiKeyAuthorized: true, credentialSource: { kind: 'env', name: '' },
+  };
+  await withEnv('OAI183_KEY_A', 'sk-a', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+      assert.throws(() => resolveCredential(emptyName, TRANSPORT, 3), /now resolves its credential from a different source/);
+    });
+  });
+});
+
 test('a profile that has since moved origin cannot lend its new key to the old endpoint', () => {
   // The informative leg. `authorizedOrigin` and the transport both came from
   // submission, so checking one against the other passes by construction; the
@@ -203,7 +336,10 @@ test('the commitment path authorises a matching query without the row ever stori
     querySalt: salt,
   };
   withConfig(vendorConfig('https://real.example/v1?tenant=a', 'sk-a'), () => {
-    assert.deepEqual(resolveCredential(authorisedQuery, transportQuery), { apiKey: 'sk-a', query: '?tenant=a' });
+    // schemaVersion 2: the commitment path's own subject, not the source pin —
+    // an unversioned call now falls into the new fail-closed branch and
+    // requires a pin this fixture never carries.
+    assert.deepEqual(resolveCredential(authorisedQuery, transportQuery, 2), { apiKey: 'sk-a', query: '?tenant=a' });
   });
 });
 
@@ -480,6 +616,33 @@ test('the same fixture, config left alone, reaches the model carrying the key', 
   } finally {
     await scenario.server.close();
   }
+});
+
+// OAI-183 end-to-end arm: every other env-sourced case in the matrix above is
+// unit-level (a hand-built `auth` blob) — this is the one that proves a real
+// `--background` submission under an `apiKeyEnv` profile actually persists an
+// `{kind:'env'}` pin, not just that `resolveCredential` accepts one if handed it.
+test('a real background submission under an apiKeyEnv profile persists an env-kind credential source', { skip: NEEDS_SQLITE }, async () => {
+  await withEnv('OAI183_E2E_KEY', 'key-env', async () => {
+    const scenario = await heldScenario({ configFor: (server) => vendorEnvConfig(server.baseUrl, 'OAI183_E2E_KEY') });
+    try {
+      const submitted = await scenario.submit();
+      assert.equal(submitted.status, 0, submitted.stderr);
+      const id = submitted.stdout.trim();
+      await waitForWaiter(scenario.state, id);
+      scenario.release();
+
+      const row = await waitForState(scenario.state, id, ['completed', 'failed']);
+      assert.equal(row.state, 'completed', JSON.stringify(row.failure));
+      assert.deepEqual(row.auth.credentialSource, { kind: 'env', name: 'OAI183_E2E_KEY' });
+
+      const chats = scenario.chats();
+      assert.equal(chats.length, 1);
+      assert.equal(chats[0].headers.authorization, 'Bearer key-env');
+    } finally {
+      await scenario.server.close();
+    }
+  });
 });
 
 // A query-bearing sibling of the positive control just above: that one uses a

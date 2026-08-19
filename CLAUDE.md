@@ -199,6 +199,10 @@ committed via `job-auth.mjs`'s `queryCommitment`/`querySalt` rather than stored 
 key-authorization (`apiKeyAuthorized`) tracked separately from profile provenance so a query-only
 credential can be re-resolved without ever authorizing a key nothing granted at submission; a query
 on an endpoint given as `--base-url`, or a credential sitting in the URL path, is still written whole.
+A key-authorized row also pins `credentialSource` (`{kind:'env', name}` or `{kind:'inline'}`) so a
+`providers.json` `apiKeyEnv` repoint — a different secret behind the job's unchanged, authorized
+endpoint — is refused at resolution, while an ordinary value rotation behind the same source is not
+(OAI-183).
 
 `agents/oai-delegate.md` delegates as a **context broker rather than a forwarder** — it picks the
 smallest sufficient file set itself, spends at most two `task` submissions on at most one accepted

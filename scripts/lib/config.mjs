@@ -135,6 +135,22 @@ function validateConfig(config, path) {
     if (!profile || typeof profile.baseUrl !== 'string' || !profile.baseUrl) {
       throw new UserError(`Provider "${name}" in ${path} needs a "baseUrl" string.`);
     }
+    // Checked HERE, at load, not in `resolveApiKey` (OAI-183) — `resolveProfile` deletes
+    // `apiKeyEnv` from the raw profile before `buildProfile` runs on the cross-endpoint
+    // `--base-url` branch, so a check placed in `resolveApiKey` would never see it on that
+    // path. Keyed on PRESENCE (`in`), not truthiness: an empty string is falsy and a
+    // truthiness-gated check would silently accept it. `process.env[profile.apiKeyEnv]`
+    // coerces its subscript, so a non-string name resolves *some* env var rather than
+    // failing to resolve one — refusing the shape here is what stops that from ever tagging
+    // a job with a name that is not a name. This runs on every command, since `loadConfig`
+    // does, not only submission — a profile with `apiKeyEnv: ""` beside an inline `apiKey`
+    // worked today by falling through to the inline key, and now refuses everywhere; an
+    // empty `apiKeyEnv` is almost certainly a typo, and failing loud on it is the point.
+    if ('apiKeyEnv' in profile && (typeof profile.apiKeyEnv !== 'string' || !profile.apiKeyEnv)) {
+      throw new UserError(
+        `Provider "${name}" in ${path} has "apiKeyEnv": ${JSON.stringify(profile.apiKeyEnv)} — expected a non-empty string.`,
+      );
+    }
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
     for (const key of [
@@ -241,20 +257,36 @@ function sameEndpoint(a, b) {
   }
 }
 
-/** Resolve the API key without ever returning it to display code. */
+/**
+ * Resolve the API key without ever returning it to display code — and say which SOURCE
+ * supplied it (OAI-183). `resolveCredential` needs this to tell a legitimate key rotation
+ * (a new value behind the same source) from an `apiKeyEnv` repoint or an env/inline
+ * transition (a different source entirely) — the value alone cannot distinguish them, and
+ * the credential itself is deliberately never persisted (see job-auth.mjs).
+ *
+ * `resolveApiKey` has exactly ONE caller (`buildProfile`, directly below) and `authPolicyFor`'s
+ * only profile source is `resolveProfile` → `buildProfile` — that is what makes "a resolved
+ * key implies a source tag" hold, and what makes job-auth.mjs's fail-closed refusal
+ * unreachable for a legitimately submitted row. A future second caller of `resolveApiKey`
+ * that does not carry `credentialSource` through would quietly break that invariant.
+ */
 function resolveApiKey(profile, name) {
   if (profile.apiKeyEnv) {
     const key = process.env[profile.apiKeyEnv];
     if (!key) {
       throw new UserError(`Provider "${name}" sets apiKeyEnv "${profile.apiKeyEnv}" but that variable is empty.`);
     }
-    return key;
+    return { apiKey: key, credentialSource: { kind: 'env', name: profile.apiKeyEnv } };
   }
-  return profile.apiKey || undefined;
+  if (profile.apiKey) {
+    return { apiKey: profile.apiKey, credentialSource: { kind: 'inline' } };
+  }
+  return { apiKey: undefined, credentialSource: undefined };
 }
 
 export function buildProfile(name, rawProfile) {
   const { baseUrl, query } = normalizeBaseUrl(rawProfile.baseUrl);
+  const { apiKey, credentialSource } = resolveApiKey(rawProfile, name);
   return {
     name,
     baseUrl,
@@ -274,7 +306,8 @@ export function buildProfile(name, rawProfile) {
     // no estimate is offered at all — see `eta.mjs`, which refuses to invent one.
     prefillTokensPerSecond: rawProfile.prefillTokensPerSecond,
     generationTokensPerSecond: rawProfile.generationTokensPerSecond,
-    apiKey: resolveApiKey(rawProfile, name),
+    apiKey,
+    credentialSource,
   };
 }
 
