@@ -1,3 +1,43 @@
+## 2026-08-20 — OAI-183 shipped: pin the credential SOURCE a background job was authorized for (`f1d1982`)
+
+- **OAI-183** — Split from OAI-63 2026-08-17: a worker could still send the wrong secret to the right
+  endpoint via a `providers.json` `apiKeyEnv` repoint between submission and execution, since OAI-63's
+  endpoint-vs-endpoint compare passes it through unchanged. The design fork was whether to pin the
+  credential *value* (a hash) or its *source* (which env var, or inline) — Codex's decisive steer,
+  taken over a value hash: source pinning preserves legitimate key rotation (a new value behind an
+  unchanged source keeps working), while a value hash would strand every job still queued across an
+  ordinary rotation.
+  **Shipped**: `authPolicyFor` persists a tagged `credentialSource` (`{kind:'env', name}` or
+  `{kind:'inline'}`) at submission, written only when a key was authorized; `resolveCredential`
+  enforces it at resolution — an `apiKeyEnv` repoint or an env/inline transition refuses, an ordinary
+  value rotation behind the same source still runs. `ROW_SCHEMA_VERSION` bumped 2→3; a row from
+  `schema_version` 1 or 2 keeps today's behaviour unchanged (no source check at all); a v3 row with a
+  missing or malformed pin fails closed rather than defaulting to the current source. `apiKeyEnv` is
+  now validated as a non-empty string at config load (`validateConfig`, not `resolveApiKey` — the
+  cross-endpoint `--base-url` scrub deletes `apiKeyEnv` before `resolveApiKey` would ever see it).
+  **Deliberate, documented scope boundary**: the pin freezes the credential *slot*, not the secret
+  *value* — an inline `apiKey` edited in place still passes, the same rotation-safety property as the
+  env case, consistent with the codebase's standing rule that a credential is never persisted or
+  value-pinned. A test asserts this passes on purpose.
+  **Process**: probe (Codex, 4/4 claims verified), grill with Codex's steer on two design forks, six
+  rounds of a dual-approved plan gate (Codex + an independent Claude verdict subagent, neither shown
+  the other's reply) — every round found a real defect in the plan text and folded it in, none
+  reopened the design itself. Two mutation checks proved the `kind` and `name` comparisons are
+  independently load-bearing (a single mutation cannot cover both flagship tests, since the repoint
+  case has both pins at `kind:'env'`). Full review-ladder pass, dual-approved: one accepted, ship-safe
+  finding (a `job-store.mjs` docblock claim about which files gate on `isKnownVersion` was not
+  exhaustive — corrected; fix confined to exempt descriptive-prose surface, non-blocking); two
+  dismissed (the already-settled inline-value scope boundary re-raised independently by Codex's
+  adversarial pass; a suggested code simplification that would have discarded a mutation-detectability
+  property proven necessary in this same session); one noted in the review transcript rather than
+  filed to the tracker — a hand-edited-`jobs.db` `schema_version` forgery, which requires a threat
+  model (local SQLite write access) this subsystem defends against nowhere, which OAI-183 narrows
+  rather than worsens, and which fails the repo's own filing-worth bar (no dated instance, purely
+  hypothetical).
+  **Residue**: none — every finding raised across probe, plan gate and review ladder was fixed,
+  dismissed with reasoning, or explicitly noted as not clearing the filing bar. No item deferred, no
+  item left open at approval.
+
 ## 2026-08-19 — OAI-55 shipped: named-profile query credential no longer persisted raw (`581ac7b`)
 
 - **OAI-55** — The item's original filed framing had two halves: the secret persisting into

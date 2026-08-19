@@ -31,13 +31,14 @@ open plan and uncommitted diff in the tree at review time). It has since shipped
 review-ladder, dual-approved) and moved to `BACKLOG_DONE.md`.
 
 **Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
-certain, not merely theoretical.** **OAI-183, OAI-185**.
-OAI-55 shipped 2026-08-19 (`BACKLOG_DONE.md`) and is dropped from this tier. OAI-183 and OAI-185
-are OAI-63's confirmed siblings, each reproduced by execution against the shipped fix: a worker can
-still send the wrong secret to the right endpoint (an `apiKeyEnv` repoint), and the authorized
-endpoint's own `baseUrl` can itself be secret-shaped and echo into a persisted failure record on
-connection failure. Both park-reviewed and kept because they are demonstrated, not merely
-foot-guns — contrast the credential items parked below (OAI-74, OAI-77, OAI-189, OAI-190), none of
+certain, not merely theoretical.** **OAI-185**.
+OAI-55 shipped 2026-08-19 (`BACKLOG_DONE.md`) and is dropped from this tier. OAI-183 shipped
+2026-08-20 (`BACKLOG_DONE.md`) — a worker sending the wrong secret to the right endpoint via an
+`apiKeyEnv` repoint is now refused, via a tagged credential-source pin. OAI-185 is OAI-63's other
+confirmed sibling, reproduced by execution against the shipped fix: the authorized endpoint's own
+`baseUrl` can itself be secret-shaped and echo into a persisted failure record on connection failure.
+Park-reviewed and kept because it is demonstrated, not merely
+a foot-gun — contrast the credential items parked below (OAI-74, OAI-77, OAI-189, OAI-190), none of
 which is attacker-triggerable or reachable today.
 
 **Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-115,
@@ -926,35 +927,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   re-read before deciding whether it still holds. Needs a probe before a plan: whether this is a
   one-line relaxation of that agent's own rule, or whether the rule exists for a reason that a per-call
   override would defeat.
-
-- **OAI-183** — **A worker can still send the wrong secret to the right endpoint.** Split from OAI-63
-  2026-08-17 by an independent reviewer during that item's review-ladder pass, after OAI-63's own
-  filed text ("Confirmed variants... an `apiKeyEnv` swap") turned out to already document this as a
-  proven variant, not a hypothetical. Reproduced against OAI-63's own patched `resolveCredential`:
-  `auth.profile`'s `baseUrl`/`query` stay frozen and unchanged between submission and execution, but
-  its `apiKeyEnv` is repointed to a different environment variable in `providers.json` — the
-  endpoint-vs-endpoint compare OAI-63 added passes (`current.baseUrl === transport.baseUrl`), and the
-  worker sends whatever secret the new env var now holds to the job's original, unmoved endpoint.
-  **Why this is not the same fix widened:** OAI-63's fix works because the endpoint is data already
-  frozen on the row (`job.transport`) for an unrelated reason, so comparing against it costs no schema
-  change. There is no equivalent already-persisted value for "the credential identity intended at
-  submission" — the credential itself is deliberately never stored (`job-auth.mjs`'s own header
-  comment). A pin would need either a new persisted field naming what was intended (e.g. the
-  `apiKeyEnv` name or a profile fingerprint, not the secret) or a hash of the resolved key at
-  submission time to compare against re-resolution — either way a `schema_version` bump and a
-  migration story for rows already written, exactly the payload decision OAI-63's own "why this is not
-  a batch fix" line described.
-  **The live design tension a fix here must resolve first:** a worker re-resolving the credential
-  fresh rather than storing it is the whole point of the current design (per the header comment above)
-  — and legitimate key rotation *is* "a different secret behind an unchanged endpoint". Any
-  value-identity pin that refuses on drift also refuses a rotated key, stranding every job still
-  queued across a rotation event. The reproduced exploit is an `apiKeyEnv` *repoint* (the config field
-  naming a different variable) rather than the same variable's value changing underneath it — which
-  is the one thing distinguishable from rotation without storing or fingerprinting the secret itself:
-  persist the `apiKeyEnv` **name** (never its value) in the auth policy at submission and compare names
-  at resolution. That is a candidate, not a decided plan — it still needs the schema/migration
-  decision above and a grill on whether name-drift is the right boundary or too narrow (it does not
-  catch a literal `apiKey` value edited in place, only an `apiKeyEnv` repoint).
 
 - **OAI-184** — **`cmd-task-worker.mjs`'s `runJob(db, seq, job)` never uses `db` or `seq`.** Found by
   Codex during OAI-63's review-ladder pass 6, on a file OAI-63's diff only touched by one docblock
