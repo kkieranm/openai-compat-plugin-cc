@@ -54,10 +54,19 @@
   bug. Every salvage attempt fails gracefully to the ordinary failure report (tier 1's partial still
   attached) and every success is loudly labelled — nothing here can silently misrepresent a truncated
   review as a complete one, whether or not the override actually works on a given model.
-  **Live verification**: a re-run of the 11 commits that failed with `deadline-timeout` in the
-  2026-08-18 overnight sweep, at the new 3600s cap with salvage live, launched 2026-08-19 against a
-  real LM Studio server (`bench/results/oai138-salvage-reverify-2026-08-19/`) — see the session record
-  for its outcome.
+  **Live verification, completed 2026-08-19** (`bench/results/oai138-salvage-reverify-2026-08-19/`):
+  re-ran the 11 commits that failed with `deadline-timeout` in the 2026-08-18 overnight sweep, at the
+  new 3600s cap, against a real LM Studio server. **9 of 11 now complete successfully** — the doubled
+  cap alone was sufficient; none of the 9 needed salvage (`salvaged: false` on every one), they simply
+  finished within the extended budget with real findings (0-4 per commit). **2 of 11
+  (`6b3fead3`, `d1f3e2c8`) still fail, but the failure mode changed**: `token-exhaustion` rather than
+  `deadline-timeout` — given twice the time the model reasons twice as long and still exhausts the
+  reply-token budget before writing findings. That is OAI-115 (reply-token starvation), already
+  tracked, not a new defect. **Salvage never fired in this run** — none of the 11 commits landed in
+  its trigger shape (`deadline-timeout` specifically) at the new cap, so this run is real evidence
+  Change 1 alone recovers most of this corpus, but gives no live evidence either way on salvage's own
+  effectiveness. That remains exactly the disclosed, already-accepted gap above; a future overnight
+  sweep hitting a genuine `deadline-timeout` at 3600s is what would finally exercise it live.
   Shipped `64ce8e2`. `npm test` green, 1027/1027, verified in the committed tree.
 
 ## 2026-08-19 — closed by the user-directed backlog review
