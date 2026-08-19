@@ -1,3 +1,65 @@
+## 2026-08-19 — OAI-138 shipped: doubled `--max-seconds`, added salvage (`64ce8e2`)
+
+- **OAI-138** — **Half the eligible corpus was being lost to a per-commit deadline that was never
+  calibrated for it, and everything the model had already reasoned through at the deadline was
+  discarded.** User-prioritized 2026-08-19: "double the max seconds, and salvage." Full prior
+  disposition (cap value, right-censoring argument, the four-commit probe, the throughput
+  correlation) stays in `evidence/138.md`, unchanged. This entry records what actually shipped.
+  **Change 1**: `bench/review-sweep.mjs`'s per-commit `DEFAULTS.maxSeconds` doubled from 1800 to 3600.
+  **Change 2 (salvage)**: tier 1 — `scripts/lib/stream-collect.mjs`'s `collectStream` now attaches
+  whatever partial `content`/`reasoning` had already streamed onto any failure it catches, instead of
+  discarding it (same move, same reasoning as the pre-existing `.timings` attachment). Surfaced as a
+  `partial` field on the JSON error envelope (`scripts/lib/review-report.mjs`'s `errorReport`) and
+  carried onto a bench sweep's failed-entry classification (`bench/lib/outcome.mjs`'s new
+  `partialFrom`, `bench/lib/sweep-outcome.mjs`'s `failure()`).
+  Tier 2 — `scripts/lib/review-request.mjs`'s new `trySalvage`, called from both of `requestFindings`'s
+  catch sites (the ordinary/`isFormatRejection`-fallback path via `unconstrained()`, and the
+  `--structured-output` path directly), fires exactly one bounded follow-up chat completion when the
+  failure is specifically `deadline-timeout` with substantial partial reasoning (500+ chars) and
+  empty/near-empty partial content: a genuine 4-message array (original system+user unchanged, a
+  synthetic assistant turn carrying the partial reasoning, a new user turn asking the model to
+  conclude now), on its own independent 300-second budget (`SALVAGE_MAX_MS`, never reusing the
+  original `--max-seconds`), re-validated against the context window before sending (refuses rather
+  than sends unchecked if the grown prompt no longer fits). On success, tagged `salvaged: true` and
+  threaded through every findings-rendering surface (JSON envelope, text report's parsed and
+  unparsed-reply branches, bench sweep Markdown report) as a visible, unmissable warning — the item's
+  own non-negotiable constraint: *"a salvaged review must never read as an ordinary complete one."*
+  `retried` (`review-report.mjs`'s `runTimings`) now derives from the shared ledger's total entry
+  count rather than the last completion call's own `requestCount`, so a review that failed once then
+  salvaged successfully correctly reports `retried: true`.
+  **Review-ladder: 8 discovery passes (Claude scouts/reviewers + Codex), each finding and fixing one
+  real, progressively narrower defect** before converging: (1) text-report caveat gap for a salvaged
+  unparsed reply; (2) missing context-window recheck before sending the follow-up; (3) two real Codex
+  findings — `--structured-output` bypassed salvage entirely (its request path never called
+  `trySalvage`), and a successful salvage misreported `retried: false`; (4) the follow-up claimed a
+  JSON shape was "already asked for" when, for the `--structured-output` path, no message had ever
+  actually stated it (only a grammar the follow-up doesn't reapply) — fixed by having `trySalvage`
+  always state the shape itself via `schemaInstruction(findingsFirst(schema))`; (5) that same
+  follow-up needed to explicitly override a stale, contradicting system-message instruction
+  (`ANALYSIS_FIRST`) rather than silently embedding a conflicting shape; (6)-(8) three successive
+  test-completeness gaps in the regression coverage for fix (5), each found by Codex and closed in
+  turn (a regex that only matched a fragment of the override sentence; `.includes()` proving presence
+  but not adjacency to the schema instruction that followed it; a missing message-count assertion that
+  let a stray inserted turn go undetected). **Dual-approved** at the final digest by Codex and an
+  independent Claude verdict subagent, neither shown the other's reply.
+  **Known, disclosed, user-accepted residual limitation** — not a defect, a decision: the override
+  sentence's effectiveness against a real instruction-hierarchy-aware model (system messages typically
+  outweigh user messages) cannot be guaranteed by a stateless chat-completions API. The user was
+  offered a choice between shipping this best-effort mitigation or pursuing a much larger restructure
+  of `review.mjs`'s shared system-prompt construction (touching every review path, risking the
+  prefix-cache property `adr/009` — since deleted, see OAI-159 — specifically engineered for), and
+  chose to ship as-is. Consistent with an earlier-accepted result in the same feature: a live test
+  against a real LM Studio server showed 0/2 salvage recoveries, attributed to genuine model behavior
+  (a reasoning model restarting its own reasoning despite instructions) rather than a construction
+  bug. Every salvage attempt fails gracefully to the ordinary failure report (tier 1's partial still
+  attached) and every success is loudly labelled — nothing here can silently misrepresent a truncated
+  review as a complete one, whether or not the override actually works on a given model.
+  **Live verification**: a re-run of the 11 commits that failed with `deadline-timeout` in the
+  2026-08-18 overnight sweep, at the new 3600s cap with salvage live, launched 2026-08-19 against a
+  real LM Studio server (`bench/results/oai138-salvage-reverify-2026-08-19/`) — see the session record
+  for its outcome.
+  Shipped `64ce8e2`. `npm test` green, 1027/1027, verified in the committed tree.
+
 ## 2026-08-19 — closed by the user-directed backlog review
 
 - **OAI-131** — ANSWERED, no action needed: `idle-timeout` was never observed across 22 failures during the OAI-9-family model-matrix run. Closed 2026-08-19 in the user-directed backlog review as a settled finding, not deferred work.

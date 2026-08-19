@@ -26,8 +26,9 @@ parking 41 of 112; this pass instead walked all 69 items that survived it, tier 
 user deciding keep or park directly against each item's existing text. **28 stayed live; 40 parked;
 1 (OAI-131) closed as an answered question; OAI-160 split, keeping only its one live defect and
 parking the rest as OAI-191.** See `BACKLOG_PARKED.md`'s 2026-08-19 section for every reopening bar.
-**OAI-138 was explicitly NOT reviewed for closure** — it is mid-implementation (an open plan and
-uncommitted diff in the tree at review time) and stays live regardless of tier position.
+**OAI-138 was explicitly NOT reviewed for closure at that sweep** — it was mid-implementation (an
+open plan and uncommitted diff in the tree at review time). It has since shipped (2026-08-19, 8-pass
+review-ladder, dual-approved) and moved to `BACKLOG_DONE.md`.
 
 **Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
 certain, not merely theoretical.** **OAI-55, OAI-183, OAI-185**.
@@ -42,7 +43,7 @@ foot-guns — contrast the credential items parked below (OAI-74, OAI-77, OAI-18
 which is attacker-triggerable or reachable today.
 
 **Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-115,
-OAI-116, OAI-156, OAI-113, OAI-114, OAI-59, OAI-57, OAI-138**.
+OAI-116, OAI-156, OAI-113, OAI-114, OAI-59, OAI-57**.
 OAI-115 leads: `max_tokens` is a shared pool, so a large target starves the reply entirely — measured
 model-modulated (MoE 4-5/6 cases, dense 1/6) with a floor now sized at 1-2k tokens from real usage
 data. OAI-116 is next and small: the starvation path records no `attempts[]`, which is what blocks
@@ -51,10 +52,10 @@ answer discarded at the parser, observed once. OAI-113 and OAI-114 are self-cont
 — a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
 regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
 restoring base behavior and ADR 003's own guarantee). OAI-59 is `/oai:result` rendering `undefined`
-on a shape it doesn't understand; OAI-57 is the matching `--json` gap, half-shipped already. OAI-138
-is mid-implementation (see header note above) — raising `--max-seconds` and adding partial-answer
-salvage on deadline — and sits here because it is this tier's dominant failure mode in the field
-(15/34 commits lost to deadline-timeout, 8 more to starvation, in the last overnight sweep).
+on a shape it doesn't understand; OAI-57 is the matching `--json` gap, half-shipped already.
+**OAI-138 shipped 2026-08-19** (doubled `--max-seconds`, added partial-answer salvage on deadline —
+see `BACKLOG_DONE.md`) — it was this tier's dominant field failure mode (15/34 commits lost to
+deadline-timeout, 8 more to starvation, in the overnight sweep that filed it).
 
 **Tier 3 — what shipping Stage 2 left behind, still live.** **OAI-85, OAI-86, OAI-56**.
 OAI-85: `/oai:result` never shows "context window unknown," so an unarmed size guard is invisible on
@@ -118,7 +119,7 @@ Every ID this file has ever issued still resolves; nothing was deleted. **Two di
 | **OAI-6** | *shipped* | Streaming output for `/oai:task`. **Recovered 2026-08-13 by the sweep**, which found it cited by OAI-13 and resolving NOWHERE — it predates the done-file convention. Shipped: `scripts/lib/stream-collect.mjs`, and `http.mjs:157` requests `text/event-stream`. |
 | **OAI-8** | *shipped* | Liveness while a run is in progress. Same recovery, cited by OAI-9. Shipped: `scripts/lib/progress.mjs`, which renders a prefill-aware elapsed line. |
 
-Moved out of the live list rather than absorbed: **OAI-51**, **OAI-78** and **OAI-33** to `BACKLOG_DONE.md`,
+Moved out of the live list rather than absorbed: **OAI-51**, **OAI-78**, **OAI-33** and **OAI-138** to `BACKLOG_DONE.md`,
 **OAI-84** to `BACKLOG_DONE.md` as a SPLIT — its two repairs shipped and were verified on disk by the
 2026-08-13 sweep, while its only live remainder, the withdrawn candidate-selection design, was carried
 into **OAI-112**, which cannot close without it. One id, one home: read OAI-84 in the done file.
@@ -860,107 +861,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   that answered in the same run. So this is not an artifact of how `bench` invokes the CLI: **4,152
   seconds of real work left no attempt record at all**. Evidence in
   `bench/results/sweep-2026-08-13-overnight/review-sweep-2026-08-13T21-57-52-135Z.ledger.jsonl`.
-
-- **OAI-138** — **Half the eligible corpus was lost to a per-commit cap that was never calibrated for
-  it: 20 of 40 commits died on `deadline-timeout`. THE CAP HALF HAS SHIPPED; SALVAGE HAS NOT.**
-  *(Status corrected 2026-08-13 by the backlog sweep, verified against disk: `review-sweep.mjs:48` now
-  reads `maxSeconds: 1800` carrying the ADR 021 comment, so the decision recorded below at "CAP VALUE:
-  1,800s, PROVISIONALLY" is **landed**, not pending. The sweep also confirmed **salvage-on-loss does
-  not exist** — nothing under `bench/` implements it, and a length-limited completion is still actively
-  EXCLUDED from scoring at `run-buckets.mjs:35-37` and `case-rows.mjs:187,197`. So what remains live
-  here is salvage alone, and its design grill.)* Filed 2026-08-10 from
-  `sweep-2026-08-09-overnight`, the first sweep run to completion against a decided model
-  (`qwen/qwen3.6-27b`, chosen by the OAI-121 benchmark). Full disposition, and every commit is
-  accounted for exactly once, per `adr/021`:
-  **The disposition table, the timing distribution, the cap probes, the analysis-cap measurements and
-  the corrections this item made to itself moved to [`evidence/138.md`](evidence/138.md)** by the
-  2026-08-14 sweep — verbatim, nothing rewritten or summarised. That file carries the evidence for the
-  cap value (1,800s, landed), the right-censoring argument, the four-commit probe, the retracted
-  throughput claim and its power-state cause, and `r(prompt,completion) = 0.072` against
-  `r(completion,seconds) = 0.940`. **The salvage design is what is live here; the cap is history.**
-  **`--max-seconds 900` was inherited, not chosen.** It is the `DEFAULTS` value from the sweep's first
-  commit (`e467be0`) and carries no comment justifying the number. Its *documented* purpose is not
-  "a review fits in 15 minutes" — `adr/021` says **the deadline governs starting, not finishing**, and
-  the per-commit cap exists to bound **overshoot past the stop time**. It has never been calibrated as
-  a sufficient review budget, and last night is the first run to ask.
-  **THE ACTUAL DEFECT: nothing bounds the reviewer's reasoning on the path it actually runs.**
-  **So `--max-seconds` is not competing with a designed bound — it is the ONLY bound**, together with
-  the reply reserve that `token-exhaustion` reports (which fired once in 40). `adr/003`'s
-  default-off decision on 2026-08-04 was taken to stop a segfault and, as a side effect nobody
-  costed, **left the wall clock as the sole governor of how long a review may think** — a role it was
-  never sized for, its documented job being to bound *overshoot past the stop time* (`adr/021`).
-  **The `review-schema.mjs:70-77` comment is not wrong, it is unreachable**: *"~6-9 minutes on the
-  MoE and ~28 minutes on a dense 27B"* still describes the schema path faithfully. It is simply dead
-  on the default path, and a reader costing the reviewer from it would conclude the reasoning is
-  bounded when it is not.
-  **Fix shape LEANING (user, 2026-08-10): express the relation in code, rather than tuning a
-  constant** — chosen before the correction above, and it survives it, because the defect it targets
-  is the *absence of any relation between the bounds*, which is now more clearly the problem, not
-  less. What it can no longer mean is "derive the cap from `ANALYSIS_CEILING`", since that ceiling
-  does not govern the tokens being spent. The candidates it can mean:
-  a **reasoning-token budget** the default path actually enforces (there is none today);
-  a **derived** `--max-seconds` from a target token count and a measured rate;
-  or a **startup check** refusing a cap that cannot reach the work it authorises.
-  Not decided — this is the leaning carried into the grill.
-  **THE OBJECTIVE, restated by the user and it supersedes the quantile framing above: find the WORST
-  CASE, then verify a cap above it lets the sweep complete.** Not "fit a distribution" — the censored
-  sample cannot support that and does not need to. The experiment that answers it is **one overnight
-  run on mains at a deliberately generous `--max-seconds` (~3600) over the same window**, which yields
-  both halves at once: the slowest commit's real duration, and whether the corpus finishes when the cap
-  is not the binding constraint. **A cap is then set above the observed worst case**, with the margin
-  stated. If a commit still hits 3600 the tail is longer than assumed and the salvage candidate below
-  becomes the answer rather than a bigger number.
-  **DECIDED 2026-08-10 (user, with Claude and Codex agreeing): SALVAGE-ON-LOSS, *AND* RAISE THE CAP.
-  They are complementary, not alternatives.** An earlier draft of this line said "not raising the
-  cap", and **that was too absolute — corrected on the user's challenge.** The measurement says
-  raising the cap does not **reliably** recover a lost review; it does not say it recovers none.
-  `e1cc17dc9` completed at **1,518s**, which no 900s cap could ever have reached. So:
-  - **A higher cap recovers the runs that merely need more time.** Cheap, one constant, available
-    immediately.
-  - **Salvage recovers the runs that die anyway** — on either bound, since raising the cap exposes
-    `token-exhaustion` as the next ceiling. It is the part that does not rot when the model changes.
-  Ruled out and kept as rejected alternatives with their evidence: raising the *reserve* alone (moves
-  the run back into the wall cap) and treating a tuned constant as the whole fix. **Not yet built**:
-  this session's feature budget was spent on OAI-134.
-  What remains open is the **design of salvage** — two loss shapes, the labelling rule, and where the
-  partial is captured — which needs its own grill.
-  **FOURTH FIX CANDIDATE, and it may supersede the cap question: cap the time but KEEP THE WORK.**
-  Raised by the user 2026-08-10. Today a `deadline-timeout` discards everything the run produced —
-  ~14k tokens paid for, **zero bytes kept**. The plumbing is already almost there, and this is read
-  off the code, not assumed: `stream-collect.mjs` accumulates into `answer` (`.content` and
-  `.reasoning`), and its `onExpire` already reads `answer.content.length + answer.reasoning.length` to
-  build the error message. **It knows how much text it holds and throws the text away while keeping
-  the count.** Carrying `answer` out on the failure is the same move the file already makes for
-  `timings`, whose comment defends exactly this reasoning ("a stream that died 50,000 characters into
-  reasoning observed a real prefill and a real partial generation; throwing them away leaves the
-  attempt record unable to say...").
-  **The catch that ranks the options: findings come LAST.** 97-98% of tokens are `reasoning_content`,
-  and the findings JSON is emitted in `content` only after reasoning completes. So a mid-reasoning
-  timeout holds a large `reasoning` and an **empty `content`** — raw salvage yields the model's
-  thinking and none of its conclusions, landing in the existing `unreadable` bucket rather than
-  `findings`. Hence, in increasing cost:
-  1. **Keep the partial in the record.** Attach `answer` to the failure and store it on the entry.
-     Near-zero cost, strictly better than discarding, and a human can read what the reviewer was
-     noticing. **Produces no findings.**
-  2. **A salvage second pass** — the interesting one. On expiry send a short follow-up: *"here is your
-     analysis so far, emit findings from it now."* The economics work **because prefill is cheap here
-     and generation is not**: 3.9k-37.8k prompt tokens cost 24-261s, while generation costs 79-770s.
-     Feeding ~12k tokens of reasoning back and asking for findings only (~500-1,500 tokens) should
-     cost ~2-4 minutes, converting a wholly wasted 900s into real findings. **Precedent in this repo**:
-     `adr/020`'s `salvageOutcome`, "so the answer outlives the row that would not take it".
-  3. **Restructure so findings stream first — NO.** `adr/003` measured it: findings-first produced 112
-     output tokens and one vague non-defect, because a grammar constrains generation from the first
-     token. That ordering is why the reviewer finds real bugs. Recorded so it is not re-proposed.
-  **Two constraints on (2), neither optional.** It is **not** findings-first — the reasoning already
-  happened and the model is being asked to conclude — but that reasoning was cut *mid-thought*, so its
-  conclusions may be partial and the entry **must be labelled**. `sweep-outcome.mjs` `classify`
-  already carries the envelope fields that change what a reader should believe (`analysisCut`,
-  `atCap`, `hunksOnly`, `dropped`, `reason`) and a `salvaged` flag belongs beside them, or `adr/021`'s
-  guarantee breaks and a truncated review reads as a complete one.
-  **Why this may supersede the tuning question entirely:** with salvage, `--max-seconds` stops meaning
-  *"throw this away"* and starts meaning *"stop thinking and conclude"*. That is a defensible bound at
-  almost any value, and — unlike a number calibrated to one model on one machine — **it does not rot
-  when the model changes**, which is the failure mode every other candidate here shares.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
