@@ -356,3 +356,15 @@ Domain:
 - "Pick next item" = top of BACKLOG.md; "mark done" = move the item to BACKLOG_DONE.md with the date;
   "park" = move to BACKLOG_PARKED.md with a reopening bar, and add a row to the absorbed-ID table if
   anything cites it.
+- **Filing a NEW item clears the same worth bar `backlog-sweep`'s consolidate pass applies
+  retroactively (2026-08-18, after 188 issued IDs and ~two-thirds of live items turned out to be
+  another item's residue): a dated instance already observed, or a named silent-failure mechanism —
+  never a plausible future, and never the filing session's own judgement that it's worth keeping.**
+  This is not scoped to review-ladder's out-of-scope findings (`agents/skills/review-ladder/SKILL.md`
+  already gates those prospectively) — it applies to a finding from ANY source considered for filing:
+  an external tool's report (an overnight local-model sweep, a linter, a benchmark), an ad-hoc
+  observation, a probe. A finding that is explicitly latent or unexercised in the code it was found in
+  (the finder's own words, not a later rationalisation) fails this bar and is noted in the
+  conversation rather than filed — it does not need a tracker ID to not be lost, since the artifact
+  that found it (a sweep report, a review transcript) already exists and is the citable evidence if it
+  ever does fire.
