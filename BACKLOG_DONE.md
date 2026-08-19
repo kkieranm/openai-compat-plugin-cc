@@ -1,3 +1,7 @@
+## 2026-08-19 — closed by the user-directed backlog review
+
+- **OAI-131** — ANSWERED, no action needed: `idle-timeout` was never observed across 22 failures during the OAI-9-family model-matrix run. Closed 2026-08-19 in the user-directed backlog review as a settled finding, not deferred work.
+
 ## 2026-08-18 — OAI-72, OAI-93, and OAI-102 closed (`cb5b225`)
 
 - **OAI-72** — **Two credential-exposure defects outside the OAI-3 range.** **(a)** `config.mjs`'s

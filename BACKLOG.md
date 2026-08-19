@@ -17,447 +17,92 @@ carried in this header, since the tier list below now states the same residue in
 
 Impact is blast radius × whether the thing is wrong *today* ÷ cost to resolve. Ties break on what has
 to be decided or measured first. **This list is the priority view; the bodies below sit in ascending
-ID order and a re-order rewrites only this index** (`adr/025` — the one-time migration was performed
-2026-08-08). **`tests/backlog-structure.test.js` asserts this on every `npm test`** — the index covers
-the live set exactly, no id is indexed twice, the bodies are in ID order, and nothing is live and
-closed out at once. Until 2026-08-09 that guarantee was prose naming a close-out script that did not
-exist (OAI-104), and the guard's first run found six closed ids still indexed, two ids indexed under
-two tiers each, and one body out of order. **Note the invariant CHANGED on 2026-08-08**: it used
-to be "the index sequence equals the heading sequence", which is why OAI-104 describes a guard that
-never ran — re-read that item against this convention before working it.
+ID order and a re-order rewrites only this index** (`adr/025`). **`tests/backlog-structure.test.js`
+asserts this on every `npm test`.**
 
-**Tier 1 — a background job kills, loses or misreports live work. EMPTY as of 2026-08-16, and kept
-as a closure record rather than deleted.** All three members closed in two days:
-**OAI-161 (`6d06f6c`, 2026-08-15)** — retention could destroy a paid-for answer, and now exempts an
-operator-abandoned row that reached `running`. **OAI-166 (`7f65ac6`, 2026-08-15)** — the fixtures its
-scope cut left are built and the two silent SQL traps are pinned. **OAI-162 (`d1f3e2c`, 2026-08-16)** —
-an unreadable pid no longer reads as a dead process, and such a row fails closed as `malformed` in
-both states.
-**Nothing was promoted in to keep the tier populated, and that was a deliberate call.** OAI-162's
-review found one wrong branch in the display layer and it was folded into OAI-160 as an amendment;
-OAI-160 stayed in tier 18 where its other eleven entries belong, because the row that branch mislabels
-is `dead` or `never-started` — not live work, which is what this tier is for. A tier heading with no
-entry list is structurally fine (verified against `tests/backlog-structure.test.js` by emptying this
-one: the only failure it produced was the now-unindexed item, not the empty tier), so nothing here
-forces an occupant. **The top of the priority view is therefore tier 2.**
+**Rewritten 2026-08-19 by a user-directed item-by-item review, not the automated worth-bar sweep.**
+The 2026-08-18 sweep (below, and in `BACKLOG_PARKED.md`) verified every claim against disk before
+parking 41 of 112; this pass instead walked all 69 items that survived it, tier by tier, with the
+user deciding keep or park directly against each item's existing text. **28 stayed live; 40 parked;
+1 (OAI-131) closed as an answered question; OAI-160 split, keeping only its one live defect and
+parking the rest as OAI-191.** See `BACKLOG_PARKED.md`'s 2026-08-19 section for every reopening bar.
+**OAI-138 was explicitly NOT reviewed for closure** — it is mid-implementation (an open plan and
+uncommitted diff in the tree at review time) and stays live regardless of tier position.
 
-**Tier 2 — the suite says something false about itself. EMPTY as of 2026-08-17, and kept as a
-closure record rather than deleted.** **OAI-167 closed 2026-08-16 (`6b3fead`)** — see
-`BACKLOG_DONE.md`; its review filed **OAI-176**, a toolchain defect in the review-ladder's
-`fork-opener` stage itself. **OAI-168 closed 2026-08-17, outside this repo (`72c91bf` in
-`~/Code/dotfiles`)** — the general rule that feature paid for twice (a positive control is a check
-that cannot fail until something witnesses it firing) is generic test methodology, so it lives
-beside `review-ladder`'s same-batch conditional rule rather than here; see `BACKLOG_DONE.md`.
-**OAI-170 closed 2026-08-17 (`feeab6d`)** — see `BACKLOG_DONE.md`; its own review filed **OAI-177**,
-the same unmeasured-witness gap in this file's other two exemptions. **OAI-172 closed 2026-08-17
-(`81a019e`)** — see `BACKLOG_DONE.md`; its verdict-point review found a further false claim in its
-own round-1 rewrite, filed as residue below.
+**Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
+certain, not merely theoretical.** **OAI-55, OAI-183, OAI-185**.
+OAI-55 fires on ordinary use of a query-string credential in `--base-url`: the secret persists into
+`jobs.db` and, via the delegate's unredirected stderr, into the session transcript on every
+`--background` submission — not attacker-triggerable, just how the code behaves. OAI-183 and OAI-185
+are OAI-63's confirmed siblings, each reproduced by execution against the shipped fix: a worker can
+still send the wrong secret to the right endpoint (an `apiKeyEnv` repoint), and the authorized
+endpoint's own `baseUrl` can itself be secret-shaped and echo into a persisted failure record on
+connection failure. All three park-reviewed and kept because they are demonstrated, not merely
+foot-guns — contrast the credential items parked below (OAI-74, OAI-77, OAI-189, OAI-190), none of
+which is attacker-triggerable or reachable today.
 
-**Tier 3 — known-unpinned, stated rather than hidden.** **OAI-171**.
-**OAI-169 was PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` — it is two constants whose
-removal shows as an intermittent stall rather than silent wrongness, which the item itself gives as the
-reason leaving them unpinned is defensible, and no such stall has been observed. See `BACKLOG_PARKED.md`.
-OAI-171 is a toolchain observation with no proposed fix: a
-skill loaded into a session is a snapshot, nothing says when it goes stale, and OAI-166's ladder spent
-two discovery passes because of it. **OAI-177 closed 2026-08-17 (`8baf283`)** — see `BACKLOG_DONE.md`;
-the existence-half gap it closed for the other two exemptions took three verdict-point rounds, each
-of the first two catching a different inaccuracy in a comparative claim between exemptions, resolved
-by deleting the claim rather than rewriting it a third time.
-**OAI-173 was PARKED 2026-08-17** by the sweep's worth bar, `not worth doing` — its two vocabularies
-currently agree exactly, and it named no dated instance of drift, only a future-risk scenario. See
-`BACKLOG_PARKED.md`.
-**OAI-62 and OAI-67 closed 2026-08-12, OAI-66 on 2026-08-13** — see BACKLOG_DONE; OAI-62's residual was
-re-scoped into OAI-106, OAI-67 shipped with its root cause deliberately separated as OAI-145, and
-OAI-66 shipped its claim halves while filing OAI-149 and OAI-150 for the mechanisms.
-**OAI-64 closed 2026-08-14 (`dd35df8`) and OAI-69 closed 2026-08-15 (`6d41bd0`)** — see
-BACKLOG_DONE. The re-read that OAI-64 discharged is what OAI-69 turned out to need: naming the blocker
-mitigated the wedge without removing it, because `isAlive` proves only that a pid NUMBER exists. What
-shipped is `/oai:abandon`, an operator exit for the row. What it left behind is this tier's two items.
+**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-115,
+OAI-116, OAI-156, OAI-113, OAI-114, OAI-59, OAI-57, OAI-138**.
+OAI-115 leads: `max_tokens` is a shared pool, so a large target starves the reply entirely — measured
+model-modulated (MoE 4-5/6 cases, dense 1/6) with a floor now sized at 1-2k tokens from real usage
+data. OAI-116 is next and small: the starvation path records no `attempts[]`, which is what blocks
+OAI-19 (tier 6) from ever passing its own gate. OAI-156 is the same tier's other half: a *complete*
+answer discarded at the parser, observed once. OAI-113 and OAI-114 are self-contained parser defects
+— a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
+regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
+restoring base behavior and ADR 003's own guarantee). OAI-59 is `/oai:result` rendering `undefined`
+on a shape it doesn't understand; OAI-57 is the matching `--json` gap, half-shipped already. OAI-138
+is mid-implementation (see header note above) — raising `--max-seconds` and adding partial-answer
+salvage on deadline — and sits here because it is this tier's dominant failure mode in the field
+(15/34 commits lost to deadline-timeout, 8 more to starvation, in the last overnight sweep).
 
-**Tier 4 — a credential or a file leaves the boundary it was promised.** **OAI-183, OAI-185, OAI-55,
-OAI-74, OAI-77, OAI-189, OAI-190**. **OAI-63 closed 2026-08-18
-(`1657ba5`)** — see BACKLOG_DONE; it led this tier on evidence, the leak proved on the wire, not
-argued. **OAI-65 and OAI-150 closed together 2026-08-18 (`687ed70`)** — see BACKLOG_DONE. **OAI-72
-closed 2026-08-18 (`cb5b225`), along with OAI-93 and OAI-102 (Tier 10) as the same fix** — see
-BACKLOG_DONE. **OAI-183 is
-OAI-63's own confirmed apiKeyEnv variant, split out because it needs a different mechanism (a
-credential-identity pin, not an endpoint compare) rather than a bigger diff on the same fix. OAI-185
-is a sibling split from OAI-63's own review — a path-embedded secret in the AUTHORIZED endpoint's own
-baseUrl, reachable through pre-existing connection-error wording, not the authorization gate. OAI-189
-and OAI-190 are two low-severity siblings found *inside OAI-72's own review*, disclosed and
-deliberately left out of that fix: an unsupported-protocol error in `http.mjs` that still interpolates
-a raw URL but is unreachable via any config-sourced input today, and `validateConfig`'s numeric-only
-config keys interpolating their raw value (a secret could only appear there via a misplaced key name).**
-**Four of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`
-and none refuted — OAI-186, OAI-187 and OAI-188 are the three siblings found *inside OAI-65's own
-review* (a symlink-followable config directory in `config.mjs`; `jobs.db` itself never passed to
-`refuseSymlink`; a leaked handle on a rare pragma failure plus a schema-mismatch branch that skips mode
-repair), each disclosed and deliberately left out of that fix, and none ever exploited; OAI-81 is a
-consequence of OAI-3's snapshot-at-submission design accepted at the time, with no retained job body
-observed costing anything. See `BACKLOG_PARKED.md`.
-OAI-55 is next: a decision apiece (OAI-55's
-redaction), then the delegate's containment surface — **OAI-74 now stands
-alone**, since OAI-76 (the unscoped `Bash` grant, its paired half) was parked in the same sweep for
-naming no instance while OAI-74 carries the dated one. The boundary decision OAI-74 makes is still the
-decision OAI-76 was the second view of, so read the parked entry before designing it. OAI-77 trails: it
-needs local write access, and it has no path-shaped fix. OAI-189 and OAI-190 trail last: both are
-disclosed, low-severity, currently-unreachable-or-narrow residue, not a dated instance.
+**Tier 3 — what shipping Stage 2 left behind, still live.** **OAI-85, OAI-86, OAI-56**.
+OAI-85: `/oai:result` never shows "context window unknown," so an unarmed size guard is invisible on
+the background path. OAI-86: the delegate's containment/attachment shell logic has zero test
+coverage, proved by mutation — sharper of the two, since the stakes are disclosure. OAI-56: a
+cancelled or dead job can still hold the server hostage for the rest of its prefill (dense ~335s,
+MoE ~67s), a known and deliberately unmitigated gap.
 
-**Tier 5 — `/oai:review` returns no answer at all, or throws away the one the model gave.**
-**OAI-115, OAI-116, OAI-156, OAI-113, OAI-114, OAI-112, OAI-59, OAI-70, OAI-57**.
-**OAI-68, OAI-60 and OAI-80 were PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` —
-a `user_version` recheck for a mid-session schema bump nobody has performed, a retention count whose
-two copies agree at HEAD, and a report-forging shape needing a filename or a server nobody has
-produced. See `BACKLOG_PARKED.md`. Re-led on 2026-08-08 by measurement: the tier used to be trap instance 14's
-family (`findings: null` against `[]`), and it still contains it, but a *worse* class now sits on top
-of it and is wrong on the shipped default path today.
-**OAI-156 joined 2026-08-14 and sorts third, directly behind the two starvation items**, because it
-is the same tier's other half observed for the first time: OAI-115 and OAI-116 are answers never
-written, where OAI-156 is an answer written, complete, `finishReason: "stop"` — and dropped at the
-parser. It sits behind them on frequency (three starvations to its one in the same run) and ahead of
-the rest because 1,245 seconds bought a finding the baseline agreed with, and the harness binned it.
+**Tier 4 — coverage the ladders found missing.** **OAI-28, OAI-52, OAI-45**.
+OAI-28's parts (B) and (C) survive the retired size-ratchet: `http.mjs`'s two untested transport
+writes, and `tests/structure.test.js`'s doc-comment guard blind to a file's first comment. OAI-52:
+four of six items on OAI-3's own verification checklist never actually landed despite the checklist
+saying they did. OAI-45 closes two holes in OAI-34's end-to-end test matrix.
 
-**OAI-115 leads the whole tier and is arguably the sharpest item in this file**: `max_tokens` is a
-single pool shared by reasoning and the answer, so on a large target the model spends the entire
-budget thinking and emits no findings. Measured across three benchmark arms — four cases, four
-budgets spanning 4.5x, reasoning terminating at 86-94% of each — and it is **model-modulated, not
-model-fixable**: the MoE starved on 4-5 of 6 cases, the dense model on 1 of 6, and the dense model has
-the *smaller* window. Both cheap escapes are already refuted (a bigger budget is simply consumed; no
-reasoning control exists on this server), so it needs a reserved floor for the answer.
+**Tier 5 — residue from the OAI-64/OAI-162 ladder, in shipped code.** **OAI-160**.
+`displayOf`'s `dead`/`never-started` note mislabels an *ordinary* row this build understands as
+"written by a newer plugin" — the database's `PRAGMA user_version` is what's actually too new, not
+the row's `schema_version`, and the rendered message contradicts itself in its own parentheses.
+Proved by execution against a seeded row. Live and wrong today, though only for a row that is
+already dead or never-started, so no live work is at risk. Its eleven pure-coverage-debt siblings
+split out as OAI-191 and parked — see `BACKLOG_PARKED.md`.
 
-**OAI-116 is next because it is small and it unblocks a gate**: the token-exhaustion path records no
-`attempts[]`, which makes OAI-19's G-E structurally unpassable and destroys the reliability evidence
-exactly where failures are most interesting. **OAI-115 and OAI-116 together gate OAI-19 in tier 8** —
-no further benchmark arm can pass its own gate until both land, which is why the measurement tier did
-not move up despite being unblocked in every other sense.
+**Tier 6 — the measurement programme: BLOCKED ON OAI-115/OAI-116 LANDING.** **OAI-19, OAI-50,
+OAI-49, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — a full-corpus baseline re-measure,
+dense vs MoE, hours of the user's own LM Studio rather than an edit, launched deliberately not
+incidentally. OAI-50 and OAI-49 are the two remaining instrument questions its own gate names as
+stated limits (whether a failed context probe should be scored; a matched-budget arm so a cross-model
+comparison measures the model, not the budget). OAI-9 and OAI-11 are multi-pass review (deduplicated
+union; diverse models/lenses) — measured 20% hit rate per single pass on a known-defect file, so
+unioning passes is the lever. OAI-13 is vendor-dependent findings needing a second server to settle.
+No arm can be scheduled before OAI-115 and OAI-116 (tier 2) land.
 
-**OAI-113 and OAI-114 are self-contained and evidence-complete**, both filed from OAI-84's review
-ladder and both wrong today: a quadratic scan measured at 39.15s of CPU against 0.13s controls on
-model-controlled input, and a regression from base where one primitive sibling discards an entire
-findings list. Either can be done in an afternoon without waiting on anything.
-**OAI-117 closed 2026-08-09** — `bench` can now pass `--structured-output`, so whether a schema fixes
-the OAI-115 starvation is a measurement someone can take rather than a question blocked on a flag.
-Taking it is part of OAI-19's arm work in tier 8, not a separate item.
+**Tier 7 — decisions and direct requests.** **OAI-159, OAI-181, OAI-184**.
+OAI-159 leads: 78 citations across this file point at an `adr/` corpus that was deleted, and the
+citation convention for this file itself was never adjudicated — it decides how every other item
+citing an ADR should be read. OAI-181 is a direct user request (let a caller pick a model per
+delegated call) that needs a probe first: would relaxing the delegate's no-`--model` rule undo the
+reason that rule exists. OAI-184 is cosmetic: two unused parameters in `runJob`.
 
-**OAI-112 is the design job and sorts after the cheap wins deliberately.** It is the candidate-selection
-withdrawal from OAI-84's ladder, **adjudicated PARTIAL by the user on 2026-08-07** — the two repairs
-OAI-84 shipped stay, and only candidate selection is replaced, through a fresh plan gate and its own
-ladder. Its evidence names two structural defects, not one: multiplicity is a signal neither content
-nor position represents, and `extractJson` admits a candidate with no extent that survives containment
-by accident of the caller's predicate. **Scope it as candidate SELECTION, not "ambiguity"** — scoped
-to multiplicity alone, the extent defect survives the replacement.
-
-Then the original family: OAI-59 is the same `null`-versus-`[]` shape on `/oai:result`, and OAI-57's
-`--json` trails it — the payload decision it makes was the natural home for parked OAI-80(a), which is
-worth reading beside it even though nothing now waits on it. **OAI-84 closed and merged 2026-08-13** — the sweep
-verified BOTH its repairs live on disk (`structured.mjs:202` tries the channels in order;
-`structured.mjs:242` wraps a bare array), so what it was filed for demonstrably works. Its only
-remaining content was the withdrawn candidate-selection design, which is OAI-112's subject and cannot
-close independently of it, so it merged there; see the redirect table.
-
-**Tier 6 — what shipping Stage 2 left behind.** **OAI-85, OAI-86, OAI-56, OAI-89, OAI-90**.
-OAI-89 and OAI-90 are what is left of Stage 2's own residue, filed 2026-08-06 after a review
-ladder that ran late: OAI-90 is two deliverables that were reported as shipped and were not built, and
-OAI-89 is the ladder that never reached approval. They sort BELOW the two OAI-83 residue items
-because neither is wrong *today* — they are absences, where OAI-85 and OAI-86 are live gaps. OAI-83 shipped on 2026-08-05 and these two are
-its residue: the first is a caveat missing from `/oai:result`, confirmed pre-existing rather than
-introduced, and the second is the delegate's containment machinery having no test at all — proved by
-mutation, and the sharper of the two because its stakes are disclosure. Both lead the tier because
-they are *wrong today*, and OAI-56 trails them.
-**Four of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` —
-OAI-87 (the Stage 2 economic gate's paired arm, deliberately not started because it spends the user's
-own tokens, and nothing currently misreports) and OAI-88 (the task corpus being n=1, a stated
-limitation the harness prints) are absences by design rather than defects; OAI-53 and OAI-54 are
-Stage 1's stated gaps, deferred deliberately in OAI-3 and recorded in `adr/014`, with no user observed
-blocked by the missing `/oai:review --background` and no foreground/queue collision ever observed. See
-`BACKLOG_PARKED.md`.
-
-**Tier 7 — coverage the ladders found missing.** **OAI-28, OAI-52, OAI-75, OAI-45**. **The size ratchet that used to block OAI-28 was
-RETIRED 2026-08-17 at the user's direction** ("we're no longer using ratchets") — `tests/structure.test.js`'s
-per-file and per-function line-count guards and `ALLOWLIST` are deleted outright, not raised, so
-OAI-28's part (A) (the ratchet itself) is now moot and parts (B) (`http.mjs`'s two untested transport
-writes) and (C) (`tests/structure.test.js`'s overclaiming doc comment) are both unblocked with no split
-required first.
-**Four of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`:
-OAI-40 (two tests that overclaim, with no regression ever observed slipping past them — it had already
-lost its only reason to run beside OAI-28 when the ratchet was retired), OAI-73 (*"None is a known
-defect"* in its own first sentence), OAI-39 (five loose reads whose fifth illustrates itself with a
-constructed `{status: null, prefillMs: 7}`), and OAI-79 (three fail-closed edges in the delegate recipe
-that this index already said *"may never be worked at all"*, since they are deleted outright if the
-lifecycle moves out of agent shell). See `BACKLOG_PARKED.md`.
-OAI-75 is an unidentified intermittent whose next step is capture, not reasoning.
-
-**Tier 8 — the measurement programme: BLOCKED ON THE INSTRUMENT, 2026-08-08.** **OAI-19, OAI-50,
-OAI-49, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — every item behind it wants
-a number to beat. It is hours of the user's own LM Studio rather than an edit, so it is launched when
-they say so, never incidentally. OAI-50 and OAI-49 are the two remaining instrument questions its
-predeclared gate names as stated limits. **The third, OAI-48, was PARKED 2026-08-18** by the sweep's
-worth bar, `not worth doing` — the hole in its construction argument is real, but no ledger entry has
-ever been observed recording a wrong served-model identity, and OAI-19's gate already states the limit
-rather than pretending to check it. See `BACKLOG_PARKED.md`.
-**Do not schedule an arm before OAI-115 and OAI-116 land.** Three arms ran on 2026-08-07/08 and all
-three were INVALID; the MoE arm is published as a failure with both its G-G invocations spent. G-E is
-unpassable while the dominant failure path records no `attempts[]`, so a fourth arm cannot pass the
-gate however it performs. The arms did settle something the tier had been chasing since 2026-07-27:
-**the schema causes the transport drops**, confirmed by controlled A/B, which is what OAI-20, OAI-24
-and OAI-34 all failed to reach from the client side. OAI-51 traded that failure class for OAI-115's.
-
-**Tier 9 — decisions that may close as "no", and housekeeping.** **OAI-159, OAI-27, OAI-42, OAI-176, OAI-181, OAI-184**.
-**OAI-181 is a direct user request, not a "may close as no" item** — it sits here only because it
-needs a probe (does relaxing `agents/oai-delegate.md`'s no-`--model` rule undo the reason it exists)
-before it can be planned; see its own body.
-**OAI-176 is OAI-167's residue** — **two** observed instances of a `fork-opener` subagent echoing the
-orchestrator's own transcript framing instead of reviewing (2026-08-16 from OAI-167's ladder, then
-2026-08-17 from OAI-170's), with no measured mechanism. The candidate mitigation — a prompt line
-disclaiming ambient waiting/status framing — was tried proactively at the second instance and the fork
-echoed anyway, so it is **measured-insufficient-alone**, not an untested candidate; what worked both
-times was the retry, not the content of either ignore-instruction. Housekeeping, sorted last: it still
-names no harm beyond the two retried passes it cost, and a standing instruction is not yet earned
-because the only mitigation proposed has now been refuted rather than confirmed. *(This paragraph was
-corrected 2026-08-18 by the sweep, closing OAI-180, which existed because it said "one observed
-instance… needs a second instance before it is worth more than a note" while OAI-176's own body already
-recorded the second.)*
-**Eight of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`
-and none refuted. OAI-178, OAI-179 and OAI-180's siblings from OAI-165's residue: a misleading error
-message on a bad `--repo` path nobody has been misled by, and a `runSweep` default-argument gap whose
-own body says *"No observed or reachable defect today"*. OAI-174 and OAI-175, OAI-162's residue: the
-first was WITHDRAWN from OAI-162's plan by the user because the exit is already in both command
-documents and the command's own refusal, the second is one paragraph of documentation filed at the
-bar's edge and saying so. OAI-182, OAI-172's residue: two additive documentation gaps its own reviewer
-called *"outside this round's scope"*. And OAI-46 and OAI-29: a guard whose narrow scope is now
-honestly described with no drift since, and a budget slip its own body calls *"immaterial at present
-scales"*. See `BACKLOG_PARKED.md`. **OAI-180 was FIXED AND CLOSED by the same sweep** (2026-08-18) —
-the tier-9/OAI-176 contradiction it named is the paragraph above; see `BACKLOG_DONE.md`.
-**OAI-159 leads the tier from 2026-08-14**: 78 citations across 37 live items point at the `adr/`
-corpus deleted in `d1ad2aa`, and the deletion commit records that `BACKLOG*.md` was *"deliberately not
-touched"* — so the convention chosen for code comments was never adjudicated for the one file where a
-citation is doing evidentiary work. It leads because every other item in this tier is one decision
-about one thing, while this one decides how 37 items are read. **OAI-42** asks "is this worth
-doing" rather than "do this", and was rejected on judgement rather than on evidence, which is why
-the judgement is worth recording once; OAI-27 is ordinary open work. **Four of this tier's members were PARKED 2026-08-13** by the sweep's worth bar —
-OAI-43, OAI-47, OAI-36 and OAI-7 named no instance of harm that had already happened, and three said so
-in their own words. **OAI-33 closed the same day**: `plans/README.md` exists, verified against disk
-rather than off the entry. What remains is genuinely open — OAI-42 carries a dated instance (OAI-35's
-own filing made the error the name invites).
-
-**Tier 10 — credential disclosure a ladder found and scoped out.** **OAI-95**.
-**OAI-102 and OAI-93 closed 2026-08-18 (`cb5b225`), as the same fix as OAI-72 (Tier 4)** — see
-BACKLOG_DONE: `config.mjs:141-145`'s (and its two siblings') refusal built its message from `raw`
-precisely because it identified a credential in it, fixed structurally by never quoting raw input in
-any of `normalizeBaseUrl`'s throws; and `providers.json` created `0644` and never chmod'ed while
-holding a literal `apiKey`, fixed by `loadConfig()`'s new 0600-at-creation-and-unconditional-repair
-posture — independent of the verified-chmod helper this tier's prose used to say OAI-93 should reuse
-from OAI-95; it shipped with its own inline error-code handling instead. OAI-95 is the withdrawn
-permission hardening and sits here rather than alongside the now-shipped OAI-94 because, unlike OAI-94,
-nothing regressed when it left: the pre-existing bare `chmodSync` is still in place, so the tree is
-where it was, not worse.
-**Five of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`
-and none refuted — **and that is the finding this tier now carries.** OAI-94's residue was four items
-enumerating output paths that feature did not touch (OAI-99's redirect `Location`, OAI-100's three
-`describeFailure` sites, OAI-101's `/oai:status` provider line, and OAI-103 in tier 12); every one was
-found by reading rather than by a leak, and only OAI-102 survives, because it alone is a path where the
-code has already decided the value is secret. OAI-91 and OAI-92 go with them: both concern a query
-string in `--base-url` reaching somewhere it is not announced, neither is wrong for a caller who does
-not put a secret in a URL, and OAI-92 needs a cooperating server to fire at all. See
-`BACKLOG_PARKED.md`.
-
-**Tier 11 — residue from the OAI-61 ladder, in code that SHIPPED.** **OAI-96, OAI-97, OAI-98**. These
-are last because none is wrong for a working install today, and first among equals is OAI-96, which is
-the only one touching code that just landed. They are recorded rather than carried into OAI-94/95
-because they belong to the capability gate, not to the withdrawn mechanisms — filing them separately is
-what stops the withdrawal from becoming a place unrelated findings go to be forgotten.
-
-**Tier 12 — residue from the OAI-94 ladder, in claims that cannot fail.** **OAI-158**.
-**OAI-158 leads the tier from 2026-08-14 and is the sharpest instance of its class yet**, because it
-is the class inside the guard written to end the class: `tests/backlog-structure.test.js` cannot see
-six of the seven parked items, so a resurrected parked id keeps the suite green — mutation-proved
-both directions. It is also one line to fix.
-The class is a statement this repo makes about itself that nothing checks. **OAI-104 closed
-2026-08-09** — it was the sharper of the two, and closing it removed the instance in this very file:
-`tests/backlog-structure.test.js` now enforces the tier/heading invariant that was previously
-promised by a script which did not exist. **OAI-103 was PARKED 2026-08-18** by the sweep's worth bar,
-`not worth doing` — it is the same shape one level out (a machine-readable payload that omits the
-caveats its human-readable sibling prints), but no consumer has ever been observed reading a crowded
-`--background --json` reply as a clean one. See `BACKLOG_PARKED.md`.
-
-**Tier 13 — residue from OAI-132 / OAI-140's recording half, 2026-08-13.** **OAI-151**.
-**OAI-151 leads and its justification is OAI-141**, which put run-to-run spread above the differences
-being compared: a per-commit reproduction rate ACROSS runs is exactly the number this tracker cannot
-compute today, and the one that decides whether any sweep A/B means anything. The feedstock now exists
-— every run leaves a ledger with per-commit timings and the full manifest — so this is an index over
-artifacts rather than new instrumentation. It was deliberately NOT built into OAI-132: the ledger is
-the within-run crash record, a history is the cross-run index, and ADR 018 gates `node:sqlite` as a
-capability, so a hard dependency would have made crash protection conditional on the one thing the job
-store was careful to keep optional. Neither argument applies to a cross-run index, which is not on the
-crash path.
-**OAI-153 and OAI-154 were PARKED 2026-08-14** by the sweep's worth bar, `not worth doing`: both were
-*stated limitations rather than defects*, neither named an instance of harm that had already happened,
-and the ADR that "said each one out loud" no longer exists (OAI-159). See `BACKLOG_PARKED.md`. **OAI-152 was PARKED the day it was filed**: it
-states outright that it is "not measured" and already carried its own reopening bar, which is a
-park-ready shape rather than an item.
-
-**Tier 14 — what the completed overnight sweeps found, 2026-08-10/15.** **OAI-163**, **OAI-155**, **OAI-157**, **OAI-141**, **OAI-138**, **OAI-143**,
-**OAI-140**, **OAI-164**, **OAI-137**.
-**OAI-142 and OAI-144 were PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` — a rung
-flip between `prepareLadder`'s two sizing passes that no run has ever produced (and whose disclosure
-half is unaffected either way), and a `finishReason === 'length'` vendor assumption filed as
-UNVERIFIABLE and still unverified against any vendor. See `BACKLOG_PARKED.md`.
-**OAI-163 leads the tier from 2026-08-15 because it is the only item here that can END a night, and
-it does so while reporting the opposite of what happened**: a healthy model that reasons without
-answering is admitted as a server outage, so three in a row abort a healthy sweep and blame the
-server. It sorts ahead of OAI-155's coverage fact because coverage lost to an oversized target is
-visible in the report, where this is a wrong verdict about the server that the report then repeats.
-**Read it immediately beside OAI-140** — same counter, opposite error, and neither fix is safe if it
-assumes the other's direction. That pairing is the reason it sits here rather than in tier 5 with the
-other no-answer items.
-**OAI-164 sorts near the bottom because it is a measurement to take, not a defect that is wrong
-today**, and because OAI-141 already says what it would cost to take it properly: one more sweep may
-still not resolve an 11-vs-6 non-answer delta against this harness's known spread. It is above
-OAI-137 only because the model in question is already installed and the question is live whenever
-someone picks a model.
-**OAI-157 sorts directly behind OAI-155 because it is the same night's lesson at a tenth of the
-cost**: OAI-155 makes an oversized target reviewable, where OAI-157 merely says so before the night
-is spent, and it can land without any decision about what a finding is scoped to.
-**OAI-155 leads the tier from 2026-08-14 and is the first thing here that is a COVERAGE fact rather
-than a harness defect**: the 2026-08-13 sweep reviewed 31 old commits successfully and none of the
-five it was launched for, two of them refused outright as oversize with nothing left for the ladder
-to shed. Every other item in this tier improves what a sweep reports; this one is about work the
-sweep cannot reach at all, which outranks them.
-**OAI-139 (done 2026-08-12) was found by probing OAI-138, not by the sweep**: when nothing is
-resident the window is unknown, the size guard returns unchecked, and `adr/005`'s drop-to-hunks
-fallback therefore cannot fire — so a cold start ships untrimmed input and the failure arrives wearing
-a known LM Studio symptom. It leads because it is a live correctness defect on every cold invocation,
-where OAI-138 is a tuning question, and because nothing in OAI-138's fix can reach it.
-**OAI-138 leads because it is the difference between a sweep and half a sweep**: 20 of 40 eligible
-commits died on `--max-seconds 900`, a cap inherited from the harness's first commit whose documented
-job is bounding *overshoot past the stop time*, never *fitting a review*. It also inverts OAI-115's
-standing expectation — starvation happened once, wall-clock exhaustion twenty times — so the next
-sweep should set the cap from the recorded `generationMs` distribution rather than by doubling it.
-Read it against OAI-132, which the same run priced: a higher cap lengthens an already unobservable
-window. **That half is now closed** — since 2026-08-13 the sweep writes an incremental ledger as each
-commit settles, so a longer cap no longer widens a window in which a crash loses everything.
-OAI-141 is second because it changes how everything else in this tier should be READ: four sweeps over
-one corpus put the run-to-run spread (17 vs 22 finding-bearing, 5 of 17 not reproducing) above the
-difference between the configurations being compared, so a single-run A/B here cannot resolve a small
-effect. It did not invalidate the cap result, which clears that spread comfortably; it did refute the
-diff-only concern, and it is why OAI-139's ceiling is safe to build.
-OAI-140 sits between them because it is live at today's cap and **OAI-138's cap rise makes it worse**:
-a slow commit zeroes the consecutive-outage counter, so a genuine outage interleaved with slow commits
-never trips `--abort-after`, and last night's data cannot rule that out because nothing records the
-counter's history. **The recording half shipped 2026-08-13** — every attempted commit now carries
-`startedAt`/`endedAt` and the report renders a derived server-health section naming the longest streak
-and how often a non-outage reset one. **What remains live is the ACTING half**: whether to count
-outages in a sliding window, decay the counter, or leave the rule alone now that the record can finally
-show whether it ever mattered. That last option is newly credible, because the question can now be
-answered from data rather than argued.
-OAI-137 is small, real and reproduced — `readOmlx` silently ignores `data` when `models` is an empty
-array, contradicting the comment that says it does not. It is in this tier because the sweep found it
-in the commit that introduced it, which is the first time this harness has caught a defect in code
-written the same day.
-
-**Tier 15 — what the model benchmark actually found, 2026-08-09.** **OAI-135**, **OAI-133**,
-**OAI-131**.
-**OAI-134 shipped 2026-08-09 and its framing did not survive contact**: the filed mechanism — the
-plugin sizing a JIT load by `max_context_length` — was **refuted** (the plugin has no load channel at
-all), and the live check that settled it also refuted the proposed blanket refusal, because oMLX 0.5.7
-JIT-loads successfully where LM Studio 0.4.20 may refuse for memory. What shipped was the honest
-remainder: two hints that predict no outcome. See BACKLOG_DONE.md.
-**OAI-136 was PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` — it had led this tier
-since 2026-08-09 as the one real defect the OAI-134 ladder found in passing (`--model` bypassing the
-embedding-model rejection at `model-selection.mjs:224`), but it was verified by reading the function
-rather than by any observed run, no chat request has been observed reaching an embedder, and its own
-part (1) says whether an explicit `--model` *should* be refused **needs its own grill**. See
-`BACKLOG_PARKED.md`.
-**With it gone this tier has no defect at its head, and nothing was promoted in to replace it.**
-**OAI-135 now leads by position**, and the tier is what it always mostly was: a record of what the
-benchmark measured. Its three members are a record (OAI-133), an answered question (OAI-131) and
-OAI-135 — read the one-line usable result at the foot of this tier before any of them.
-OAI-131 is **answered, not open**: `idle-timeout` was never observed across 22 failures, so the five
-iterations spent admitting it bought no measured coverage. OAI-133 records that the gemma arms measured
-nothing and carries the sized contexts for a future attempt, including that **`gemma-4-31b` will not
-fit this machine at a fair context**. OAI-132 — the harness emitting no signal for hours at a time — **shipped 2026-08-13**; see BACKLOG_DONE.md.
-**The usable result of the whole exercise is one line: use `qwen/qwen3.6-27b`** — 7 of 10 commits
-reviewed in both runs, against 3-5 for the MoE, which starved exactly as OAI-115 predicted.
-
-**Tier 16 — residue from the follow-on ladder, which also ended `cap-without-approval`.**
-**OAI-125, OAI-128, OAI-126, OAI-129**. (OAI-131 was filed by this ladder but is
-indexed under tier 15, where the benchmark answered it — one id, one tier entry.)
-**OAI-125 leads and is the sharpest item filed today**: the resolved-SHA guarantee — the one fact the
-whole pinning feature exists to provide — reaches the artifact by a single untested path, proved by a
-mutation that left the suite green. Its root cause is an unexported `main()`, i.e. the shape of
-`bench/run.mjs` that this harness's own header says it was written to avoid, so **the fix is a seam
-rather than another test**. Until it lands, benchmark arms must pass a full SHA.
-**OAI-128 is next because it is a NEW TRAP CLASS** — asserting presence where the code guarantees
-presence — and the fifth "test that cannot fail" found in one feature; filing it as its own entry is
-what stops the stub-fidelity entry added the same day from appearing to cover it.
-OAI-126 and OAI-129 trail as one-line fixes with named remedies.
-**OAI-127 and OAI-130 were PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` — the
-decision record promising a semantic rule the code cannot keep (OAI-122's class one level up, but its
-two vocabularies agree at HEAD and no sixth timeout reason has ever been added), and a dropped
-`requestedModel` its own body calls *"Low impact while every arm passes `--model` explicitly, which the
-benchmark does"*. See `BACKLOG_PARKED.md`.
-**OAI-131 is different in kind and should not be sorted with the defects**: two vendor assumptions with
-no artifact in the repo to check them against, one of which the `serverUnwell` rule depends on — and
-the overnight sweep is itself the instrument that can settle it.
-
-**Tier 17 — what is LEFT of the overnight review-sweep ladder's residue. EMPTY as of 2026-08-18, and
-kept as a closure record rather than deleted.**
-Filed with seven items; **six closed on 2026-08-08** by the follow-on (OAI-118, OAI-119, OAI-120,
-OAI-121, OAI-122, OAI-124 — see `BACKLOG_DONE.md`), including the two that blocked the model
-benchmark. This index went on naming all seven for a day, which is the drift
-`tests/backlog-structure.test.js` now exists to make impossible (OAI-104).
-**The seventh, OAI-123, was PARKED 2026-08-18** by the sweep's worth bar, `not worth doing` — the
-sweep's deadline is compared with `Date.now()`, so a wall-clock step could move it, but it was
-stated-untested at pass 1 and has never fired; the DST boundary that WAS observed is already fixed.
-See `BACKLOG_PARKED.md`. **Nothing was promoted in to keep the tier populated**, following the same
-call tiers 1 and 2 record: an empty tier heading is structurally fine (`tests/backlog-structure.test.js`
-parses a tier with no entry list without complaint, which tiers 1 and 2 have demonstrated since
-2026-08-16), and this ladder's residue is genuinely spent.
-
-**Tier 18 — residue from the OAI-62 ladder: seven places contention is answered by an argument, a
-misdiagnosis, or a silence.** **OAI-106**, **OAI-110**, **OAI-107**,
-**OAI-108**, **OAI-111**, **OAI-146**, **OAI-147**, **OAI-148**,
-**OAI-160**. (**OAI-150 closed together with OAI-65 2026-08-18 (`687ed70`)** — see BACKLOG_DONE; it
-joined this tier from OAI-66's review alongside OAI-149, but its precondition turned out reachable
-through OAI-65's own directory-mode gap, not merely unobserved.)
-**Four of this tier's members were PARKED 2026-08-18** by the sweep's worth bar, all `not worth doing`
-and none refuted — and they are the four whose "never observed outside an injected test" framing was
-load-bearing rather than incidental: OAI-105 (the reconciler's five unprotected writes, an exclusion
-resting on an argument nothing has ever tested *against a stuck row*), OAI-109 (a rescue guard with no
-witness whose one real hole the item itself proves unreachable today), OAI-145 (a claim
-`spawnWorker` cannot support, whose every destructive consequence OAI-67 already contained), and
-OAI-149 (whose own last line reads *"Without it this is a story about a race"*). See
-`BACKLOG_PARKED.md`. OAI-160 is coverage debt in the same subsystem, filed by OAI-64's confirmation pass and
-owned by nothing else — **but it was AMENDED on 2026-08-16 and one of its twelve entries is no longer
-merely untested.** `displayOf`'s `dead`/`never-started` arms are reachable for an ordinary row this
-build understands, not only for one a newer plugin wrote, and the note they render names the row's own
-schema while attributing it to a newer plugin. It leads the tier's tail for that reason. It stays here
-rather than moving up because the row it mislabels is dead or never-started: the label is wrong, and
-no live work is at risk from it.
-**OAI-106 leads the tier because it was the reason OAI-62 reached its ten-pass cap without approval.**
-Codex refused to approve on exactly this ground: after an exhausted persistence retry the public
-lifecycle still reports `worker-died` for work that completed, and no product reader can recover the
-salvaged answer — a false terminal state produced by contention, which is one of the outcomes OAI-62
-set out to remove. `salvageOutcome` keeps the bytes; it does not correct the verdict.
-**That sentence no longer gates anything: OAI-62 was CLOSED over the objection on 2026-08-12**, and
-the same day Codex reversed its own refusal when asked as a scheduling question rather than at a
-verdict point. What survives is the defect itself, and OAI-106 was re-scoped so its cheap half — the
-message stops asserting something false, with no new lifecycle state — is separable from the
-`persistence-pending` state that may never be worth building.
-The rest are last because nothing is broken today — **with the one exception noted above**, OAI-160's
-mislabelled render, which is wrong right now and is why that item leads this tail: each fires only
-under contention that has never been observed outside an injected test. They are here at all because ADR 020 exists to remove a
-comment that claimed a property the code did not have, and each is a smaller instance of that shape —
-a count restated where nothing holds it to the code (OAI-110),
-a stop request with no contention policy at all (OAI-107), and a fact that reaches a human on stderr
-but no machine through `--json` (OAI-108). OAI-111 is housekeeping the review fan-outs generate.
-(OAI-150 was the parked OAI-149's own
-sibling — a permission chain letting an attacker traverse the state directory and write `logs/` while
-`jobs.db` stayed out of reach — and closed 2026-08-18 together with OAI-65, whose fix repairs that
-exact permission chain unconditionally on every open. That is the one member of this shape whose
-precondition turned out reachable, which is why it closed and OAI-149 parked.)
+**Tier 8 — cross-run history.** **OAI-151**.
+No index exists over the ledgers every sweep already leaves behind, so no sweep can be compared
+against the sweeps before it — a per-commit reproduction rate across runs is exactly what this
+tracker cannot compute today, and OAI-141's finding (run-to-run spread exceeds the differences
+usually being compared) is why that number matters. An index over existing artifacts, not new
+instrumentation.
 
 <!-- /tiers -->
+
 
 ### Absorbed IDs — where a merged or moved number now resolves
 
@@ -843,30 +488,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   before it lands measures a parser that is about to change. That is the same argument OAI-51 made for
   the suspension, one layer down, and it is the reason OAI-84 sorts ahead of this item.
 
-- **OAI-27** — Put a security lens on the transport-classification path. **The instrument this item
-  named is gone: `security-review` was retired 2026-08-13 (dotfiles `adr/100`), which folds its
-  surface into `codex-adversarial`'s focus string — so this asks for that focus, not the deleted
-  stage.** Filed 2026-08-01 from
-  the OAI-22 ladder, where it was **evaluated and not triggered, and that call is disputed**. That
-  skill's trigger list was auth/sessions, personal data, money movement, secrets and credentials, or
-  anything irreversible — OAI-22 touches none of them, so it was skipped and the specific concern
-  raised (`transportError` now branches on a `cause.code` that arrives from a remote peer, and a TLS
-  rejection such as `CERT_HAS_EXPIRED` becomes `non-retryable-transport` with `cause.message`
-  interpolated into a `UserError`) was closed by an explicit assertion instead: the code is preserved
-  and the message still names the certificate.
-  **Re-verified 2026-08-05 by the sweep, and it narrows what remains.** Both halves of the premise
-  still hold on disk (`http-errors.mjs:135`, `:124`), and the closing assertion is real and passing —
-  `tests/bench-reason-notes.test.js:171-172` asserts the rendered text matches `/certificate has
-  expired/` and does **not** match `/CERT_HAS_EXPIRED/`. `describeFailure` (`provider.mjs:70`) returns
-  the wrapped error untouched for this code, so `reword` never runs and the message passes through
-  intact. So what is open is **not** whether the concern was handled — it was — but whether the skill's
-  trigger list should have fired at all. That is a process disagreement, and reading code cannot settle
-  it; only running the pass can. The `advisor` argued that is a security lens being
-  recorded as "not triggered" when it does trigger. Cheap to settle, so settle it rather than leave
-  the disagreement in a commit message: one fan-out over `http-errors.mjs`, `http.mjs`,
-  `provider.mjs`. If it finds nothing, the trigger list stands as written and this closes as a
-  recorded judgement rather than an open question.
-
 - **OAI-28** — **Give `http.mjs`'s two untested transport writes the coverage they have never had.**
   **Merged 2026-08-05 by the backlog sweep from OAI-28, OAI-30 and OAI-41** — one feature run ships all
   of it. **The ratchet was the leading half**: it was the only part of the three at its own limit (the
@@ -940,31 +561,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   searched for in `BACKLOG.md`. **Verifying a finding is not the same as checking whether it is
   already tracked.**
 
-- **OAI-42** — Consider renaming `serverResponded` to say what it means. **Lowest priority, and it
-  may well close as "no".** Filed 2026-08-04 because three independent reviewers across two OAI-35
-  passes raised it unprompted: the name invites *the server responded to me* — a claim about a peer —
-  where the field means only *an HTTP response was obtained*, and a proxy or gateway can produce one
-  with the model server never seeing the request.
-  The evidence for: this repo has now spent a great deal of prose defending that distinction — in ADR
-  012, ADR 013, `CLAUDE.md`, `REPO_TRAPS.md`, two test files and the ledger's own minting comment —
-  and a reader who trusts the name reaches the wrong conclusion without ever hitting one of them. The
-  original backlog item for OAI-35 made exactly that error in its own text.
-  The evidence against, which is why this is filed rather than done: the name **predates** OAI-35 —
-  ~~`http.mjs` and `cmd-setup.mjs` were reading it~~ ~~corrected 2026-08-05 by the sweep: `http.mjs:107`
-  and `http-errors.mjs:142` *mint* the field and `cmd-setup.mjs:32` is the only site that *reads* it~~
-  **— that correction was itself WRONG and is corrected again 2026-08-14, verified against disk. The
-  field is minted at roughly a dozen sites (`http-errors.mjs`, `provider.mjs`, `sse.mjs`, `body.mjs`,
-  `chat.mjs`, `answer-attempts.mjs`, `attempt-outcome.mjs`, `attempt-ledger.mjs`) and it is READ to
-  drive a decision in at least two: `attempt-outcome.mjs` `obtainedResponse` opens with
-  `if (error?.serverResponded === true) return true;`, and `provider.mjs` propagates it. So
-  `cmd-setup.mjs` is not the only reader, and the rename is LARGER than this item has ever said —
-  which cuts against doing it, not for it.** The name predates the ledger,
-  so a rename
-  touches the transport, not just the record; and the documentation now carries the load correctly,
-  so this buys clarity rather than fixing a defect. If it is done, `httpResponseObtained` was the
-  suggested name and every recorded benchmark file under `bench/results/` carries the old key, so it
-  needs the same read-both-shapes treatment the `not recorded` bucket already gives legacy records.
-
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
   scenario crossing the real entry point", with one *stated* exemption (G8, structurally impossible to
@@ -1021,7 +617,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   handles the benchmark. The open question is the product one: should `/oai:review` refuse, warn
   louder, or retry the probe, rather than quietly reviewing under a budget nobody chose? The size
   guard is disarmed on exactly that path, which is when an oversized request goes out unrefused.
-
 
 - **OAI-52** — **Six items from OAI-3's own verification list did not land** — ~~five~~ **four remain
   here, both corrections dated 2026-08-05: item (1) is done, and item (3) was superseded by OAI-62,
@@ -1179,152 +774,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Note the pairing sharpens the fix: the added field is itself the first test of the rule, since a
   build predating it must render the row without claiming the job "recorded no answer".
 
-- **OAI-70** — **Three small correctness guards on the worker's row-decoding path.**
-  **(a)** `resolveCredential` never checks `auth.profile` exists: `job-auth.mjs:54` passes
-  `{provider: auth.profile}` and `config.mjs:245` *(line moved; verified again 2026-08-17)* treats a
-  falsy provider as "use `defaultProvider`".
-  Executed — a row whose `auth` lacks `profile` **completed and sent a credential the job never named**.
-  Reachable only from a forged or foreign row, but one line (`if (!auth?.profile) throw`) closes it.
-  **(b)** It pairs with a real structural gap: `cmd-task-worker.mjs` consumes a decoded row and never
-  calls `isKnownVersion`, where `job-queue.mjs:57` and `job-reconcile.mjs:72` both do. *(Corrected
-  2026-08-13 by the sweep, and it makes this WIDER, not narrower: "the only consumer" is **false** —
-  `cmd-status.mjs` and `cmd-result.mjs` skip the check too, so three consumers do.)* — and the forward-compat story explicitly contemplates a newer writer's rows in the table.
-  **(c)** A `transport` payload of JSON `null` crashes at `cmd-task-worker.mjs:40` before the auth
-  check, giving exit 2 with a TypeError envelope rather than the UserError exit 1. No credential
-  escaped (the positive control proves the probe would have seen one). Diagnosability only —
-  deliberately not inflated.
-
-- **OAI-74** — Enforce the attachment boundary for **every** caller, not just the delegate's recipe.
-  **Narrowed 2026-08-05 by OAI-5's second review pass: the delegate path is now enforced.** Its recipe
-  canonicalises per attachment — ~~`readlink -f`~~ **a `canon()` wrapping `realpathSync`, corrected
-  2026-08-14 against disk; the recipe already made the (a) fix this item argues for below** — and
-  refuses the submission when a resolved path leaves the git top
-  level — falling back to the working directory outside a repository, so it is only as tight as where
-  the session was rooted —
-  proved with controls in `bash` and `zsh` (an in-tree symlink to `/etc/hosts` and a bare `/etc/hosts`
-  both refused, in-tree files accepted). So the symlink variant that would have survived a
-  `resolve()`-based fix is closed **for this agent**. What remains, and why the item stays open:
-  the check lives in agent-authored shell, so it protects the delegate and not `prompt.mjs`'s other
-  callers; and an agent holding unscoped `Bash` can still reach the network without the companion at
-  all. Original framing follows.
-  Filed 2026-08-05 from the OAI-5 plan gate, where Codex raised it and it was deliberately **not**
-  grown into that item. `readFileBlocks` (`prompt.mjs:12`) accepts absolute paths and `..`, and
-  `readFileSync` follows symlinks, so a component that selects its own attachments can send a file
-  from outside the working tree to the configured endpoint. `agents/oai-delegate.md` states the rule
-  — repository contents are untrusted data, and every attachment's *resolved* path stays inside the
-  tree unless the user named the file — but prose is not a boundary, and the agent is the first
-  consumer in this repo that chooses files without a human reading the list first.
-  **Not a known exploit and not attacker-triggerable today**: it is a foot-gun that becomes a
-  disclosure path the moment a repository file's content is treated as an instruction. The decision
-  needed first is *where* the check belongs — `prompt.mjs` refusing an out-of-tree `--file` would
-  also constrain the foreground commands, where the user typed the path themselves and the refusal
-  would be wrong. So this is probably an opt-in flag the agent passes, which is a surface decision
-  rather than a one-line guard.
-  **Rescoped 2026-08-05 by OAI-5's security review, which showed the obvious implementation would not
-  work.** Three corrections, the first of which is the reason this item is not what it looked like:
-  **(a) It must dereference, not resolve.** The natural fix — `resolve()` plus a prefix test — accepts
-  an **in-tree symlink pointing outside the tree**, and that variant is worse than the ones it does
-  catch, because it is the only one that leaves *no trace*: verified by execution, a link at
-  `./innocuous-note.txt` was read and `prompt.mjs:23` labelled it `innocuous-note.txt`, so the model
-  header, `digestsOf` and the rendered attachment list **all** name the harmless in-tree path. Absolute
-  and `..` attachments at least appear in those records. So the check needs `realpathSync`, and needs a
-  decision about dangling links, where `realpathSync` throws `ENOENT` and today's code maps that to
-  "File not found".
-  **(b) Containment is necessary and not sufficient.** `.git/config` and `.git/logs/HEAD` (a token in
-  an HTTPS remote), an in-tree `.env`, `.claude/settings*.json` are all *inside* the tree. A perfect
-  boundary admits every one of them.
-  **(c) `prompt.mjs` is not the last word.** The agent holds unscoped `Bash`, so `curl` bypasses the
-  companion entirely; `commands/task.md:5` scopes its own grant to `Bash(node:*)` and the agent does
-  not. Scoping the agent the same way is incompatible with its one-shell-invocation recipe, which
-  needs `mktemp`, `awk`, `sleep` and `trap`. Now filed separately as **OAI-76** — *parked 2026-08-18, `not worth doing`, for naming no instance;
-  it remains the second view of the boundary decision this item makes, so read it before designing one.* **Codex's adversarial
-  stage rated the residual high (0.99) and said do not ship**; it shipped anyway, with the limits
-  stated in [ADR 015](adr/015-a-context-broker-not-a-forwarder.md) — recorded here so the dissent is
-  not lost.
-  **(d) The check and the read are separated by a process boundary, so containment is TOCTOU.** Raised
-  low by the security lens in pass 3 and high by `codex-adversarial` in pass 8. The delegate's shell
-  canonicalises a *pathname* and compares it; `readFileBlocks` then resolves and opens that name again
-  one process later, so an attacker able to swap a symlink or an ancestor directory *between* those
-  moments defeats the check. It is open rather than urgent because it needs a **concurrent local
-  attacker mutating the filesystem mid-run**, which is outside this feature's threat model of untrusted
-  repository *content* — but it is the strongest argument for doing this item properly: the real fix is
-  to validate and read through **one held descriptor** and submit the captured bytes, rather than
-  re-opening a name that was checked earlier. That is only possible here, in `prompt.mjs`, and it
-  cannot be done in agent-authored shell at all.
-  **(e) Whatever lands here should also settle what the root IS.** The delegate anchors containment to
-  `git rev-parse --show-toplevel`, falling back to the working directory outside a repository, so the
-  boundary is only as tight as where the session was rooted — started at `$HOME`, it admits everything
-  under `$HOME`. Stated in the agent text and ADR 015 rather than hidden, but a code-side boundary
-  should decide this deliberately rather than inherit a shell fallback.
-
-- **OAI-75** — **An unidentified suite intermittent, recorded because it was seen and not explained.**
-  Observed once on 2026-08-05 during OAI-5, in the first `npm test` after a live delegation round trip:
-  a `strictEqual` failure with `actual: 2, expected: 0`. It did **not** reproduce — three consecutive
-  full runs green afterwards, on identical content — and **the failing test's name was not captured**,
-  which is the gap that makes this an item rather than a fix. The count shape matches the
-  `assert.equal(scenario.chats().length, 0, …)` family in `tests/job-auth.test.js:167` and
-  `tests/queue-reconcile.test.js:31,67`, i.e. *two chat requests reached a recorder that should have
-  seen none* — which would mean a worker ran where a blocker should have stopped it.
-  **Two hypotheses were tested and neither is supported.**
-  *(1) Store leakage from this machine's real job rows.* `tests/job-helpers.mjs:27-38,116-124` scopes
-  `OAI_PLUGIN_STATE` to a temp dir per scenario and restores it in a `finally`. Not the explanation —
-  though note this rules out the *helper*, not interleaving, which is why (2) was run.
-  *(2) `process.env` interleaving with the new async test.* `OAI_PLUGIN_STATE` is process-global, and
-  OAI-5 added the first `async` test to `tests/plugin.test.js`, which awaits a child four times — so a
-  scenario overlapping it could read the wrong store. **Refuted by execution**: 8/8 green running
-  exactly `node --test tests/plugin.test.js tests/job-auth.test.js tests/queue-reconcile.test.js`, the
-  file combination that would have to interleave.
-  **Attribution, stated at the strength the evidence supports:** 1 failure in ~9 full-suite runs with
-  the OAI-5 diff, 0 in 5 full-suite runs with `tests/plugin.test.js` reverted, 0 in the 8 targeted
-  runs. That is not enough to call it pre-existing and not enough to blame the diff; it is one
-  unexplained event with two candidate causes eliminated.
-  **Second observation, 2026-08-06, and it is a different shape — a HANG, not a failure.** Two
-  independent `npm test` invocations were found still alive after **6h38m and 6h47m**, both wedged on
-  the same file: `tests/review-json.test.js`. Both were runs this session started, saw exceed their
-  tool timeout, and moved to the background without ever completing. Two separate runs stopping in the
-  same place is not scheduling noise.
-  **This retracts an explanation given earlier the same day.** A single failing test during the Stage 2
-  work was dismissed as "flaky under parallel load" because it passed when re-run alone. That reading is
-  unsupported: load does not explain a run that never terminates, and it was a guess offered as an
-  answer.
-  **The live capture was lost** — the two processes were killed at the user's request before a stack was
-  taken, so the next step is to reproduce rather than to read. Concretely: run
-  `node --test tests/review-json.test.js` alone in a loop and watch for one that does not return, then
-  take a report with `kill -SIGUSR1 <pid>` **before** killing it. The fake server and its
-  `runCompanion` children are the obvious suspects — `tests/helpers.mjs` resolves on `'close'`, which
-  waits for every descriptor a child holds, and this repo has already shipped one hang from exactly that
-  (see the footgun about a detached worker inheriting a descriptor).
-  **Whether the two observations are one bug is unknown** and should not be assumed: one is a wrong
-  count that vanished, the other is a run that never ends.
-  **Still unidentified as of 2026-08-05, and deliberately NOT merged into OAI-62(c).** OAI-5's later
-  passes produced a third `database is locked` sighting with a captured test name, which closed the
-  naming gap **for that signature only**. This item's signature is different — a `strictEqual` of
-  `2` against `0`, which is a chat-request count, not a locked database — and nothing since has
-  reproduced it. Merging them on the strength of "both are flaky" would lose exactly the distinction
-  that makes this one worth keeping open.
-  This is a **different signature from OAI-62(c)** (a locked database), so it is filed separately
-  rather than folded in. Both share the property that matters: a failure indistinguishable from a real
-  regression. Next step is to capture the name — run the suite in a loop with the failing test's
-  output retained, rather than reasoning about which assertion it must have been.
-
-- **OAI-77** — **In-tree secrets are attachable, and containment cannot see it.** Filed 2026-08-05 at
-  OAI-5's verdict point. The delegate's enforced check refuses paths that resolve *outside* the root;
-  `.git/config` and `.git/logs/HEAD` (a token in an HTTPS remote URL), any in-tree `.env`, and
-  `.claude/settings*.json` are all *inside* it. `agents/oai-delegate.md` names them as never-attach in
-  prose, which is exactly the enforcement gap OAI-74 exists for, one direction over. A deny-list
-  belongs wherever OAI-74's containment lands, since both are the same predicate on the same path.
-  Note the asymmetry worth keeping: containment is a property of the path, while this is a property of
-  the *content*, so a deny-list will always be a heuristic — which is an argument for keeping the
-  attachment list small and visible, not against having one.
-  **Widened 2026-08-05 by the ladder's pass-8 security lens: an in-tree HARDLINK to an out-of-tree
-  file passes containment**, verified — `sub/hl.txt` disclosed a file outside the tree. A hardlink has
-  nothing to resolve, so `realpathSync` cannot see through it the way it sees through a symlink, and
-  **unlike the symlink case the audit trail is truthful**: that name genuinely is a name for that
-  inode, so nothing is mislabelled and no check is forged. It belongs here rather than with the
-  containment work because it needs local write access into the tree — the same premise as the rest of
-  this item — and because no path-resolution fix can address it. If it is ever worth closing, the
-  instrument is `st_nlink > 1` or a device/inode comparison against the root, not a path check.
-
 - **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
   invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is
   PRE-EXISTING** — `cmd-result.mjs` hardcodes `contextNote: null` at HEAD, and reverting OAI-83 leaves
@@ -1352,241 +801,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   disclosure rather than correctness, which is why it is filed rather than folded into an
   argument-construction suite.
 
-- **OAI-89** — **The Stage 2 ladder never reached dual approval, and four of its entries are filed
-  rather than fixed.** Filed 2026-08-06. Two passes ran (`80f6bea`, `4310475`), 39 ledger entries, and
-  the ladder ended by **termination, not approval** — so nothing in it is `verified`; every entry is
-  `pending verification`. The ledger is `plans/stage-2-ladder-ledger.md` and it is the handoff.
-  **Pass 3 is owed for a specific reason, not as ceremony:** pass 2's batch **widened the frozen diff**
-  to `cmd-task-worker.mjs` and `cmd-result.mjs`, which neither pass reviewed. Carried forward as
-  filed-not-fixed: an empty file reporting one line where `wc -l` reports none; the slice note's
-  position, which Codex argues belongs in the **system message** (the same move templates already
-  make, and it would decouple the warning from the status excerpt entirely); `tests/file-slices.test.js`
-  now pulling `node:sqlite` transitively, which is OAI-61's import chain; and `bench/task-run.mjs`'s
-  `main()` having no test.
-  **Start it in a FRESH session.** The clause in the repo's own methodology fired: pass 2's findings sat
-  mostly inside pass 1's repairs, and two of them were defects the author had already reasoned about
-  and shipped anyway.
-
-- **OAI-90** — **Two Stage 2 deliverables were never built, and were reported as shipped.** Filed
-  2026-08-06 by the late review ladder, which is the only reason they are visible.
-  **(a) Artifact PERSISTENCE.** The plan asks for "patches and findings stored as separate artifacts
-  beside the raw output". Only the *check* was built: `saveArtifact` existed but was gated on a field
-  nothing ever set, so it was unreachable, and it is now deleted rather than left looking shipped.
-  Wiring a `--save-artifact <path>` flag was **deliberately rejected mid-ladder** — a caller-supplied
-  write path for model-generated content is a new consideration that would fire `security-review`, and
-  growing the reviewed surface inside a pass is its own defect. Decide the shape deliberately: a flag,
-  a fixed location beside the job log, or not at all.
-  **(b) Context manifests.** Never built, never deferred, never recorded until now. The plan pairs it
-  with file slices ("context manifests and file *slices*"); slices shipped, manifests did not, and
-  nothing anywhere said so. Decide whether a manifest is a distinct thing from the delegate's existing
-  `files` list before building anything.
-
-- **OAI-95** — **permission hardening for the job state tree, withdrawn from OAI-61 with its findings.**
-  `job-store.mjs` chmods `jobs.db` to `0600` best-effort and swallows every failure, so hardening that
-  fails does so silently. OAI-61's ladder built a `state-permissions.mjs` (`restrict`, `narrowOrWarn`)
-  to fix that and it was withdrawn with the rest of the unplanned scaffolding (`adr/033`); the tree is
-  back to the pre-existing bare `chmodSync`, which is where it was rather than worse.
-  **Design already established, and each point was proved by execution rather than argued:**
-  `restrict()` must **verify the mode took** rather than trust `chmodSync` not to throw — disproved on
-  a FAT image, where the call silently no-ops and leaves the file readable; the chmod must run **before**
-  `PRAGMA journal_mode = WAL`, because SQLite creates `-wal`/`-shm` with the main file's mode as it
-  stands at that moment and nothing chmods them afterwards, so a first-ever submission wrote the query
-  string, the prompt and every attached file into a `jobs.db-wal` left at **0644**; and the failure must
-  be **reported**, since the rest of the code's reassurances are written as though it succeeded.
-  **Carry these open findings, none of which the withdrawn version closed:** `restrict()` returns true
-  on a **symlink** (it follows one, making `openStore` a chmod primitive against any victim-owned path)
-  and on a **dangling** symlink (ENOENT counted as success), and does not check the owner is the current
-  user; on **macOS an ACL is invisible to `st_mode`**, so it can return true at 0600 while
-  `group:everyone allow read` persists — the exact inverse of the FAT case, reachable with no attacker
-  action via one inheritable ACE on any parent of `~/.local/state`, and this repo runs on darwin; the
-  early chmod's return value is **discarded**, so a throw in `applySchema` (a too-new database, which is
-  reachable and tested) skips the warning entirely; `jobs.db-journal` is in **no** narrowing list though
-  SQLite writes it whenever WAL cannot engage, holding pre-images of committed pages; `openStoreForReading`
-  narrows nothing, creating `-wal`/`-shm` at 0644; log files get the mode only on creation and `'a'`
-  follows symlinks; and a state directory **owned by someone else** throws `ERR_SQLITE_ERROR`, which is
-  not a `UserError`, so the single most likely permission failure a real user hits prints
-  `Unexpected failure: <stack>` and exits 2 unclassified. Finally, the warning is **invisible on the
-  worker path**: `cmd-task-worker.mjs` opens the store in a process whose stderr IS the job log, so it
-  is written where the user has no reason to look, and it names neither the mode it wanted nor the mode
-  it found — so a reader cannot tell 0644 from 0666. Any fix must also pin the hardening's own tests:
-  in the withdrawn version, deleting the `-wal`/`-shm` entries from the narrowing list reddened
-  **nothing**, and nothing asserted the directory mode at all.
-
-- **OAI-96** — **three pieces of residue in the shipped `node:sqlite` guard.** All found by OAI-61's
-  final pass, all in code that landed in `2312c47`, none blocking.
-  (a) **`throw null` is still reachable.** `job-store.mjs`'s comment claims the invariant holds "by
-  construction rather than by a null check a later edit can drop", and the truthy check closed the
-  *resolved-but-no-export* route — but a **falsy rejection value** still reaches `throw importFailure`
-  and prints `Unexpected failure: null`, the exact string the comment says was eliminated. Proved by
-  execution with a loader hook; no shipping Node produces it, which is why it is low. Fix is
-  `importFailure = error ?? new Error(…)` **plus softening the comment to what is true** — an
-  overstated invariant is the more durable half of this defect.
-  (b) **Two assertion triples in `tests/runtime-capability.test.js` are non-separable** — the exit-code
-  assertions move as one under any exit-code edit, and the refusal-message assertions under any message
-  edit. **They must NOT be deleted.** The `assert.deepEqual(server.requests, [])` check passes
-  *vacuously* if the command dies for any reason before the probe, and its neighbours are what establish
-  the refusal path was the one taken: they are subsumed-as-CONTROL, not subsumed-as-redundant. This
-  repo deleted four assertions on the redundancy reading during that same ladder, so the distinction is
-  filed as a documentation fix before someone applies the rule again.
-  (c) Six unused imports in `tests/runtime-capability.test.js`, left by the split. No lint catches them.
-
-- **OAI-97** — **an intermittent test failure, observed once and never reproduced.** During OAI-61 a
-  full-suite run failed an `assert.equal(status, 0, stderr)` in a job/background test, with stderr
-  opening on the ordinary `Checking fake for available models…` preamble. It did **not** reproduce
-  across ten subsequent full-suite runs. Recorded rather than closed because a flake that is not
-  understood is a test that cannot be trusted to fail for the right reason, and this suite gates every
-  commit. The one lead: it is a submission returning non-zero, not an assertion about content, so the
-  place to look is worker spawn or queue timing rather than any single test's logic.
-  **Second occurrence, 2026-08-06, while closing the session**: a full-suite run read **629/1**, and the
-  failure detail did not survive into the summary — three immediate reruns were 630/0. So the rate is
-  now two observations against roughly fourteen clean full-suite runs, and it remains unidentified.
-  Anyone picking this up should capture `npm test` to a file rather than grepping a live pipe, since
-  both observations lost the failing test's name that way.
-  **Third occurrence, 2026-08-07, during OAI-94's pass-6 batch**: `actual: 2, expected: 0` mid-batch,
-  then three consecutive captured green runs at 637/637. The failing test's name was lost to a live
-  pipe for the THIRD time, by the same person who wrote the sentence above telling them not to — which
-  is the actual finding here. The rate is now three observations against roughly thirty clean
-  full-suite runs. Anyone picking this up should make the capture the default, not the advice:
-  a note that has failed to be followed three times is not a note, it is a missing default.
-
-- **OAI-98** — **job state is trusted completely once it is on disk.** Two findings from OAI-61's
-  `security-review`, both needing write access to the state directory — a shared `XDG_STATE_HOME`, a
-  pre-created `/tmp` path, not the default `~/.local/state`.
-  (a) **A tampered row redirects the prompt.** `cmd-task-worker.mjs` `transportProfile` takes `baseUrl`
-  and `query` **verbatim** from the row, so replacing `jobs.db` sends the whole prompt and every attached
-  file to an attacker's endpoint, and the reply is printed by `/oai:result` — reaching the delegate
-  agent's context. *Proved not redirectable: the configured credential.* `job-auth.mjs`'s third
-  comparison anchors on the **current config's** origin, so a forged `authorizedOrigin` is refused —
-  that check genuinely defeats a fully attacker-written row and is worth keeping. But the common local
-  case has no key (`mode:'none'`), and then nothing is checked at all.
-  (b) **No `PRAGMA secure_delete`**, so `job-retention.mjs`'s `DELETE` leaves `transport.query` — and
-  the prompt — recoverable in freelist pages of a file whose permissions are the only protection.
-  Deliberately separate from OAI-95: hardening the *modes* does not help once the bytes are readable by
-  a process that legitimately opened the file.
-
-- **OAI-106** — **the row is still wrong about why a salvaged job ended, and the CHEAP HALF is separable
-  from the expensive one.** Narrowed by OAI-62, which originally filed this as the whole defect — a
-  paid-for answer lost outright — and then had both approvers reject that filing: losing the answer
-  *was* contention killing live work, which is precisely OAI-62's own ask, so it was fixed in the
-  ladder rather than deferred. `salvageOutcome` now writes the outcome to the job log under the fixed
-  prefix `SALVAGED_OUTCOME` before the storage error propagates, so the answer survives
-  (`cmd-task-worker.mjs:183`, line moved; verified again 2026-08-17).
-  **RE-SCOPED 2026-08-12, when OAI-62 was closed over the objection this item carries.** It was framed
-  as "a `persistence-pending` state **or** a recovery pass" — both structural, and that framing is what
-  kept it expensive enough to defer indefinitely. The thing that actually made the approver refuse is
-  narrower than either, and it is a **sentence**:
-  **(a) THE CHEAP HALF — stop asserting something false.** `job-reconcile.mjs:79-83` publishes
-  *"The worker for job X exited without recording an outcome."* That is **false** whenever a salvage
-  line exists: the worker recorded its outcome and SQLite refused the write. `terminalizeDead` can
-  check the log for the marker and say so — *the worker recorded its outcome to the log but could not
-  persist it, see `<path>`* — in the failure message and hint. **This touches no lifecycle state**,
-  adds nothing to `TERMINAL_STATES` (`job-record.mjs:17`, four values, no SQL `CHECK`), and removes the
-  actual falsehood. Do this one.
-  **(b) THE EXPENSIVE HALF — a state that can express it.** An explicit non-terminal
-  `persistence-pending` that `/oai:result` and reconciliation both understand, or a recovery pass that
-  reads the salvaged line back into the row. This is a state-machine change in the subsystem whose
-  entire tier is about lifecycle misreporting, so a new state is itself a plausible source of the class
-  it is meant to fix. **It may never be worth building**, and (a) does not depend on it.
-  **A witness is missing for BOTH halves and is worth having regardless.**
-  `tests/job-busy-placement.test.js` asserts the salvage line is written and that the row is still
-  `running` immediately after — it **never drives reconciliation**, so nothing observes the row
-  becoming `failed`/`worker-died`. The false terminal state has no test that can fail on it, which is
-  this repo's most-repeated shape. Related: [OAI-105] *(parked 2026-08-18, `not worth doing`)*.
-
-- **OAI-107** — **cancellation is the one lifecycle fact with no contention answer.** `runCancel`
-  calls `reconcileAll` before `requestCancel` and neither is retried, so a `SQLITE_BUSY` anywhere in
-  the sweep fails the command before the stop request is attempted at all — and what the user sees is
-  a raw `database is locked`, not a `UserError` with a hint, so even "run it again" is advice the
-  output does not give. The billable request they wanted stopped carries on. OAI-62 declined to build
-  this: a failed cancel is visible and nonzero, it kills nothing, and that item's ask is that
-  contention must not kill live work. But review called the enumeration lifecycle-biased with
-  justification — terminal facts get retries and a stop request does not. The fix is a cancellation
-  contention policy: reconciliation best-effort under busy, `requestCancel` retried on a short bounded
-  budget, and exhaustion converted to a `UserError` that states the cancellation was not recorded.
-  Needs a witness driving a busy through both halves.
-
-- **OAI-108** — **an unrecorded start reaches a human and no machine.** When the spawn stamp's retry
-  exhausts, `submitTask` warns on stderr that the job was spawned and that this session cannot see
-  what the worker did next — but `--json` still emits `{id, background: true}`, byte-identical to a
-  submission whose start was recorded. A harness therefore cannot distinguish them, and the one
-  channel it reads says everything is normal. A `spawnConfirmed` field was built during OAI-62's
-  ladder and **reverted**: it changed a published `--json` contract that item's approved plan never
-  covered, and `commands/task.md` documents that envelope literally. Whatever lands here must ship
-  with the doc, an end-to-end `--background --json` test, and a name describing what is actually
-  unknown — the spawn IS confirmed, `spawnWorker` returned a pid; it is the recorded start that is
-  missing, and a caller reading "unconfirmed spawn" could resubmit a billable request.
-  **Enlarged by OAI-67 on 2026-08-12, and this is now the item's worst case rather than its original
-  one.** OAI-67 changed the same stamp so that ANY storage fault — not only an exhausted lock
-  contention — reports on stderr and still returns the id, because rethrowing lost the handle to a
-  worker that may already have been spending. The `--json` channel did not change, so a submission
-  made against a CORRUPT database or a FULL DISK now emits the same success envelope as a healthy one,
-  where before that caller received a rejection and knew the submission was unhealthy. The trade was
-  made deliberately (a lost id is unrecoverable and costs money; a silent success is recoverable by
-  polling `/oai:status`), Codex and the author both recommended keeping it, and the user chose it — but
-  it means **this item now covers a path that previously did signal**, not merely one that was always
-  quiet. The contract fix is still the same fix, and it is still gated on the same doc-plus-test work.
-
-- **OAI-110** — **the six-sites count is stated in a third document that nothing holds to the code.**
-  `tests/busy-site-count.test.js` derives both counts from `scripts/lib` and requires the sentence in
-  `adr/020` and `job-busy.mjs` — but CLAUDE.md states the same figure in its own words, outside that
-  `documents` array. Proved with a mutation and a positive control: a seventh `withBusyRetry` site was
-  added, the guard failed naming only the two documents, those two were corrected, the guard went
-  green — and CLAUDE.md still said "six". **Adding CLAUDE.md to the array does not fix it**: the
-  required sentence is the literal "six `withBusyRetry` call sites", and CLAUDE.md's "six enumerated
-  sites" collapses two different counts into one number, matching neither the required-sentence check
-  nor the wrong-number check. So the fix is to reword the CLAUDE.md line to carry both counts with
-  their nouns, *then* add it to `documents`. This is the same defect the guard was written three
-  review passes deep to eliminate, reproduced one document over. Raised and CONFIRMED by `lean-wide`
-  in OAI-62's terminal pass.
-  **RE-MEASURED 2026-08-14 by the sweep, and both numbers moved — read this before working it.** The
-  counts are now **seven `withBusyRetry` sites and five `isBusy` sites**, and CLAUDE.md says "seven
-  enumerated sites", which is **currently accurate**. Two things changed underneath the item: the
-  guard's `documents` array is now `['scripts/lib/job-busy.mjs']` **alone**, because `adr/020` was
-  deleted with the ADR corpus (`d1ad2aa`) — the deletion commit calls that *"A REAL WEAKENING"* in its
-  own words, since one witness means a file and its own doc comment can now move together. So the
-  defect is no longer "CLAUDE.md disagrees" but "**one witness, and CLAUDE.md still outside it**", and
-  the fix is unchanged in shape while being more valuable than when filed.
-  **FOLDED IN 2026-08-17 by the sweep, same shape one level out**: four more comments cite the deleted
-  `adr/020` as settled policy nothing now holds to the code — `task-submit.mjs:182`,
-  `cmd-task-worker.mjs:173`, `job-launch-outcome.mjs:86,105`. This item's whole subject is "a claim
-  nothing holds to the code," so these are in scope for the same fix rather than a separate filing.
-
-- **OAI-111** — **Stale git worktrees accumulate under `.claude/worktrees/`.** *(Count corrected
-  2026-08-13 by the backlog sweep: **3 directories, 29M**, not the ~28 first filed — the retired
-  review fan-outs stopped creating them, so the rate has fallen and the residue has not been cleared.)* Left behind
-  by review fan-outs whose agents ran under `isolation: worktree`; each is a full checkout of this
-  repo, so the disk cost is real and grows with every wide review. Nothing reads them after the run
-  that made them. Needs a sweep that is safe against a worktree still in use — `git worktree list`
-  plus a liveness check, not a blind `rm -rf` — and, if the harness offers one, a cleanup hook rather
-  than a manual command nobody remembers to run.
-- **OAI-112** — **The candidate-selection design is under a PARTIAL PLAN WITHDRAWAL. ADJUDICATED
-  PARTIAL BY THE USER, 2026-08-07** — so the two repairs OAI-84 shipped STAY, and only the
-  candidate-selection design is replaced. The replacement goes through a fresh step-3 plan gate and
-  earns its own ladder; the one-per-feature replacement budget is not consumed until that ladder's
-  ledger opens. Filed 2026-08-07 from OAI-84's review ladder, which ran six passes
-  and ended WITHOUT dual approval (both approvers returned `CHANGES-REQUIRED`). What is withdrawn is
-  only the candidate-selection design that grew across passes 2-5 — **the two repairs OAI-84 was filed
-  for both stand and are audited**: the channel fallback under `--structured-output`, and the bare
-  top-level array. The defect is structural, not a bug list: `findingsShaped` (content) and
-  `extractJson` (position, last-outermost) each decide alone, neither knows what the other guarantees,
-  and **two signals the design never represents** are visible to neither — candidate MULTIPLICITY, and
-  whether a candidate has a valid extent. Carried evidence, all reproduced first-hand: several
-  outermost candidates are resolved silently by position; the "prose-wrapped clean review is
-  unreadable" trade rests on a false binary, since a lone scanned empty could be accepted while genuine
-  competitors are refused; a wrapper-shaped array element is kept in place of the payload it wraps; and
-  `extractJson` admits a candidate with `end: undefined`, which survives the containment filter (every
-  comparison against `undefined` is false) and wins the ranking — not live today only because the
-  single caller's predicate happens to reject it, which is a coincidence of the caller rather than a
-  property of the code. **Scope it as CANDIDATE SELECTION, not "ambiguity"** — scoped to multiplicity
-  alone, the extent defect survives the replacement. Replacement code is not eligible until a fresh
-  step-3 plan gate closes; the one-per-feature replacement-ladder budget is UNSPENT.
-
-
-  **ABSORBED OAI-84 on 2026-08-13 by the backlog sweep**, whose two repairs are SHIPPED and were
-  verified on disk (`structured.mjs:202`, `:242`). Only the withdrawal was still live, and it cannot
-  close without this item's replacement — the merge criterion, not tidying. **Its record, evidence and
-  register row are in `BACKLOG_DONE.md`; they are not restated here.** Note **OAI-114** sits inside
-  this item's replacement scope, since `objects()` rejects at candidate SELECTION.
 - **OAI-113** — **The OAI-84 batch made prose scanning QUADRATIC on model-controlled input.** Filed
   2026-08-07, live today. `scanFor` skips a start position whose bracket never closes, but re-scans the
   entire remaining suffix before advancing ONE byte, so a reply carrying many unmatched openers costs
@@ -1647,183 +861,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   seconds of real work left no attempt record at all**. Evidence in
   `bench/results/sweep-2026-08-13-overnight/review-sweep-2026-08-13T21-57-52-135Z.ledger.jsonl`.
 
-- **OAI-125** — **The resolved-SHA guarantee reaches the artifact by ONE UNTESTED PATH.** Filed
-  2026-08-08 from the follow-on ladder, `unresolved at cap`. **MUTATION-PROVED**: deleting just the
-  `options.from =` assignment in `bench/review-sweep.mjs` leaves the suite at 766/0, after which the
-  record and report print the caller's typed ref instead of the resolved commit. Two benchmark arms
-  invoked identically with `--from main` days apart would then review different histories while the
-  artifact claimed the same window — **the exact defect OAI-124 exists to prevent, reintroducible with
-  nothing going red.** Root cause: `main()` is unexported and runs only under the
-  `process.argv[1] === fileURLToPath(import.meta.url)` guard, so no test can invoke the composition.
-  **This is the shape of `bench/run.mjs`** — the file this harness's own header says it was
-  deliberately structured NOT to imitate, because an unguarded main is why `run.mjs` has no test at
-  all. `task-run.mjs`'s injectable seams were copied for the loop and not for the composition.
-  **The fix is a seam, not another test**: export the composition, or `runMain(deps)`.
-  **Update 2026-08-09 — `bench/run.mjs` was worse than this item said, and is now partly fixed.**
-  Its `main()` was not merely unexported: it was called **unconditionally at module scope**, so the
-  first `tests/` import of that module ran a whole six-case benchmark and wrote a report and a record
-  into `bench/results/`, indistinguishable from a real arm. Found by OAI-117's seam and fixed there —
-  `run.mjs` now has the `process.argv[1]` guard `review-sweep.mjs:291` always had, plus one exported
-  function under test. **This does NOT close OAI-125**, whose defect is `review-sweep.mjs`'s
-  `options.from =` assignment reaching the artifact untested; it removes the excuse that `run.mjs` is
-  the shape to copy.
-  **Until it lands, every benchmark arm must pass a full SHA and the pre-flight assertion is
-  load-bearing rather than belt-and-braces.**
-
-- **OAI-126** — **A bare catch deletes the cause it was meant to report.** Filed 2026-08-08,
-  `unresolved at cap`. `resolvePin` in `bench/lib/sweep-window.mjs` wraps its only git call in
-  `catch { throw new UserError('--from did not resolve to a commit') }`, discarding the caught error —
-  so a git **spawn** failure is reported as the revision being bad. **Reproduced against the real
-  artifact at its real path**: with a PATH containing only node, `--from HEAD` printed
-  `--from did not resolve to a commit: "HEAD"`, and a positive control showed
-  `git rev-parse 'HEAD^{commit}'` resolves fine in the same tree. The harness's printer shows only
-  `error.message` for a `UserError`, so the `spawn git ENOENT` text that named the real cause is
-  deleted. One-line fix: carry the cause as the `hint`.
-
-- **OAI-128** — **A test that asserts presence where the code guarantees presence.** Filed
-  2026-08-08, `unresolved at cap`. **A NEW TRAP CLASS, distinct from the stub-fidelity entry added the
-  same day.** The OAI-121 caveat tests assert `key in entry` for all five carried fields, but
-  `reported()` sets every one with `?? null` — so reading the WRONG source field (`hunksOnlyTypo`)
-  leaves the key present with `null` and the assertion still passes. The test verifies the SHAPE of
-  the mapping, not that it read the right field. **Fifth instance of "a test that cannot fail" in one
-  feature**, and the second distinct shape; belongs in `.claude/REPO_TRAPS.md` as its own entry, since
-  the stub-fidelity entry would otherwise read as covering it.
-  *(Half done, verified 2026-08-14: the `REPO_TRAPS.md` entry now exists — "A test that asserts
-  presence where the code guarantees presence". **The test itself is unchanged**, so what is live here
-  is the fix, not the filing.)*
-
-- **OAI-129** — **The shortfall cause is still guessable at one boundary.** Filed 2026-08-08,
-  `unresolved at cap`. `walked >= scanLimit` is *also* true when exactly `scanLimit` commits are
-  reachable, so a repo with exactly 200 reachable commits and a 200 limit is told "the scan stopped at
-  its `--scan-limit`" when raising it would find nothing. Reproduced with a stub git. **The fix was
-  named by the reviewer**: request `scanLimit + 1` and record whether an extra existed — that
-  separates the two causes instead of inferring one. The docstring's claim "WHICH cause, not a guess"
-  is false in exactly this case.
-
-- **OAI-131** — **ANSWERED 2026-08-09 by the model matrix: `idle-timeout` was never observed.**
-  Filed 2026-08-08 as two unverifiable vendor assumptions; **(a) is now measured**, (b) is not.
-  **The measurement**: 5 models x 2 executions x the same 10 pinned commits (`--from f092405`), 1200s
-  per commit, whole files. Records at `bench/results/model-matrix-2026-08-08/` — **gitignored, so quote
-  these figures rather than assuming the files survive.**
-  **Reason codes across 22 recorded failures**: `token-exhaustion` x14, `deadline-timeout` x5,
-  `empty-completion` x2, **`idle-timeout` x0**.
-  **What it means for `serverUnwell`.** The rule stands — the CLI's own per-budget hint is still the
-  right discriminator, and `empty-completion`, which did fire, is correctly admitted. But **the five
-  iterations spent getting `idle-timeout` into the set bought no observed coverage**, while the shape
-  that dominates real failures (`token-exhaustion`) is deliberately excluded as the model's budget.
-  The reasoning was sound and the yield was nil — worth knowing before the next argument of that kind.
-  **(b) remains unmeasured**: no reply carried both `analysisCut` and a substituted model, so that
-  pairing is still only a synthetic fixture's claim.
-
-- **OAI-133** — **The gemma arms measured NOTHING about the gemma models. CORRECTED 2026-08-09.**
-  The first filing guessed the cause was "something else resident"; that was **wrong and is recorded
-  here rather than quietly replaced.** Measured with `lms ps` reporting **no models loaded at all**,
-  `gemma-4-12b-qat` still failed: `HTTP 400 … requires approximately 44.87 GB`. The real cause is
-  **OAI-134** — the plugin JIT-loads at `max_context_length` (262144 for every model on this server).
-  **Sized contexts, measured by actually loading each one** (36 GB machine):
-  | model | weights | verdict |
-  |---|---|---|
-  | `gemma-4-12b-qat` | 7.15 GB | **loads at 61,696** — the same context the qwen arms used |
-  | `gemma-4-26b-a4b-qat` | 15.64 GB | loads, but **LM Studio ignores `-c`** and pins 116,736 |
-  | `gemma-4-31b-qat` | 18.85 GB | **refused at 61,696** (needs 34.45 GB of 36); loads at 32,768 |
-  KV cost derived from the error and confirmed by loading: ~0.144 MB/token for the 12b.
-  **`gemma-4-31b` cannot be benchmarked on this machine at a context comparable to the qwens** — that
-  is a fact about the machine, and it is the finding. `gemma-4-26b-a4b` gets nearly double the qwens'
-  context, so its earlier `unreadable` replies (8 of 10, then 4 of 10 — it emitted `findings` and
-  `analysis` as prose rather than the requested shape) are **not** explicable as a context handicap.
-  **The re-run was STOPPED BY THE USER after ~1 minute: SSD usage spiked.** Cause was almost certainly
-  swap thrash, not writes — the whole first matrix wrote 364 KB. Loading and unloading 7-19 GB models
-  back to back on a 36 GB machine pages heavily. **Do not re-run three models in one sitting**; one
-  model per session, with `sysctl vm.swapusage` watched, and never size a context that leaves only
-  ~1.5 GB of headroom.
-
-- **OAI-135** — **The benchmark's caveat layer reports success where it cannot fail: four defects, none
-  of them reachable by a diff-scoped review.** Filed 2026-08-09 from the OAI-104/OAI-117 review
-  ladder's **confirmation pass** (`adr/032`), which exists precisely to look at code the ladder has not
-  touched. Passes 1 and 2 read only the diff and found five and three defects, **all in the ladder's own
-  fixes**; the confirmation pass read the surrounding module and found these, all **pre-existing**.
-  Each is reproduced, three of them by executing the real unmodified code.
-  1. **The prompt-cache caveat cannot print on the default invocation.** `caveats.mjs:87` `cacheNote`
-     gates two paragraphs on a ratio needing **two prefill samples in one case**, but the default is
-     `runsPerCase = 1` (`run.mjs:219`). Executed with a positive control: 1 sample → **0 of 2**
-     paragraphs; 2 samples → **2 of 2**; at `--runs 3` with 1 surviving sample → **0 of 2**, so the
-     gate is **sample count, not run count** — a run the server degraded (this repo measured LM Studio
-     dropping ~1/3 of long requests) loses the warning exactly when it needs it. The second paragraph
-     ("Generation is what the cache does not touch") **needs no ratio at all** and is bundled behind the
-     same gate. `case-rows.mjs:74` justifies its `--cold`-only exclusion on the premise that "the caveats
-     say so" — false on the default path, so a **behaviour is reasoned from a claim that does not hold**.
-  2. **A truncated-but-parsed run is discarded, and the caveat asserts it could not exist.**
-     `run-buckets.mjs:35` `truncatedRuns` filters on `finishReason === 'length'` with **no parse check**;
-     `case-rows.mjs:197` then drops those runs from `scored`, and `caveats.mjs:38` explains the exclusion
-     with *"the JSON never parsed, so there is nothing in them to score"* — which nothing enforces.
-     **Reachable because ADR 003 removed the default schema on 2026-08-04**: without a grammar the model
-     completes its JSON and keeps talking, so hitting the ceiling *after* a complete reply is the
-     ordinary case now. The `cut` vs `truncated` split was sound while a schema guaranteed the JSON came
-     last; **removing the schema invalidated the premise and this bucket was never revisited.**
-  3. **The dropped-defects caveat mixes two units and inverts its own sentence.** `caveats.mjs:261` sums
-     `listed` (distinct defects, **per case**) beside `scoreable` (`case-rows.mjs:236`:
-     `listed * scored.length`, **defect-slots per case × scored runs**) and prints them as a subset:
-     *"N scoreable of M listed defect(s)"*. Executed output at 3 scored runs: **"6 scoreable of 2 listed
-     defect(s)"**. It has never failed a test because **every caveats test passes `runsPerCase: 1`**,
-     where the two units coincide by coincidence. Reachable on any full-corpus run — `dropped` is
-     non-empty for `config-origin`, `scaffold` and `model-info` — and **the sibling caveat two
-     paragraphs above tells the reader to raise `--runs`**, so the report instructs you to do the thing
-     that breaks it. *(Narrowed by its verifier: the trailing "smaller than the truth twice over" clause
-     SURVIVES — in slot units the honest denominator is `(listed+dropped)*scored = 10 > 6`. The defect is
-     purely the unit mismatch, plus understating the dropped gap by a factor of `scored.length`.)*
-  4. **DONE 2026-08-09 (see below). The schema arm is captioned by what was ASKED FOR, not what happened.** `caveats.mjs:165` asserts
-     *"the reply shape was enforced by a `response_format` schema"* gated on the **flag**.
-     `review-request.mjs:224-232` **falls back to unconstrained** when a server rejects `response_format`
-     and says so on stderr; `cmd-review.mjs:156-167` emits both facts and its own comment names the
-     distinction — *"What was ASKED for, beside `structured` which is what was obtained."* **`bench`
-     never reads `structured`** (`grep -rn structured bench/` returns only `structuredOutput`). Against
-     oMLX, vLLM without the feature, or an older LM Studio, **both arms of the comparison are the same
-     arm, labelled as different ones** — while the report instructs the reader to read one against the
-     other. **Not pre-existing in the way the other three are**: the note and the flag forwarding are
-     OAI-117's own. **Deferred out of the ladder deliberately, not missed** — the fix needs a new row
-     field, a reduce across runs and a threaded argument (`caseRows` projects a fixed field set;
-     `caveats` takes `structuredOutput` from the CLI options, never from `rows`), and it **cannot be a
-     boolean**: with N runs a case can degrade on some and not others, so the caption must read
-     *"requested; obtained on 2 of 3"* or it replaces one blind caption with another. Landing that in the
-     ladder's **final** batch would have shipped it unreviewed, since `adr/089`'s verification pass opens
-     no finding lenses.
-  **ITEM 4 SHIPPED 2026-08-09**, once its cost turned out to be a tenth of the estimate: the CLI
-  already emits `degraded` ("asked for, and not obtained") in the `--json` envelope, so no new fact had
-  to be computed — `case-rows.mjs` counts it per run beside a `reported` denominator and
-  `bench/lib/schema-degrade.mjs` prints it. **Per run, never a boolean**: a case can degrade on some
-  runs and not others, and a wholly degraded arm now says **"THIS ARM DID NOT MEASURE A SCHEMA"** while
-  a mixed one says it only partly did. Four mutations prove it, including the one that reinstates the
-  original bug. **Items 1-3 and everything below remain open.**
-  **Also here, same file, lower value:** `run.mjs:81-84` — an empty `--model=` suppresses the manifest
-  fallback via `??` and is then discarded, so the harness **silently benchmarks the configured default
-  and overrides a case-level model pin**, measuring a different target than the operator named; and
-  `run.mjs:219` — an empty `--runs=` is truthiness-tested before conversion, so it reads as absent and
-  runs 1 instead of rejecting the value. Plus one weak test: the `--cold` case never asserts `second`
-  *has* a `--cache-buster`, so a `second` that dropped the flag entirely still satisfies `notEqual`.
-  **The unifying class is this repo's own** — a check or claim that reports success while structurally
-  unable to fail — and (1), (3) and (4) each additionally **cannot fail under the only configuration
-  the tests exercise**. Fix (3) and (1) with tests at `runsPerCase > 1`, which no test currently uses.
-- **OAI-137** — **`readOmlx` does not accept `data` when `models` is present but empty, though the
-  comment four lines above says it does.** Filed 2026-08-10 from the overnight sweep, which reviewed
-  the very commit (`1139d97`) that introduced the line. **Reproduced directly against the real
-  predicate**, not argued:
-  ```
-  {models: [], data: [2 entries]}  ->  []          # data never reached
-  {data: [1 entry]}                ->  [1 entry]   # data reached only when models is absent
-  ```
-  `model-info.mjs:130` is `[payload?.models, payload?.data, payload].find(Array.isArray) ?? []`, and
-  `Array.isArray([])` is **true**, so an empty `models` array wins the `find` and short-circuits the
-  fallback. The docstring at `:126` states *"`data` is still accepted — dropping it would swap a
-  verified shape for an unverified assumption pointing the other way."* For the `{models: [], data:
-  […]}` envelope that sentence is **false**.
-  **Narrow envelope, and that is the argument for fixing it rather than against.** No observed server
-  returns that shape today; the whole point of keeping `data` was to cover a server nobody has run
-  this against. A fallback that silently does not fall back is worth less than no fallback, because
-  the comment tells the next reader it is covered. **This repo's signature class** — a claim the code
-  does not support — arriving inside the fix whose entire subject was vendor-shape assumptions.
-  **Fix shape**: prefer the first **non-empty** array, or take the first array and fall through when
-  it is empty. Either way the test must use `{models: [], data: […]}`, which no current test does —
-  which is why the unit suite was green through the whole review.
 - **OAI-138** — **Half the eligible corpus was lost to a per-commit cap that was never calibrated for
   it: 20 of 40 commits died on `deadline-timeout`. THE CAP HALF HAS SHIPPED; SALVAGE HAS NOT.**
   *(Status corrected 2026-08-13 by the backlog sweep, verified against disk: `review-sweep.mjs:48` now
@@ -1924,142 +961,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   *"throw this away"* and starts meaning *"stop thinking and conclude"*. That is a defensible bound at
   almost any value, and — unlike a number calibrated to one model on one machine — **it does not rot
   when the model changes**, which is the failure mode every other candidate here shares.
-- **OAI-140** — **A slow commit RESETS the consecutive-outage counter, so a real outage interleaved
-  with slow commits never trips `--abort-after`.** Filed 2026-08-10, surfaced by Codex while pricing
-  OAI-138's cap rise and **separated from it deliberately**: it is a defect in its own right, it is
-  live at today's 900s cap, and folding it into a cap change would hide it.
-  `review-sweep.mjs:216` is `consecutiveOutage = isOutage(entry) ? consecutiveOutage + 1 : 0;` — the
-  counter is a run of **strictly consecutive** outages, and **any** non-outage zeroes it. A
-  `deadline-timeout` is deliberately not an outage: that is exactly what OAI-119 asked for and OAI-120
-  delivered, and it was the right fix — three slow commits must not abort a healthy sweep. **The
-  overcorrection is the reset.** A server that is genuinely failing every other commit, with a slow
-  commit in between, produces `outage, timeout, outage, timeout, …` and the counter never reaches 3.
-  The sweep runs to its full wall clock against a dead server and reports the result as coverage.
-  **Evidence it is live, not theoretical:** last night's run recorded **20 deadline-timeouts and zero
-  aborts**. That was read at the time as "the OAI-120 fix held in the field" and it did — but the same
-  data cannot distinguish *"no outage occurred"* from *"outages occurred and were repeatedly reset"*,
-  because **nothing records the counter's history**. This is the repo's own class again: a check that
-  reported success without the evidence to fail.
-  **OAI-138's cap rise makes it worse and is the reason it surfaced now.** At 1,800s a single
-  pathological commit can burn 30 minutes without advancing the counter, so the interval over which a
-  genuine outage stays undetected roughly doubles.
-  **Fix shape (not decided, and it must not simply re-admit `deadline-timeout` as an outage — that
-  reverts OAI-120).** Candidates: count outages in a sliding window rather than requiring them to be
-  consecutive; decay the counter instead of zeroing it; or keep the streak but record every outage so
-  the report can say how many occurred and how often the streak reset. **The last one is worth doing
-  regardless**, since it is what would have let last night's record answer the question at all.
-- **OAI-141** — **The reviewer's per-commit output is unstable enough that ~30% of finding-bearing
-  commits do not reproduce run-to-run, and every single-run comparison in this tracker was read as if
-  it were a measurement.** Filed 2026-08-12 from OAI-139's replication, which was designed to answer a
-  different question and answered this one on the way.
-  **Four sweeps over the same 40 eligible commits, same pinned SHA, same model, same 1800s cap.** Two
-  whole-file, two diff-only. Finding-bearing counts: **17, 22** (whole-file) and **19, 21**
-  (diff-only). **Whole-file re-run against ITSELF reproduced only 12 of its own 17 finding-bearing
-  commits** — the same number the diff-only arm reproduced.
-  **So the spread between identical runs (17 vs 22, and 5 of 17 not reproducing) is LARGER than the
-  difference between the two configurations anyone was arguing about.** A single-run A/B in this
-  harness cannot resolve an effect smaller than that, and nothing in the tracker previously said so.
-  **What this does and does not invalidate**, judged rather than asserted:
-  - **OAI-138's cap result SURVIVES.** 20 commits hitting the 900s boundary exactly, against 18
-    completions demonstrably needing more than 900s, is far outside this spread. Codex made the same
-    call independently.
-  - **The diff-only comparison did NOT survive it** and was correctly recorded as inconclusive before
-    the replication existed; the replication then refuted it outright.
-  - **Anything else here resting on one run against one run should be re-read**, and future arms
-    should say what effect size they can actually detect.
-  **The likely mechanism is already measured, not speculative:** 97-98% of every completion is
-  `reasoning_tokens` on an unconstrained path with no schema (`adr/003`), so what the model attends to
-  varies run to run. The same commit has completed once and starved once on identical input.
-  **What "absent" means here matters and was nearly mis-recorded:** across the 10 commits where a run
-  went quiet, absence usually meant **a different defect reported**, not none — so a naive
-  reproduction rate understates agreement. Only 1 of 17 went clean in every re-run.
-  **Fix shape (not decided).** Options: report a reproduction rate alongside any sweep comparison;
-  require N>=2 runs per arm before an A/B enters this tracker as evidence; or state a minimum
-  detectable effect in the pre-registration. **The cheap half is the last one** — it costs a sentence
-  and would have stopped this being read as a signal for two days.
-  **A FIFTH run, 2026-08-14, and it is recorded here rather than as its own item.** Same model, same
-  1800s cap, whole-file, warmed rather than cold-started; 35 eligible commits overlap the arms above.
-  On that overlap: **15 finding-bearing tonight against 21**, 23 total findings against 33, **14 of
-  21 reproduced, and 1 finding-bearing commit was novel**. That sits inside the spread this item
-  measured (17 vs 22; 12 of 17), so it is a data point, **not** a regression — and the discipline
-  this item asks for is what produced that reading. **It was nearly filed as a separate defect**: at
-  36 of 40 commits the partial run showed 11 against 18 with *zero* novel commits, which looked like
-  an asymmetry the noise model does not predict. The last four commits removed it. **A partial sweep
-  is not a small sweep — reading one is how this item's own mistake gets made again.**
-  One real subtraction survives: **1 of tonight's 7 non-reproductions is a discarded answer, not a
-  quiet one** (OAI-156), so a reproduction rate computed off outcomes alone understates agreement by
-  at least that much.
-
-- **OAI-143** — **`errorReport` carries none of the caveat fields `jsonReport` does, so a run that was
-  CUT tells a harness nothing about what it sent.** Filed 2026-08-12, observed while verifying
-  OAI-139: a review cut by `--max-seconds` returns `{error, reason, message, hint, attempts,
-  requestedModel}` and nothing else. `estimatedTokens`, `hunksOnly`, `skippedUnsizedWindow` and
-  `contextChecked` are all absent — so the run carrying the MOST evidence about a sizing problem is
-  the one that reports least about it. Concretely: the first live reproduction attempt for OAI-139 was
-  cut at 900s and its envelope could not evidence the skip either way; the claim had to be carried by
-  a separate deterministic stub run. `adr/012` already argues the failure path is where the attempt
-  record matters most, and the same reasoning applies to the request-shape fields. Not a wide change —
-  `errorReport` needs the context `jsonReport` already receives.
-
-- **OAI-146** — **"A detached worker is running" is asserted in many places and established in
-  none.** Filed 2026-08-12, from OAI-67's gate rounds, which kept surfacing instances OUTSIDE that
-  feature's diff. The `'spawn'` event proves a child was CREATED; nothing in this repo watches it
-  afterwards, so every sentence saying a worker "is running", "is alive", or "is about to make a
-  billable call" claims continued liveness nobody observed. OAI-67 corrected every instance it
-  touched and left these, which are pre-existing and unrelated to it: `adr/020`'s site (e) discussion
-  and its evidence-table row name `a busy on the SPAWNED stamp does not lose an id whose worker is
-  already running` (renaming it renames a live test, which is why it survives a claim sweep twice over
-  — it is quoted text, not prose), and `tests/job-busy-spawn.test.js`'s header
-  ("already running and about to make a real, billable model call"). **Why it matters rather than
-  being pedantry:** the same overclaim, in `task-submit.mjs`, is what made a spawn rejection destroy
-  a live worker's row — OAI-67's central defect — and the shape recurred eight times inside one
-  feature once anyone looked. **Cheap first step is a grep, not a redesign**, and the honest bound is
-  that this is comment/ADR text, not behaviour: no code reads these sentences.
-  **NARROWED 2026-08-14 by the sweep, verified against disk — it is now ONE instance, not two.** The
-  `adr/020` site (e) discussion went with the deleted ADR corpus (`d1ad2aa`), and `task-submit.mjs`
-  has since been corrected on its own (*"a rejection may mean no child was ever created, or a child
-  that is alive"*). What remains is `tests/job-busy-spawn.test.js`'s header and test names —
-  *"already running and about to make a real, billable model call"* — which is **quoted test text, so
-  renaming it renames a live test**, exactly the reason this survived two claim sweeps.
-
-- **OAI-147** — **`tests/structure.test.js`'s orphaned-doc-comment guard is blind to a file's FIRST
-  function, which is where the defect it exists for is most likely to be.** Filed 2026-08-12 from
-  OAI-67's review pass 3, and **measured rather than argued**. The guard tracks `seenFunction` and only
-  reports once a `function` declaration has been passed (`tests/structure.test.js:69,74`, moved from
-  `:120,125` when the ratchet retirement deleted 51 lines above them, 2026-08-17 — the file lost 57
-  lines total, but 6 of those sat below this site), so two
-  adjacent doc blocks ABOVE a module's first function are invisible to it. That is exactly the shape
-  `acceptance-audit` found by eye in `scripts/lib/job-launch-outcome.mjs`, where the module's own
-  contract had detached onto a one-line stderr writer and the exported function carried no docstring at
-  all — while this guard ran green in the same suite.
-  **Positive control, both directions, in one run:** a probe file with the adjacency placed BEFORE the
-  first function leaves the guard green; the identical adjacency placed AFTER a function reddens it and
-  names the line. So the guard works and its scope is wrong, which is the more dangerous shape — it
-  reports success over the case it was written for.
-  The `seenFunction` gate is not gratuitous: its comment says it exists so a module HEADER, attached to
-  nothing on purpose, is not called a defect. So the fix is not deleting the gate but distinguishing a
-  header from an orphan — the last block before the first declaration is a header only if it is the
-  ONLY one there. A new module is precisely where a first-function docstring gets written, which is why
-  the blind spot and the defect coincide.
-
-- **OAI-148** — **the evidence a ladder produces does not outlive the session that produced it.**
-  Filed 2026-08-12 from OAI-67's review, which spent real effort rediscovering its own work twice.
-  Two concrete losses, both measured rather than supposed:
-  **(a)** the MUTATION SET was never written down. OAI-67 re-ran nine mutations after every batch, but
-  the set existed only in one session's context; resuming after a compaction meant reconstructing it
-  from what each witness appeared to guard, and one reconstructed mutation was wrong in a way that
-  mattered — it produced a SYNTAX ERROR rather than a behavioural failure, which proves a file changed
-  and nothing else, and would have been recorded as a passing mutation had it not been re-examined.
-  **(b)** the plan cited a ledger at `scratchpad/ledger-oai-67.md` for its round-by-round measurements.
-  That path is session-local and resolves to nothing in the repo, so an auditor could not corroborate a
-  single cited figure; the plan now says so instead of citing it, which is honest but not a fix.
-  **The shape of the fix is a durable per-feature evidence file** — the mutation set as a runnable
-  list, and the measurements the plan relies on — sitting beside the plan rather than in a scratchpad.
-  **The bar for it being real:** the mutation list must be EXECUTABLE, not prose. A written list of
-  mutations nobody runs is exactly the class this repo keeps legislating against, and it would decay
-  faster than the code it describes.
-  Related: the ladder register already survives the session (`adr/082`), which is the precedent — this
-  is the same argument applied to the evidence rather than to the metadata.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
@@ -2076,41 +977,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Feedstock already exists**: every run leaves `review-sweep-<stamp>.ledger.jsonl` carrying per-commit
   `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
   not replace them.
-- **OAI-155** — **The size ladder ends at the diff, so this repo's own large commits cannot be
-  reviewed at all.** Filed 2026-08-14 from the overnight sweep. Two of the five never-reviewed
-  commits were refused `oversize` in under a second: `d1ad2aa` at **128.9k estimated tokens** and
-  `9883f7f` at **101.1k**, against **57.6k usable** (a 61.7k window less a 4.1k reply reserve) on
-  `qwen/qwen3.6-27b`.
-  **This is the ladder working, and that is what makes it filable rather than a bug report.**
-  `prepareLadder` (`scripts/lib/review-ladder.mjs:60`) reaches the `hunks` rung only after the `whole`
-  rung has thrown and every changed-file body has been shed, so those two figures are **the diff
-  alone, with nothing left to drop**. There is no rung below it, so the refusal is honest and
-  instant — and terminal.
-  **The consequence is measured, not argued: the harness cannot review its own newest work.** Taken
-  with three starvations (OAI-115), the split across the completed run is exact: of the five
-  genuinely-unreviewed commits of 2026-08-13, **2 failed oversize and 3 starved — none produced a
-  review**, while of the 35 older and smaller commits **33 did** (18 clean, 15 with findings, 1
-  starved, 1 unreadable). So a sweep's coverage skews
-  systematically toward small old commits, and a header reading "40 eligible" conceals that the
-  interesting five were never seen.
-  **Fix shape (not decided), and it is a decision rather than a patch**: a per-file rung below
-  `hunks` (review each changed file's hunks alone and merge), or split the target and report N
-  sub-reviews as one. Both change what a finding is scoped to, and the second changes what "a commit
-  reviewed" means in every artifact this repo writes.
-  **There is a cheaper repair in front of both, and the measurement is decisive.** The sweep selects
-  commits by `--include scripts bench tests` but then sends the **whole** commit, so both refusals
-  were mostly content the include filter had already declared irrelevant: `d1ad2aa`'s diff is
-  **436,887 bytes whole and 34,800 restricted to those paths — 8%** (the rest is the deleted ADR
-  corpus); `9883f7f` is **340,491 against 58,384 — 17%**. Both fit the window comfortably once
-  scoped. So the first thing to try is not a new rung but **making the review honour the same
-  pathspec the eligibility check uses** — a pathspec through `selectDiff`'s `listArgs` and diff
-  command.
-  **Do NOT reach for `--file` as the interim.** `collectTarget` (`scripts/lib/git-diff.mjs:199`)
-  short-circuits on `options.file` **before** any diff selection, so `--commit X --file path`
-  silently discards the commit and reads `path` from the **working tree**, returning `diff: ''` and a
-  label of `N file(s)`. In a sweep artifact that would read as a review of the commit while being a
-  review of today's tree — the wrong-content-under-a-right-looking-label class this tracker keeps
-  filing. This entry previously recommended exactly that, on 2026-08-14, before the code was read.
+
 - **OAI-156** — **A complete answer, in the shape the prompt asked for, is discarded because it is
   not bracketed JSON.** Filed 2026-08-14 from the overnight sweep — one commit, `9a38a2a6b`, and
   **1,245 seconds of work thrown away**.
@@ -2131,48 +998,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Fix shape (not decided)**: accept a `findings:` list as a candidate shape in
   `findings-candidate.mjs`, or keep the parser strict and make the instruction compel JSON harder.
   The first widens what `parseFindings` will trust; the second costs nothing and enforces nothing.
-- **OAI-157** — **A sweep commits a night to a corpus it has never sized, so an impossible target is
-  discovered at 08:00 rather than at 22:57.** Filed 2026-08-14, recommended by `codex-rescue` in its
-  review of that night's run and adopted because the night it describes had already happened.
-  **The evidence is the run itself**: the two commits refused `oversize` were refused in **under a
-  second each**, on an arithmetic — estimated tokens against the served window — that needs no model
-  and could have been done before the first review started. Instead it was done nine hours later, by
-  hand, by a reader comparing two records.
-  **Shape**: a `--plan-only` that runs everything up to the first request and then stops, emitting per
-  enumerated commit — the resolved SHA, whether any prior ledger already covered it, the whole-file
-  and diff-alone token estimates, which ladder rung those imply, and whether the target is reviewable
-  at all. **It must run AFTER the warm-up**, or the window is unknown and every estimate it prints is
-  the unsized-window case (OAI-139) rather than the one the night will run.
-  **What it buys, stated as the thing it prevents**: 9h26m was spent to learn that 5 of 40 targets
-  were unreachable. The same fact is a sub-second calculation. It also gives the sweep a refusal it
-  cannot currently express — *this corpus contains targets no configuration of this run can review* —
-  which is the only signal that would have stopped the 2026-08-13 night going ahead unchanged.
-  **Related but NOT the same as OAI-155**: that item is about making a big target reviewable, this one
-  about knowing it is not before spending the hardware. Either can land without the other, and this
-  one is strictly smaller.
-  **Coverage lookup is the one part with a dependency**: "has a prior ledger covered this SHA" is
-  OAI-151's cross-run history. Until that exists `--plan-only` should print the sizing half and say
-  the coverage column is unavailable, rather than growing its own second index.
-- **OAI-158** — **The tracker guard cannot see six of the seven parked items, so its "live and closed
-  out at once" check is blind over most of its own domain.** Filed 2026-08-14 by the backlog sweep,
-  **mutation-proved**, in the guard the PREVIOUS sweep shipped (OAI-104).
-  `tests/backlog-structure.test.js` `closedIds` matches `^- \*\*(OAI-n)\*\*` — the list shape — and
-  `BACKLOG_PARKED.md` writes the 2026-08-13 block as `### OAI-n — parked` headings. So the guard sees
-  exactly **`OAI-44`**, and is blind to **`OAI-7`, `OAI-36`, `OAI-43`, `OAI-47`, `OAI-82`,
-  `OAI-152`**.
-  **Positive control, both directions, in one run:** resurrect `OAI-43` as a live body in ID order and
-  add it to its tier index — the suite stays **6 pass / 0 fail**, so an item can be live and parked
-  simultaneously with nothing going red. Restored, still 6/0.
-  **The shape is this repo's signature and the location is the sting**: the guard was written because
-  the invariant it enforces had been prose naming a script that did not exist, and it found real drift
-  on its first run — but its own domain query cannot reach the file that the last sweep's worth bar
-  filled. A check that reports success over the case it was written for.
-  **Fix is one line and a decision**: match both shapes in `closedIds`, or normalise
-  `BACKLOG_PARKED.md` to one heading shape. Prefer matching both — the parked file's two shapes are a
-  real history (the `### ` block carries a reopening bar per item, the older `- ` entries do not), and
-  a guard should read the tracker as written rather than require the tracker to be rewritten for it.
-  **Whichever is chosen, the mutation above is the test**: a parked id resurrected as live must turn
-  the suite red.
+
 - **OAI-159** — **78 citations in this file point at an `adr/` corpus that no longer exists, and 37 of
   the 99 live items depend on one.** Filed 2026-08-14 by the backlog sweep, counted rather than
   estimated: `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
@@ -2200,151 +1026,28 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-59, OAI-63, OAI-64,
   OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
-- **OAI-160** — **Twelve branches in the background-job display and queue modules are reachable and
-  untested, enumerated by OAI-64's confirmation pass.** Filed 2026-08-14 from that pass, which was
-  steered at PRE-BATCH symbols precisely because the three passes before it had reviewed only new
-  code. None is a defect and none was introduced by OAI-64 — which is why they are here rather than in
-  that change. `job-view.mjs` `openJobs`' null-database return and `cmd-status.mjs` `runStatus`'
-  matching "none has ever been submitted" branch; `displayOf`'s `dead` and `never-started` arms,
-  reachable only for a row a newer plugin wrote, which `queue-reconcile.test.js` creates but never
-  renders; `noteFor`'s matching "written by a newer plugin" note; `stamp`'s `—` fallback,
-  `workerField`'s "no worker registered yet", and `fields`/`renderDetail` as a whole for a **queued**
-  row, since no test renders the detail view of one; `isAlive`'s `EPERM` arm; `inImmediateTransaction`'s
-  ROLLBACK path, which nothing makes `decide` throw inside; `attempt`'s `isBusy` → `blocked` mapping,
-  exercised only incidentally by real concurrency; `claimJob`'s `false` return, the late-arrival race
-  its own comment names; and `showOne`'s "No job with id" `UserError` — the identically worded
-  assertions elsewhere hit `cmd-cancel`'s and `cmd-result`'s own copies, not this one.
-  **Two constants are pinned by nothing that names them:** `STARTUP_GRACE_MS` (fixtures sit ~1.5x past
-  it) and `STALE_BEAT_MS` (5x past it), so either could change severalfold undetected.
-  **The `noteFor` newer-plugin branch is the borderline entry, called out rather than buried:** OAI-64
-  is what first puts foreign unknown-version queued rows on a bare `/oai:status` screen, and its own
-  version-99 test executes `renderList` over such a row without asserting the note. Judged out of scope
-  because the branch itself is untouched.
-  *Enumerated by a scout against a fixed manifest, each entry checked by grepping the test tree rather
-  than assumed.*
-  **AMENDED 2026-08-16 from OAI-162's review — this item is no longer coverage-only, because the
-  premise two of its entries rest on is FALSE.** `displayOf`'s `dead`/`never-started` arms and
-  `noteFor`'s matching note are described above as "reachable only for a row a newer plugin wrote".
-  They are also reachable for an ORDINARY row whose own `schema_version` this build understands, when
-  only the DATABASE's `PRAGMA user_version` is too new: `cmd-status.mjs` then skips reconciliation
-  entirely, so a genuinely dead worker's row is never collected and renders `dead`. Proved by
-  execution against the real CLI on a seeded row — a `schema_version: 1` row with a reaped
-  `worker_pid` under `user_version = 2` renders `! written by a newer plugin (row schema 1), so this
-  build will not touch it.` That sentence contradicts itself in its own parentheses: it names the
-  row's schema as `1`, which is exactly what this build understands, while attributing the row to a
-  newer plugin. The unconditional text is `job-render.mjs`'s `noteFor`. So the work is: correct the
-  branch to say which version is too new, then pin it — not merely pin what is there. This is the
-  `PRAGMA user_version` / `schema_version` conflation the repo elsewhere insists on keeping separate,
-  landing at the one place a user reads it.
-  **Two entries above moved or aged, recorded so the item stays actionable.** `isAlive`'s `EPERM` arm
-  is now `pidLiveness`'s (OAI-162) and is still reached by no test — `grep -rn EPERM tests/` returns
-  nothing. **CORRECTED 2026-08-17 by the sweep — this amendment had the two constants' names
-  swapped**: `grep -rn STARTUP_GRACE_MS tests/` returns **zero** hits in any test file. It is
-  `STALE_BEAT_MS` that is referenced, in three test files (`abandon-record.test.js`,
-  `abandon.test.js`, `abandon-transaction.test.js`) — but only as a bare comment (`// past
-  STALE_BEAT_MS (60s)`) beside a numeric literal, not as an imported symbol used in arithmetic, so
-  changing the constant in `job-liveness.mjs` would not turn any of those tests red. **Net effect on
-  the item: unchanged** — "pinned by nothing that names them" holds for `STARTUP_GRACE_MS` (zero
-  references) and, despite the comment mentions, effectively still holds for `STALE_BEAT_MS` too (no
-  test would fail if it moved).
 
-- **OAI-163** — **A healthy model that reasons without answering is recorded as a SERVER OUTAGE, and
-  three in a row would abort the night.** Filed 2026-08-15 from the qwen3.8 characterisation sweep;
-  claim put to Codex as a refutation request and confirmed TRUE against the code.
-  The same observable behaviour — the model reasons and never emits an answer — reaches the classifier
-  in **two shapes, and only one is safe**. `finish_reason: 'length'` is tagged `token-exhaustion`
-  (`review-unparsed.mjs:20-43`) and becomes outcome `starved`, which `isOutage` does not admit. But
-  `requireAnswer()` throws a `UserError` carrying **no `reason`** for reasoning-only output
-  (`client.mjs:104-107`); `errorReport` serialises `reason: null` (`review-report.mjs:200-216`); and
-  `isOutage` admits `failed && !reason` **unconditionally** (`sweep-outcome.mjs:109-112`), which
-  `runSweep` then counts toward the abort streak (`review-sweep.mjs:207-210`).
-  **Evidence, 2026-08-15 02:26Z, commit `caa9d85ba`:** 31,249 characters of reasoning at ~15.4 tok/s
-  over 633s, then the model ended its own turn without leaving the reasoning channel. It was recorded
-  as the run's **only** server outage. The server was healthy — the commits either side of it answered
-  normally, and the model went on to complete 17 reviews.
-  **The blast radius is not just the abort.** The report's health section fired its
-  "may have done so against a server that was failing intermittently rather than a healthy one"
-  caveat on a healthy server, so the morning artifact understates its own trustworthiness.
-  **Distinct from OAI-140, and in the OPPOSITE direction** — that one is a real outage the counter
-  never reaches; this one is a non-outage the counter does. **A fix to either must not assume the
-  other's direction**, and the two should be read together before either is designed.
-  **Not covered by OAI-115 or OAI-116** — checked against both bodies. OAI-115 is the allocation
-  defect that produces the behaviour; OAI-116 is the missing `attempts[]` on that path. Neither says
-  the resulting envelope is admitted as evidence of an unwell server.
-  **Fix shape (not decided, and cheap):** the code already distinguishes these two cases — the
-  reasoning-only branch runs only after the `finish_reason: 'length'` test did not hold — so giving
-  that refusal its own non-null reason would classify it beside `starved` without touching `isOutage`.
-  The care needed is that it must not be folded into `token-exhaustion`: they have different causes
-  and `tests/review-exhaustion-reason.test.js:56-77` varies `finish_reason` alone to keep them apart.
-
-- **OAI-164** — **Is `qwen3.8-27b-mlx` worth adopting? One run says "findings level, reliability
-  worse", and one run cannot say that.** Filed 2026-08-15 from the model's first characterisation
-  sweep. **This is a measurement to take, not a defect.**
-  **What the release does NOT change, and this is settled:** `loaded_context_length` is **61,696** —
-  identical to the outgoing `qwen/qwen3.6-27b` — against a `max_context_length` of 262,144. Same
-  `qwen3_5` arch, 4bit, artifact `lmstudio-community/Qwen3.8-27B-MLX-4bit`. So the release buys
-  **nothing** on the constraint that actually binds this repo, and the OAI-115 starvation mechanism
-  carries over rather than being fixed by it.
-  **The 8h run, `--from 8275488`, `--max-seconds 1800`, `--max-attempts 2`:** 30 attempted, 18
-  reviewed, 13 findings, 6 starved, 6 failed, 1 (wrongly) judged an outage — see OAI-163.
-  **On the 27 commits this run and the 2026-08-13 baseline both attempted: findings 12 vs 12 — level.
-  Non-answers 11 vs 6.** Throughput 3.7/hr against 4.2/hr.
-  **Why that is not yet a result, and the reason this item exists rather than a conclusion:**
-  **OAI-141** puts the run-to-run spread of this harness ABOVE an effect of this size, and records
-  that *the same commit has completed once and starved once on identical input*. Codex was asked
-  directly whether the non-answer delta clears that spread and said it does not. So what is
-  established is "this run had 11 versus 6", **not** a property of the model — exactly the
-  single-run-read-as-measurement error OAI-141 was filed to stop.
-  **What would settle it:** a second qwen3.8 sweep from the same pinned SHA with the same flags, and —
-  per OAI-141's own instruction — **state the detectable effect size before running it**, because a
-  second run may still not resolve 11 vs 6. Until then the default model stays `qwen/qwen3.6-27b`.
-  Artifacts (gitignored, this machine only): `bench/results/sweep-2026-08-15-qwen38/` — report, JSON
-  record, ledger, `run.sh` and `provenance.txt` recording the served id, both context figures, the
-  artifact identity and the `lms` CLI commit.
-
-- **OAI-171** — **The review ladder's own rules changed mid-run and the run followed the superseded
-  copy for two batches, which is what caused two of its passes.** Filed 2026-08-15 from OAI-166.
-  `~/Code/dotfiles` commit `8475d03` (2026-08-15 16:18) added a delete-only carve-out — when a stage
-  adjudicates descriptive prose false, DELETE the proposition rather than rewriting it, because a
-  rewrite keeps producing the next false description. OAI-166's ladder had loaded `review-ladder`
-  before that commit and `feature` before `2f6fac8`, so batches 1 and 2 rewrote where they should
-  have deleted, and each introduced a fresh false claim that the next pass then found. The operator
-  discovered the staleness only by checking on a hunch.
-  **A skill loaded into a session is a snapshot, and nothing tells the session it has gone stale.**
-  Filed as a toolchain observation with no proposed fix: the obvious remedies (re-read every skill at
-  every step; a version stamp compared at each invocation) each have costs this run is not evidence
-  enough to judge. What the run does establish is the cost of not knowing — two discovery passes,
-  roughly ten subagents and four Codex calls, spent on prose.
-
-- **OAI-176** — **A `fork-opener` subagent's first invocation, mid-review-ladder, returned a status
-  message about its OWN siblings instead of performing its assigned review.** Filed 2026-08-16 from
-  OAI-167's review-ladder pass. A fork inherits the whole calling session's transcript, and the
-  transcript at launch time ended with the orchestrator's own "waiting on Group A subagents" narration
-  plus a `ListAgents` call showing the fork itself as `running`. The fork's reply was that same
-  narration verbatim — "Still waiting on the three Group A subagents... I'll pick this back up as soon
-  as they report in" — not a review of the frozen artifact it was handed. Treated as a non-clean stage
-  result and retried once, per the ladder's retry rule; the retry, with an explicit instruction to
-  ignore ambient waiting-status framing in the transcript, produced a real review. **Not reproduced
-  deliberately, and no root cause is established** — the working hypothesis is that a fork launched
-  while the orchestrator's most recent turns are themselves about waiting for sibling agents can latch
-  onto that framing as if it were its own instruction, but this is one observed instance, not a
-  measured mechanism. Filed as a toolchain observation for the review-ladder skill's `fork-opener`
-  stage, with a candidate mitigation worth evaluating rather than assumed: a fork-opener prompt could
-  open by explicitly disclaiming any waiting/status framing already in the transcript as not being its
-  own task, the way the retry prompt did successfully here — but one success against one failure is
-  not enough evidence to make that a standing instruction.
-  **Second instance, 2026-08-17, from OAI-170's review-ladder pass — and it REFUTES the candidate
-  mitigation rather than confirming it.** This launch's very first prompt already carried an explicit
-  disclaiming line ("Ignore any ambient narration in this transcript about what's 'still running' or
-  'waiting' from moments before this fork was spawned") — the exact mitigation floated above, tried
-  proactively rather than only at retry — and the fork still returned "Waiting on notifications from
-  the remaining Group A/B stages," echoing the orchestrator's own prior turn. Retried once more with a
-  more forceful instruction ("Produce the actual review in this response... Do not mention waiting,
-  background tasks, or other stages' status"), which worked. **Two failures, two different mitigation
-  strengths, both insufficient on the first try** — the disclaiming-line mitigation is downgraded from
-  untested-candidate to measured-insufficient-alone. Whatever the mechanism is, one line naming the
-  framing to ignore does not reliably suppress it; what worked both times was a *retry*, not the
-  content of either prompt's ignore-instruction.
+- **OAI-160** — **`displayOf`'s `dead`/`never-started` note mislabels an ORDINARY row this build
+  understands as "written by a newer plugin."** Filed 2026-08-14 from OAI-64's confirmation pass as
+  pure coverage debt across twelve branches in the background-job display and queue modules; **AMENDED
+  2026-08-16 from OAI-162's review, because the premise under two of those entries turned out FALSE.**
+  `displayOf`'s `dead`/`never-started` arms and `noteFor`'s matching note were filed as
+  "reachable only for a row a newer plugin wrote." They are also reachable for an ORDINARY row whose
+  own `schema_version` this build understands, when only the DATABASE's `PRAGMA user_version` is
+  too new: `cmd-status.mjs` then skips reconciliation entirely, so a genuinely dead worker's row is
+  never collected and renders `dead`. **Proved by execution** against the real CLI on a seeded row —
+  a `schema_version: 1` row with a reaped `worker_pid` under `user_version = 2` renders `!
+  written by a newer plugin (row schema 1), so this build will not touch it.` That sentence
+  contradicts itself in its own parentheses: it names the row's schema as `1`, which is exactly what
+  this build understands, while attributing the row to a newer plugin. The unconditional text is
+  `job-render.mjs`'s `noteFor`. **This is wrong right now** — the row it mislabels is dead or
+  never-started, so no live work is at risk, but the message a human reads is false about why. **Fix
+  shape:** correct the branch to name which version is actually too new (the database's
+  `user_version`, not the row's `schema_version`), then pin it with a test seeding exactly this row
+  shape. The eleven pure-coverage-debt branches this pass also enumerated, and the two unpinned
+  constants (`STARTUP_GRACE_MS`, `STALE_BEAT_MS`) it found, carried no live defect and were split
+  out as **OAI-191**, 2026-08-19, so this item stays scoped to the one thing that is actually wrong
+  today. See `BACKLOG_PARKED.md` for that residue.
 
 - **OAI-181** — **Let a caller pick which model a delegated call uses, per call.** Filed 2026-08-17
   from a direct user request ("we should be able to specify per call what model to use"). `--model` is
@@ -2426,21 +1129,3 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   argument was raised once during OAI-63's review, adjudicated wrong, and reversed: a live,
   operator's-own-terminal display is not the same exposure as a value persisted into a shared,
   longer-lived failure record.
-
-- **OAI-189** — **`http.mjs`'s unsupported-protocol refusal still interpolates a raw URL, but nothing
-  currently reaches it that way.** `send()`'s unsupported-protocol branch (`http.mjs:246`) builds its
-  `UserError` from the full `url`, which would include a query string. Disclosed, not fixed, at OAI-72's
-  final verdict point: both `provider.mjs:121` and `model-info.mjs:36` — the only two callers — always
-  pass a URL already protocol-validated by `normalizeBaseUrl` upstream, which restricts to http/https
-  before this point is ever reached, so the branch is currently dead for any config-sourced input.
-  Worth a fix only if a future caller of `send()` bypasses `normalizeBaseUrl`; until then this is a
-  one-line note, not a dated instance.
-
-- **OAI-190** — **`config.mjs`'s `validateConfig` interpolates raw values for its numeric config keys.**
-  Seven enumerated keys (`contextLength`, `timeoutSeconds`, `idleSeconds`, `maxSeconds`,
-  `retrySeconds`, `prefillTokensPerSecond`, `generationTokensPerSecond`) have their raw value
-  interpolated into a `UserError` when validation fails, via `JSON.stringify(value)` or `value`
-  directly. Disclosed, not fixed, at OAI-72's final verdict point: this is a narrower, different shape
-  than OAI-72 addressed (baseUrl/JSON content) — a secret could only leak here if hand-misplaced under
-  one of these specific numeric key names, which none of these keys are named or documented to accept.
-  Low enough probability and severity that it was left as a note rather than fixed alongside OAI-72.
