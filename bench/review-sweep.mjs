@@ -45,7 +45,14 @@ const DEFAULTS = {
   include: ['scripts', 'bench', 'tests'],
   maxCommits: 40,
   scanLimit: 200,
-  maxSeconds: 1800, // raised from 900, which lost half the corpus to deadline-timeout — see ADR 021
+  // Raised from 900 to 1800 (see ADR 021): 900 lost half the corpus to
+  // deadline-timeout. Doubled again to 3600 (2026-08-19, user-directed,
+  // landing alongside OAI-138's salvage mechanism rather than a repeat of that
+  // item's own worst-case-tail experiment): raising the cap alone recovers
+  // only the commits that merely needed more time, not the ones whose
+  // reasoning has no natural end on this server — salvage is what turns THOSE
+  // into real findings instead of a wasted 3600s. Read them as complementary.
+  maxSeconds: 3600,
   // 2 rather than 1: the starvation path records no attempts (OAI-116), so what
   // that ceiling costs there is unmeasured rather than known-idle.
   maxAttempts: 2,

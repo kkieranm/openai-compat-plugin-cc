@@ -7,9 +7,12 @@
 //
 // Raised 900 -> 1800 on 2026-08-10 (OAI-138) after the first sweep run
 // to completion lost HALF its eligible corpus to the old value — 20 of 40
-// commits, every one `deadline-timeout`. Nothing would have noticed it going
+// commits, every one `deadline-timeout`. Raised again 1800 -> 3600 on
+// 2026-08-19 (OAI-138, user-directed, landing alongside the salvage
+// mechanism) after a night at 1800 still lost 15 of 34 attempted to
+// `deadline-timeout`. Nothing would have noticed either change going
 // back: every fixture in the sweep suite passes its own `maxSeconds`, so the
-// whole suite stayed green against either value. That is the same shape as the
+// whole suite stayed green against any value. That is the same shape as the
 // `--abort-after` gap, which is why that test says what it says.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,8 +26,8 @@ const ok = () => ({
 // Two assertions because they fail differently: the parser reading the wrong
 // constant, and the selected value never reaching the child that enforces it.
 // A test that only checked `optionsFrom` would pass with the forwarding broken.
-test('the per-commit cap default is 1800 and reaches the review command', () => {
-  assert.equal(optionsFrom({ minutes: '10' }, 0).maxSeconds, 1800);
+test('the per-commit cap default is 3600 and reaches the review command', () => {
+  assert.equal(optionsFrom({ minutes: '10' }, 0).maxSeconds, 3600);
   assert.equal(optionsFrom({ minutes: '10', 'max-seconds': '42' }, 0).maxSeconds, 42);
 
   const seen = [];
@@ -35,7 +38,7 @@ test('the per-commit cap default is 1800 and reaches the review command', () => 
   });
   const at = seen[0].indexOf('--max-seconds');
   assert.notEqual(at, -1, 'the review command must carry --max-seconds');
-  assert.equal(seen[0][at + 1], '1800');
+  assert.equal(seen[0][at + 1], '3600');
 });
 
 // The same shape for the attempt ceiling: a default nothing observes, whose

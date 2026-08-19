@@ -24,7 +24,7 @@
 // path alone". Reading `findings` and none of them is how the first version of
 // this file reported a truncated analysis as `clean`.
 import { COMPLETION_SHAPES, NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../../scripts/lib/failure-shape.mjs';
-import { outcomeFor, reasonFrom, requestedModelFrom } from './outcome.mjs';
+import { outcomeFor, partialFrom, reasonFrom, requestedModelFrom } from './outcome.mjs';
 
 /** Outcomes that mean a model actually read the commit and reported on it. */
 export const REVIEWED = new Set(['findings', 'clean']);
@@ -172,6 +172,10 @@ function failure(stdout, status) {
     reason,
     requestedModel: requestedModelFrom(stdout),
     status,
+    // What was salvageable, even where tier 2 never ran (e.g. `/oai:review`
+    // invoked directly, outside the sweep) — one mapping, not a second
+    // construction site, per this file's own rule.
+    partial: partialFrom(stdout),
   };
 }
 
@@ -196,6 +200,10 @@ function reported(report) {
     // reconstructing it would be guessing at the run's inputs.
     skippedUnsizedWindow: report?.skippedUnsizedWindow ?? null,
     dropped: report?.dropped ?? null,
+    // OAI-138 salvage. Non-negotiable per that item's own text: a salvaged
+    // review must never read as an ordinary complete one, so this rides beside
+    // every other belief-changing field here rather than being inferred later.
+    salvaged: report?.salvaged ?? null,
   };
   // `null` is "could not be read" and `[]` is "read, nothing found" — the
   // distinction ADR 003 exists to protect.

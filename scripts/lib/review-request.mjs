@@ -10,11 +10,12 @@
 // number, and this repo has already paid for the second.
 import { withLedger } from './attempt-ledger.mjs';
 import { chatCompletion } from './client.mjs';
+import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { reviewSystemPrompt } from './review.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS, reviewSchemaFor } from './review-schema.mjs';
 import { prepareLadder, unconstrainedLadder } from './review-ladder.mjs';
-import { isFormatRejection, responseFormatFor } from './structured.mjs';
+import { findingsFirst, isFormatRejection, responseFormatFor, schemaInstruction } from './structured.mjs';
 
 /**
  * The ceiling on a reply budget where the window is known.
@@ -147,6 +148,11 @@ function sharedRequest(profile, plan) {
  * ever reaching `answerWithRetry`.
  */
 async function unconstrained({ profile, shared, ladder, send, ledger, refuse, announce }) {
+  // Hoisted out of the try: a salvage attempt needs the built messages (to
+  // reconstruct the follow-up), but only when the ladder itself succeeded —
+  // `unconstrainedLadder` refusing an oversized prompt never reaches a stream,
+  // so there is nothing to salvage and `built` stays undefined for that case.
+  let built;
   try {
     // Predicted to be negotiation, settled as such only once the replacement
     // exists — `refuseLast` registers, `ledger.begin` decides (OAI-23). Two
@@ -159,7 +165,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // *before* the retry is announced. Announcing first meant a guard refusal
     // arrived right after "Retrying without it", blaming the user's diff size
     // for a request that was never sent and a retry that never happened.
-    const built = unconstrainedLadder(shared, ladder);
+    built = unconstrainedLadder(shared, ladder);
 
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.
@@ -167,7 +173,136 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     const result = await chatCompletion(profile, { ...send, maxTokens: built.reserve, messages: built.messages });
     return { result, structured: false, ...built };
   } catch (fallbackError) {
+    // OAI-138 salvage tier 2: one bounded attempt to conclude from whatever
+    // reasoning the deadline cut short, before giving up. `built` is undefined
+    // when the ladder itself refused (nothing streamed, nothing to salvage).
+    const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
+    if (salvaged) return salvaged;
     throw withLedger(fallbackError, ledger);
+  }
+}
+
+/**
+ * How long a salvage follow-up gets, once. Sized for "conclude now", not
+ * "review the commit" — OAI-138's own estimate is ~2-4 minutes given
+ * prefill-is-cheap economics (the original system+user turns should hit the
+ * server's prefix cache, so only the new turns cost fresh compute). Generous
+ * headroom over that estimate, not a measured ceiling: a fixed constant for
+ * now rather than a flag, since nothing has asked to tune it yet.
+ */
+const SALVAGE_MAX_MS = 300_000;
+
+/**
+ * The smallest reasoning worth paying a follow-up request for. Below this a
+ * "conclude now" ask is unlikely to have anything real to conclude from.
+ */
+const SALVAGE_MIN_REASONING_CHARS = 500;
+
+/**
+ * Ask the model to conclude from reasoning a deadline cut short, instead of
+ * discarding it (OAI-138 salvage tier 2).
+ *
+ * **Only `deadline-timeout`.** The model was actively still working when the
+ * cap fired — the one shape a "conclude now" ask can plausibly answer.
+ * `idle-timeout` and a raw transport drop mean the SERVER stalled or died;
+ * asking it to continue is asking the thing that already stopped answering.
+ *
+ * **Only substantial reasoning with empty/near-empty content** — the
+ * documented majority shape (findings JSON is emitted only after reasoning
+ * completes, per OAI-115's own measurement: 87-98% of every completion is
+ * reasoning). A cut mid-CONTENT is a different, rarer shape — resuming a
+ * truncated JSON array reliably is a harder prompting problem than
+ * "conclude from pure reasoning", and is deliberately not attempted here;
+ * tier 1 still preserves that answer on the ordinary failure path.
+ *
+ * **Exactly one attempt, never recursed.** A failure here (including its own
+ * deadline) is swallowed — `null` — and the caller falls back to reporting
+ * the ORIGINAL `fallbackError`, whose `.answer` (tier 1) is untouched by this
+ * having been tried and failed.
+ *
+ * Returns a result shaped like `unconstrained`'s own success return, tagged
+ * `salvaged: true` so nothing downstream can mistake this for an ordinary
+ * complete review — `jsonReport` reads that flag explicitly. `budget` and
+ * `estimatedTokens` on that return describe the GROWN prompt this function
+ * actually sends, never `built`'s stale numbers for the smaller original one —
+ * see the re-check below.
+ *
+ * **`schema` is the follow-up turn's OWN source of truth for the shape, never
+ * an assumption that `built.messages` already stated it (pass 3).** The
+ * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
+ * appends the same instruction to every rung, schema or no). The
+ * `--structured-output` call site does not: its first request relies purely
+ * on the `response_format` grammar, which is not text the model can see or
+ * recall on a later turn — and reusing that rung's own `schema` here, rather
+ * than growing that rung's messages to state it up front, is what avoids
+ * resizing a request every other window-budget test is tuned against.
+ *
+ * **Always findings-first, and said explicitly enough to override whatever the
+ * inherited system turn said (pass 4).** `built.messages`/`first.messages`'
+ * unchanged system turn may be `ANALYSIS_FIRST` (`review.mjs`) — the ordering a
+ * grammar-constrained rung needs, because that model has no scratchpad of its
+ * own. This follow-up sends no grammar at all, so that reasoning does not
+ * apply here, but the instruction that assumed it is still sitting in the
+ * conversation. Silently embedding a findings-first schema without addressing
+ * that would leave two contradictory orderings in one prompt, and a real model
+ * is not guaranteed to prefer the later one — it could re-run the very
+ * open-ended analysis this follow-up exists to cut short. So the ordering is
+ * named and reversed out loud, not left for the model to reconcile.
+ */
+async function trySalvage(profile, built, schema, shared, send, fallbackError) {
+  if (fallbackError?.reason !== 'deadline-timeout') return null;
+  const reasoning = fallbackError.answer?.reasoning?.trim() ?? '';
+  const content = fallbackError.answer?.content?.trim() ?? '';
+  if (reasoning.length < SALVAGE_MIN_REASONING_CHARS || content.length > 0) return null;
+
+  const messages = [
+    ...built.messages,
+    { role: 'assistant', content: reasoning },
+    {
+      role: 'user',
+      content: 'You ran out of time before finishing. Based only on your analysis above, state '
+        + 'your findings now. Do not reason further — conclude from what you already have. '
+        + 'Ignore any earlier instruction to work through "analysis" before "findings": there is no '
+        + 'schema enforcing that order here, and this reply must carry its findings even if it runs '
+        + 'out of room, so findings come FIRST. '
+        + schemaInstruction(findingsFirst(schema)),
+    },
+  ];
+
+  // The grown prompt must clear the SAME window check every other request
+  // path clears before going out — appending the partial reasoning back in as
+  // an assistant turn can push an already-near-window request over the top,
+  // exactly the class of review most likely to have hit the deadline in the
+  // first place. `checkContextBudget` throws rather than truncating silently;
+  // a follow-up that cannot fit is not attempted at all, the same fallback
+  // contract every other unmet condition in this function already follows.
+  const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
+  let budget;
+  try {
+    budget = checkContextBudget({
+      estimatedTokens,
+      contextLength: shared.contextLength,
+      reserveTokens: built.reserve,
+      providerName: profile.name,
+      model: send.model,
+      oversizeHint: shared.oversizeHint,
+    });
+  } catch {
+    return null;
+  }
+
+  try {
+    const result = await chatCompletion(profile, {
+      ...send,
+      messages,
+      maxTokens: built.reserve,
+      maxMs: SALVAGE_MAX_MS,
+      expiresAt: performance.now() + SALVAGE_MAX_MS,
+      maxAttempts: 1,
+    });
+    return { result, structured: false, ...built, budget, estimatedTokens, salvaged: true };
+  } catch {
+    return null;
   }
 }
 
@@ -219,6 +354,13 @@ export async function requestFindings(profile, plan) {
     });
     return { result, structured: true, schema, ...first };
   } catch (error) {
+    // OAI-138 salvage tier 2, same as `unconstrained`'s own catch: a
+    // deadline-timeout here is a schema-constrained request that ran out of
+    // time reasoning, not a rejected schema — `isFormatRejection` would never
+    // be true for it, so without this the structured-output path fell straight
+    // through to `throw error` and salvage never got a chance to fire for it.
+    const salvaged = await trySalvage(profile, first, schema, shared, send, error);
+    if (salvaged) return salvaged;
     if (!isFormatRejection(error)) throw error;
     // The whole ladder is climbed again, not just the guard: the instruction
     // makes the prompt longer, so the rung that fit a moment ago may not now.

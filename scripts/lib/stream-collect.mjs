@@ -116,6 +116,14 @@ export async function collectStream(response, profile, { startedAt, firstTokenMs
     if (failure && failure.timings === undefined) {
       failure.timings = timings(startedAt, firstTextAt, performance.now());
     }
+    // Same move, same reasoning, for the text itself rather than just its
+    // duration (OAI-138 salvage). `answer` is this function's own accumulator —
+    // in scope here regardless of which budget produced `failure` (deadline,
+    // idle, a raw transport drop) — so attaching it is unconditional and cheap;
+    // content/reasoning are simply empty when nothing had streamed yet.
+    if (failure && failure.answer === undefined) {
+      failure.answer = answer;
+    }
     throw failure;
   } finally {
     deadline.clear();

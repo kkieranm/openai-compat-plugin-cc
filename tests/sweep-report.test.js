@@ -37,6 +37,22 @@ test('a truncated review still shows the findings it managed to produce', () => 
   assert.match(out, /truncated/);
 });
 
+// OAI-138 salvage. Non-negotiable per that item's own text: a salvaged review
+// must never read as an ordinary complete one — asserted at the artifact
+// level, in the Findings section itself, since that is the ONE place a
+// reader scanning for real coverage would otherwise mistake it for a normal
+// finding.
+test('a salvaged review carries its findings but is visibly flagged, never silent', () => {
+  const out = render(commit({
+    outcome: 'findings',
+    salvaged: true,
+    model: 'qwen/qwen3.6-27b',
+    findings: [{ file: 'a.mjs', line: 3, summary: 'concluded from partial reasoning', severity: 'low' }],
+  }));
+  assert.match(out, /concluded from partial reasoning/, 'a lead recovered by salvage must not vanish from the artifact');
+  assert.match(out, /SALVAGED/);
+});
+
 test('a clean review that only saw the diff says so, though it never reaches coverage', () => {
   const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
   assert.match(out, /reviewed only as hunks/);

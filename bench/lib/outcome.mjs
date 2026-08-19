@@ -51,6 +51,15 @@ export function requestedModelFrom(stdout) {
   return failureEnvelope(stdout)?.requestedModel ?? null;
 }
 
+/**
+ * What a FAILED run had already reasoned, off the same envelope (OAI-138
+ * salvage). `null` unless `errorReport` found real reasoning text to attach —
+ * most failures (a pre-stream refusal, an oversize refusal) carry nothing.
+ */
+export function partialFrom(stdout) {
+  return failureEnvelope(stdout)?.partial ?? null;
+}
+
 function failureEnvelope(stdout) {
   try {
     const parsed = JSON.parse(String(stdout ?? ''));

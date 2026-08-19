@@ -151,9 +151,21 @@ export function unsizedWindowNote(skipped, profile) {
  * differs from the condition actually tested. Kept together because they are one
  * idea, and because a new one added beside them inherits the same scrutiny.
  */
-function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow }, profile) {
+function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, salvaged }, profile) {
   const notes = [];
 
+  // First and loudest — OAI-138 salvage. These findings were not written in
+  // the model's ordinary findings-first pass: its normal run hit the deadline
+  // mid-reasoning, and what is shown is a SECOND, separate request asking it
+  // to conclude from that cut-off reasoning. Non-negotiable per that item's
+  // own text: a salvaged review must never read as an ordinary complete one.
+  if (salvaged) {
+    notes.push(
+      'WARNING: this review was SALVAGED. The model ran out of time while reasoning; these findings ' +
+        'come from a follow-up request asking it to conclude from what it had already worked out, not ' +
+        'from its ordinary findings-first pass. Treat this result as less reliable than an ordinary review.',
+    );
+  }
   // Said loudly, and before the findings count is believed: the model was cut
   // off while still reasoning, so an empty list means "did not finish looking",
   // not "found nothing". Without this the reply is identical to a clean review.

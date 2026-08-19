@@ -54,6 +54,32 @@ test('hunksOnly is carried, because it falsifies "the files were reviewed whole"
   assert.equal(classify(ok([], { hunksOnly: true })).hunksOnly, true);
 });
 
+// OAI-138 salvage. Non-negotiable per that item's own text: a salvaged review
+// must never read as an ordinary complete one — so `salvaged` rides the same
+// path every other belief-changing caveat does, on both a `findings` and a
+// `clean` outcome, and is `null` (not `false`) when nothing determined it.
+test('salvaged is carried on a completed review, and null when the field is absent', () => {
+  const salvagedEntry = classify(ok([{ file: 'a.mjs', summary: 'from a follow-up' }], { salvaged: true }));
+  assert.equal(salvagedEntry.outcome, 'findings');
+  assert.equal(salvagedEntry.salvaged, true);
+
+  const ordinaryEntry = classify(ok([{ file: 'a.mjs', summary: 'x' }]));
+  assert.equal(ordinaryEntry.salvaged, null, 'an ordinary review must not assert false — nothing determined it either way');
+});
+
+// OAI-138 salvage tier 1: what a FAILED run had already reasoned before the
+// deadline cut it off, visible even where tier 2 never ran.
+test('a failed run carries what was salvageable, and null when nothing streamed', () => {
+  const withPartial = classify(envelope('deadline-timeout', {
+    partial: { reasoning: 'it looked like this was fine because', content: '' },
+  }));
+  assert.equal(withPartial.outcome, 'failed');
+  assert.equal(withPartial.partial.reasoning, 'it looked like this was fine because');
+
+  const withoutPartial = classify(envelope('oversize'));
+  assert.equal(withoutPartial.partial, null);
+});
+
 // The measured dominant outage on this hardware (27/72 runs). Omitting these
 // meant the guard could not fire on the one shape it was written for.
 test('the completion shapes count as the server being unwell', () => {
@@ -226,7 +252,7 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
 // `skippedUnsizedWindow` joined them in OAI-139: it is the CAUSE `hunksOnly`
 // cannot carry, so a path keeping one and losing the other reports a diff-only
 // review with no way to tell a deliberate shed from an unmeasurable window.
-const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped'];
+const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];
 
 test('a substituted model keeps the findings it produced, and every caveat', () => {
   const entry = classify(ok([{ file: 'a.mjs', line: 3, summary: 'a real defect' }], {

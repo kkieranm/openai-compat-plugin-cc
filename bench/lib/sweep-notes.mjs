@@ -16,6 +16,12 @@
  */
 export function incompleteness(entry) {
   const notes = [];
+  // First, and the loudest of these — OAI-138 salvage. Non-negotiable per that
+  // item's own text: a salvaged review must never read as an ordinary complete
+  // one. These findings did not come from the model's ordinary findings-first
+  // pass; its normal run hit the deadline mid-reasoning, and what is shown is a
+  // second, separate request asking it to conclude from that cut-off reasoning.
+  if (entry.salvaged) notes.push('SALVAGED: the model ran out of time while reasoning; these findings come from a follow-up request asking it to conclude from what it had already worked out, not from its ordinary findings-first pass — treat as less reliable than an ordinary review');
   // Read from the entry, never inferred from the outcome name. `analysisCut`
   // used to reach the artifact only by surviving as the `truncated` verdict, so
   // an entry whose outcome was overridden — a substituted model whose analysis

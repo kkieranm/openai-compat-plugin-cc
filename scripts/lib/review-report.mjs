@@ -9,11 +9,11 @@ import { renderTaskFooter } from './render.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
-function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped }) {
+function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged }) {
   if (parsed) {
     process.stdout.write(
       renderFindings(
-        { ...parsed, hunksOnly, unreadable: target.unreadable, skippedUnsizedWindow: skipped === 'unsized-window' },
+        { ...parsed, hunksOnly, unreadable: target.unreadable, skippedUnsizedWindow: skipped === 'unsized-window', salvaged },
         // The model that ANSWERED, not the one requested. This block heads the
         // report and the footer closes it; handing one the requested id and the
         // other the served id would produce a single report naming two different
@@ -25,8 +25,17 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
   }
 
   const text = unparsedReply(result, { structured, profile });
-  // Both caveats, because a reply that came back as prose did not see more.
+  // Every caveat, because a reply that came back as prose did not see more —
+  // `salvaged` FIRST, same ordering as `caveats()` below: without it, a
+  // salvage follow-up's prose reply carries no indication it came from a
+  // conclude-now request rather than the original review (OAI-138), even
+  // though this branch already disclaims completeness on its own terms.
   const notes = [
+    salvaged
+      ? 'WARNING: this reply came from a SALVAGE follow-up — a conclude-now request sent after the ' +
+        'model ran out of time reasoning, not the original findings-first pass. Treat it as less ' +
+        'reliable than an ordinary review.'
+      : null,
     unsizedWindowNote(skipped === 'unsized-window', profile),
     unreadableNote(target.unreadable),
   ].filter(Boolean);
@@ -73,12 +82,22 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * says what it means, across every ladder. Exactly the inversion this docstring
  * warns about, in the field added to prevent it, which is why it is written down
  * rather than quietly corrected.
+ *
+ * **Read off the shared ledger when one is available, not `result.requestCount`
+ * (OAI-138 salvage).** `requestCount` is scoped to the one `answerWithRetry`
+ * call that produced `result` — exactly right for the two ladders this
+ * docstring already describes, both of which run inside a single call. Salvage
+ * is a second, separate call on the same shared ledger: a review that failed
+ * once and then salvaged successfully made at least two physical requests, but
+ * the salvage call's own `requestCount` is 1 (it never retries itself), so
+ * `retried` read `false` for a run that plainly was one. The ledger spans both
+ * calls; `requestCount` only ever spans one.
  */
-function runTimings(result, { structured, structuredOutput }) {
+function runTimings(result, { structured, structuredOutput, ledger }) {
   return {
     prefillMs: result.prefillMs ?? null,
     generationMs: result.generationMs ?? null,
-    retried: (result.requestCount ?? 1) > 1,
+    retried: ledger ? ledger.entries().length > 1 : (result.requestCount ?? 1) > 1,
     degraded: Boolean(structuredOutput) && !structured,
   };
 }
@@ -126,10 +145,16 @@ function parseFields(parsed, result, context) {
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger } = context;
+  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger, salvaged } = context;
   return {
     label: target.label,
     provider: profile.name,
+    // A context-derived fact, not something read off the model's own reply —
+    // same shape as `hunksOnly`/`skippedUnsizedWindow` below (OAI-138 salvage).
+    // Non-negotiable per that item's own text: a salvaged review must never
+    // read as an ordinary complete one, so this rides beside `findings` on
+    // every path that can set it, never inferred from anything else here.
+    salvaged: Boolean(salvaged),
     // What answered, not what was asked for: a server may serve a different
     // build than the id requested, and the run belongs to the one that ran.
     model: result.model || model,
@@ -167,7 +192,7 @@ export function jsonReport(parsed, context) {
     contextChecked: budget.checked,
     contextNote: budget.checked ? null : budget.note,
     durationMs,
-    ...runTimings(result, { structured, structuredOutput: context.structuredOutput }),
+    ...runTimings(result, { structured, structuredOutput: context.structuredOutput, ledger }),
     // One entry per PHYSICAL request — the first try, a capability degrade, the
     // response_format fallback, a retry after the server dropped one. The
     // timings above belong to the attempt that *answered*; these are how the
@@ -214,6 +239,15 @@ export function errorReport(error) {
     // only place the id survives — without it the reliability table cannot
     // attribute an all-failed sweep to the model that failed.
     requestedModel: error?.requestedModel ?? null,
+    // What the model had already produced when the failure cut it off (OAI-138
+    // salvage's tier 1) — `stream-collect.mjs` attaches `.answer` to every
+    // failure it catches, but most carry nothing (a pre-stream refusal, no
+    // frame ever arrived). `null` unless there is real text — reasoning OR
+    // content — to show for it, following the same "cannot live on one path
+    // alone" rule as every other belief-changing field in this file.
+    partial: error?.answer?.reasoning?.trim() || error?.answer?.content?.trim()
+      ? { reasoning: error.answer.reasoning, content: error.answer.content }
+      : null,
   };
 }
 
