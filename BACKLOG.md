@@ -1,152 +1,23 @@
 # Backlog
 
-IDs are stable and global (`OAI-n`, never reused). **The tier index below is the priority view — top of
-the index is next.** Item bodies below it sit in ascending ID order, not priority order; a re-order
-rewrites only the index (`adr/025`, 2026-08-08).
+IDs are stable and global (`OAI-n`, never reused). Item bodies sit in ascending ID order.
+**`tests/backlog-structure.test.js` asserts this on every `npm test`.**
 
 The direction is **"use local LLMs like I use Codex"** —
-[`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. The ordering
-below is not the plan's stage order and that is deliberate: the stages say what to *build* next, the
-tiers say what is *wrong today*, and a defect outranks the next feature. Two prior sweeps' full
-rewrite notes (2026-08-05, 2026-08-14 — what shipped, what each sweep verified and filed) are moved
-verbatim to [`evidence/backlog-header-history.md`](evidence/backlog-header-history.md) rather than
-carried in this header, since the tier list below now states the same residue inline per tier.
+[`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Two prior
+sweeps' full rewrite notes (2026-08-05, 2026-08-14 — what shipped, what each sweep verified and
+filed) are moved verbatim to
+[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md) rather than carried in
+this header.
 
-<!-- tiers -->
-### The order, by impact — tiers, and why each leads where it does
-
-Impact is blast radius × whether the thing is wrong *today* ÷ cost to resolve. Ties break on what has
-to be decided or measured first. **This list is the priority view; the bodies below sit in ascending
-ID order and a re-order rewrites only this index** (`adr/025`). **`tests/backlog-structure.test.js`
-asserts this on every `npm test`.**
-
-**Rewritten 2026-08-19 by a user-directed item-by-item review, not the automated worth-bar sweep.**
-The 2026-08-18 sweep (below, and in `BACKLOG_PARKED.md`) verified every claim against disk before
-parking 41 of 112; this pass instead walked all 69 items that survived it, tier by tier, with the
-user deciding keep or park directly against each item's existing text. **28 stayed live; 40 parked;
-1 (OAI-131) closed as an answered question; OAI-160 split, keeping only its one live defect and
-parking the rest as OAI-191.** See `BACKLOG_PARKED.md`'s 2026-08-19 section for every reopening bar.
-**OAI-138 was explicitly NOT reviewed for closure at that sweep** — it was mid-implementation (an
-open plan and uncommitted diff in the tree at review time). It has since shipped (2026-08-19, 8-pass
-review-ladder, dual-approved) and moved to `BACKLOG_DONE.md`.
-
-**Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
-certain, not merely theoretical.** Empty as of 2026-08-20: OAI-55 shipped 2026-08-19, OAI-183 shipped
-2026-08-20, and OAI-185 shipped 2026-08-20 (all in `BACKLOG_DONE.md`) — an 8-pass review ladder found
-and fixed seven sites where a server-controlled value (the authorized endpoint's own `baseUrl`, an
-echoed response body, a redirect `Location`, an HTTP reason phrase, a JSON-parse excerpt, a
-content-encoding header, an unvalidated `finish_reason`) could reach a persisted or logged failure
-record, and added a structural test guarding the whole class. Three narrower, lower-severity siblings
-were deferred rather than fixed in that pass: OAI-192, OAI-193, OAI-194 (tier below). The credential
-items still parked below (OAI-74, OAI-77, OAI-189, OAI-190) remain there — none is attacker-triggerable
-or reachable today.
-
-**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-113,
-OAI-114, OAI-59, OAI-57**.
-OAI-115 and OAI-116 both shipped 2026-08-20 (a live watchdog cuts a starving reasoning
-stream before `max_tokens` is exhausted and salvages a conclusion via OAI-138's mechanism, generalized
-to a second trigger; the token-exhaustion failure path now attaches its attempt ledger instead of
-recording `attempts: null` — see `BACKLOG_DONE.md`). OAI-156 also shipped 2026-08-20 (a whole-document
-YAML-ish findings reply is now recovered instead of discarded at the parser — see `BACKLOG_DONE.md`).
-OAI-113 and OAI-114 are self-contained parser defects
-— a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
-regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
-restoring base behavior and ADR 003's own guarantee). OAI-59 is `/oai:result` rendering `undefined`
-on a shape it doesn't understand; OAI-57 is the matching `--json` gap, half-shipped already.
-**OAI-138 shipped 2026-08-19** (doubled `--max-seconds`, added partial-answer salvage on deadline —
-see `BACKLOG_DONE.md`) — it was this tier's dominant field failure mode (15/34 commits lost to
-deadline-timeout, 8 more to starvation, in the overnight sweep that filed it).
-
-**Tier 3 — what shipping Stage 2 left behind, still live.** **OAI-85, OAI-86, OAI-56**.
-OAI-85: `/oai:result` never shows "context window unknown," so an unarmed size guard is invisible on
-the background path. OAI-86: the delegate's containment/attachment shell logic has zero test
-coverage, proved by mutation — sharper of the two, since the stakes are disclosure. OAI-56: a
-cancelled or dead job can still hold the server hostage for the rest of its prefill (dense ~335s,
-MoE ~67s), a known and deliberately unmitigated gap.
-
-**Tier 4 — coverage the ladders found missing.** **OAI-28, OAI-52, OAI-45**.
-OAI-28's parts (B) and (C) survive the retired size-ratchet: `http.mjs`'s two untested transport
-writes, and `tests/structure.test.js`'s doc-comment guard blind to a file's first comment. OAI-52:
-four of six items on OAI-3's own verification checklist never actually landed despite the checklist
-saying they did. OAI-45 closes two holes in OAI-34's end-to-end test matrix.
-
-**Tier 5 — residue from the OAI-64/OAI-162 ladder, in shipped code.** **OAI-160**.
-`displayOf`'s `dead`/`never-started` note mislabels an *ordinary* row this build understands as
-"written by a newer plugin" — the database's `PRAGMA user_version` is what's actually too new, not
-the row's `schema_version`, and the rendered message contradicts itself in its own parentheses.
-Proved by execution against a seeded row. Live and wrong today, though only for a row that is
-already dead or never-started, so no live work is at risk. Its eleven pure-coverage-debt siblings
-split out as OAI-191 and parked — see `BACKLOG_PARKED.md`.
-
-**Tier 6 — the measurement programme, UNBLOCKED 2026-08-20.** **OAI-19, OAI-50,
-OAI-49, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — a full-corpus baseline re-measure,
-dense vs MoE, hours of the user's own LM Studio rather than an edit, launched deliberately not
-incidentally. OAI-50 and OAI-49 are the two remaining instrument questions its own gate names as
-stated limits (whether a failed context probe should be scored; a matched-budget arm so a cross-model
-comparison measures the model, not the budget). OAI-9 and OAI-11 are multi-pass review (deduplicated
-union; diverse models/lenses) — measured 20% hit rate per single pass on a known-defect file, so
-unioning passes is the lever. OAI-13 is vendor-dependent findings needing a second server to settle.
-Both blocking instrument defects are now shipped (OAI-115: the live reserve watchdog; OAI-116: the
-token-exhaustion path now attaches `attempts[]` instead of recording `null`) — an arm may now be
-scheduled, though OAI-19's own body should be re-read for any further settled decisions before one
-is launched.
-
-**Tier 7 — decisions and direct requests.** **OAI-159, OAI-181, OAI-184**.
-OAI-159 leads: 78 citations across this file point at an `adr/` corpus that was deleted, and the
-citation convention for this file itself was never adjudicated — it decides how every other item
-citing an ADR should be read. OAI-181 is a direct user request (let a caller pick a model per
-delegated call) that needs a probe first: would relaxing the delegate's no-`--model` rule undo the
-reason that rule exists. OAI-184 is cosmetic: two unused parameters in `runJob`.
-
-**Tier 8 — cross-run history.** **OAI-151**.
-No index exists over the ledgers every sweep already leaves behind, so no sweep can be compared
-against the sweeps before it — a per-commit reproduction rate across runs is exactly what this
-tracker cannot compute today, and OAI-141's finding (run-to-run spread exceeds the differences
-usually being compared) is why that number matters. An index over existing artifacts, not new
-instrumentation.
-
-**Tier 9 — OAI-185's own residue: narrower siblings of the same leak class, deferred rather than
-fixed.** **OAI-192, OAI-193, OAI-194**.
-All three surfaced during OAI-185's review ladder and were assessed, not overlooked: OAI-192
-(`job-launch-outcome.mjs`'s spawn-error message) carries local OS/process data, not server content —
-low/theoretical risk, a different error type from the transport/response-parsing class OAI-185 fixed.
-OAI-193 (`cmd-setup.mjs`'s `jsonRow` never reading `listUnavailable`) is a pre-existing `--json`
-completeness gap, unrelated to secret persistence. OAI-194 (`model-selection.mjs`/`delegate.mjs`'s
-server-reported model id reaching a `UserError` message) is real but structurally unreachable through
-the background persistence path OAI-185 protects, since model selection completes at submission time,
-before a job row exists.
-
-<!-- /tiers -->
-
-
-### Absorbed IDs — where a merged or moved number now resolves
-
-Every ID this file has ever issued still resolves; nothing was deleted. **Two did not until 2026-08-13** — OAI-6 and OAI-8 were cited by live bodies while resolving to no heading in any tracker, which is the broken-reference trigger a sweep exists for; both had shipped and neither was ever filed. ADRs, plans and
-`BACKLOG_DONE.md` cite absorbed numbers, so this table is what keeps those references working.
-
-| Was | Now | Why |
-| --- | --- | --- |
-| **OAI-30** | **OAI-28** | Now OAI-28's part (C) — its own justification is still live and unresolved, not closed; it used to be blocked from starting by the ratchet (headroom), which was closed as moot 2026-08-17, see part (A). |
-| **OAI-41** | **OAI-28** | The ratchet decision that used to block OAI-28 and OAI-30 — closed as moot 2026-08-17, see OAI-28's part (A). |
-| **OAI-38** | **OAI-28** | Withdrawn 2026-08-04 as a duplicate on the day it was filed; never independent. |
-| **OAI-71** | **OAI-59** | One added `outcome` field, one shape-drift decision, one `/oai:result` render. |
-| **OAI-6** | *shipped* | Streaming output for `/oai:task`. **Recovered 2026-08-13 by the sweep**, which found it cited by OAI-13 and resolving NOWHERE — it predates the done-file convention. Shipped: `scripts/lib/stream-collect.mjs`, and `http.mjs:157` requests `text/event-stream`. |
-| **OAI-8** | *shipped* | Liveness while a run is in progress. Same recovery, cited by OAI-9. Shipped: `scripts/lib/progress.mjs`, which renders a prefill-aware elapsed line. |
-
-Moved out of the live list rather than absorbed: **OAI-51**, **OAI-78**, **OAI-33** and **OAI-138** to `BACKLOG_DONE.md`,
-**OAI-84** to `BACKLOG_DONE.md` as a SPLIT — its two repairs shipped and were verified on disk by the
-2026-08-13 sweep, while its only live remainder, the withdrawn candidate-selection design, was carried
-into **OAI-112**, which cannot close without it. One id, one home: read OAI-84 in the done file.
-**OAI-44** to `BACKLOG_PARKED.md`. **OAI-72(c)** moved into **OAI-63** as a sub-item; OAI-72 keeps its
-ID and its other two claims. **OAI-13** split: its sub-items (3) and (5) became **OAI-84** because
-they stopped being vendor-dependent.
-
-**At the sweep that built this table, item count fell far faster than byte count, and the difference
-was not fixing.** 56 live items became 50, but almost nothing was discarded: four IDs were merged into
-two, three moved to other trackers, one split out, and every dated observation, measurement and
-decision-with-reason came with them. *(Stated as history, not a standing count — the live set has
-grown far past 50 since. The lesson stands: read a shrinking item count as shorter to navigate, never
-assume it means shorter work, and check the byte figures the sweep reports each time instead.)*
+**The tier-ranking priority index and the absorbed-ID redirect table were retired 2026-08-20**,
+owner-directed, matching the same removal in `~/Code/backlog` and `~/Code/dotfiles`: no more
+priority-ranking pass over this file, and a merged item now gets a one-line stub bullet
+(`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
+resolved through the exact same `- **OAI-n**` shape as every other item — never a separate table.
+Four such stubs exist in `## Items` below (OAI-30, OAI-38, OAI-41, OAI-71); OAI-6 and OAI-8, which
+the old table resolved to `*shipped*` rather than another ID, are now ordinary `BACKLOG_DONE.md`
+entries instead of stubs, since they already carried full shipped descriptions.
 
 ### Standing methodology note, earned the hard way
 
@@ -161,7 +32,8 @@ arm.
 ### The parked theme — "make `/oai:review` trustworthy before extending the plugin further"
 
 Parked 2026-08-04 by the direction change, and kept here rather than in `BACKLOG_PARKED.md` because it
-is context for Tier 6 rather than an item. Everything in it was sized to answer "is the reviewer
+is context for the measurement-programme items (OAI-19, OAI-50, OAI-49, OAI-9, OAI-11, OAI-13) rather
+than an item itself. Everything in it was sized to answer "is the reviewer
 trustworthy" before extending the plugin — and OAI-51 then found the reviewer was crashing the model
 backend with its own request, so the thing being measured was broken throughout. Stage 0 changed how
 replies are produced, which invalidates any baseline taken before it.
@@ -578,6 +450,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   searched for in `BACKLOG.md`. **Verifying a finding is not the same as checking whether it is
   already tracked.**
 
+- **OAI-30** — Absorbed into OAI-28 (part C); see that item.
+
+- **OAI-38** — Absorbed into OAI-28 (part D); see that item.
+
+- **OAI-41** — Absorbed into OAI-28 (part A); see that item.
+
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
   scenario crossing the real entry point", with one *stated* exemption (G8, structurally impossible to
@@ -757,6 +635,8 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   filing said to decide it with this item rather than alone, so the merge takes that at its word.
   Note the pairing sharpens the fix: the added field is itself the first test of the rule, since a
   build predating it must render the row without claiming the job "recorded no answer".
+
+- **OAI-71** — Absorbed into OAI-59; see that item.
 
 - **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
   invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is

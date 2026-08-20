@@ -445,25 +445,26 @@ Domain:
 
 ## Work tracker
 
-- `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). It opens with a
-  **tier list between `<!-- tiers -->` markers** and an **absorbed-ID table**. **Since 2026-08-08 the
-  tier list is the PRIORITY VIEW and the bodies below sit in ascending ID order**; a re-order
-  rewrites only the index. **`tests/backlog-structure.test.js` enforces this on every
-  `npm test`** (OAI-104, 2026-08-09 — before it, the same guarantee was prose naming a script that
-  did not exist, and it found three classes of live drift on its first run): the index covers the
-  live set exactly, no ID repeats in it, the bodies are in ID order, and nothing is live and closed
-  out at once. It is no longer true that
-  the index sequence equals the heading sequence — that was the pre-migration invariant. Every ID ever
-  issued must still resolve to exactly one live heading, one done/parked heading, or one redirect hop.
-  *(A single bolded `**OAI-n**` inside the tier prose parses as a tier entry — refer to items in other
-  tiers without bold.)*
+- `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …), bodies in ascending ID
+  order. **`tests/backlog-structure.test.js` enforces this on every `npm test`** (OAI-104,
+  2026-08-09 — before it, the same guarantee was prose naming a script that did not exist, and it
+  found three classes of live drift on its first run): no ID repeats among the live bodies, the
+  bodies are in ID order, and nothing is live and closed out at once. **The tier-ranking priority
+  index and the absorbed-ID redirect table were retired 2026-08-20**, owner-directed, matching the
+  same removal in `~/Code/backlog` and `~/Code/dotfiles` — there is no more priority-ranking pass
+  over this file. A merged item now gets a one-line stub bullet
+  (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
+  resolved through the ordinary `- **OAI-n**` shape every item uses, never a separate table.
 - `BACKLOG_DONE.md` — completed items, newest first.
 - `BACKLOG_PARKED.md` — items whose **framing** was disproved, not merely deprioritised. Each carries a
   **reopening bar**: what would have to be observed for it to become live again. An item still wanted
   but unscheduled stays in `BACKLOG.md`; parking is for a premise that no longer holds.
-- "Pick next item" = top of BACKLOG.md; "mark done" = move the item to BACKLOG_DONE.md with the date;
-  "park" = move to BACKLOG_PARKED.md with a reopening bar, and add a row to the absorbed-ID table if
-  anything cites it.
+- **"Pick next item" is a judgement call, not a file position** — `BACKLOG.md`'s bodies are in
+  ascending ID order for lookup, not priority order, since the priority-ranking pass was retired
+  2026-08-20; the top of the file is the lowest ID, not the most urgent item. "mark done" = move the
+  item to BACKLOG_DONE.md with the date; "park" = move to BACKLOG_PARKED.md with a reopening bar. If
+  a merge leaves an ID cited elsewhere with no body of its own, give it a one-line stub bullet
+  wherever the surviving item lives.
 - **Filing a NEW item clears the same worth bar `backlog-sweep`'s consolidate pass applies
   retroactively (2026-08-18, after 188 issued IDs and ~two-thirds of live items turned out to be
   another item's residue): a dated instance already observed, or a named silent-failure mechanism —

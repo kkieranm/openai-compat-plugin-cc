@@ -1,3 +1,18 @@
+## 2026-08-20 — OAI-6 and OAI-8 given real entries, migrated from the retired absorbed-ID table
+
+Both had shipped and were never independently filed — the old table's "Was/Now" rows described them
+as `*shipped*` rather than redirecting to another ID, with the full description below already
+written there. Moved here as ordinary entries now that the table (and the tier-ranking index beside
+it) is retired, owner-directed, 2026-08-20 — matching the same removal in `~/Code/backlog` and
+`~/Code/dotfiles`.
+
+- **OAI-6** — Streaming output for `/oai:task`. **Recovered 2026-08-13 by the sweep**, which found it
+  cited by OAI-13 and resolving NOWHERE — it predates the done-file convention. Shipped:
+  `scripts/lib/stream-collect.mjs`, and `http.mjs:157` requests `text/event-stream`.
+
+- **OAI-8** — Liveness while a run is in progress. Same recovery, cited by OAI-9. Shipped:
+  `scripts/lib/progress.mjs`, which renders a prefill-aware elapsed line.
+
 ## 2026-08-20 — OAI-156 shipped: a whole-document YAML-ish findings reply is recovered instead of discarded (`d397deb`)
 
 - **OAI-156** — A complete, well-formed findings list expressed as whole-document YAML-ish prose (no

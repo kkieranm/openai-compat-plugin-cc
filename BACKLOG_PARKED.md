@@ -2447,8 +2447,9 @@ The bar was applied to all 101 surviving items, not to a chosen subset.
 # Parked
 
 Items whose *framing* was disproved, not merely deprioritised. Each carries a **reopening bar**: what
-would have to be observed for it to become live again. IDs here are still stable and global, and
-`BACKLOG.md`'s absorbed-ID table points at this file.
+would have to be observed for it to become live again. IDs here are still stable and global, and a
+merged item that landed here (rather than being independently parked) gets a one-line stub bullet
+— `BACKLOG.md`'s tier-ranking index and absorbed-ID redirect table were retired 2026-08-20.
 
 - **OAI-44** — Decide whether a *confirmation-capable* server-state instrument is worth building.
   **Parked 2026-08-05 by the backlog sweep.** It was already marked "Parked, not closed" in its own

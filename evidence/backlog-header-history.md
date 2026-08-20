@@ -8,9 +8,10 @@ which is where `BACKLOG.md` sits; moved into `evidence/`, that same text would r
 level wrong, so those link targets were adjusted to still resolve correctly from here — nothing else
 was touched. What the notes explain (the plan direction, why the ordering isn't stage order, which
 stages shipped and what residue they left) is still true, but by 2026-08-17 both blocks were paying
-their cost — 3,300+ bytes of header, read on every open of the file — for context the tier list below
-already carries in its own per-tier rationale (see Tier 6, "what shipping Stage 2 left behind", for
-the OAI-85/86/87/88/89/90 residue this once explained inline). The live header now carries one
+their cost — 3,300+ bytes of header, read on every open of the file — for context the tier list then
+in `BACKLOG.md` already carried in its own per-tier rationale (at the time, "Tier 6, what shipping
+Stage 2 left behind" explained the OAI-85/86/87/88/89/90 residue inline; that tier list was itself
+retired 2026-08-20, owner-directed, and no longer carries this). The live header now carries one
 compact paragraph pointing to the plan; this file is where the fuller account lives.
 
 > ## Sweep, 2026-08-14 — what verification changed, which was almost nothing
