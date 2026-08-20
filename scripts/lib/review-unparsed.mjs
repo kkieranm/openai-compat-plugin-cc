@@ -5,6 +5,7 @@
 // for findings, while the module it left renders runs that are. Both the text
 // report and `--json` call it, which is why it was already factored out into a
 // single function there — this only gives that function its own file.
+import { withLedger } from './attempt-ledger.mjs';
 import { requireAnswer } from './client.mjs';
 import { UserError } from './errors.mjs';
 
@@ -17,7 +18,7 @@ import { UserError } from './errors.mjs';
  * would be free to disagree, and this repo keeps relearning that fixing the
  * branch in front of you leaves the adjacent one wrong (trap instance 11).
  */
-export function unparsedReply(result, { structured, profile }) {
+export function unparsedReply(result, { structured, profile, ledger }) {
   // A reply we cut off mid-object is a token-budget problem, not a shape
   // problem. Showing the fragment and calling it a bad shape blames the model
   // for damage we did, and hides the one flag that fixes it.
@@ -28,7 +29,14 @@ export function unparsedReply(result, { structured, profile }) {
     // by its ninth long finding fails again at a larger budget — and on a big
     // input `prepareRequest` may shrink the raised value straight back to the
     // window's leftovers. Reviewing less is the lever that moves both.
-    throw new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
+    //
+    // Wrapped with `withLedger` (OAI-116): this is a POST-HOC classification of
+    // an otherwise-successful transport interaction — the ledger already holds
+    // a closed, populated entry for it — so the failure this throws must carry
+    // that record rather than leave `errorReport()`'s `attempts` field null,
+    // which made OAI-19's gate criterion G-E unpassable for the dominant
+    // overnight-sweep failure mode.
+    throw withLedger(new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
       // Tagged so a caller can tell "the budget ran out" from "the server broke"
       // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
       // off the `--json` envelope and states the rule its own header keeps —
@@ -40,7 +48,7 @@ export function unparsedReply(result, { structured, profile }) {
         'Review a smaller target — a single commit with --commit, or specific files with --file. '
         + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
         + 'reasoning rather than more room for the findings themselves.',
-    });
+    }), ledger);
   }
 
   // Under a schema the reasoning channel carries the constrained output, so it
@@ -62,5 +70,12 @@ export function unparsedReply(result, { structured, profile }) {
     if (content && reasoning) return `[content]\n${content}\n\n[reasoning]\n${reasoning}`;
     if (content || reasoning) return content || reasoning;
   }
-  return requireAnswer(result, profile).trim();
+  // Narrowly wrapped (OAI-116) — only around this one call, not the whole
+  // function body, so a programming error elsewhere in here is never
+  // misreported as a ledger-carrying attempt failure.
+  try {
+    return requireAnswer(result, profile).trim();
+  } catch (error) {
+    throw withLedger(error, ledger);
+  }
 }

@@ -9,7 +9,7 @@ import { renderTaskFooter } from './render.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
-function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged }) {
+function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged, ledger }) {
   if (parsed) {
     process.stdout.write(
       renderFindings(
@@ -24,7 +24,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
     return;
   }
 
-  const text = unparsedReply(result, { structured, profile });
+  const text = unparsedReply(result, { structured, profile, ledger });
   // Every caveat, because a reply that came back as prose did not see more —
   // `salvaged` FIRST, same ordering as `caveats()` below: without it, a
   // salvage follow-up's prose reply carries no indication it came from a

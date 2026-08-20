@@ -41,6 +41,29 @@ test('a token-exhausted review names its cause in a field, not only in prose', a
   }
 });
 
+// OAI-116: this is a POST-HOC classification of an otherwise-successful
+// transport interaction — the ledger already holds a closed, populated entry
+// for the request that produced this refusal — so the failure envelope must
+// carry it. Without this, `attempts` came back null for the dominant
+// overnight-sweep failure mode, making OAI-19's gate criterion G-E ("a
+// missing or self-inconsistent attempts[] invalidates the invocation")
+// structurally unpassable for any run that starved.
+test('a token-exhausted review still carries the attempt that produced it', async () => {
+  const { dir, server, configPath } = await scenario(replies({ finishReason: 'length' }));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    const report = JSON.parse(result.stdout);
+    // Exact projection, not a truthy/non-null check — proves the record is a
+    // real, internally consistent closed physical attempt, not a placeholder.
+    assert.deepEqual(
+      report.attempts.map(({ index, outcome, reason, serverResponded }) => ({ index, outcome, reason, serverResponded })),
+      [{ index: 1, outcome: 'answered', reason: null, serverResponded: true }],
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 test('the prose still says what happened, so a human loses nothing to the field', async () => {
   const { dir, server, configPath } = await scenario(replies({ finishReason: 'length' }));
   try {
@@ -48,6 +71,32 @@ test('the prose still says what happened, so a human loses nothing to the field'
 
     const report = JSON.parse(result.stdout);
     assert.match(report.message, /ran out of tokens/);
+  } finally {
+    await server.close();
+  }
+});
+
+// OAI-116's second, narrower wrap: unparsedReply's OTHER throw path — a
+// reasoning-only reply (content empty, reasoning non-empty, so it is NOT the
+// wholly-blank shape the retry layer already catches as 'blank-completion')
+// that falls through to requireAnswer, not the finish_reason==='length'
+// branch above — must carry the same attempt record. This is not OAI-163's
+// concern (that item is about the null `reason` this throw carries, and the
+// sweep's outage classifier reading it) — only that `attempts` isn't dropped
+// here either.
+test('a reasoning-only reply that falls through to requireAnswer still carries the attempt that produced it', async () => {
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondStream(response, completionFrames('reasoned but never answered', { channel: 'reasoning', finishReason: 'stop' })),
+  );
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.notEqual(result.status, 0);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.error, true);
+    assert.deepEqual(
+      report.attempts.map(({ index, outcome, reason, serverResponded }) => ({ index, outcome, reason, serverResponded })),
+      [{ index: 1, outcome: 'answered', reason: null, serverResponded: true }],
+    );
   } finally {
     await server.close();
   }

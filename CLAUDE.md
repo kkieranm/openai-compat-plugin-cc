@@ -106,6 +106,15 @@ follow-up's own budget branching on the reason: `token-reserve-cutoff` gets a fl
 and `bench/lib/sweep-outcome.mjs` classify an unsalvaged `token-reserve-cutoff` alongside
 `token-exhaustion` as `starved`, never as a generic failure or a server-health symptom.
 
+`scripts/lib/review-unparsed.mjs`'s `unparsedReply` is a post-hoc classifier, not a request-failure
+path: `token-exhaustion` (`finish_reason: 'length'`) and the reasoning-only fallthrough to
+`client.mjs`'s `requireAnswer` both fire *after* a physical request has already closed successfully
+in the ledger, so both throw sites wrap their `UserError` with `withLedger(error, ledger)` (OAI-116)
+— the ownership boundary lives here, in the one function that decides a completed answer is
+unreportable, rather than duplicated at its two `review-report.mjs` call sites (`reportFindings`,
+`parseFields`). Without it `errorReport()`'s `attempts` field silently read `null` for the dominant
+overnight-sweep failure mode, which made OAI-19's gate criterion G-E structurally unpassable.
+
 `--max-seconds` caps a whole model call in wall clock, retries included — `scripts/lib/http-budgets.mjs`
 arms it as the transport's `deadline` budget from one expiry `requestFindings` mints per command, and
 `scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
