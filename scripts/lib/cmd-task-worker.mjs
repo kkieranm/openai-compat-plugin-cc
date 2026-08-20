@@ -101,7 +101,7 @@ function outcomeOf(result, durationMs, template) {
  * Returning the outcome instead of writing it puts the completed write outside
  * that catch's scope, which makes the defect impossible rather than handled.
  */
-async function runJob(db, seq, job) {
+async function runJob(job) {
   const startedAt = Date.now();
   const ledger = createLedger();
   const profile = transportProfile(job);
@@ -233,7 +233,7 @@ async function runAndPublish(db, seq, job) {
   try {
     let outcome;
     try {
-      outcome = await runJob(db, seq, job);
+      outcome = await runJob(job);
     } catch (error) {
       publishFailure(db, seq, error);
       throw error;
