@@ -43,12 +43,18 @@ export async function readJson(response, what, { maxChars } = {}) {
     return JSON.parse(text);
   } catch (error) {
     // Quoting the reply is what identifies a proxy login page or an HTML error
-    // in the path; "invalid JSON" alone sends the reader to the wrong server.
-    const failure = new UserError(`${what} returned a non-JSON response: ${error.message}`, {
-      hint: `The reply began: ${text.trim().slice(0, 200) || '(empty)'}`,
-    });
+    // in the path — but the reply is server-controlled and can carry the same
+    // secret-shaped content `provider.mjs`'s `assertOk` guards against
+    // (OAI-185), and `error.message` from `JSON.parse` itself quotes a
+    // fragment of the input, so neither may go on `.message` or `.hint`:
+    // both are read unconditionally by `describeFailure` (this reason,
+    // `bad-json`, passes through untouched) and by `oai-companion.mjs`'s
+    // top-level catch. The excerpt travels on `.bodyExcerpt` instead — the
+    // same structured-field, display-time-only pattern as `.responseBody`.
+    const failure = new UserError(`${what} returned a non-JSON response.`);
     failure.reason = 'bad-json';
     failure.serverResponded = true;
+    failure.bodyExcerpt = text.trim().slice(0, 200) || '(empty)';
     throw failure;
   }
 }

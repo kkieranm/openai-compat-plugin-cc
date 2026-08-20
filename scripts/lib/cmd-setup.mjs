@@ -3,6 +3,7 @@ import { buildProfile, loadConfig, normalizeBaseUrl } from './config.mjs';
 import { describeProvider } from './delegate.mjs';
 import { UserError } from './errors.mjs';
 import { effectiveWindow } from './model-info.mjs';
+import { transportDetail } from './provider.mjs';
 import { renderSetupReport } from './render.mjs';
 
 /**
@@ -48,7 +49,13 @@ export async function probeProvider(name, rawProfile) {
     // with a configured model still runs against it. Reporting that as
     // unreachable would tell the user to restart a server that is working.
     if (error.serverResponded) {
-      return { profile, rawProfile, built: true, models: [], described: null, listUnavailable: error.message };
+      // `/oai:setup` is unambiguously interactive — the operator's own
+      // terminal, echoing their own config back to them — so it composes the
+      // structured OAI-185 fields into the message itself, the same as
+      // `oai-companion.mjs`'s top-level catch does for every other command.
+      const detail = transportDetail(error);
+      const listUnavailable = detail ? `${error.message} (${detail})` : error.message;
+      return { profile, rawProfile, built: true, models: [], described: null, listUnavailable };
     }
     return { profile, rawProfile, built: true, models: [], error };
   }
@@ -59,6 +66,13 @@ function jsonRow({ profile, rawProfile, models, error, described }) {
   // Derived from the same resolver the text report uses; computing it
   // separately is how the two views come to disagree about the same run.
   const resolved = effectiveWindow(profile, described);
+  // No `transportDetail` composition on `error` (unlike `listUnavailable`
+  // above): every error stored in this field is pre-response, carrying only
+  // `.endpoint` — always `profile.baseUrl`, already reported on the `baseUrl`
+  // field below. A `serverResponded` failure with real body detail always
+  // takes the `listUnavailable` branch instead (OAI-185 review-ladder pass
+  // 1). `jsonRow` never reads `listUnavailable` at all, which is a real,
+  // separate gap — filed rather than fixed here (out of this pass's scope).
   return {
     name: profile.name,
     baseUrl: profile.baseUrl,

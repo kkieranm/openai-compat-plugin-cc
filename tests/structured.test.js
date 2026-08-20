@@ -182,12 +182,26 @@ test('a reply without a findings array is not findings', () => {
 });
 
 test('only a rejection of the format itself triggers the fallback', () => {
-  const rejection = Object.assign(new Error("'response_format.type' must be 'json_schema' or 'text'"), { status: 400 });
+  // The refusal wording lives on `.responseBody` (OAI-185), not `.message` —
+  // `assertOk()` puts the server's echoed body there so a secret-shaped URL
+  // never reaches the persisted `.message`.
+  const rejection = Object.assign(new Error('a generic 400'), {
+    status: 400,
+    responseBody: "'response_format.type' must be 'json_schema' or 'text'",
+  });
   assert.equal(isFormatRejection(rejection), true);
 
   // A 400 about anything else is a real error the user must see.
-  assert.equal(isFormatRejection(Object.assign(new Error('model not found'), { status: 400 })), false);
+  assert.equal(
+    isFormatRejection(Object.assign(new Error('a generic 400'), { status: 400, responseBody: 'model not found' })),
+    false,
+  );
   // A server that fails while generating has already accepted the format.
-  assert.equal(isFormatRejection(Object.assign(new Error('response_format failed'), { status: 500 })), false);
+  assert.equal(
+    isFormatRejection(
+      Object.assign(new Error('a generic 500'), { status: 500, responseBody: 'response_format failed' }),
+    ),
+    false,
+  );
   assert.equal(isFormatRejection(new Error('connection refused')), false);
 });

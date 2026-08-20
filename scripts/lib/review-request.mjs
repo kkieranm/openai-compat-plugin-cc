@@ -371,8 +371,12 @@ export async function requestFindings(profile, plan) {
       send,
       ledger,
       refuse: () => ledger?.refuseLast(error),
+      // The rejection detail lives on `.responseBody` now, not `.message`
+      // (OAI-185) — present by construction here, since `isFormatRejection`
+      // just matched against it. Truncated: the body can run to 400 chars,
+      // and this is one stderr line.
       announce: () => process.stderr.write(
-        `${profile.name} rejected response_format (${error.message}). Retrying without it.\n`,
+        `${profile.name} rejected response_format (${error.responseBody.slice(0, 200)}). Retrying without it.\n`,
       ),
     });
   }

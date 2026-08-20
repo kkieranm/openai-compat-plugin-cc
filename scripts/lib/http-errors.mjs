@@ -157,10 +157,15 @@ export function transportError(error, url, { delivered = false } = {}) {
 export function assertDecodable(response, url) {
   const encoding = response.headers['content-encoding'];
   if (!encoding || encoding === 'identity') return null;
-  const error = new UserError(`${url.host} sent a ${encoding}-compressed response, which this client cannot decode.`, {
+  // `encoding` is a raw, server-controlled header value — not a fixed enum
+  // this client validated — so it goes on `.bodyExcerpt`, never `.message`,
+  // the same discipline as `provider.mjs`'s `assertOk`, `body.mjs`'s
+  // `readJson` and `sse.mjs`'s `readSse` (OAI-185).
+  const error = new UserError(`${url.host} sent a compressed response, which this client cannot decode.`, {
     hint: 'The request asks for `accept-encoding: identity`; a proxy or server is overriding it.',
   });
   error.reason = 'protocol';
   error.serverResponded = true;
+  error.bodyExcerpt = encoding;
   return error;
 }

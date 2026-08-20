@@ -132,10 +132,16 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
  */
 function refuseUnusable(answer, { profile, sawDone, streamed }) {
   if (!answer.sawContent && !answer.sawReasoning) {
-    throw new UserError(
-      `${profile.name} returned a completion with no message content (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
-      { reason: EMPTY_COMPLETION },
-    );
+    // `answer.finishReason` is read straight off the server's own payload
+    // (completion.mjs's applyFrame/applyCompletion, no validation) — the same
+    // secret-shape risk as every other server-controlled value this feature
+    // guards (OAI-185), so it travels on `.finishReason`, never inside
+    // `.message`. `transportDetail()` (provider.mjs) composes it for display.
+    const failure = new UserError(`${profile.name} returned a completion with no message content.`, {
+      reason: EMPTY_COMPLETION,
+    });
+    failure.finishReason = answer.finishReason ?? 'unknown';
+    throw failure;
   }
   if (streamed && !sawDone && !answer.finishReason) {
     const size = answer.content.length + answer.reasoning.length;
@@ -153,12 +159,11 @@ function refuseUnusable(answer, { profile, sawDone, streamed }) {
   // real reply and spend two more requests failing to get it back. The test for
   // "the server delivered nothing" is that nothing is what it delivered.
   if (answer.content.length === 0 && answer.reasoning.length === 0) {
-    throw new UserError(
-      `${profile.name} returned an entirely empty completion (finish_reason: ${answer.finishReason ?? 'unknown'}).`,
-      {
-        hint: 'The channels were present but carried no characters — check the server log.',
-        reason: BLANK_COMPLETION,
-      },
-    );
+    const failure = new UserError(`${profile.name} returned an entirely empty completion.`, {
+      hint: 'The channels were present but carried no characters — check the server log.',
+      reason: BLANK_COMPLETION,
+    });
+    failure.finishReason = answer.finishReason ?? 'unknown';
+    throw failure;
   }
 }

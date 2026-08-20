@@ -52,6 +52,16 @@ function reword(error, message, options) {
   return worded;
 }
 
+/**
+ * The endpoint a transport failure names, kept OFF `.message` (OAI-185).
+ *
+ * `.message` is what `errorReport()` persists into `jobs.db` and what an
+ * uncaught worker error prints to its own job log — both longer-lived than
+ * this process, and `baseUrl` can be secret-shaped (a credential embedded in
+ * its path or query). Only a genuinely interactive command's own top-level
+ * catch (`oai-companion.mjs`, gated on an explicit allowlist) may append this
+ * field when printing to the operator's own terminal.
+ */
 function describeFailure(error, profile) {
   // The transport already names which budget elapsed and what had arrived, so
   // re-describing it here would replace a diagnosis with a guess — which is what
@@ -61,25 +71,50 @@ function describeFailure(error, profile) {
   }
   const code = error?.cause?.code ?? error?.code;
   if (code === 'ECONNREFUSED') {
-    return reword(error, `Cannot reach ${profile.name} at ${profile.baseUrl} — connection refused.`, {
+    const worded = reword(error, `Cannot reach ${profile.name} — connection refused.`, {
       hint: START_HINTS[profile.name] ?? 'Check the server is running and the baseUrl in the config is right.',
     });
+    worded.endpoint = profile.baseUrl;
+    return worded;
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
-    return reword(error, `Cannot resolve the host in ${profile.baseUrl} (provider "${profile.name}").`);
+    const worded = reword(error, `Cannot resolve the host for provider "${profile.name}".`);
+    worded.endpoint = profile.baseUrl;
+    return worded;
   }
   if (error instanceof UserError) return error;
-  return reword(
+  // Generic fallback: neither `profile.baseUrl` nor the underlying transport
+  // error's own `.message` may appear here — a Node syscall error's `.message`
+  // routinely carries the request URL itself, which is the same secret shape
+  // one layer down.
+  const worded = reword(
     error,
-    `Request to ${profile.name} at ${profile.baseUrl} failed: ${error?.message ?? error}${code ? ` (${code})` : ''}`,
+    `Request to ${profile.name} failed${code ? ` (${code})` : ''}.`,
   );
+  worded.endpoint = profile.baseUrl;
+  return worded;
 }
 
 /**
  * Non-2xx, kept here rather than in the transport: the message carries the
- * provider's name and the first 400 characters of the body, and
- * `structured.mjs` pattern-matches that body to decide whether a schema was
- * refused. Moving this would lose `.status` silently.
+ * provider's name and HTTP status, and the first 400 characters of the body
+ * go on `.responseBody` rather than `.message` (OAI-185) — a server routinely
+ * echoes the request path back in a 404/405 body, which can carry the same
+ * secret-shaped `baseUrl` segment `describeFailure()` guards against.
+ * `structured.mjs` pattern-matches that body via `.responseBody`, not
+ * `.message`, to decide whether a schema was refused. `.status` stays
+ * separate for the same reason it always was — a caller tests it without
+ * pattern-matching prose. A redirect's `Location` is exactly as server-
+ * controlled as a response body — it folds onto the same `.responseBody`
+ * field rather than into `.message`, so the operator-only hint below stays
+ * displayable through the same interactive-allowlist path the body uses,
+ * instead of naming a URL that then has nowhere to show up. `statusText`
+ * folds onto the same field for the same reason, rather than being dropped
+ * outright: a pass-7 review found a server that signals a capability
+ * refusal purely through the HTTP reason phrase, with an empty body, would
+ * otherwise have `isFormatRejection`/`refusedField` lose that signal
+ * entirely — both read `.responseBody`, so it must carry everything the old
+ * `.message` did, not just the body half of it.
  */
 async function assertOk(profile, path, response) {
   if (response.status >= 200 && response.status < 300) return;
@@ -98,9 +133,8 @@ async function assertOk(profile, path, response) {
 
   const error = new UserError(
     redirect
-      ? `${profile.name} redirected ${path} (HTTP ${response.status}) to ${response.headers.location ?? 'an unnamed location'}.`
-      : `${profile.name} returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''} for ${path}` +
-        `${detail.trim() ? `: ${detail.trim()}` : ''}`,
+      ? `${profile.name} redirected ${path} (HTTP ${response.status}).`
+      : `${profile.name} returned HTTP ${response.status} for ${path}.`,
     redirect ? { hint: 'Point baseUrl at the final URL — redirects are deliberately not followed.' } : undefined,
   );
   // The server answered, so it is up — it just does not serve this endpoint.
@@ -109,7 +143,29 @@ async function assertOk(profile, path, response) {
   // Kept separate from the message so a caller can test the status without
   // pattern-matching prose (structured.mjs discriminates a 400 this way).
   error.status = response.status;
+  if (redirect) {
+    error.responseBody = response.headers.location ?? 'an unnamed location';
+  } else {
+    const combined = [response.statusText, detail.trim()].filter(Boolean).join(': ');
+    if (combined) error.responseBody = combined;
+  }
   throw error;
+}
+
+/**
+ * The server/endpoint-controlled detail an error carries off `.message`
+ * (OAI-185) — `.endpoint`, `.responseBody`, `.bodyExcerpt`, `.finishReason`
+ * (completion.mjs / client.mjs — unvalidated server payload, not transport
+ * data, but the same discipline) — joined for a genuinely interactive
+ * display. One definition: `oai-companion.mjs`'s top-level catch and
+ * `cmd-setup.mjs`'s own error rendering both call this rather than each
+ * re-composing the same field list, so a further field only needs naming
+ * here.
+ */
+export function transportDetail(error) {
+  return [error?.endpoint, error?.responseBody, error?.bodyExcerpt, error?.finishReason]
+    .filter(Boolean)
+    .join(' — ');
 }
 
 export async function request(profile, path, { method = 'GET', body, firstByteMs, totalMs, totalBudget, totalReportMs } = {}) {

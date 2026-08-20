@@ -113,7 +113,10 @@ test('a compressed response is refused by name, not parsed as noise', async () =
   const error = await caught(send(server.url, { firstByteMs: 5_000 }));
   await server.close();
 
-  assert.match(error?.message ?? '', /gzip-compressed/);
+  // The encoding value is server-controlled (OAI-185), so it lives on
+  // .bodyExcerpt, not .message.
+  assert.doesNotMatch(error?.message ?? '', /gzip/);
+  assert.equal(error.bodyExcerpt, 'gzip');
   assert.equal(error.name, 'UserError');
 });
 
@@ -223,8 +226,12 @@ test('a non-JSON reply names what it was and quotes the start', async () => {
   const error = await caught(readJson(response, 'lmstudio'));
   await server.close();
 
-  assert.match(error?.message ?? '', /^lmstudio returned a non-JSON response/);
-  assert.match(error.hint, /proxy login page/, 'quoting the reply is what identifies a proxy in the path');
+  // The excerpt lives on `.bodyExcerpt`, not `.message` or `.hint` (OAI-185)
+  // — both of those are read unconditionally by callers this reply can reach
+  // once persisted, and the reply body is server-controlled.
+  assert.match(error?.message ?? '', /^lmstudio returned a non-JSON response\.$/);
+  assert.equal(error.hint, undefined);
+  assert.match(error.bodyExcerpt, /proxy login page/, 'quoting the reply is what identifies a proxy in the path');
 });
 
 test('mediaType strips parameters and case', () => {

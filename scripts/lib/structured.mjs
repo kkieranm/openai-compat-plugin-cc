@@ -20,7 +20,7 @@ export function responseFormatFor(schema, name = 'review') {
  */
 export function isFormatRejection(error) {
   if (error?.status !== 400 && error?.status !== 422) return false;
-  return /response_format|json_schema|response format/i.test(error.message ?? '');
+  return /response_format|json_schema|response format/i.test(error.responseBody ?? '');
 }
 
 /**

@@ -52,6 +52,13 @@ function describeContext(profile, described) {
 function providerLines({ profile, rawProfile, models, error, built, described, listUnavailable }, plan) {
   const lines = [];
   if (error) {
+    // No `transportDetail` composition here (unlike `listUnavailable` below):
+    // every error `probeProvider` stores in this field is pre-response
+    // (ECONNREFUSED/ENOTFOUND/the generic fallback), which carries only
+    // `.endpoint` — always `profile.baseUrl`, already shown unconditionally
+    // on this row's own header line above. A `serverResponded` failure with
+    // real body detail always takes the `listUnavailable` branch instead, so
+    // composing it here would be dead weight (OAI-185 review-ladder pass 1).
     lines.push(`      ${error.message}`);
     const hint = error.hint ?? START_HINTS[profile.name];
     if (hint) lines.push(`      ${hint}`);

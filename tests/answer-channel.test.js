@@ -56,6 +56,65 @@ test('a response carrying no message at all is still malformed', async () => {
   assert.match(result.stderr, /no message content/);
 });
 
+test('a marker-bearing finish_reason is shown in full, but never baked into .message', async () => {
+  // OAI-185: finish_reason is read straight off the server's payload with no
+  // validation (completion.mjs's applyFrame), so it can be as secret-shaped as
+  // any other server-controlled value this feature guards. It travels on
+  // .finishReason, composed into the foreground display by transportDetail —
+  // this is `task` (interactive), so the marker should still be VISIBLE,
+  // just not as part of the raw .message string a persisted record would keep.
+  const marker = 'SECRET_MARKER_finishreason';
+  const result = await runWith(
+    () => [deltaFrame({}), { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] }],
+    ['task', 'explain this'],
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
+  const messageLine = result.stderr.split('\n')[0];
+  assert.doesNotMatch(messageLine, new RegExp(`content \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+});
+
+test('a marker-bearing finish_reason on the blank-completion refusal is shown, but not fused into .message', async () => {
+  // The third refuseUnusable shape (BLANK_COMPLETION): a channel was seen but
+  // carried nothing. Same OAI-185 concern as the EMPTY_COMPLETION shape above,
+  // pinned separately since it is a distinct throw site with its own
+  // .finishReason assignment.
+  const marker = 'SECRET_MARKER_blankcompletion';
+  const result = await runWith(
+    () => [
+      deltaFrame({ role: 'assistant', content: '' }),
+      { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
+    ],
+    ['task', 'explain this'],
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
+  const messageLine = result.stderr.split('\n')[0];
+  assert.doesNotMatch(messageLine, new RegExp(`completion \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+});
+
+test('a marker-bearing finish_reason on requireAnswer\'s empty-answer refusal is shown, not fused', async () => {
+  // client.mjs's requireAnswer, not completion.mjs's finishAnswer: whitespace-
+  // only content has length > 0 (finishAnswer's blank-completion guard passes
+  // it through) but trims to empty, so requireAnswer's own final refusal
+  // fires — a third, distinct .finishReason assignment (OAI-185).
+  const marker = 'SECRET_MARKER_requireanswer';
+  const result = await runWith(
+    () => [
+      deltaFrame({ role: 'assistant', content: ' ' }),
+      { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
+    ],
+    ['task', 'explain this'],
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
+  const messageLine = result.stderr.split('\n')[0];
+  assert.doesNotMatch(messageLine, new RegExp(`answer \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+});
+
 test('the same guard holds on the non-streaming path, where the choice has no message', async () => {
   // The streaming and whole-JSON paths share one accumulator precisely so they
   // cannot disagree about what an answer is. Asserting the guard on only one of

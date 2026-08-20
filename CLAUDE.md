@@ -59,7 +59,18 @@ measured over.
 `scripts/lib/failure-shape.mjs` names the shapes in which a request dies without the model saying no
 and splits them by whether a retry could survive it — `transport` retries, `non-retryable-transport`
 is a pre-response failure it does not recognise as transient — while `scripts/lib/provider.mjs`
-`reword` improves such a failure's message without ever changing that verdict; and
+`reword` improves such a failure's message without ever changing that verdict, and the same file's
+`describeFailure`/`assertOk` carry the endpoint and a server's echoed body on `error.endpoint` /
+`error.responseBody` — joined for display only by `transportDetail`, and never inside `.message`
+(OAI-185); `scripts/lib/body.mjs`'s `readJson`, `scripts/lib/sse.mjs`'s `readSse` and
+`scripts/lib/http-errors.mjs`'s `assertDecodable` all carry a malformed reply or header value the
+same way, on `error.bodyExcerpt`, and `scripts/lib/completion.mjs`'s `refuseUnusable` and
+`scripts/lib/client.mjs`'s `requireAnswer` carry the server's unvalidated `finish_reason` on
+`error.finishReason` — `tests/structure.test.js`'s `no server-controlled value reaches a UserError's
+message` scans exactly these files, is itself exercised against every historical leak this discipline
+was written from, and is scoped rather than repo-wide: a server-reported model id can still reach a
+`UserError` message via `model-selection.mjs`/`delegate.mjs`, deferred as OAI-185 residue since it
+never reaches the background persistence path this discipline protects; and
 `scripts/lib/answer-attempts.mjs` `answerWithRetry` retries only the retryable ones, spanning
 `postWithDegrade` and `finishAnswer` so it can see every shape; `scripts/lib/attempt-ledger.mjs` records
 one entry per physical request so scoring reads the attempt that answered while reliability reads

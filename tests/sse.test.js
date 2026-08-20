@@ -131,8 +131,12 @@ test('an event that is not JSON names the server and quotes the payload', async 
     response.end('data: {"broken":\n\n');
   }).then(() => null, (error) => error);
 
-  assert.match(failed?.message ?? '', /test sent an event that is not JSON/);
-  assert.match(failed.message, /\{"broken":/);
+  // The payload is server-controlled (OAI-185), so the quote lives on
+  // .bodyExcerpt, not .message — errorReport() persists .message into
+  // jobs.db, and a worker's uncaught error prints it to its own job log.
+  assert.match(failed?.message ?? '', /^test sent an event that is not JSON\.$/);
+  assert.doesNotMatch(failed.message, /\{"broken":/);
+  assert.match(failed.bodyExcerpt, /\{"broken":/);
   assert.equal(failed.name, 'UserError');
 });
 

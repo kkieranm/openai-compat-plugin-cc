@@ -248,3 +248,98 @@ test('a server that sent headers is not reported as one that never answered', as
   assert.equal(error.reason, TRANSPORT, 'a delivery that broke is retryable');
   assert.equal(error.serverResponded, true, 'it sent headers, so telling the user to start it is wrong');
 });
+
+// OAI-185. `describeFailure`'s three `reword(...)` sites used to bake
+// `profile.baseUrl` into `.message`, which `errorReport()` persists into
+// `jobs.db` and which an uncaught worker error also writes to its own job log.
+// `baseUrl` can be secret-shaped, so the endpoint now travels on a separate
+// `.endpoint` field and never on `.message` — these tests pin that split at
+// each of the three sites, through the real `request()` wrapper.
+
+test('a connection refusal names the endpoint on .endpoint, never on .message', async () => {
+  const marker = 'http://127.0.0.1:1/SECRET_MARKER/v1';
+  const error = await caught(request({ name: 'p', baseUrl: marker }, '/models', { firstByteMs: 3_000 }));
+
+  assert.equal(error.endpoint, marker);
+  assert.doesNotMatch(error.message, /SECRET_MARKER/);
+  assert.match(error.message, /connection refused/);
+});
+
+test('an unresolvable host names the endpoint on .endpoint, never on .message', async () => {
+  const marker = 'http://no-such-host.invalid/SECRET_MARKER/v1';
+  const error = await caught(request({ name: 'p', baseUrl: marker }, '/models', { firstByteMs: 3_000 }));
+
+  assert.equal(error.endpoint, marker);
+  assert.doesNotMatch(error.message, /SECRET_MARKER/);
+});
+
+test('the generic fallback (a non-transport, non-UserError throw) omits the endpoint', async () => {
+  // `send()`'s `new URL(url)` is the one throw in this repo's request path that
+  // is NEITHER wrapped by `transportError` (both `http.mjs` catch sites already
+  // are) NOR already a `UserError` — every other failure `describeFailure` sees
+  // is one or the other, and both of those return before reaching the generic
+  // `reword()` site. A malformed concatenated URL is what actually reaches it.
+  const marker = 'SECRET_MARKER';
+  const error = await caught(request({ name: 'p', baseUrl: `http://${marker} not a valid url/v1` }, '/models', { firstByteMs: 3_000 }));
+
+  assert.doesNotMatch(error.message, new RegExp(marker), 'the endpoint must not appear in .message');
+  assert.equal(error.endpoint, `http://${marker} not a valid url/v1`, 'it still travels on the structured field');
+});
+
+// OAI-185. `assertOk`'s non-2xx branch used to embed up to 400 chars of the
+// SERVER's own response body into `.message` — and a server routinely echoes
+// the request path/query back in a 404/405 body, which can carry the same
+// secret-shaped `baseUrl` segment the tests above cover. The body now lives on
+// `.responseBody`, never on `.message`.
+
+test('a non-2xx response body lands on .responseBody, never on .message', async () => {
+  const marker = 'SECRET_MARKER';
+  const server = createServer((request_, response) => {
+    response.writeHead(404, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: `Unexpected endpoint or method. (POST /${marker}/v1/chat/completions)` }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/${marker}/v1`;
+
+  const error = await caught(request({ name: 'p', baseUrl }, '/chat/completions', { firstByteMs: 3_000 }));
+  await new Promise((resolve) => server.close(resolve));
+
+  assert.equal(error.status, 404);
+  assert.match(error.responseBody, new RegExp(marker), 'the echoed body is preserved, on the structured field');
+  assert.doesNotMatch(error.message, new RegExp(marker), 'the endpoint-shaped body text must not reach .message');
+});
+
+test('a redirect Location header lands on .responseBody, never on .message', async () => {
+  const marker = 'SECRET_MARKER';
+  const server = createServer((request_, response) => {
+    response.writeHead(302, { location: `http://elsewhere.invalid/${marker}` });
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
+
+  const error = await caught(request({ name: 'p', baseUrl }, '/chat/completions', { firstByteMs: 3_000 }));
+  await new Promise((resolve) => server.close(resolve));
+
+  assert.match(error.responseBody, new RegExp(marker), 'the redirect target is preserved, on the structured field');
+  assert.doesNotMatch(error.message, new RegExp(marker), 'the redirect target must not reach .message');
+});
+
+test('an empty-body 400 with only a reason phrase still carries it on .responseBody', async () => {
+  // Pass-7 finding: dropping statusText outright (rather than folding it in,
+  // like the redirect Location) broke capability-fallback detection for a
+  // server that signals a refusal purely through the HTTP reason phrase with
+  // no body — isFormatRejection/refusedField read only .responseBody now.
+  const server = createServer((request_, response) => {
+    response.writeHead(400, 'response_format unsupported');
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
+
+  const error = await caught(request({ name: 'p', baseUrl }, '/chat/completions', { firstByteMs: 3_000 }));
+  await new Promise((resolve) => server.close(resolve));
+
+  assert.equal(error.status, 400);
+  assert.match(error.responseBody, /response_format unsupported/);
+});

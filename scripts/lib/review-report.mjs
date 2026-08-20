@@ -228,6 +228,12 @@ export function errorReport(error) {
     reason: error?.reason ?? null,
     message: error?.message ?? String(error),
     hint: error?.hint ?? null,
+    // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt` /
+    // `error.finishReason` (OAI-185) are deliberately never copied here —
+    // this object is what `publishFailure` persists into `jobs.db`, and all
+    // four fields can be secret-shaped. Absence by construction: this is an
+    // explicit field list, not a spread of `error`, so a new field on the
+    // source error never reaches a persisted job by default.
     // The attempt record survives the failure path, and this is the path where
     // it matters most: a run whose every attempt died is the run carrying the
     // most reliability evidence, and the easiest place to lose it. `null` where

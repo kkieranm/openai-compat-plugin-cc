@@ -240,3 +240,257 @@ test('the body-stream catch classifies its failures as delivered, whatever code 
       'retryable regardless of `error.code`, which Node does not promise to attach (OAI-22).',
   );
 });
+
+// Confirmed FOUR times in one review-ladder run (OAI-185): a UserError message
+// built at the HTTP response boundary interpolated something the SERVER
+// controls — profile.baseUrl, a redirect Location header, an echoed response
+// body, a JSON.parse error quoting the input, a raw content-encoding header —
+// each one independently discovered by a different reviewer pass because
+// nothing forced the next call site to remember the others. `.message` is what
+// `errorReport()` persists into `jobs.db` and what an uncaught worker error
+// prints to its own job log, so this graduates from a reviewer's prompt to a
+// guard per this file's own header rule.
+//
+// DENYLIST, not allowlist: the four confirmed variable names (plus the
+// destination fields themselves, in case one is ever read back into a
+// message) are what this guard can prove wrong. It cannot prove a NEW
+// interpolation is safe — that judgement still belongs to a reviewer — so a
+// legitimate new interpolation is added to SAFE_MESSAGE_EXPRESSIONS by hand,
+// a conscious decision, never silently passed.
+//
+// Known limitation, stated rather than hidden: this only sees a template
+// literal passed DIRECTLY to `new UserError(` or `reword(` — a message built
+// in an intermediate variable (`http-errors.mjs`'s `budgetMessages`) is
+// unscanned. Its interpolations (`host`, `seconds`, `received`) are local
+// config/counters, not server response content, which is why that gap was
+// accepted rather than closed.
+const RESPONSE_BOUNDARY_FILES = [
+  'scripts/lib/http.mjs',
+  'scripts/lib/http-errors.mjs',
+  'scripts/lib/provider.mjs',
+  'scripts/lib/body.mjs',
+  'scripts/lib/sse.mjs',
+  // Not transport-layer, but the same server-payload risk: `finish_reason`
+  // (completion.mjs's applyFrame/applyCompletion) is read off the server's
+  // JSON with no validation, and both files construct a UserError from it —
+  // found by a pass-4 adversarial review after the first three passes'
+  // sweeps missed it entirely by staying inside the transport layer.
+  'scripts/lib/completion.mjs',
+  'scripts/lib/client.mjs',
+];
+
+const TAINTED_SUBSTRINGS = [
+  'baseurl', 'encoding', 'location', 'detail', 'payload', 'statustext',
+  'bodyexcerpt', 'responsebody', 'excerpt', '.headers', 'finishreason',
+  'finish_reason',
+  // `message` generically: the original body.mjs leak (`${error.message}`,
+  // JSON.parse's own error quoting a fragment of server input) is caught
+  // only by this general rule, not by any of the specific field names above
+  // — a pass-5 adversarial review found the fixture for it slipped past
+  // every named substring. `SAFE_MESSAGE_EXPRESSIONS` below is checked
+  // FIRST, so the one legitimate exception is still excluded.
+  'message',
+  // `text`: body.mjs's original leak also quoted the response body itself in
+  // .hint (`The reply began: ${text.trim()...}`), a second, independent
+  // interpolation in the SAME historical call the `message` rule above does
+  // not reach.
+  'text',
+];
+
+// The one reviewed-safe exception: transportError's Node/OS-level syscall
+// message (ECONNREFUSED, EAI_AGAIN, …), never server response content.
+const SAFE_MESSAGE_EXPRESSIONS = new Set([
+  'cause.message ?? error.message',
+  // provider.mjs's ECONNREFUSED hint: a static lookup table plus a hardcoded
+  // fallback sentence, not server data — flagged only because that sentence's
+  // own English text happens to contain the word "baseUrl".
+  "START_HINTS[profile.name] ?? 'Check the server is running and the baseUrl in the config is right.'",
+]);
+
+/** Every `${...}` inside `text`, matching nested backticks (one deep is enough here). */
+function interpolations(text) {
+  const found = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '$' || text[i + 1] !== '{') continue;
+    let depth = 1;
+    let j = i + 2;
+    let expr = '';
+    while (j < text.length && depth > 0) {
+      if (text[j] === '{') depth++;
+      else if (text[j] === '}') {
+        depth--;
+        if (depth === 0) break;
+      }
+      expr += text[j];
+      j++;
+    }
+    found.push(expr);
+    i = j;
+  }
+  return found;
+}
+
+/**
+ * Every candidate expression inside a `new UserError(` / `reword(` call in
+ * `text`: `${...}` interpolations inside its backtick-quoted argument(s),
+ * PLUS a bare (non-template, non-string-literal) `hint:` value — the exact
+ * shape `sse.mjs`'s original leak used (`hint: error.message`, no
+ * backticks at all), which no `${...}` scan can ever see. A pass-6
+ * adversarial review found this exact gap: the fixture test below had been
+ * quietly rewritten to use a templated hint, which is not what the real
+ * historical bug looked like.
+ */
+function messageTemplates(text) {
+  const candidates = [];
+  const callSite = /(?:new UserError|reword)\(/g;
+  let match = callSite.exec(text);
+  while (match !== null) {
+    // Scan forward from the call for every backtick-delimited literal up to
+    // the call's closing paren — a redirect/non-redirect ternary (provider.mjs)
+    // puts two template literals inside one call.
+    let depth = 1;
+    let k = match.index + match[0].length;
+    let region = '';
+    while (k < text.length && depth > 0) {
+      if (text[k] === '(') depth++;
+      else if (text[k] === ')') depth--;
+      if (depth > 0) region += text[k];
+      k++;
+    }
+    const backtick = /`([^`]*)`/g;
+    let inner = backtick.exec(region);
+    while (inner !== null) {
+      candidates.push(inner[1]);
+      inner = backtick.exec(region);
+    }
+    // A bare hint value: `hint:`'s value, up to the next comma or closing
+    // brace, EXCLUDING a leading backtick/quote — a string or template
+    // literal is not a variable reference (checked in JS, not the regex:
+    // `\s*` backtracking around a character-class exclusion silently
+    // defeats it, since the engine can retreat to a zero-width match and
+    // let the excluded character satisfy a DIFFERENT, earlier position —
+    // measured here, not assumed).
+    const bareHint = /hint\s*:\s*([^,}]*)/g;
+    let hintMatch = bareHint.exec(region);
+    while (hintMatch !== null) {
+      const value = hintMatch[1].trim();
+      if (!/^[`'"]/.test(value)) candidates.push(`\${${value}}`);
+      hintMatch = bareHint.exec(region);
+    }
+    callSite.lastIndex = k;
+    match = callSite.exec(text);
+  }
+  return candidates;
+}
+
+/** Every offending `${...}` found in `source`, as `label: ${expr}` strings. */
+function taintedInterpolations(source, label) {
+  const offenders = [];
+  for (const template of messageTemplates(source)) {
+    for (const expr of interpolations(template)) {
+      const trimmed = expr.trim();
+      if (SAFE_MESSAGE_EXPRESSIONS.has(trimmed)) continue;
+      const lower = trimmed.toLowerCase();
+      if (TAINTED_SUBSTRINGS.some((word) => lower.includes(word))) {
+        offenders.push(`${label}: \${${trimmed}}`);
+      }
+    }
+  }
+  return offenders;
+}
+
+test('no server-controlled value reaches a UserError message at the response boundary', () => {
+  const offenders = RESPONSE_BOUNDARY_FILES.flatMap((relPath) =>
+    taintedInterpolations(withoutComments(readFileSync(join(ROOT, relPath), 'utf8')), relPath),
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    'a server-controlled value must travel on error.endpoint / .responseBody / .bodyExcerpt / ' +
+      '.finishReason, never inside .message — all are read unconditionally by errorReport() ' +
+      "(-> jobs.db) and by oai-companion.mjs's top-level catch (-> a background worker's job log). " +
+      'If this is a new, genuinely safe interpolation, add it to SAFE_MESSAGE_EXPRESSIONS by hand ' +
+      '(OAI-185). Scoped to RESPONSE_BOUNDARY_FILES only — not a repo-wide guarantee; ' +
+      'scripts/lib/model-selection.mjs / delegate.mjs carry a related, lower-severity, deferred gap ' +
+      '(a server-reported model id can reach a UserError message, but only pre-submission, never on ' +
+      'the background persistence path this feature protects — OAI-185 residue).',
+  );
+});
+
+// Pass-5 AND pass-6 adversarial findings, both on this same block: nothing
+// proved the DETECTOR itself still catches the exact historical leaks it was
+// written from — a rename in TAINTED_SUBSTRINGS or a bug in
+// messageTemplates()/interpolations() could silently stop catching them, and
+// the guard above would report "clean" for the wrong reason. Pass 6 also
+// found the first version of this block was not what it claimed: fixtures
+// had been simplified (the body.mjs / sse.mjs snippets dropped their `.hint`
+// clause entirely, which is a SECOND, independent leak in the same call the
+// `.message` clause does not cover) and each fixture asserted only "at least
+// one offender found," which cannot catch one expression masking a second,
+// missed one in the same call. These are the pre-fix snippets, verbatim,
+// from this ladder's own passes 1-6 — never executed, just fed through the
+// same detector the guard above uses — each paired with EVERY expression it
+// must individually flag.
+const HISTORICAL_LEAKS = [
+  ['describeFailure ECONNREFUSED (original)',
+    'reword(error, `Cannot reach ${profile.name} at ${profile.baseUrl} — connection refused.`, { ' +
+      "hint: START_HINTS[profile.name] ?? 'Check the server is running and the baseUrl in the config is right.' });",
+    ['profile.baseUrl']],
+  ['describeFailure ENOTFOUND (original)',
+    'reword(error, `Cannot resolve the host in ${profile.baseUrl} (provider "${profile.name}").`)',
+    ['profile.baseUrl']],
+  ['describeFailure generic fallback (original)',
+    'reword(error, `Request to ${profile.name} at ${profile.baseUrl} failed: ${error?.message ?? error}' +
+      "${code ? ` (${code})` : ''}`)",
+    ['profile.baseUrl', 'error?.message ?? error']],
+  // A backtick nested a second level deep, inside this ternary's own
+  // sub-template, is beyond what messageTemplates()'s non-nesting-aware
+  // backtick scan can parse (stated, not hidden — see its own comment) — so
+  // this fixture keeps the real two-templates-joined-by-`+` structure but
+  // flattens the innermost ternary's sub-template to a `+` concatenation,
+  // which the detector CAN see, rather than silently mis-testing a shape it
+  // cannot actually parse.
+  ['assertOk non-redirect body echo (original, innermost nesting flattened — see comment above)',
+    'new UserError(`${profile.name} returned HTTP ${response.status}' +
+      "${response.statusText ? ' ' + response.statusText : ''} for ${path}` + " +
+      "`${detail.trim() ? ': ' + detail.trim() : ''}`)",
+    ["response.statusText ? ' ' + response.statusText : ''", "detail.trim() ? ': ' + detail.trim() : ''"]],
+  ['assertOk redirect Location (original)',
+    "new UserError(`${profile.name} redirected ${path} (HTTP ${response.status}) to " +
+      "${response.headers.location ?? 'an unnamed location'}.`, " +
+      "{ hint: 'Point baseUrl at the final URL — redirects are deliberately not followed.' })",
+    ["response.headers.location ?? 'an unnamed location'"]],
+  ['body.mjs readJson (original, message AND hint both leak independently)',
+    'new UserError(`${what} returned a non-JSON response: ${error.message}`, { ' +
+      "hint: `The reply began: ${text.trim().slice(0, 200) || '(empty)'}` })",
+    ['error.message', "text.trim().slice(0, 200) || '(empty)'"]],
+  ['sse.mjs readSse (original, message AND a BARE non-template hint both leak independently)',
+    'new UserError(`${what} sent an event that is not JSON: ${payload.slice(0, 200)}`, { hint: error.message })',
+    ['payload.slice(0, 200)', 'error.message']],
+  ['http-errors.mjs assertDecodable (original)',
+    'new UserError(`${url.host} sent a ${encoding}-compressed response, which this client cannot decode.`)',
+    ['encoding']],
+  ['completion.mjs refuseUnusable (original)',
+    'new UserError(`${profile.name} returned a completion with no message content ' +
+      "(finish_reason: ${answer.finishReason ?? 'unknown'}).`)",
+    ["answer.finishReason ?? 'unknown'"]],
+  ['client.mjs requireAnswer (original)',
+    "new UserError(`${profile.name} returned an empty answer (finish_reason: ${result.finishReason ?? 'unknown'}).`)",
+    ["result.finishReason ?? 'unknown'"]],
+];
+
+test('the detector itself still catches every historical leak this ladder found — EVERY expected expression, not just one', () => {
+  const missed = [];
+  for (const [name, snippet, expectedExprs] of HISTORICAL_LEAKS) {
+    const found = new Set(taintedInterpolations(snippet, 'fixture').map((o) => o.replace(/^fixture: \$\{(.*)\}$/, '$1')));
+    for (const expected of expectedExprs) {
+      if (!found.has(expected)) missed.push(`${name}: expected \${${expected}} to be flagged, was not`);
+    }
+  }
+  assert.deepEqual(
+    missed,
+    [],
+    'a historical leak expression no longer trips the detector — TAINTED_SUBSTRINGS, messageTemplates() ' +
+      'or interpolations() regressed silently (OAI-185).',
+  );
+});

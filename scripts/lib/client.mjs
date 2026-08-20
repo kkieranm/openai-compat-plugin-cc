@@ -106,8 +106,11 @@ export function requireAnswer(result, profile) {
       hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
     });
   }
-  throw new UserError(
-    `${profile.name} returned an empty answer (finish_reason: ${result.finishReason ?? 'unknown'}).`,
-    { hint: 'Try again, or check the server log — nothing was generated.' },
-  );
+  // result.finishReason is unvalidated server payload (OAI-185) — travels on
+  // .finishReason, never .message; see completion.mjs's refuseUnusable.
+  const failure = new UserError(`${profile.name} returned an empty answer.`, {
+    hint: 'Try again, or check the server log — nothing was generated.',
+  });
+  failure.finishReason = result.finishReason ?? 'unknown';
+  throw failure;
 }

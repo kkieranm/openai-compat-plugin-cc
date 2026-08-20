@@ -58,6 +58,32 @@ test('setup reports an unreachable provider with remediation and still exits 0',
   assert.match(result.stdout, /No provider can take a task right now/);
 });
 
+test('setup still shows a probe failure\'s echoed response body in the text view', async () => {
+  // /oai:setup is unambiguously interactive — the operator's own terminal,
+  // echoing their own config back to them — so it must not lose diagnostic
+  // detail just because .message itself is now generic (OAI-185). The marker
+  // sits only in the /v1/models response body here, never in baseUrl, so a
+  // pass would be meaningless if it only reflected the (separately accepted,
+  // unconditional) baseUrl display on the provider's own header line.
+  //
+  // Text-only: `jsonRow` never reads `listUnavailable` at all (cmd-setup.mjs),
+  // so the --json view has always omitted this reachable-but-no-model-list
+  // case entirely — a pre-existing gap unrelated to OAI-185, not covered here.
+  const marker = 'SECRET_MARKER_probebody';
+  const server = await startFakeServer((request, response) => {
+    respondJson(response, { error: `no models here: ${marker}` }, 404);
+  });
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+  try {
+    const text = await runCompanion(['setup'], { configPath: path });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, new RegExp(marker), 'the text view must still show the echoed body');
+  } finally {
+    await server.close();
+  }
+});
+
 test('setup --json reports that a key is configured without ever printing it', async () => {
   const server = await startFakeServer(route());
   const { path } = writeConfig({
