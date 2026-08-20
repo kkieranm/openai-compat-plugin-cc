@@ -37,6 +37,31 @@ size ceiling as a backstop against a runaway reply, and hitting the `MAX_FINDING
 `scripts/lib/findings-candidate.mjs` `findingsShaped` accepts, skipping past a start position that
 never closes rather than treating it as the end of the scan.
 
+`scripts/lib/findings-yaml.mjs` `findingsInYaml` reads a reply `extractJson` structurally cannot see
+at all: a well-formed findings list with no bracket pair anywhere, expressed as whole-document
+YAML-ish prose (reproduced 2026-08-14, OAI-156 — 1,245s of real model work discarded this way,
+naming a defect a separate baseline run had already reported as bracketed JSON on the same commit).
+Deliberately not a YAML parser and never throws — same never-throw contract as `extractJson`, which
+is what keeps it correctly absent from `tests/structure.test.js`'s `RESPONSE_BOUNDARY_FILES` list
+rather than needing to be added to it. Whole-document-only by design: it accepts a reply only when
+the ENTIRE trimmed text is a top-level `findings:` key, one or more `- `-prefixed flat-mapping items,
+and an optional trailing `summary:` scalar, and rejects everything else outright — never partially —
+which is what sidesteps the decoy-vs-real-payload ranking problem `extractJson`'s own comments
+document as hard-won for the bracketed case: there is no ranking to do when only one shape can ever
+match. A value is a **flow collection**, and disqualifies the whole document, only when it **starts
+with** `[`/`{` after trimming; a bracket appearing later in ordinary scalar text does not (`summary:
+found a { in the config` is accepted verbatim) — the plan's own round-1 "provably disjoint" claim was
+refuted on exactly this point by two independent review-ladder plan-gate verdicts (Codex, a fable
+verdict subagent) before landing as this narrower, stated-as-judgment rule. `scripts/lib/structured.mjs`'s
+`findingsIn` attempts `findingsInYaml` **only when `!structured`** — never on the constrained
+(`--structured-output`) path, where a schema-conforming JSON payload is the whole promise and racing
+the two acceptors risked a YAML reading pre-empting a valid embedded JSON payload before
+`matchesSchema` ever saw it (round-2 plan-gate finding). On a match `extractJson` is skipped entirely
+for that channel; on `null`, the unconstrained path falls through to the unchanged `extractJson` path
+exactly as before this change. `MAX_ITEMS` (200) and `MAX_FIELDS_PER_ITEM` (20) are flat-reject
+backstops against unbounded work on a pathological reply, not truncation — truncating would silently
+under-report findings the model actually sent, the same honesty `capDiagnostics` protects elsewhere.
+
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
 SSE, while the first-token and idle budgets that mean "the model is working" live in

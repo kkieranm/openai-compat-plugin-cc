@@ -3,6 +3,7 @@
 // ADR 003. Pulling JSON out of prose is NOT dialect and lives in `json-scan.mjs`.
 import { extractJson } from './json-scan.mjs';
 import { findingsShaped } from './findings-candidate.mjs';
+import { findingsInYaml } from './findings-yaml.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
 
 const SEVERITIES = new Set(['high', 'medium', 'low']);
@@ -229,17 +230,30 @@ const UNREADABLE = { kind: 'unreadable' };
 
 /** One channel's text, read as findings. */
 function findingsIn(text, { structured, schema }) {
+  // Tried first, and ONLY on the unconstrained path — a structured request has
+  // a schema-conforming JSON payload as its whole promise, and letting a
+  // whole-document YAML reading pre-empt it would be a bug OAI-156's own plan
+  // gate rejected (round 2): the two grammars are not disjoint in general (a
+  // YAML value can carry an embedded balanced bracket run as ordinary scalar
+  // text), so racing them on the structured path can silently prefer the wrong
+  // one. Unconstrained, there is no schema to lose to, and a reply that is
+  // whole-document YAML-shaped never had a bracketed candidate `extractJson`
+  // was going to legitimately find in the first place — see findings-yaml.mjs.
+  const yaml = structured ? null : findingsInYaml(text);
+
   // What this module will accept as a candidate, handed to the scanner so the
   // scanner never learns what a finding is. It is also what stops a bracketed
-  // expression in a quoted source line outranking the real payload.
-  const parsed = extractJson(text, findingsShaped);
+  // expression in a quoted source line outranking the real payload. Skipped
+  // entirely once the YAML acceptor above already matched the whole document —
+  // there is nothing left in `text` for it to legitimately win.
+  const parsed = yaml ? null : extractJson(text, findingsShaped);
   // A bare top-level array is the SAME REPLY as `{findings: [...]}`, and asked
   // in prose a model emits one about as readily as the other. It used to be
   // discarded — not on the `typeof` test, which arrays pass, but on
   // `parsed.findings` being undefined. Wrapped HERE, before anything downstream
   // reads it, so the two spellings cannot diverge rather than merely agreeing
   // about accept/reject. See ADR 003.
-  const shaped = Array.isArray(parsed) ? { findings: parsed } : parsed;
+  const shaped = yaml ?? (Array.isArray(parsed) ? { findings: parsed } : parsed);
   if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return NO_PAYLOAD;
 
   // Under a schema, conformance is the whole proof. A server that accepts
@@ -248,6 +262,8 @@ function findingsIn(text, { structured, schema }) {
   // which is exactly what reading that channel is supposed to rule out. It is
   // also what keeps the fallback above from becoming a scratchpad channel.
   // Without a schema nothing was promised, so repair what is repairable.
+  // (`yaml` is always null here when `structured` is true — the gate above —
+  // so this only ever judges an `extractJson` candidate.)
   if (structured && !matchesSchema(shaped, schema)) return NO_PAYLOAD;
 
   const normalized = shaped.findings.map(normalizeFinding);
