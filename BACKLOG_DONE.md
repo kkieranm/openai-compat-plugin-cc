@@ -1,3 +1,40 @@
+## 2026-08-20 — OAI-116 shipped: a token-exhaustion failure now carries its attempt ledger (`bc41fd5`)
+
+- **OAI-116** — A run lost to token exhaustion (or a reasoning-only reply with no usable answer) was
+  recorded with `attempts: null`, because `scripts/lib/review-unparsed.mjs`'s `unparsedReply` — a
+  post-hoc classifier of an otherwise-successful transport interaction — threw its `UserError` without
+  ever attaching the request's own closed, populated ledger entry. This made OAI-19's gate criterion
+  G-E ("a missing or self-inconsistent `attempts[]` on any run invalidates the invocation")
+  structurally unpassable for any run that hit it — and since token exhaustion had become the
+  dominant overnight-sweep failure mode (reconfirmed 2026-08-14: four of 40 commits starved, all four
+  `attempts: null`), no benchmark arm could pass its own gate.
+  **Shipped**: `unparsedReply` threads a `ledger` parameter and wraps both its throw paths — the
+  `finish_reason === 'length'` branch, and a narrow wrap (only around the one call, not the whole
+  function) on the `requireAnswer` fallthrough for a reasoning-only reply — with the existing
+  `withLedger(error, ledger)` helper before throwing. `review-report.mjs`'s `reportFindings()` gained
+  `ledger` in its own parameters; `parseFields()`/`jsonReport()` needed no change, since they already
+  thread the whole `context` object through. Deliberately does not touch OAI-163's distinct, parked
+  concern (a null `reason` field on the same `requireAnswer` throw, misclassified by the sweep's
+  outage detector) beyond the incidental, harmless `attempts[]` attachment.
+  **Unblocks OAI-19** (tier 6) together with OAI-115 — both instrument defects blocking the
+  measurement programme are now shipped.
+  **Ran unattended, without harness plan-mode** — same standing operator authorization already
+  disclosed for OAI-185 and OAI-115, applied consistently.
+  **Design converged with Codex in one steer — no genuine fork**, every question single-answer
+  (thread `ledger` into `unparsedReply` itself, not wrapped at the two call sites; also wrap the
+  `requireAnswer` fallthrough since it costs nothing and doesn't touch OAI-163's actual defect; no
+  special handling needed for the salvage/retry interaction, since the ledger is created once and
+  shared). A 1-round dual-approved plan gate, and a review-ladder pass where four independent
+  reviewers (`acceptance-audit`, `fork-opener`, `codex-adversarial`, `codex-plain`) all found zero
+  findings — `codex-adversarial` additionally ran a write-free module probe confirming the ledger's
+  idempotency safety and the salvage/retry interactions directly. The terminal `agent-closer`
+  (`fable`) hung once mid-`npm test` on its first launch (killed after 20+ minutes per the ladder's
+  one-retry rule) and, on retry, independently executed its own negative control — reverting the fix
+  to HEAD, confirming both new regression tests fail with the exact pre-fix symptom
+  (`attempts: null`), then restoring and confirming green — before verdict CLOSE THIS PASS. Dual
+  approval (Codex + an independent Claude verdict subagent, neither shown the other's reply) closed
+  both the plan gate and the review-ladder's own verdict point. Full suite 1083/1083 green throughout.
+
 ## 2026-08-20 — OAI-115 shipped: a starving reasoning stream is cut before max_tokens is exhausted, and salvaged (`917c7fb`)
 
 - **OAI-115** — `max_tokens` is a single pool shared by a reasoning model's thinking and its actual

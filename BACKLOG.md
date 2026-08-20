@@ -41,12 +41,12 @@ were deferred rather than fixed in that pass: OAI-192, OAI-193, OAI-194 (tier be
 items still parked below (OAI-74, OAI-77, OAI-189, OAI-190) remain there — none is attacker-triggerable
 or reachable today.
 
-**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-116,
-OAI-156, OAI-113, OAI-114, OAI-59, OAI-57**.
-OAI-116 leads and is small: the starvation path records no `attempts[]`, which is what blocks
-OAI-19 (tier 6) from ever passing its own gate. OAI-115 shipped 2026-08-20 (a live watchdog cuts
-a starving reasoning stream before `max_tokens` is exhausted and salvages a conclusion via OAI-138's
-mechanism, generalized to a second trigger — see `BACKLOG_DONE.md`). OAI-156 is the same tier's other half: a *complete*
+**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-156,
+OAI-113, OAI-114, OAI-59, OAI-57**.
+OAI-156 leads: OAI-115 and OAI-116 both shipped 2026-08-20 (a live watchdog cuts a starving reasoning
+stream before `max_tokens` is exhausted and salvages a conclusion via OAI-138's mechanism, generalized
+to a second trigger; the token-exhaustion failure path now attaches its attempt ledger instead of
+recording `attempts: null` — see `BACKLOG_DONE.md`). OAI-156 is the same tier's other half: a *complete*
 answer discarded at the parser, observed once. OAI-113 and OAI-114 are self-contained parser defects
 — a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
 regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
@@ -77,7 +77,7 @@ Proved by execution against a seeded row. Live and wrong today, though only for 
 already dead or never-started, so no live work is at risk. Its eleven pure-coverage-debt siblings
 split out as OAI-191 and parked — see `BACKLOG_PARKED.md`.
 
-**Tier 6 — the measurement programme: BLOCKED ON OAI-116 LANDING.** **OAI-19, OAI-50,
+**Tier 6 — the measurement programme, UNBLOCKED 2026-08-20.** **OAI-19, OAI-50,
 OAI-49, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — a full-corpus baseline re-measure,
 dense vs MoE, hours of the user's own LM Studio rather than an edit, launched deliberately not
 incidentally. OAI-50 and OAI-49 are the two remaining instrument questions its own gate names as
@@ -85,7 +85,10 @@ stated limits (whether a failed context probe should be scored; a matched-budget
 comparison measures the model, not the budget). OAI-9 and OAI-11 are multi-pass review (deduplicated
 union; diverse models/lenses) — measured 20% hit rate per single pass on a known-defect file, so
 unioning passes is the lever. OAI-13 is vendor-dependent findings needing a second server to settle.
-No arm can be scheduled before OAI-116 (tier 2) lands — OAI-115 shipped 2026-08-20.
+Both blocking instrument defects are now shipped (OAI-115: the live reserve watchdog; OAI-116: the
+token-exhaustion path now attaches `attempts[]` instead of recording `null`) — an arm may now be
+scheduled, though OAI-19's own body should be re-read for any further settled decisions before one
+is launched.
 
 **Tier 7 — decisions and direct requests.** **OAI-159, OAI-181, OAI-184**.
 OAI-159 leads: 78 citations across this file point at an `adr/` corpus that was deleted, and the
@@ -474,13 +477,15 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   grammar-driven `empty-completion` transport drops. Without one, reasoning consumes the whole shared
   budget and no findings are emitted. Both are now identified; neither is fixed.
 
-  **THIS ITEM IS BLOCKED ON INSTRUMENT DEFECTS, not on measurement effort.** The token-exhaustion error
-  path emits no `attempts[]` at all, so **G-E is structurally unpassable** for any arm containing one
-  such failure — and that is now the dominant failure mode. Verified against 2026-08-04, where all 4
-  failed runs *did* carry ledgers, so this is specific to the new path rather than general. No further
-  arm should be run until **OAI-116** lands (OAI-115 shipped 2026-08-20); a dense second invocation was deliberately
-  not run for this reason, and because `scaffold` fails deterministically (41,251 / 42,064 / 41,404
-  chars, a ±1% spread). The `--max-attempts 1` control arm is deferred with it.
+  **THIS ITEM WAS BLOCKED ON INSTRUMENT DEFECTS, not on measurement effort — both now shipped
+  2026-08-20 (OAI-115, OAI-116).** The token-exhaustion error path emitted no `attempts[]` at all,
+  so **G-E was structurally unpassable** for any arm containing one such failure — and that was the
+  dominant failure mode. Verified against 2026-08-04, where all 4 failed runs *did* carry ledgers, so
+  this was specific to the new path rather than general. No further arm was run while blocked; a dense
+  second invocation was deliberately not run for this reason, and because `scaffold` fails
+  deterministically (41,251 / 42,064 / 41,404 chars, a ±1% spread). The `--max-attempts 1` control arm
+  was deferred with it — all now unblocked, pending re-reading this body's other settled decisions
+  before scheduling.
 
 
   ~~**The measurement is SUSPENDED, and the reason is OAI-51: the drops are our own bug.**~~
@@ -798,21 +803,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the test named `one malformed entry does not discard its siblings, in any spelling` uses an OBJECT
   missing fields, which `objects()` accepts, so the primitive case its name promises was never covered.
   Fix: admit a list with at least one normalizable finding and let normalization drop the rest.
-
-- **OAI-116** — **The token-exhaustion failure path emits no `attempts[]`, making G-E unpassable.**
-  Filed 2026-08-08. A run lost to token exhaustion is recorded with `attempts: null`, so OAI-19's
-  gate criterion G-E — "a missing or self-inconsistent `attempts[]` on any run invalidates the
-  invocation" — fails for any arm containing one, whatever its recall. Since token exhaustion is now
-  the dominant failure mode, **no arm can pass the gate**. Not a general defect and not longstanding:
-  on 2026-08-04 all 4 failed runs carried ledgers, because those failures were transport failures,
-  whose path preserves the record. It also destroys the reliability evidence exactly where failures
-  are most interesting. **Blocks OAI-19**, and is likely small.
-  **RECONFIRMED 2026-08-14 outside the benchmark, on the shipped default path.** The overnight sweep
-  starved on four of 40 commits — `223136e` (928s), `e966c95` (947s), `bc469ce` (691s), `77c1eab9`
-  (1,586s) — and all four recorded `attempts: null`, against a populated `attempts[]` on every commit
-  that answered in the same run. So this is not an artifact of how `bench` invokes the CLI: **4,152
-  seconds of real work left no attempt record at all**. Evidence in
-  `bench/results/sweep-2026-08-13-overnight/review-sweep-2026-08-13T21-57-52-135Z.ledger.jsonl`.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
