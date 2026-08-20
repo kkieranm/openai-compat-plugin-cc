@@ -1,3 +1,22 @@
+## 2026-08-20 — OAI-193 shipped: setup --json surfaces listUnavailable (`1988153`)
+
+- **OAI-193** — `cmd-setup.mjs`'s `jsonRow` never read the `listUnavailable` field `probeProvider`
+  sets, so `/oai:setup --json` reported a "reachable, but serves no model list" provider as
+  indistinguishable from a fully healthy one (`reachable: true, error: null` regardless). Found
+  incidentally during OAI-185's review ladder. Fixed by mirroring the text view's semantics
+  (`render.mjs`'s `providerLines` already showed this case) — `jsonRow` now returns
+  `listUnavailable`, `reachable`/`error` unchanged. Dual-approved at both the plan gate (digest
+  `399700b8c442`) and the verdict point (pass digest `b2052c350f2e`). One accepted
+  codex-adversarial finding (severity medium, confidence 0.93: this diff newly places
+  `transportDetail`-composed server response bytes, up to ~400 bytes, into the machine-readable
+  `--json` channel, previously 0 bytes there) was dismissed rather than fixed — same bytes, same
+  stdout, same operator, already-sanctioned for this command's text view since OAI-185's own pass 1;
+  no in-repo consumer persists `--json` output anywhere (confirmed by grep). Not filed as a new
+  backlog item — the exposure Codex names is prospective (a reflecting server plus an external
+  capture pipeline that doesn't exist in this repo), not a dated instance or a mechanism that has
+  actually fired, so it fails the 2026-08-18 worth bar; the codex-adversarial transcript is the
+  citable evidence if it ever does. Plan: `plans/oai-193-jsonrow-listunavailable.md`.
+
 ## 2026-08-20 — OAI-184 shipped: dead db/seq params dropped from runJob (`da2c34a`)
 
 - **OAI-184** — `cmd-task-worker.mjs`'s `runJob(db, seq, job)` never used `db` or `seq`; only `job`

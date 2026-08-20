@@ -775,14 +775,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   if an actual secret-bearing spawn-error message is ever observed; until then this is structural
   hardening, not a demonstrated leak.
 
-- **OAI-193** — **`cmd-setup.mjs`'s `jsonRow` never reads the `listUnavailable` field `probeProvider`
-  sets**, so `/oai:setup --json` silently omits the "reachable, but serves no model list" case entirely
-  — `reachable: true, error: null` regardless. Pre-existing, found incidentally during OAI-185's review
-  ladder while auditing that same function for an unrelated fix (composing `transportDetail()` into
-  `listUnavailable`'s text-view rendering); the text view (`render.mjs`'s `providerLines`) has always
-  shown this case, only the JSON view is blind to it. A `--json` consumer (a script, a future
-  dashboard) currently cannot distinguish this state from a fully healthy provider.
-
 - **OAI-194** — **A server-reported model id can reach a `UserError` message unredacted, via
   `model-selection.mjs`'s `unservedProblem`/`autoSelect` (`listModelIds` over the server's own
   `/v1/models` response) → `delegate.mjs:111`'s `selectModel`.** Found by Codex during OAI-185's pass-5
