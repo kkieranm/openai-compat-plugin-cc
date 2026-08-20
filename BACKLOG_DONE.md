@@ -1,3 +1,14 @@
+## 2026-08-20 — OAI-184 shipped: dead db/seq params dropped from runJob (`da2c34a`)
+
+- **OAI-184** — `cmd-task-worker.mjs`'s `runJob(db, seq, job)` never used `db` or `seq`; only `job`
+  was read. Found by Codex during OAI-63's review-ladder pass 6, on a file OAI-63's diff only touched
+  by one unrelated docblock comment — confirmed pre-existing, not introduced by that fix. Module-private,
+  one call site (`runAndPublish`), no test double or other caller depended on the 3-arg arity. Shipped
+  as `runJob(job)`, call site updated to match. Cosmetic, no behavioural effect — confirmed by a
+  full-table review-ladder pass (acceptance-audit, codex-adversarial, codex-plain, agent-closer, all
+  zero findings) and dual-approved at both the plan gate (digest `1d87a63b88e3`) and the verdict point
+  (pass digest `8202870127ee`). Plan: `plans/oai-184-runjob-dead-params.md`.
+
 ## 2026-08-20 — OAI-6 and OAI-8 given real entries, migrated from the retired absorbed-ID table
 
 Both had shipped and were never independently filed — the old table's "Was/Now" rows described them

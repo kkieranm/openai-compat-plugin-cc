@@ -764,15 +764,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   one-line relaxation of that agent's own rule, or whether the rule exists for a reason that a per-call
   override would defeat.
 
-- **OAI-184** — **`cmd-task-worker.mjs`'s `runJob(db, seq, job)` never uses `db` or `seq`.** Found by
-  Codex during OAI-63's review-ladder pass 6, on a file OAI-63's diff only touched by one docblock
-  comment (`transportProfile`'s, unrelated to `runJob`) — confirmed pre-existing via `git diff HEAD`
-  on that file, not introduced by that fix. Both parameters are dead inside the function body; only
-  `job` is read. Left unfixed there rather than folded in, to keep that diff's "no more, no less"
-  scope discipline — a signature change also touches the call site (`:214`) and needs its own check
-  that nothing else (a test double, a future caller) depends on the current arity. Cosmetic, no
-  behavioural effect.
-
 - **OAI-192** — **`job-launch-outcome.mjs:79`'s `terminalizeSpawnFailure` interpolates a raw spawn
   error's `.message` directly into the object it hands to `errorReport()`, bypassing that function's
   explicit-field-list redaction entirely** since the content is already baked into `.message` before
