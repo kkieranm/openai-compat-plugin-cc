@@ -31,15 +31,15 @@ open plan and uncommitted diff in the tree at review time). It has since shipped
 review-ladder, dual-approved) and moved to `BACKLOG_DONE.md`.
 
 **Tier 1 — a credential or a file leaves the boundary it was promised, reproduced or structurally
-certain, not merely theoretical.** **OAI-185**.
-OAI-55 shipped 2026-08-19 (`BACKLOG_DONE.md`) and is dropped from this tier. OAI-183 shipped
-2026-08-20 (`BACKLOG_DONE.md`) — a worker sending the wrong secret to the right endpoint via an
-`apiKeyEnv` repoint is now refused, via a tagged credential-source pin. OAI-185 is OAI-63's other
-confirmed sibling, reproduced by execution against the shipped fix: the authorized endpoint's own
-`baseUrl` can itself be secret-shaped and echo into a persisted failure record on connection failure.
-Park-reviewed and kept because it is demonstrated, not merely
-a foot-gun — contrast the credential items parked below (OAI-74, OAI-77, OAI-189, OAI-190), none of
-which is attacker-triggerable or reachable today.
+certain, not merely theoretical.** Empty as of 2026-08-20: OAI-55 shipped 2026-08-19, OAI-183 shipped
+2026-08-20, and OAI-185 shipped 2026-08-20 (all in `BACKLOG_DONE.md`) — an 8-pass review ladder found
+and fixed seven sites where a server-controlled value (the authorized endpoint's own `baseUrl`, an
+echoed response body, a redirect `Location`, an HTTP reason phrase, a JSON-parse excerpt, a
+content-encoding header, an unvalidated `finish_reason`) could reach a persisted or logged failure
+record, and added a structural test guarding the whole class. Three narrower, lower-severity siblings
+were deferred rather than fixed in that pass: OAI-192, OAI-193, OAI-194 (tier below). The credential
+items still parked below (OAI-74, OAI-77, OAI-189, OAI-190) remain there — none is attacker-triggerable
+or reachable today.
 
 **Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-115,
 OAI-116, OAI-156, OAI-113, OAI-114, OAI-59, OAI-57**.
@@ -100,6 +100,17 @@ against the sweeps before it — a per-commit reproduction rate across runs is e
 tracker cannot compute today, and OAI-141's finding (run-to-run spread exceeds the differences
 usually being compared) is why that number matters. An index over existing artifacts, not new
 instrumentation.
+
+**Tier 9 — OAI-185's own residue: narrower siblings of the same leak class, deferred rather than
+fixed.** **OAI-192, OAI-193, OAI-194**.
+All three surfaced during OAI-185's review ladder and were assessed, not overlooked: OAI-192
+(`job-launch-outcome.mjs`'s spawn-error message) carries local OS/process data, not server content —
+low/theoretical risk, a different error type from the transport/response-parsing class OAI-185 fixed.
+OAI-193 (`cmd-setup.mjs`'s `jsonRow` never reading `listUnavailable`) is a pre-existing `--json`
+completeness gap, unrelated to secret persistence. OAI-194 (`model-selection.mjs`/`delegate.mjs`'s
+server-reported model id reaching a `UserError` message) is real but structurally unreachable through
+the background persistence path OAI-185 protects, since model selection completes at submission time,
+before a job row exists.
 
 <!-- /tiers -->
 
@@ -937,32 +948,33 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   that nothing else (a test double, a future caller) depends on the current arity. Cosmetic, no
   behavioural effect.
 
-- **OAI-185** — **The AUTHORIZED endpoint's own `baseUrl` can carry a secret, and a connection failure
-  echoes it verbatim into the persisted job record.** Found by Codex at OAI-63's final verdict-point
-  check, on a file (`scripts/lib/provider.mjs`) outside that fix's seven-file scope and untouched by
-  its diff. **Reproduced with executed evidence**: a profile with `baseUrl:
-  'http://127.0.0.1:1/PATH_SECRET_MARKER/v1'`, endpoint unchanged from what the job was authorized for
-  (so OAI-63's gate correctly passes it through), server unreachable —
-  `client.mjs`'s `chatCompletion` → `provider.mjs`'s `describeFailure` (`:64`) produces `Cannot reach
-  vendor at http://127.0.0.1:1/PATH_SECRET_MARKER/v1 — connection refused.`, and
-  `cmd-task-worker.mjs`'s `publishFailure` → `errorReport(error)` persists that string verbatim into
-  `row.failure.message` — the same failure record OAI-65's file modes protect.
-  **This is NOT the same defect class as OAI-63.** OAI-63 is "the right secret goes only to the
-  endpoint it was authorized for" — an authorization-gate defect. This is "the endpoint you are
-  *legitimately, correctly* talking to might itself be secret-shaped, and a connection diagnostic
-  says so." No authorization boundary is crossed; the leak is the job's own already-authorized
-  endpoint reaching its own failure record. `describeFailure`'s three `reword(...)` call sites
-  (`:64`, `:69`, `:74`) all interpolate `profile.baseUrl`, and this same function serves the
-  **foreground** CLI path too, where "Cannot reach X at Y — connection refused" quoting the endpoint
-  is the entire point of the message — there is no context-free string to swap in. **Why this is not a
-  quick fix, and not a scrub:** the fix needs to distinguish a *display* context (foreground, the
-  operator's own terminal, echoing their own config back to them) from a *persistence* context
-  (background, written into a shared failure record with its own file-mode exposure), which is a
-  design decision about how transport errors carry the endpoint — structured fields versus a
-  pre-formatted string, not a line edit. And regex-scrubbing `baseUrl` at the `errorReport` boundary is
-  explicitly ruled out: OAI-63's own history is five rounds of that exact approach being defeated by a
-  narrower bypass each time, on the same class of problem. **Do not cite "baseUrl is already shown
-  unredacted elsewhere in this codebase" (e.g. `/oai:setup`) as a reason to downgrade this** — that
-  argument was raised once during OAI-63's review, adjudicated wrong, and reversed: a live,
-  operator's-own-terminal display is not the same exposure as a value persisted into a shared,
-  longer-lived failure record.
+- **OAI-192** — **`job-launch-outcome.mjs:79`'s `terminalizeSpawnFailure` interpolates a raw spawn
+  error's `.message` directly into the object it hands to `errorReport()`, bypassing that function's
+  explicit-field-list redaction entirely** since the content is already baked into `.message` before
+  `errorReport` ever sees it. Found and deferred during OAI-185's review ladder (pass 1, Codex steer:
+  DEFER). Confirmed real but low-severity: production spawns `process.execPath` directly (the
+  companion script is an argument, not the executable), so a genuine spawn rejection here names the
+  Node binary or a local state/log path, never a remote endpoint, request target, response body, or
+  authorization value — the class of naturally secret-bearing input OAI-185 protects against. Reopen
+  if an actual secret-bearing spawn-error message is ever observed; until then this is structural
+  hardening, not a demonstrated leak.
+
+- **OAI-193** — **`cmd-setup.mjs`'s `jsonRow` never reads the `listUnavailable` field `probeProvider`
+  sets**, so `/oai:setup --json` silently omits the "reachable, but serves no model list" case entirely
+  — `reachable: true, error: null` regardless. Pre-existing, found incidentally during OAI-185's review
+  ladder while auditing that same function for an unrelated fix (composing `transportDetail()` into
+  `listUnavailable`'s text-view rendering); the text view (`render.mjs`'s `providerLines`) has always
+  shown this case, only the JSON view is blind to it. A `--json` consumer (a script, a future
+  dashboard) currently cannot distinguish this state from a fully healthy provider.
+
+- **OAI-194** — **A server-reported model id can reach a `UserError` message unredacted, via
+  `model-selection.mjs`'s `unservedProblem`/`autoSelect` (`listModelIds` over the server's own
+  `/v1/models` response) → `delegate.mjs:111`'s `selectModel`.** Found by Codex during OAI-185's pass-5
+  adversarial review, real but assessed as not currently exploitable through the background
+  persistence path OAI-185 protects: model selection runs inside `prepareTask`'s `resolveTarget`,
+  which completes at submission time — before `task-submit.mjs` ever creates the job row — so a
+  refusal here fails the foreground submission outright rather than reaching `errorReport()`/`jobs.db`
+  or a worker's job log. Reopen if model selection is ever moved to run inside the worker, or if a
+  foreground-only exposure (this message on an operator's own terminal) is judged to need the same
+  structured-field treatment OAI-185 gave the transport layer.
+

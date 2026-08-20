@@ -1,3 +1,50 @@
+## 2026-08-20 — OAI-185 shipped: server-controlled content no longer reaches a persisted or logged UserError message (`d9dca45`)
+
+- **OAI-185** — OAI-63's other confirmed sibling: the authorized endpoint's own `baseUrl` can itself be
+  secret-shaped, and a connection or protocol failure echoed it verbatim into the persisted job record.
+  Ran unattended, without harness plan-mode (the operator was away and gave standing authorization to
+  proceed on Codex+Claude dual approval instead of their own sign-off — a deliberate deviation from
+  `plans/README.md`'s `unattended-draft`/`blocked-on-plan` posture, disclosed in the plan file and
+  flagged here for the record) — probe, grill (Codex-converged, no operator present), a 3-round plan
+  gate, then an 8-pass review ladder.
+  **Shipped**: `profile.baseUrl`/a server's echoed HTTP body/a redirect `Location`/an HTTP reason
+  phrase/a JSON-parse excerpt/a `content-encoding` header/an unvalidated `finish_reason` all now travel
+  on structured fields (`error.endpoint`, `error.responseBody`, `error.bodyExcerpt`,
+  `error.finishReason`) rather than inside `.message`/`.hint` — composed for display only by a new
+  `transportDetail()` helper, called only from a genuinely interactive command's own top-level catch
+  (an explicit `Object.hasOwn` allowlist, never the background worker) or `cmd-setup.mjs`'s own
+  rendering. `errorReport()` never copies any of the four fields, by explicit field list.
+  **Discovery, not scope creep**: the plan named one site (`describeFailure`); the review ladder found
+  six more of the exact same class across seven files (`provider.mjs`'s `assertOk`, `body.mjs`'s
+  `readJson`, `sse.mjs`'s `readSse`, `http-errors.mjs`'s `assertDecodable`, `completion.mjs`'s
+  `refuseUnusable`, `client.mjs`'s `requireAnswer`) — each pass finding one fewer than the last, four
+  independent full-`scripts/`-tree sweeps converging on the same residual before the ladder closed.
+  **A functional regression caught and fixed within the same ladder**: an early fix dropped
+  `statusText` outright rather than folding it in like the redirect `Location` fix did, silently
+  breaking `isFormatRejection`/`refusedField`'s capability-fallback detection for a server signalling
+  refusal purely through the HTTP reason phrase with an empty body — found by Codex, fixed by folding
+  `statusText` into `.responseBody` alongside the body detail, proven with a real HTTP request through
+  `assertOk` (not a constructed error object).
+  **A permanent structural test** (`tests/structure.test.js`, "no server-controlled value reaches a
+  UserError message at the response boundary") scans the seven response-boundary files for this exact
+  pattern, per this repo's "confirmed twice → structural test" rule (this class was confirmed seven
+  times). The guard is itself proven against ten fixture reproductions of every historical leak this
+  ladder found, each asserting every expected offending expression individually — a real
+  regex-backtracking bug in the guard's own bare-`hint`-value scanning was found and fixed along the
+  way (Codex review of the guard itself, not just the production code).
+  **Three findings deferred as separate items**, each with a stated reopening condition: OAI-192 (a
+  spawn error's local-process message, low/theoretical risk, different error type), OAI-193
+  (`cmd-setup.mjs`'s `jsonRow` never reading `listUnavailable`, a pre-existing unrelated `--json` gap),
+  OAI-194 (a server-reported model id reaching a message via `model-selection.mjs`/`delegate.mjs`,
+  real but structurally unreachable through the background persistence path this fix protects).
+  **Process**: 8 review-ladder passes (acceptance-audit, adversarial and plain Codex review,
+  fork-opener, agent-closer), each accepted finding mutation-tested (fault injected, proven caught by
+  a named test, restored, re-verified green) before the next pass. `fork-opener` failed twice with a
+  narration-echo reply early in the ladder (a known, previously-documented failure mode) and was
+  retried once each time per the skill's rule, then ran cleanly for the remaining six passes. Dual
+  approval (Codex + a fresh Claude verdict-only subagent, neither told the other's reply) at digest
+  `30a0eb38055e`. Full suite: 1072/1072.
+
 ## 2026-08-20 — OAI-183 shipped: pin the credential SOURCE a background job was authorized for (`f1d1982`)
 
 - **OAI-183** — Split from OAI-63 2026-08-17: a worker could still send the wrong secret to the right
