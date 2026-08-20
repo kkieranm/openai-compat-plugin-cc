@@ -142,7 +142,7 @@ function capBudgets(profile, expiresAt, maxMs) {
  * `capBudgets`). Required rather than defaulted so a future caller cannot omit
  * the contract and run a request the cap should have refused.
  */
-async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }, budget) {
+async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, reasoningReserveTokens }, budget) {
   // One absolute deadline for the whole attempt. Arming the semantic budget with
   // a *fresh* firstTokenMs after the transport has already waited would grant up
   // to twice the number the config advertises — the same double-count as
@@ -191,6 +191,13 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs }, bud
     reportMs: firstTokenMs,
     idleMs,
     onProgress,
+    reasoningReserveTokens,
+    // A value distinct from `reasoningReserveTokens` — the request's own raw
+    // completion-token budget, not the merged reserve (OAI-115). `body` is
+    // already in scope; `body.max_tokens` is only set when the caller passed
+    // one (see `chatCompletion` above), so this is `undefined` for a caller
+    // that never named a budget.
+    maxTokens: body.max_tokens,
   });
   return { ...streamed, streamed: true };
 }

@@ -78,6 +78,14 @@ export async function chatCompletion(profile, options) {
     // One ledger per command where the caller minted one, so a review's two
     // completion calls share indexes instead of each starting from 1.
     ledger: options.ledger,
+    // OAI-115's reasoning-reserve watchdog opt-in — undefined for every
+    // caller that never asked for it. Named explicitly rather than spread
+    // (like every other field here) because this function already builds an
+    // explicit object for `answerWithRetry`; a field left off here is
+    // silently dropped, which is exactly the defect this line exists to
+    // avoid (OAI-115's plan-gate found it structurally identical one hop
+    // later in `chat.mjs`'s `postChat`).
+    reasoningReserveTokens: options.reasoningReserveTokens,
   });
 }
 

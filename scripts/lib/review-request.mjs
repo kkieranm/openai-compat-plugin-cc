@@ -61,6 +61,27 @@ export const REVIEW_UNKNOWN_WINDOW_TOKENS = 16_384;
 export const REVIEW_MIN_TOKENS = 4096;
 
 /**
+ * The reasoning-reserve watchdog's floor (OAI-115): ~1.8x the largest
+ * observed successful answer (1,116 tokens) across a 17-run sample, well
+ * above the median (~420). Hardcoded rather than configurable for v1 — one
+ * measurement supports one policy, not a tunable range.
+ */
+export const TOKEN_RESERVE_TOKENS = 2_048;
+
+/**
+ * The watchdog is armed only when there is at least as much room for
+ * reasoning as for the reserve itself — below that, the cutoff would fire on
+ * the very first reasoning delta and every request on a small-window model
+ * would die with nothing salvageable (`reserveFor`'s half-window branch
+ * deliberately drops under the schema minimum on small windows, and ADR 004
+ * pins the resulting `finish_reason: length` behaviour as chosen, by test;
+ * an unguarded watchdog would silently overturn that decision).
+ */
+function armedReserve(reserve) {
+  return reserve >= 2 * TOKEN_RESERVE_TOKENS ? TOKEN_RESERVE_TOKENS : undefined;
+}
+
+/**
  * Never reserve more than half the window: on a small-window model a fixed 16k
  * reserve would refuse every review outright, blaming an input that would
  * comfortably have fit.
@@ -170,7 +191,16 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // Said out loud: a silent retry would hide a schema this plugin got wrong
     // just as well as it hides a server that cannot take one.
     announce?.();
-    const result = await chatCompletion(profile, { ...send, maxTokens: built.reserve, messages: built.messages });
+    // `reasoningReserveTokens` is passed HERE, not added to `send` — `send` is
+    // also spread into `trySalvage`'s own follow-up call below, which must
+    // never carry it (OAI-115; re-arming the watchdog against the follow-up's
+    // own small budget could cut the salvage attempt off before it concludes).
+    const result = await chatCompletion(profile, {
+      ...send,
+      maxTokens: built.reserve,
+      reasoningReserveTokens: armedReserve(built.reserve),
+      messages: built.messages,
+    });
     return { result, structured: false, ...built };
   } catch (fallbackError) {
     // OAI-138 salvage tier 2: one bounded attempt to conclude from whatever
@@ -199,14 +229,20 @@ const SALVAGE_MAX_MS = 300_000;
 const SALVAGE_MIN_REASONING_CHARS = 500;
 
 /**
- * Ask the model to conclude from reasoning a deadline cut short, instead of
- * discarding it (OAI-138 salvage tier 2).
+ * The reasons `trySalvage` will attempt to recover from (OAI-138's
+ * `deadline-timeout`, OAI-115's `token-reserve-cutoff`). Both leave the model
+ * actively working when the cut happens — the one shape a "conclude now" ask
+ * can plausibly answer. `idle-timeout` and a raw transport drop mean the
+ * SERVER stalled or died; asking it to continue is asking the thing that
+ * already stopped answering.
+ */
+const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
+
+/**
+ * Ask the model to conclude from reasoning a cut short, instead of
+ * discarding it (OAI-138 salvage tier 2, generalized for OAI-115).
  *
- * **Only `deadline-timeout`.** The model was actively still working when the
- * cap fired — the one shape a "conclude now" ask can plausibly answer.
- * `idle-timeout` and a raw transport drop mean the SERVER stalled or died;
- * asking it to continue is asking the thing that already stopped answering.
- *
+ * **Only a reason in `SALVAGE_REASONS`.**
  * **Only substantial reasoning with empty/near-empty content** — the
  * documented majority shape (findings JSON is emitted only after reasoning
  * completes, per OAI-115's own measurement: 87-98% of every completion is
@@ -250,7 +286,7 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
  * named and reversed out loud, not left for the model to reconcile.
  */
 async function trySalvage(profile, built, schema, shared, send, fallbackError) {
-  if (fallbackError?.reason !== 'deadline-timeout') return null;
+  if (!SALVAGE_REASONS.has(fallbackError?.reason)) return null;
   const reasoning = fallbackError.answer?.reasoning?.trim() ?? '';
   const content = fallbackError.answer?.content?.trim() ?? '';
   if (reasoning.length < SALVAGE_MIN_REASONING_CHARS || content.length > 0) return null;
@@ -260,14 +296,23 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
     { role: 'assistant', content: reasoning },
     {
       role: 'user',
-      content: 'You ran out of time before finishing. Based only on your analysis above, state '
-        + 'your findings now. Do not reason further — conclude from what you already have. '
-        + 'Ignore any earlier instruction to work through "analysis" before "findings": there is no '
-        + 'schema enforcing that order here, and this reply must carry its findings even if it runs '
-        + 'out of room, so findings come FIRST. '
+      content: 'Your previous response was cut off before it finished. Based only on your analysis '
+        + 'above, state your findings now. Do not reason further — conclude from what you already '
+        + 'have. Ignore any earlier instruction to work through "analysis" before "findings": there '
+        + 'is no schema enforcing that order here, and this reply must carry its findings even if it '
+        + 'runs out of room, so findings come FIRST. '
         + schemaInstruction(findingsFirst(schema)),
     },
   ];
+
+  // A `token-reserve-cutoff` already consumed `built.reserve - TOKEN_RESERVE_TOKENS`
+  // tokens of reasoning on the ORIGINAL request — appending that reasoning back
+  // into this follow-up and then re-reserving the full `built.reserve` again
+  // would very likely overrun the window this exact check exists to enforce,
+  // reproducing the original starvation one request later. `deadline-timeout`
+  // carries no such consumption and keeps its existing, previously re-verified
+  // `built.reserve` ceiling unchanged (OAI-115 plan-gate rounds 1-2).
+  const salvageReserve = fallbackError.reason === 'token-reserve-cutoff' ? TOKEN_RESERVE_TOKENS : built.reserve;
 
   // The grown prompt must clear the SAME window check every other request
   // path clears before going out — appending the partial reasoning back in as
@@ -282,7 +327,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
     budget = checkContextBudget({
       estimatedTokens,
       contextLength: shared.contextLength,
-      reserveTokens: built.reserve,
+      reserveTokens: salvageReserve,
       providerName: profile.name,
       model: send.model,
       oversizeHint: shared.oversizeHint,
@@ -292,10 +337,15 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
   }
 
   try {
+    // No `reasoningReserveTokens` here — the salvage follow-up never re-arms
+    // the watchdog against itself (`send` never carries the field; see
+    // `unconstrained()`'s own call site above — the only place that arms it,
+    // since `requestFindings`'s `--structured-output` branch below
+    // deliberately never does).
     const result = await chatCompletion(profile, {
       ...send,
       messages,
-      maxTokens: built.reserve,
+      maxTokens: salvageReserve,
       maxMs: SALVAGE_MAX_MS,
       expiresAt: performance.now() + SALVAGE_MAX_MS,
       maxAttempts: 1,
@@ -346,6 +396,18 @@ export async function requestFindings(profile, plan) {
   // differ whenever a large input made the reserve shrink.
   const schema = reviewSchemaFor(first.reserve);
   try {
+    // NEVER armed here (review-ladder pass 1, codex-adversarial): under a
+    // `response_format` grammar the model can never emit the token that
+    // closes its own think block, so the actual findings JSON legitimately
+    // arrives on the `reasoning` channel, not `content` — this is already
+    // documented above `client.mjs`'s `requireAnswer` and in this repo's own
+    // CLAUDE.md. The watchdog's false-trigger guard (`content.length === 0`)
+    // is therefore always true throughout a structured request regardless of
+    // how much real answer has been written, and arming it here would cut
+    // off a reply that is actively finishing. `unconstrained()`'s own call
+    // has no such ambiguity — its messages always carry a prose schema
+    // instruction and the model answers on `content` — so only that path
+    // opts in.
     const result = await chatCompletion(profile, {
       ...send,
       maxTokens: first.reserve,

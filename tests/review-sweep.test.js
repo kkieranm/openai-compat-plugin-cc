@@ -52,6 +52,15 @@ test('a token-exhausted run is starved, read off the reason field rather than th
   assert.equal(entry.reason, 'token-exhaustion');
 });
 
+// OAI-115: the same starvation, caught earlier by a live watchdog instead of
+// the server's own terminal finish_reason — an UNSALVAGED cutoff is the same
+// outcome as token-exhaustion, not a generic failure.
+test('an unsalvaged token-reserve-cutoff is starved too, alongside token-exhaustion', () => {
+  const entry = classify(envelope('token-reserve-cutoff'));
+  assert.equal(entry.outcome, 'starved');
+  assert.equal(entry.reason, 'token-reserve-cutoff');
+});
+
 test('any other failure envelope is failed, and keeps its reason for the report', () => {
   const entry = classify(envelope('transport'));
   assert.equal(entry.outcome, 'failed');

@@ -279,6 +279,14 @@ test('the shape-rejected paragraph follows the refused one it calls itself the t
   assert.ok(refusedAt < twinAt, 'the twin reference must point BACKWARDS at printed prose');
 });
 
+// OAI-115: a fourth gated reason code, added alongside the original three.
+test('token-reserve-cutoff is explained as a client-side cutoff, never a server symptom', () => {
+  const markdown = renderWith('token-reserve-cutoff');
+  const para = paragraphAbout(markdown, 'token-reserve-cutoff');
+  assert.match(para, /\*\*client-side\*\* cutoff, not a server symptom/);
+  assert.match(para, /never retried/);
+});
+
 test('a sweep explains only the codes it actually saw — a results section, not a glossary', () => {
   const markdown = renderWith('transport');
   assert.match(markdown, /\| `transport` \| 1 \|/, 'the failure itself is still counted');

@@ -169,5 +169,16 @@ export function reasonNotes(sawReason) {
       '',
     );
   }
+  if (sawReason('token-reserve-cutoff')) {
+    lines.push(
+      '`token-reserve-cutoff` below (OAI-115) is a **client-side** cutoff, not a server symptom: the model'
+      + ' was actively generating reasoning and spending the request\'s own `max_tokens` pool on it, so the'
+      + ' watchdog disposed the stream before the pool ran out entirely, leaving no room to write an'
+      + ' answer. It is unrelated to `*-timeout` reasons and is never retried — the follow-up "conclude'
+      + ' from what you have" attempt (`trySalvage`) already ran and failed; a row carrying this reason'
+      + ' here is one that attempt could not recover.',
+      '',
+    );
+  }
   return lines;
 }

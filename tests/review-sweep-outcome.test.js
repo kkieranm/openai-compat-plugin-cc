@@ -114,6 +114,9 @@ test('a dropped connection or an unusable reply shape still counts', () => {
 // server's health, so three large commits must never read as an outage.
 test('starvation and input refusals are NOT the server being unwell', () => {
   assert.equal(serverUnwell('token-exhaustion'), false);
+  // OAI-115's live watchdog is a client-side cutoff on the model's own
+  // budget, exactly like token-exhaustion — never a server symptom.
+  assert.equal(serverUnwell('token-reserve-cutoff'), false);
   assert.equal(serverUnwell('oversize'), false);
 });
 

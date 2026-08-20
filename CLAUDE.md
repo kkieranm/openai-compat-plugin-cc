@@ -51,6 +51,61 @@ its silence widens the benchmark's recall into a band.
 second alone; `/oai:review --cache-buster <token>` defeats that cache for a measurement, and the
 benchmark's `--cold` uses it.
 
+`stream-collect.mjs`'s `collectStream` also carries a second, opt-in watchdog (OAI-115) beside the
+time-based one: `max_tokens` is one pool shared between a reasoning model's `reasoning` channel and
+its `content` channel, and a model can spend the whole pool reasoning and never write an answer.
+Armed only when a caller passes `reasoningReserveTokens` (a token count) alongside a finite
+`maxTokens` (the request's own raw budget, threaded down separately — the two are never merged into
+one value, since the synthesized failure needs both), it fires on the first frame whose reasoning
+crosses `(maxTokens - reasoningReserveTokens) * REASONING_CHARS_PER_TOKEN` chars — a local,
+output-specific char/token constant (3.0), deliberately not `context-guard.mjs`'s `CHARS_PER_TOKEN`
+(3.4), which was measured against input code/diffs, a different population. Fires only while
+`answer.content.length === 0`; any content permanently disarms it for that stream, and a defensive
+`cutoffChars > 0` guard means a caller that forgets to gate on window size (`reserveFor`'s half-window
+branch can drop under `2 * TOKEN_RESERVE_TOKENS`) still cannot arm it on the very first delta. On
+firing it disposes the response and synthesizes a `UserError` on the SAME `expired` variable the
+deadline watchdog uses — never a second one — and **throws it immediately, in the same synchronous
+turn**, rather than relying on `dispose()`'s later async rejection: a review-ladder pass
+(`codex-adversarial`) found that `readSse` can have further events already buffered from the same
+physical chunk — a finish frame, `[DONE]` — which `drain()` yields with no `await` in between, so a
+bare `dispose()` here let the loop keep consuming them and return a normal success, discarding the
+cutoff entirely. `codex-plain`, independently and in the same pass, found a DIFFERENT race in the
+same block: the deadline watchdog's own `onExpire` unconditionally overwrote `expired`, so a
+still-armed idle timer firing after the cutoff already claimed it could silently replace
+`token-reserve-cutoff` with `idle-timeout`. **Throwing synchronously does not by itself close that
+second race** — a further round on the same pass found that throwing out of a `for-await` loop still
+runs
+`IteratorClose` on the async generator before this function's own `catch` executes, and that cleanup
+can itself await, leaving a real gap in which the still-armed idle timer could fire and overwrite
+`expired` — reproduced directly with a delayed iterator `return()`. Closed two ways: `onExpire` only
+ever assigns `expired` when it is still `null`, and the cutoff itself calls `deadline.clear()` before
+`dispose()`/`throw`, removing the timer from the race outright rather than merely surviving it. The
+`catch` block's `expired ?? error` is what lets the real cause outrank the generic transport error a
+raw `dispose()` alone would produce. Reasoned `token-reserve-cutoff`, deliberately not
+`token-reserve-timeout` (several `bench/` paths classify any `*-timeout` reason as timing data, which
+this is not); `failure-shape.mjs`'s `RETRYABLE` whitelist excludes it by
+construction, with no code change needed there.
+
+`scripts/lib/review-request.mjs`'s `unconstrained()` — **and only `unconstrained()`, never
+`requestFindings`'s `--structured-output` branch** — opts into that watchdog by passing
+`reasoningReserveTokens: TOKEN_RESERVE_TOKENS` (2,048 — ~1.8x the largest observed successful review
+answer across a 17-run sample) directly at the original-request `chatCompletion` call, only when
+`built.reserve >= 2 * TOKEN_RESERVE_TOKENS` — **never on the shared `send` object**, since `send` is
+also spread into `trySalvage`'s own follow-up call, which must never re-arm the watchdog against its
+own small budget. The structured-output exclusion is load-bearing, not an oversight (review-ladder
+pass 1, `codex-adversarial`): under a `response_format` grammar the model can never emit the token
+that closes its own think block, so the real findings JSON legitimately arrives on the `reasoning`
+channel rather than `content` (see `client.mjs`'s `requireAnswer` above) — the watchdog's
+false-trigger guard (`content.length === 0`) is therefore always true throughout a structured request
+regardless of how much real answer has been written, and arming it there would cut off a reply that
+is actively finishing. `trySalvage` (OAI-138's original salvage mechanism) is generalized via a
+`SALVAGE_REASONS` allowlist (`deadline-timeout`, `token-reserve-cutoff`) rather than forked, with the
+follow-up's own budget branching on the reason: `token-reserve-cutoff` gets a flat
+`TOKEN_RESERVE_TOKENS`, since the window is already consumed down to that headroom by construction;
+`deadline-timeout` keeps its original `built.reserve` ceiling unchanged. `bench/lib/reason-notes.mjs`
+and `bench/lib/sweep-outcome.mjs` classify an unsalvaged `token-reserve-cutoff` alongside
+`token-exhaustion` as `starved`, never as a generic failure or a server-health symptom.
+
 `--max-seconds` caps a whole model call in wall clock, retries included — `scripts/lib/http-budgets.mjs`
 arms it as the transport's `deadline` budget from one expiry `requestFindings` mints per command, and
 `scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was

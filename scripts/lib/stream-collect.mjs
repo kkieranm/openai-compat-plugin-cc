@@ -1,6 +1,18 @@
 import { applyFrame, emptyAnswer } from './completion.mjs';
+import { UserError } from './errors.mjs';
 import { budgetError } from './http-errors.mjs';
 import { readSse } from './sse.mjs';
+
+/**
+ * Reasoning prose is a different population from the input code/diffs
+ * `context-guard.mjs`'s CHARS_PER_TOKEN (3.4) was measured against — no
+ * measurement here supports reusing that number. 3.0 deliberately errs toward
+ * triggering the reserve watchdog early: guessing too low only costs a little
+ * preserved reasoning before asking for conclusions, guessing too high risks
+ * losing the review outright or overrunning the salvage follow-up's own
+ * context check (OAI-115).
+ */
+const REASONING_CHARS_PER_TOKEN = 3.0;
 
 /**
  * Reading a streamed completion under the budgets that mean "the model is
@@ -75,7 +87,11 @@ function timings(startedAt, firstTextAt, endedAt) {
   return { prefillMs: Math.round(firstTextAt - startedAt), generationMs: Math.round(endedAt - firstTextAt) };
 }
 
-export async function collectStream(response, profile, { startedAt, firstTokenMs, reportMs, idleMs, onProgress }) {
+export async function collectStream(
+  response,
+  profile,
+  { startedAt, firstTokenMs, reportMs, idleMs, onProgress, maxTokens, reasoningReserveTokens },
+) {
   const answer = emptyAnswer();
   const outcome = {};
   let expired = null;
@@ -85,13 +101,41 @@ export async function collectStream(response, profile, { startedAt, firstTokenMs
     reportMs,
     idleMs,
     onExpire: (budget, ms) => {
+      // Idempotent (review-ladder pass 1, codex-adversarial round 2):
+      // throwing the token-reserve cutoff from inside the for-await loop
+      // still triggers IteratorClose on `readSse`'s async generator before
+      // this function's own `catch` ever runs, and that cleanup can itself
+      // await — a real gap in which this timer can fire and overwrite an
+      // `expired` a cutoff already set, reproduced directly with a delayed
+      // iterator `return()`. Once something has already claimed `expired`,
+      // a later timer firing has nothing left to report.
+      if (expired !== null) return;
       expired = budgetError(budget, ms, answer.content.length + answer.reasoning.length, profile.name);
       response.dispose();
     },
   });
 
+  // Opt-in only (OAI-115): `reasoningReserveTokens` is undefined for every
+  // caller that never asked for it — `/oai:task`, capability probes, and the
+  // salvage follow-up itself (`review-request.mjs` never puts it on the
+  // shared `send` object precisely so this stays disarmed there). Watches a
+  // reasoning model spending its whole `max_tokens` pool on reasoning and
+  // never reaching `content`, cutting the stream before that happens instead
+  // of after — there is no timeout to catch this the way `createDeadline`
+  // catches a stalled server.
+  //
+  // `cutoffChars > 0` is a second, defensive arm guard beyond the caller's own
+  // (review-request.mjs only passes `reasoningReserveTokens` when
+  // `maxTokens >= 2 * reserve`): if that guard were ever skipped, a
+  // non-positive cutoff would otherwise fire on the very first reasoning
+  // delta, which is exactly the failure this repo has twice built a guard to
+  // prevent elsewhere (OAI-115's own plan-gate history).
+  const reserveArmed = reasoningReserveTokens !== undefined && Number.isFinite(maxTokens);
+  const cutoffChars = reserveArmed ? (maxTokens - reasoningReserveTokens) * REASONING_CHARS_PER_TOKEN : 0;
+
   try {
     for await (const frame of readSse(response, profile.name, outcome)) {
+      const reasoningBefore = answer.reasoning.length;
       // The same condition the idle budget uses, and deliberately so: a frame
       // that carried text is the only evidence that generation has begun. A
       // role-only frame or a keepalive would put the boundary before the model
@@ -100,6 +144,56 @@ export async function collectStream(response, profile, { startedAt, firstTokenMs
       if (applyFrame(answer, frame)) {
         firstTextAt ??= performance.now();
         deadline.progress();
+      }
+      // Permanently disarmed the moment any content appears (raw length, not
+      // trimmed) — a model that has started answering is never interrupted,
+      // even if it later pauses. No plateau/rate-of-growth heuristic: only
+      // reasoning that just grew this frame is eligible, so a stall cannot
+      // trip this on its own — that is `createDeadline`'s job, not this one's.
+      if (
+        expired === null
+        && reserveArmed
+        && cutoffChars > 0
+        && answer.content.length === 0
+        && answer.reasoning.length > reasoningBefore
+        && answer.reasoning.length >= cutoffChars
+      ) {
+        const reasoningChars = answer.reasoning.length;
+        const failure = new UserError(
+          `${profile.name} spent its whole reply budget reasoning before writing an answer.`,
+          { hint: 'Attempting to conclude from the partial reasoning instead.' },
+        );
+        failure.reason = 'token-reserve-cutoff';
+        failure.maxTokens = maxTokens;
+        failure.reserveTokens = reasoningReserveTokens;
+        failure.reasoningChars = reasoningChars;
+        failure.estimatedReasoningTokens = Math.ceil(reasoningChars / REASONING_CHARS_PER_TOKEN);
+        failure.serverResponded = true;
+        expired = failure;
+        // Cleared here, not left to the outer `finally` — belt and suspenders
+        // alongside `onExpire`'s own idempotency guard above (review-ladder
+        // pass 1, codex-adversarial round 2): throwing out of a `for-await`
+        // loop still runs `IteratorClose` on `readSse`'s async generator
+        // BEFORE this function's own `catch` ever executes, and that
+        // generator's cleanup can itself await — a real gap, reproduced
+        // directly with a delayed iterator `return()`, in which the idle
+        // timer could otherwise still fire and race `expired`. Disarming the
+        // timer outright removes that race rather than merely surviving it.
+        deadline.clear();
+        response.dispose();
+        // Thrown immediately, never left to a later async rejection
+        // (review-ladder pass 1, codex-adversarial): `readSse` can have MORE
+        // than one event already buffered from the same physical chunk — a
+        // finish frame and `[DONE]` can arrive alongside the frame that
+        // crossed the threshold, and `drain()` yields all of them
+        // synchronously with no await in between, so a bare `dispose()` here
+        // would let the loop keep consuming those buffered events and return
+        // a normal success, discarding `expired` entirely. codex-plain,
+        // independently, found a DIFFERENT race in the same block — the
+        // deadline watchdog's own `onExpire` unconditionally overwriting
+        // `expired` — closed above by the idempotency guard and the early
+        // `deadline.clear()`, not by this throw.
+        throw failure;
       }
       onProgress?.(answer);
     }

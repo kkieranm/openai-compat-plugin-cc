@@ -74,8 +74,10 @@ export const MAX_RAW = 256_000;
  * instead, which is an artifact rather than an inference, and is why it is
  * written here rather than just the resulting set.
  *
- * **Still excluded, each for its own reason:** `token-exhaustion` (the model's
- * budget), `oversize` and other input refusals (another commit may survive
+ * **Still excluded, each for its own reason:** `token-exhaustion` and
+ * `token-reserve-cutoff` (both the model's own budget, never the server's —
+ * OAI-115's live watchdog is a client-side cutoff, not a server symptom),
+ * `oversize` and other input refusals (another commit may survive
  * them), and `output-too-large`, which is THIS HARNESS's own capture ceiling —
  * counting it would have the sweep diagnose the server for its own limit.
  */
@@ -165,10 +167,19 @@ function usableReason(stdout) {
  * making. It is kept under its own name so the record kkeeps the fact without
  * the renderer being able to mistake it.
  */
+// A model spending its whole reply budget reasoning and never reaching
+// content — `token-exhaustion` is the terminal shape (the server's own
+// finish_reason: length), `token-reserve-cutoff` is OAI-115's live watchdog
+// catching the same starvation earlier, before the terminal shape occurs. An
+// UNSALVAGED cutoff is classified alongside it rather than as a generic
+// failure — a salvaged one already returns as `outcome: 'ok'` upstream and
+// never reaches this function.
+const STARVED_REASONS = new Set(['token-exhaustion', 'token-reserve-cutoff']);
+
 function failure(stdout, status) {
   const reason = usableReason(stdout);
   return {
-    outcome: reason === 'token-exhaustion' ? 'starved' : 'failed',
+    outcome: STARVED_REASONS.has(reason) ? 'starved' : 'failed',
     reason,
     requestedModel: requestedModelFrom(stdout),
     status,

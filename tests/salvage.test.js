@@ -171,6 +171,11 @@ test('salvage sends a genuine multi-turn follow-up and reports it as salvaged, n
     const original = chatRequests[0].body.messages;
     assert.equal(followUp[0].content, original[0].content);
     assert.equal(followUp[1].content, original[1].content);
+    // OAI-115's reason-keyed budget branch must leave a deadline-timeout
+    // salvage untouched: the follow-up's own max_tokens stays the original
+    // built.reserve, never dropped to the token-reserve-cutoff branch's
+    // smaller flat reserve.
+    assert.equal(chatRequests[1].body.max_tokens, chatRequests[0].body.max_tokens);
   } finally {
     stop();
     await server.close();
@@ -258,7 +263,7 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
     // expectation cannot itself drift from what trySalvage actually sends.
     assert.equal(
       ask.content,
-      'You ran out of time before finishing. Based only on your analysis above, state '
+      'Your previous response was cut off before it finished. Based only on your analysis above, state '
         + 'your findings now. Do not reason further — conclude from what you already have. '
         + 'Ignore any earlier instruction to work through "analysis" before "findings": there is no '
         + 'schema enforcing that order here, and this reply must carry its findings even if it runs '
