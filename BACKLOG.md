@@ -41,13 +41,14 @@ were deferred rather than fixed in that pass: OAI-192, OAI-193, OAI-194 (tier be
 items still parked below (OAI-74, OAI-77, OAI-189, OAI-190) remain there — none is attacker-triggerable
 or reachable today.
 
-**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-156,
-OAI-113, OAI-114, OAI-59, OAI-57**.
-OAI-156 leads: OAI-115 and OAI-116 both shipped 2026-08-20 (a live watchdog cuts a starving reasoning
+**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-113,
+OAI-114, OAI-59, OAI-57**.
+OAI-115 and OAI-116 both shipped 2026-08-20 (a live watchdog cuts a starving reasoning
 stream before `max_tokens` is exhausted and salvages a conclusion via OAI-138's mechanism, generalized
 to a second trigger; the token-exhaustion failure path now attaches its attempt ledger instead of
-recording `attempts: null` — see `BACKLOG_DONE.md`). OAI-156 is the same tier's other half: a *complete*
-answer discarded at the parser, observed once. OAI-113 and OAI-114 are self-contained parser defects
+recording `attempts: null` — see `BACKLOG_DONE.md`). OAI-156 also shipped 2026-08-20 (a whole-document
+YAML-ish findings reply is now recovered instead of discarded at the parser — see `BACKLOG_DONE.md`).
+OAI-113 and OAI-114 are self-contained parser defects
 — a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
 regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
 restoring base behavior and ADR 003's own guarantee). OAI-59 is `/oai:result` rendering `undefined`
@@ -819,27 +820,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **Feedstock already exists**: every run leaves `review-sweep-<stamp>.ledger.jsonl` carrying per-commit
   `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
   not replace them.
-
-- **OAI-156** — **A complete answer, in the shape the prompt asked for, is discarded because it is
-  not bracketed JSON.** Filed 2026-08-14 from the overnight sweep — one commit, `9a38a2a6b`, and
-  **1,245 seconds of work thrown away**.
-  Nothing failed. `finishReason: "stop"`, one attempt recorded, `outcome: answered`, `usage` present,
-  no truncation (`analysisCut: null`, `atCap: null`). The reply carried a well-formed findings list
-  and an `analysis` section, in YAML-ish prose rather than JSON — and the sweep recorded
-  `parsed: false`, `findings: null`, `summary: null`, outcome `unreadable`.
-  **This is NOT OAI-112.** That item is candidate SELECTION among several bracketed runs; here there
-  is no bracketed run at all, so `extractJson` has nothing to select between and `findingsShaped` is
-  never reached. It is the tier's other half — the answer was given and thrown away.
-  **It follows from the 2026-08-04 default** (OAI-51): the ordinary path asks for the shape **in
-  prose** and no grammar compels JSON, so a prose-shaped answer is a *likely* reply rather than a
-  malformed one, while the parser accepts only the bracketed form.
-  **What was discarded was a REPRODUCING finding, which is what raises this above a curiosity.** Its
-  first item names `scanFor`'s parameter list at that commit — `(text, from, open, close, accept)` —
-  the same defect the 2026-08-11 baseline reported on the same commit, and which today's
-  `json-scan.mjs:66` no longer has. The parser did not discard noise; it discarded agreement.
-  **Fix shape (not decided)**: accept a `findings:` list as a candidate shape in
-  `findings-candidate.mjs`, or keep the parser strict and make the instruction compel JSON harder.
-  The first widens what `parseFindings` will trust; the second costs nothing and enforces nothing.
 
 - **OAI-159** — **78 citations in this file point at an `adr/` corpus that no longer exists, and 37 of
   the 99 live items depend on one.** Filed 2026-08-14 by the backlog sweep, counted rather than

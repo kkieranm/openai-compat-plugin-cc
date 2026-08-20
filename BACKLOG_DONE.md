@@ -1,3 +1,52 @@
+## 2026-08-20 — OAI-156 shipped: a whole-document YAML-ish findings reply is recovered instead of discarded (`d397deb`)
+
+- **OAI-156** — A complete, well-formed findings list expressed as whole-document YAML-ish prose (no
+  bracket pair anywhere) was silently discarded, because `scripts/lib/json-scan.mjs`'s `extractJson`
+  works exclusively on balanced-bracket runs. Reproduced 2026-08-14 on commit `9a38a2a6b`: 1,245
+  seconds of real model work discarded this way, and the discarded reply's first finding named the
+  same defect a separate baseline run had already reported as bracketed JSON on the same commit — not
+  noise, a real finding lost to a parser gap.
+  **Shipped**: a new module `scripts/lib/findings-yaml.mjs`, a narrow, whole-document-only YAML-ish
+  acceptor — never a general YAML parser. It accepts a reply only when the entire trimmed text is a
+  top-level `findings:` key, one or more `- `-prefixed flat-mapping items, and an optional trailing
+  `summary:` scalar; anything else is a flat reject, never a partial parse. That whole-document-only
+  posture sidesteps the decoy-vs-real-payload ranking problem `extractJson`'s own comments document as
+  hard-won for the bracketed case. Never throws, matching `extractJson`'s own contract — which is what
+  keeps it correctly outside `tests/structure.test.js`'s `RESPONSE_BOUNDARY_FILES` guard rather than
+  needing enrollment in it. `scripts/lib/structured.mjs`'s `findingsIn` attempts `findingsInYaml` only
+  when `!structured` — never on the constrained (`--structured-output`) path, where a
+  schema-conforming JSON payload is the whole promise and racing the two acceptors risked a YAML
+  reading pre-empting a valid embedded JSON payload before `matchesSchema` ever saw it.
+  **Design converged with Codex plus a fable-model third opinion across 3 plan-gate rounds**: round 1's
+  "the two grammars are provably disjoint" claim was refuted by both reviewers independently (a YAML
+  value can carry an embedded balanced bracket run as ordinary scalar text); round 2 fixed this with an
+  explicit leading-bracket rule and the `!structured` gate, but Codex found the round-2 test fixtures
+  didn't actually discriminate the mutations they claimed to catch (an unmatched `{` proves nothing
+  about ordering, and a `null`-vs-`null` comparison can't distinguish a correct gate from a broken one);
+  round 3 fixed this with a genuinely discriminating fixture (an embedded, balanced, findings-shaped
+  JSON object inside a YAML value, whose two possible readings disagree observably), approved by both.
+  **The review-ladder's first pass found and fixed six real implementation gaps**, none caught by the
+  plan gate: Group A (`acceptance-audit` + `fork-opener`, converging independently) found the trailing
+  `summary:` scalar skipped the leading-bracket check every item field goes through, and a tautological
+  no-regression test (comparing two calls of the same function to each other, which cannot fail — fixed
+  by pinning against the actual expected output shape). Group B (`codex-adversarial` + `codex-plain`,
+  converging independently on the same two bugs) found a repeated field key silently overwrote the
+  earlier value and bypassed the 20-field cap, and a value beginning with YAML-special syntax this
+  narrow acceptor cannot interpret faithfully (quotes, anchors, aliases, tags, block scalars) was read
+  literally rather than rejected; `codex-plain` additionally found the continuation-indent check
+  compared indent by length only, not as a strict prefix of the item's own indent. Group C
+  (`agent-closer`, fable) found `__proto__` as a field key defeats this same pass's own duplicate-key
+  fix (assigning a string to `item.__proto__` is a silent no-op, never an own property). Every fix
+  carries a regression test and is mutation-proven (mutate the fix, confirm the target test goes red,
+  restore, confirm green). **The terminal verdict point itself ran two rounds**: round 1's Codex found a
+  leading `#` (YAML comment indicator) was read literally instead of rejected — a genuinely disputed
+  point (the round-1 fable verdict subagent judged this a sound boundary, not a defect) resolved in
+  Codex's favor on the plan's own text ("a value that itself needs YAML quoting to disambiguate is out
+  of scope"); fixed and re-verified by both reviewers on round 2.
+  Full suite 1108/1108 green throughout.
+  **Ran unattended, without harness plan-mode** — same standing operator authorization already
+  disclosed for OAI-185, OAI-115, and OAI-116, applied consistently.
+
 ## 2026-08-20 — OAI-116 shipped: a token-exhaustion failure now carries its attempt ledger (`bc41fd5`)
 
 - **OAI-116** — A run lost to token exhaustion (or a reasoning-only reply with no usable answer) was
