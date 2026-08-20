@@ -1,3 +1,48 @@
+## 2026-08-20 — OAI-115 shipped: a starving reasoning stream is cut before max_tokens is exhausted, and salvaged (`917c7fb`)
+
+- **OAI-115** — `max_tokens` is a single pool shared by a reasoning model's thinking and its actual
+  answer; on this repo's own hardware a model could spend nearly the whole budget reasoning and never
+  write an answer, measured model-modulated (MoE 4-5/6 cases, dense 1/6, and dense has the *smaller*
+  window — not fixable by picking a bigger model). Two easy fixes were already refuted by measurement:
+  a larger budget is simply consumed (a 4.5x increase moved one metric from 0/3 to 1/3, not to a fix),
+  and no server-side reasoning-control parameter works on this server (three tried, silently ignored).
+  A 17-run sample of successful answers put the real cost at 205-1,116 tokens (median ~420), sizing the
+  reserve this fix protects.
+  **Shipped**: `stream-collect.mjs`'s `collectStream` gains a live, opt-in watchdog — once estimated
+  reasoning tokens cross `(maxTokens - reasoningReserveTokens) * 3.0` chars, and only while `content`
+  is still empty, it disposes the stream and throws synchronously with a dedicated
+  `token-reserve-cutoff` reason (never `-timeout`, since several `bench/` paths classify any
+  `*-timeout` reason as timing data). OAI-138's existing `trySalvage()` salvage mechanism is
+  generalized via a reason allowlist to attempt the same "conclude from partial reasoning" follow-up
+  for this trigger too, budgeted at a flat 2,048 tokens for this reason and left byte-for-byte
+  unchanged (`built.reserve`) for the original `deadline-timeout`. Armed only when
+  `built.reserve >= 2 * TOKEN_RESERVE_TOKENS` (4,096) — below that the cutoff would fire on the very
+  first reasoning delta — and **never** for `--structured-output` requests (the real answer
+  legitimately arrives via the reasoning channel under a `response_format` grammar there, making the
+  content-empty guard meaningless) or the salvage follow-up itself (`reasoningReserveTokens` is never
+  added to the shared `send` object, which is also spread into the follow-up's own call).
+  **Ran unattended, without harness plan-mode** — same standing operator authorization and deviation
+  from `plans/README.md`'s `unattended-draft`/`blocked-on-plan` posture already disclosed for OAI-185,
+  applied consistently here rather than re-litigated.
+  **Design converged with Codex across an unusually deep process**: a 4-round plan gate before any
+  code existed, where three straight independent verdict subagents each found one real,
+  previously-missed defect in the value's propagation chain (`review-request.mjs` → `client.mjs` →
+  `answer-attempts.mjs` → `chat.mjs` → `stream-collect.mjs`) — a field silently dropped by
+  explicit-field-list destructuring at two separate hops, and a budget-clamp formula that was a
+  mathematical no-op — each caught only by re-tracing the whole chain rather than trusting the
+  previous round's fix. Then a 3-round review-ladder pass, where `codex-adversarial` and `codex-plain`
+  found and fixed: a structured-output false-trigger risk; a bug where a bare `dispose()` (no throw)
+  let the watchdog's failure be silently discarded when a finish frame and `[DONE]` arrived buffered
+  in the same transport chunk as the crossing frame; and, on a further round re-checking that very
+  fix, a subtler async-iterator-cleanup race — throwing synchronously still runs `IteratorClose`
+  before the `catch` executes, and that cleanup can itself await, leaving a gap where the semantic
+  deadline timer could overwrite the cutoff's own failure — closed by making the deadline callback
+  idempotent and clearing it early. Plus five smaller correctness/documentation fixes (a weak test
+  assertion, inaccurate provenance attribution, stale comments, two stale plan-document passages
+  caught by the terminal `agent-closer`). All nine findings fixed and mutation-tested; full suite
+  1081/1081 green at every checkpoint. Dual-approved (Codex + an independent Claude verdict subagent,
+  neither shown the other's reply) at both the plan gate and the review-ladder's own verdict point.
+
 ## 2026-08-20 — OAI-185 shipped: server-controlled content no longer reaches a persisted or logged UserError message (`d9dca45`)
 
 - **OAI-185** — OAI-63's other confirmed sibling: the authorized endpoint's own `baseUrl` can itself be

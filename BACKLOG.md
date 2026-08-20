@@ -41,12 +41,12 @@ were deferred rather than fixed in that pass: OAI-192, OAI-193, OAI-194 (tier be
 items still parked below (OAI-74, OAI-77, OAI-189, OAI-190) remain there — none is attacker-triggerable
 or reachable today.
 
-**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-115,
-OAI-116, OAI-156, OAI-113, OAI-114, OAI-59, OAI-57**.
-OAI-115 leads: `max_tokens` is a shared pool, so a large target starves the reply entirely — measured
-model-modulated (MoE 4-5/6 cases, dense 1/6) with a floor now sized at 1-2k tokens from real usage
-data. OAI-116 is next and small: the starvation path records no `attempts[]`, which is what blocks
-OAI-19 (tier 6) from ever passing its own gate. OAI-156 is the same tier's other half: a *complete*
+**Tier 2 — `/oai:review` returns no answer, drops the one it got, or renders it wrong.** **OAI-116,
+OAI-156, OAI-113, OAI-114, OAI-59, OAI-57**.
+OAI-116 leads and is small: the starvation path records no `attempts[]`, which is what blocks
+OAI-19 (tier 6) from ever passing its own gate. OAI-115 shipped 2026-08-20 (a live watchdog cuts
+a starving reasoning stream before `max_tokens` is exhausted and salvages a conclusion via OAI-138's
+mechanism, generalized to a second trigger — see `BACKLOG_DONE.md`). OAI-156 is the same tier's other half: a *complete*
 answer discarded at the parser, observed once. OAI-113 and OAI-114 are self-contained parser defects
 — a quadratic scan on adversarial input (scoped to cap-and-fail-closed, not a full rewrite) and a
 regression that discards a whole findings list over one bad sibling (scoped to drop-bad-keep-good,
@@ -77,7 +77,7 @@ Proved by execution against a seeded row. Live and wrong today, though only for 
 already dead or never-started, so no live work is at risk. Its eleven pure-coverage-debt siblings
 split out as OAI-191 and parked — see `BACKLOG_PARKED.md`.
 
-**Tier 6 — the measurement programme: BLOCKED ON OAI-115/OAI-116 LANDING.** **OAI-19, OAI-50,
+**Tier 6 — the measurement programme: BLOCKED ON OAI-116 LANDING.** **OAI-19, OAI-50,
 OAI-49, OAI-9, OAI-11, OAI-13**. OAI-19 leads and gates the rest — a full-corpus baseline re-measure,
 dense vs MoE, hours of the user's own LM Studio rather than an edit, launched deliberately not
 incidentally. OAI-50 and OAI-49 are the two remaining instrument questions its own gate names as
@@ -85,7 +85,7 @@ stated limits (whether a failed context probe should be scored; a matched-budget
 comparison measures the model, not the budget). OAI-9 and OAI-11 are multi-pass review (deduplicated
 union; diverse models/lenses) — measured 20% hit rate per single pass on a known-defect file, so
 unioning passes is the lever. OAI-13 is vendor-dependent findings needing a second server to settle.
-No arm can be scheduled before OAI-115 and OAI-116 (tier 2) land.
+No arm can be scheduled before OAI-116 (tier 2) lands — OAI-115 shipped 2026-08-20.
 
 **Tier 7 — decisions and direct requests.** **OAI-159, OAI-181, OAI-184**.
 OAI-159 leads: 78 citations across this file point at an `adr/` corpus that was deleted, and the
@@ -478,7 +478,7 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   path emits no `attempts[]` at all, so **G-E is structurally unpassable** for any arm containing one
   such failure — and that is now the dominant failure mode. Verified against 2026-08-04, where all 4
   failed runs *did* carry ledgers, so this is specific to the new path rather than general. No further
-  arm should be run until **OAI-115** and **OAI-116** land; a dense second invocation was deliberately
+  arm should be run until **OAI-116** lands (OAI-115 shipped 2026-08-20); a dense second invocation was deliberately
   not run for this reason, and because `scaffold` fails deterministically (41,251 / 42,064 / 41,404
   chars, a ±1% spread). The `--max-attempts 1` control arm is deferred with it.
 
@@ -798,31 +798,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   the test named `one malformed entry does not discard its siblings, in any spelling` uses an OBJECT
   missing fields, which `objects()` accepts, so the primitive case its name promises was never covered.
   Fix: admit a list with at least one normalizable finding and let normalization drop the rest.
-
-- **OAI-115** — **The answer gets no reserved token budget, so the model spends it all reasoning.**
-  Filed 2026-08-08 from OAI-19's arms. `max_tokens` is a single pool shared by reasoning and the
-  reply, computed as ~(window − prompt) and capped at 32,768. qwen3.6 spends essentially all of it
-  thinking and emits no findings; the CLI then reports "ran out of tokens before it finished writing
-  its findings", which reads as a sizing problem and is an allocation problem. Evidence: four cases,
-  four budgets spanning 4.5×, reasoning terminating at 86–94% of each (table in the OAI-19 run log).
-  **Both easy fixes are already refuted**: a larger budget is simply consumed (T1 — 4.5× moved
-  `structured` from 0/3 to 1/3), and no reasoning control exists on this server (T3 — three parameters
-  accepted and silently ignored). The remaining shape is a floor reserved for the answer that
-  reasoning cannot consume, and failing loudly if the model crosses it. **Model-modulated**: the MoE
-  starves on 4–5 of 6 cases, dense on 1 of 6, and dense has the *smaller* window — so this is not
-  fixable by choosing a bigger model. **Blocks OAI-19.**
-  **The floor now has a measured size, 2026-08-15 (qwen3.8 sweep, OAI-164).** Across the **17
-  successful** reviews of that run, read from the `usage` each reply actually returned rather than
-  reconstructed: `reasoning_tokens` were **87.0–98.3%** of every completion (median 95.9%), while the
-  answer itself cost **205–1,116 tokens, median ~420**. The largest answer in a successful run was
-  1,116 tokens. So **the reserve this item asks for is on the order of 1–2k tokens, not a fraction of
-  the budget** — and every one of the run's six starvations died with a budget larger than that still
-  nominally available to it. The allocation framing is confirmed by the same data: budgets ranged
-  25,260–30,848 on the successes and the model simply expanded its reasoning to fill whatever it was
-  given, which is T1's "a larger budget is simply consumed" observed a third time.
-  **Sizing caveat carried deliberately:** the 17 are the runs that SUCCEEDED, so this measures what a
-  completed answer costs, not what a starved commit's answer would have cost. It is a lower bound on
-  the floor, and a starved commit reviewing more files could need more.
 
 - **OAI-116** — **The token-exhaustion failure path emits no `attempts[]`, making G-E unpassable.**
   Filed 2026-08-08. A run lost to token exhaustion is recorded with `attempts: null`, so OAI-19's
