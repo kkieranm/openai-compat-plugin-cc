@@ -62,22 +62,23 @@ export async function probeProvider(name, rawProfile) {
 }
 
 /** Never emit apiKey — only whether one is configured. */
-function jsonRow({ profile, rawProfile, models, error, described }) {
+function jsonRow({ profile, rawProfile, models, error, described, listUnavailable }) {
   // Derived from the same resolver the text report uses; computing it
   // separately is how the two views come to disagree about the same run.
   const resolved = effectiveWindow(profile, described);
   // No `transportDetail` composition on `error` (unlike `listUnavailable`
-  // above): every error stored in this field is pre-response, carrying only
+  // below): every error stored in this field is pre-response, carrying only
   // `.endpoint` — always `profile.baseUrl`, already reported on the `baseUrl`
   // field below. A `serverResponded` failure with real body detail always
   // takes the `listUnavailable` branch instead (OAI-185 review-ladder pass
-  // 1). `jsonRow` never reads `listUnavailable` at all, which is a real,
-  // separate gap — filed rather than fixed here (out of this pass's scope).
+  // 1), which `listUnavailable` below now surfaces (OAI-193) — `reachable`
+  // stays `true` in that case, since the server genuinely answered.
   return {
     name: profile.name,
     baseUrl: profile.baseUrl,
     reachable: !error,
     error: error ? error.message : null,
+    listUnavailable: listUnavailable ?? null,
     models,
     defaultModel: profile.defaultModel ?? null,
     contextLength: profile.contextLength ?? null,

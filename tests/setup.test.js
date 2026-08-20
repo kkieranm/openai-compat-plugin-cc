@@ -66,9 +66,8 @@ test('setup still shows a probe failure\'s echoed response body in the text view
   // pass would be meaningless if it only reflected the (separately accepted,
   // unconditional) baseUrl display on the provider's own header line.
   //
-  // Text-only: `jsonRow` never reads `listUnavailable` at all (cmd-setup.mjs),
-  // so the --json view has always omitted this reachable-but-no-model-list
-  // case entirely — a pre-existing gap unrelated to OAI-185, not covered here.
+  // Text-only here: the --json view of this same case is covered separately
+  // below (OAI-193).
   const marker = 'SECRET_MARKER_probebody';
   const server = await startFakeServer((request, response) => {
     respondJson(response, { error: `no models here: ${marker}` }, 404);
@@ -79,6 +78,29 @@ test('setup still shows a probe failure\'s echoed response body in the text view
     const text = await runCompanion(['setup'], { configPath: path });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(marker), 'the text view must still show the echoed body');
+  } finally {
+    await server.close();
+  }
+});
+
+test('setup --json reports a reachable-but-no-model-list provider via listUnavailable', async () => {
+  // Mirrors the text-view test above, but for the --json view, which used to
+  // omit this case entirely (`reachable: true, error: null`, indistinguishable
+  // from a healthy provider) because `jsonRow` never read `listUnavailable`.
+  const marker = 'SECRET_MARKER_jsonprobebody';
+  const server = await startFakeServer((request, response) => {
+    respondJson(response, { error: `no models here: ${marker}` }, 404);
+  });
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+
+  try {
+    const result = await runCompanion(['setup', '--json'], { configPath: path });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    const row = report.providers[0];
+    assert.equal(row.reachable, true, 'the server did answer, so it is reachable');
+    assert.equal(row.error, null);
+    assert.match(row.listUnavailable, new RegExp(marker), 'the --json view must surface the echoed body too');
   } finally {
     await server.close();
   }
