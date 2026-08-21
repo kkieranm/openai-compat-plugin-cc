@@ -10,26 +10,53 @@
 const FENCE = /```(?:json)?\s*\n([\s\S]*?)```/;
 
 /**
- * Find the balanced `open`…`close` run starting at or after `from`. String-aware,
- * so a bracket inside a quoted value (`"summary": "the } case"`) does not close
- * it early.
+ * EVERY balanced `open`…`close` run OUTSIDE a quoted string in `text` that
+ * parses and is accepted, each with the span it occupies — found in ONE linear
+ * pass with a stack, not by restarting a fresh scan from every candidate
+ * opener. A run sitting inside a quoted string is scanner-tracked as string
+ * content, not JSON structure — see the quote-tracking note below.
+ *
+ * The restart approach used to cost O(n²) on a reply of many unmatched openers
+ * (a 200KB run of bare `[` took ~36s): each restart scanned all the way to the
+ * end of `text` before discovering the opener never closes, and the next
+ * restart re-scanned the same trailing suffix again. A single pass with a
+ * stack of open positions never re-reads a byte: a `close` pops the most
+ * recently opened, still-unclosed `open` — exactly the LIFO pairing a
+ * depth-counted restart from that opener would have found — and an opener
+ * left unpopped at the end of the pass produces no candidate, same as an
+ * opener a restart scan could never balance.
+ *
+ * String/escape tracking is now CONTINUOUS across the whole pass, not reset to
+ * "not in a string" at every restart position the way the old per-opener scan
+ * did. That reset was a documented, accepted inaccuracy (an `open` living
+ * inside a quoted string used to be entered as if it were JSON) — continuous
+ * tracking closes it, at a wider cost than "content inside a quote is no
+ * longer its own candidate" suggests: ONE unbalanced `"` ANYWHERE in `text`
+ * flips `inString` for the entire remainder of the pass, not just for the
+ * span that quote appears to open. A reply that quotes a source line with an
+ * odd count of `"` characters — plausible, not hypothetical, since this
+ * repo's own review prompt orders exactly that — can blind the scan to a
+ * genuine payload arriving much later, with nothing resembling a "quoted
+ * string" around it. Nothing here recovers from it — this module returns
+ * `null`, the same value it returns for "no candidate here at all", and
+ * knows nothing about what the caller does with that; see `structured.mjs`
+ * for what `null` means to the caller that actually reads it. See
+ * `tests/json-scan.test.js` for the two pinned instances of that trade, and
+ * its own broader framing of the mechanism.
+ *
+ * `accept` is evaluated in OPENING-POSITION order, matching the old restart
+ * scan's order and preserving it for a caller with a stateful `accept` — a
+ * stack alone would emit in CLOSING order (the innermost candidate first),
+ * which is why open records are also appended to an ordered list and that
+ * list, not the stack, drives evaluation once the pass completes.
  */
-function balanced(text, from, open, close) {
-  const start = text.indexOf(open, from);
-  if (start === -1) return null;
-  // `start` is entered with `inString` false whatever the true document state,
-  // because nothing here has read the text before `from`. An `open` living
-  // inside a quoted string is therefore entered as if it were JSON, and the
-  // string's CLOSING quote then turns quote-tracking ON for the remainder — so
-  // this function reports failure on inputs that are not malformed at all. That
-  // is why a failure below is one dead START POSITION and never a verdict about
-  // the text; `scanFor` is what has to know the difference.
-
-  let depth = 0;
+function scanFor(text, open, close, accept) {
+  const opened = []; // every opener seen, in opening-position order; `end` filled in on its matching close
+  const stack = []; // indices into `opened`, for LIFO matching only
   let inString = false;
   let escaped = false;
 
-  for (let index = start; index < text.length; index += 1) {
+  for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
     if (escaped) {
       escaped = false;
@@ -41,65 +68,31 @@ function balanced(text, from, open, close) {
       continue;
     }
     if (character === '"') inString = true;
-    else if (character === open) depth += 1;
-    else if (character === close) {
-      depth -= 1;
-      if (depth === 0) return { json: text.slice(start, index + 1), start, end: index + 1 };
+    else if (character === open) {
+      stack.push(opened.length);
+      opened.push({ start: index, end: null });
+    } else if (character === close && stack.length > 0) {
+      opened[stack.pop()].end = index + 1;
     }
   }
-  // An opener that never balances. Distinct from "no opener left", and the two
-  // were returned as the same `null` for four passes: `scanFor` read a dead
-  // start position as exhaustion of the whole bracket type and stopped, so one
-  // stray `[` in quoted source hid every real candidate after it.
-  return { json: null, start };
-}
 
-/**
- * EVERY balanced `open`…`close` run in `text` that parses and is accepted, each
- * with the span it occupies.
- *
- * It used to return the first and stop, which is what made position a trap: the
- * first accepted candidate is routinely a quoted example and the real answer is
- * further down. Deciding between candidates needs all of them, and deciding
- * *correctly* needs their extents, not just their starts — see `extractJson`.
- */
-function scanFor(text, open, close, accept) {
   const found = [];
-  let from = 0;
-  for (;;) {
-    const run = balanced(text, from, open, close);
-    if (!run) return found;
-    if (run.json === null) {
-      // One dead start position — skip past it and keep going.
-      //
-      // This branch is DEFENSIVE, not load-bearing, and the comment that used to
-      // stand here claimed otherwise. Deleting it leaves the whole suite green:
-      // the fall-through advance below does the same thing, because `JSON.parse`
-      // of a null candidate yields `null` and the caller's predicate rejects it.
-      // What the branch does buy is independence from that predicate — with the
-      // module's own default `accept`, a dead candidate would be pushed with no
-      // `end`, survive the containment filter (every comparison against
-      // `undefined` is false) and win the ranking. That is a real hole in
-      // `extractJson`'s public contract and it belongs in the push, not here.
-      from = run.start + 1;
-      continue;
-    }
+  for (const record of opened) {
+    if (record.end === null) continue; // never closed — no candidate, same as an unbalanced restart scan
     try {
-      const value = JSON.parse(run.json);
-      if (accept(value)) found.push({ value, start: run.start, end: run.end });
+      const value = JSON.parse(text.slice(record.start, record.end));
+      if (accept(value)) found.push({ value, start: record.start, end: record.end });
     } catch {
       // Not it — an unparseable candidate is expected here.
     }
-    // Resume past this candidate's opening bracket, so a nested or adjacent one
-    // later in the reply still gets its turn.
-    from = run.start + 1;
   }
+  return found;
 }
 
 /**
  * Parse JSON out of a reply that may be bare, fenced, or wrapped in prose.
  *
- * Every balanced object is tried, not just the first. The system prompt orders
+ * Every balanced object outside a quoted string is tried, not just the first. The system prompt orders
  * the model to quote the offending source line, so a degraded reply routinely
  * opens with code — and anchoring on the first `{` meant a quoted `if (x) { … }`
  * swallowed the anchor and a perfectly good findings object was thrown away,
