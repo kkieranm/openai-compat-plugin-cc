@@ -288,7 +288,26 @@ test('a known-schema dead row on a writable database is not blamed on a version 
 
   assert.doesNotMatch(text, /written by a newer plugin/, 'the row is not foreign');
   assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
+  assert.doesNotMatch(text, /this build did reconcile the database this run/, 'reconciliation running this session is not a claim that THIS row was checked');
+  assert.doesNotMatch(text, /left this row exactly as found/, 'a row inserted after reconcileAll\'s snapshot was never examined at all, not "examined and left unchanged"');
+  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
   assert.match(text, /schema \(1\) is understood/);
+  assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row');
+  // Verdict-point round 1, Codex: fragment-only assertions above would still
+  // pass for a semantically-different regression phrased differently (e.g.
+  // "reconciliation inspected this row"), since none of them pins the whole
+  // sentence. Verdict-point round 2, Codex: an `includes()` pin of the
+  // complete sentence still passes if something is APPENDED alongside it, so
+  // this is equality against the row's own note line (the last line of
+  // output here — this test seeds exactly one row) rather than substring
+  // containment.
+  assert.equal(text.trim().split('\n').pop(),
+    "  ! its own schema (1) is understood, and this build's reconciliation ran against the database"
+    + ' this run — but this row reads dead at render time anyway (this row may have appeared, or'
+    + ' its liveness or a timing threshold like the startup grace period may have moved, after'
+    + ' reconciliation took its snapshot). If it keeps showing dead across repeated runs rather'
+    + ' than clearing on its own, it is in a shape reconciliation does not collect.',
+    'the complete case-B note, verbatim, not just fragments of it, and nothing appended');
 });
 
 test('a known-schema never-started row on a writable database is not blamed on a worker that never existed', { skip: NEEDS_SQLITE }, () => {
@@ -302,5 +321,20 @@ test('a known-schema never-started row on a writable database is not blamed on a
   assert.doesNotMatch(text, /written by a newer plugin/, 'the row is not foreign');
   assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
   assert.doesNotMatch(text, /worker likely changed state/, 'a never-started row has no worker to have changed state');
+  assert.doesNotMatch(text, /this build did reconcile the database this run/, 'reconciliation running this session is not a claim that THIS row was checked');
+  assert.doesNotMatch(text, /left this row exactly as found/, 'a row inserted after reconcileAll\'s snapshot was never examined at all, not "examined and left unchanged"');
+  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
   assert.match(text, /schema \(1\) is understood/);
+  assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row, same branch as the dead-row test above');
+  // Verdict-point round 1 + 2, Codex: same reasoning as the dead-row test
+  // above — equality against the row's own note line, not substring
+  // containment, so nothing can be appended alongside a correct match.
+  assert.equal(text.trim().split('\n').pop(),
+    "  ! its own schema (1) is understood, and this build's reconciliation ran against the database"
+    + ' this run — but this row reads never-started at render time anyway (this row may have'
+    + ' appeared, or its liveness or a timing threshold like the startup grace period may have'
+    + ' moved, after reconciliation took its snapshot). If it keeps showing never-started across'
+    + ' repeated runs rather than clearing on its own, it is in a shape reconciliation does not'
+    + ' collect.',
+    'the complete case-B note, verbatim, not just fragments of it, and nothing appended');
 });

@@ -149,16 +149,44 @@ function noteFor(view, nowMs, readOnly) {
         + ` its own schema (${view.schema_version}) is understood, but nothing here was reconciled,`
         + ' collected or written this run.';
     }
-    // Not a version story at all: this build reconciled the database this run
-    // and found nothing to collect from this row at the time. Deliberately not
-    // "its worker changed state" — a queued row can reach `never-started` by
-    // crossing STARTUP_GRACE_MS with no worker ever having existed to change
-    // anything (Codex adversarial review, plan-gate pass 1), so the wording
-    // stays cause-neutral between a liveness change and a timing threshold.
-    return `its own schema (${view.schema_version}) is understood and this build did reconcile the`
-      + ` database this run, but the row still shows ${view.display} — something about it (its`
-      + ' liveness, or a timing threshold like the startup grace period) changed between that check'
-      + ' and this render.';
+    // Not a version story at all: this build's reconciliation pass ran against
+    // the database this run. Deliberately NOT "this build did reconcile [this
+    // row]", and NOT "left this row exactly as found" either — both are
+    // per-row examination claims this render cannot make good on. Three
+    // routes reach here with no such examination: (1) a row a foreign or
+    // corrupt writer left in a state its own abandonUnstarted update never
+    // matches (not `queued`, not `running`) survives untouched on every run,
+    // not just this one, so a specific per-row claim would be false on repeat
+    // (review-ladder pass 1, codex-plain); (2) reconcileAll works from a
+    // listJobs() SNAPSHOT taken before it iterates, so a row a concurrent
+    // submission inserts after that snapshot — whose worker then dies before
+    // this render reads it — reaches this branch never having been iterated
+    // by reconciliation at all, not merely left unchanged (review-ladder pass
+    // 2, codex-adversarial + codex-plain, independently converging); (3) a
+    // row reconciliation DID examine and leave alone can still have its
+    // liveness or a timing threshold like STARTUP_GRACE_MS move between that
+    // probe and this render (also not "its worker changed state" — a queued
+    // row can reach `never-started` with no worker ever having existed to
+    // change anything; Codex adversarial review, plan-gate pass 1). The
+    // wording below commits to none of the three: its parenthetical offers
+    // only (2) and (3), and only as hedged "may" candidates, while route (1)
+    // surfaces solely through the persistence clause — which is what
+    // actually discriminates route (1) from routes (2) and (3): a genuine
+    // race clears on its own, a stuck shape does not (review-ladder pass 4 —
+    // the prior wording here, "makes no claim about which of the three
+    // happened," overclaimed symmetry the string doesn't have). Deliberately
+    // also no FREQUENCY word — "usually a benign race" was an unmeasured
+    // lean toward routes (2)/(3) that contradicted this very sentence, and
+    // inverted for exactly the readers who see the note more than once:
+    // routes (2)/(3) are one-shot and self-clear, so a reader seeing this
+    // note on repeated runs is, on every one of those reads, in route (1) —
+    // the case "usually" pointed away from (review-ladder pass 3).
+    return `its own schema (${view.schema_version}) is understood, and this build's reconciliation ran`
+      + ` against the database this run — but this row reads ${view.display} at render time anyway`
+      + ' (this row may have appeared, or its liveness or a timing threshold like the startup'
+      + ' grace period may have moved, after reconciliation took its snapshot). If it keeps'
+      + ` showing ${view.display} across repeated runs rather than clearing on its own, it is in a`
+      + ' shape reconciliation does not collect.';
   }
   if (view.display === 'failed') return view.failure?.message ?? 'failed with no message recorded.';
   return null;
