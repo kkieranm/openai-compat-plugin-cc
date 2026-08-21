@@ -3,13 +3,13 @@
 // Split from `abandon-transaction.test.js` when that file reached its size
 // budget, on the seam the module already has: `abandonRow` decides and writes,
 // and `abandonFailure` decides what the stored payload claims. The second
-// is not a detail of the first — the whole of OAI-162 was a record that asserted
-// something nobody had established.
+// is not a detail of the first — a record that asserts something nobody had
+// established is its own failure.
 //
 // Every assertion here is about a permanent artifact, and a sentence that is
 // merely plausible is one somebody will one day debug against. `finish` clears
 // `worker_pid`, so for a running row the unreadable value is gone entirely — the
-// record does not quote it, which is a scope decision filed with OAI-162.
+// record does not quote it, a deliberate scope decision.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { abandonRow } from '../scripts/lib/job-abandon.mjs';
@@ -51,7 +51,7 @@ test('a READABLE pid records that a probe answered — the control the absence a
 
 test('a recorded-but-unreadable pid takes the malformed arm, and claims no probe', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // The shape OAI-162 added to `malformed`. It shares the no-pid arm's wording
+  // The malformed arm shares the no-pid arm's wording
   // because the same thing is true of both: nothing was asked of the OS. What it
   // may NOT say is that a pid answered a probe.
   //

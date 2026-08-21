@@ -49,8 +49,6 @@ test('a stray token strands every flag after it, which is why main refuses one',
   assert.equal(positionals.length > 0, true);
 });
 
-// OAI-165: with no --repo, behaviour is unchanged — repo resolves to this
-// tool's own root and the include default still applies.
 test('with no --repo, options.repo is this tool and DEFAULTS.include still applies', () => {
   const options = from(['--minutes', '10']);
   assert.equal(options.repo, TOOL_ROOT);
@@ -74,19 +72,18 @@ test('--repo with --include resolves and runs rooted at the foreign path', () =>
   assert.equal(options.outDir, `${TOOL_ROOT}/bench/results`);
 });
 
-// Adversarial review (OAI-165): the guard used to fire on --repo being
-// SYNTACTICALLY given, not on the resolved path being foreign — so naming
-// this tool's own root back at it refused for no reason, on a false message
-// ("points at a different repository" when it did not). Fixed to compare
-// resolved identity instead.
+// The guard used to fire on --repo being SYNTACTICALLY given, not on the
+// resolved path being foreign — so naming this tool's own root back at it
+// refused for no reason, on a false message ("points at a different
+// repository" when it did not). Fixed to compare resolved identity instead.
 test('--repo naming this tool itself is a no-op — defaults still apply, no --include required', () => {
   const options = from(['--minutes', '10', '--repo', TOOL_ROOT]);
   assert.equal(options.repo, TOOL_ROOT);
   assert.deepEqual(options.include, ['scripts', 'bench', 'tests']);
 });
 
-// Adversarial review (OAI-165): `--repo` given an empty value used to be
-// silently read as "not given" (empty string is falsy) and fell back to
+// `--repo` given an empty value used to be silently read as "not given"
+// (empty string is falsy) and fell back to
 // self-review with no --include required — a mistyped `--repo=` reviewing
 // this tool instead of the intended target, and saying nothing about it.
 test('--repo given an empty value is refused, not silently read as omitted', () => {
@@ -95,8 +92,8 @@ test('--repo given an empty value is refused, not silently read as omitted', () 
 
 // `--include src/` and `--include ./src` both parsed and passed the
 // non-empty check, then matched NOTHING against a git-relative path list —
-// the exact silent hollow-sweep failure OAI-165 exists to prevent, one flag
-// over. Normalized rather than left to fail quietly.
+// the same silent hollow-sweep failure the --repo empty-value check exists
+// to prevent, one flag over. Normalized rather than left to fail quietly.
 test('--include is normalized: a trailing slash and a leading ./ are stripped', () => {
   assert.deepEqual(from(['--minutes', '10', '--repo', '/x', '--include', 'src/']).include, ['src']);
   assert.deepEqual(from(['--minutes', '10', '--repo', '/x', '--include', './src']).include, ['src']);
@@ -107,34 +104,33 @@ test('--include normalizing to empty is refused, not silently matching every pat
   assert.throws(() => from(['--minutes', '10', '--repo', '/x', '--include', '/']), /--include was given.*empty/);
 });
 
-// agent-closer (same pass): stripping only the ONE leading "./" left the class
-// open — each of these parses, is non-empty, and still matches no real git
-// path. `--include .` in particular is the most plausible way to type "review
-// everything in the target repo" and silently reviewed nothing.
+// Stripping only the ONE leading "./" left the class open — each of these
+// parses, is non-empty, and still matches no real git path. `--include .` in
+// particular is the most plausible way to type "review everything in the
+// target repo" and silently reviewed nothing.
 test('--include shapes that can never match a git-relative path are refused, not silently accepted', () => {
   for (const value of ['.', '/src', '../src', '..', 'src/./x', 'src//sub']) {
     assert.throws(() => from(['--minutes', '10', '--repo', '/x', '--include', value]), /--include was given/, `expected "${value}" to be refused`);
   }
 });
 
-// Codex (pass 3): validation used to check a TRIMMED copy but return the
-// UNTRIMMED entry, so surrounding whitespace slipped through and matched
-// nothing — the same failure class one character over.
+// Validation used to check a TRIMMED copy but return the UNTRIMMED entry, so
+// surrounding whitespace slipped through and matched nothing — the same
+// failure class one character over.
 test('--include surrounding whitespace is trimmed, not silently returned untrimmed', () => {
   assert.deepEqual(from(['--minutes', '10', '--repo', '/x', '--include', ' src']).include, ['src']);
   assert.deepEqual(from(['--minutes', '10', '--repo', '/x', '--include', 'src ']).include, ['src']);
 });
 
-// Codex (pass 3): `startsWith('..')` refused a legitimate name like
-// `..config`, which is not path traversal — only an exact `..` or a `../`
-// prefix is.
+// `startsWith('..')` refused a legitimate name like `..config`, which is not
+// path traversal — only an exact `..` or a `../` prefix is.
 test('--include names that merely start with two dots, but are not traversal, are accepted', () => {
   assert.deepEqual(from(['--minutes', '10', '--repo', '/x', '--include', '..config']).include, ['..config']);
 });
 
-// Codex + fork-opener (pass 4): the same whitespace bug --include had — a
-// trimmed copy validated, the untrimmed original used — existed for --repo
-// too: the empty-value check trimmed, but resolve() ran on the raw value.
+// The same whitespace bug --include had — a trimmed copy validated, the
+// untrimmed original used — existed for --repo too: the empty-value check
+// trimmed, but resolve() ran on the raw value.
 test('--repo surrounding whitespace is trimmed before both the empty check and resolve()', () => {
   assert.throws(() => from(['--minutes', '10', '--repo', '   ']), /--repo was given an empty value/);
   const options = from(['--minutes', '10', '--repo', '  /other/repo  ', '--include', 'src']);

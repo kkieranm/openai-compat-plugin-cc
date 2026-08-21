@@ -37,8 +37,7 @@ test('a truncated review still shows the findings it managed to produce', () => 
   assert.match(out, /truncated/);
 });
 
-// OAI-138 salvage. Non-negotiable per that item's own text: a salvaged review
-// must never read as an ordinary complete one — asserted at the artifact
+// A salvaged review must never read as an ordinary complete one — asserted at the artifact
 // level, in the Findings section itself, since that is the ONE place a
 // reader scanning for real coverage would otherwise mistake it for a normal
 // finding.
@@ -80,7 +79,7 @@ test('an unsized-window review says WHY, and never re-asserts a measurement', ()
 test('the state note is scoped to diff-covered files, not to the whole request', () => {
   // It said "only the diff was reviewed" flatly, which is FALSE for a mixed target:
   // collectTarget can pair diff-covered tracked files with untracked or --file bodies that
-  // are sent WHOLE and are never droppable. Found by codex-adversarial at 0.99.
+  // are sent WHOLE and are never droppable.
   const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
   assert.match(out, /diff-covered changed files were reviewed only as hunks/);
   assert.match(out, /may still have been sent whole/, 'the pinned files are not covered by this note');
@@ -166,7 +165,7 @@ test('every commit is disposed of exactly once', () => {
 });
 
 // …and the leads a disqualified review produced still reach the reader, with the
-// same detail a completed review's would. Losing them is what OAI-120 was.
+// same detail a completed review's would. Losing them is the failure mode.
 test('a disqualified review still shows what it reported, in full', () => {
   const out = render(commit({
     outcome: 'substituted',

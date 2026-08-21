@@ -3,14 +3,9 @@ import { test } from 'node:test';
 import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
 
 /**
- * OAI-34 — the TTL challenge instrument, driven END TO END through its real
- * entry point.
- *
- * This file is the reason OAI-34 is not OAI-24. That item built the same
- * instrument, reviewed it twice, found 18 defects and withdrew it — and its own
- * retro named the cause: "the half nominated as 'exercised by running it' was
- * never run, and most of both passes' findings were in it". Reading cannot
- * substitute for executing a module whose job is to decide something.
+ * The TTL challenge instrument, driven END TO END through its real entry
+ * point. Reading cannot substitute for executing a module whose job is to
+ * decide something.
  *
  * The scaffolding is in `ttl-e2e-harness.mjs`, including why the outer spawn
  * must be asynchronous.

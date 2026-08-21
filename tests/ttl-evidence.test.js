@@ -9,7 +9,7 @@ import {
 } from '../bench/lib/ttl-attempts.mjs';
 import { DEFAULTS, isCanonical, resolveConfig } from '../bench/lib/ttl-config.mjs';
 
-// OAI-34. The two evidence readers and the config seam. Neither reader decides
+// The two evidence readers and the config seam. Neither reader decides
 // anything — the rule lives in ttl-verdict.mjs — so what is guarded here is every
 // way a reading could quietly become an answer it does not support.
 

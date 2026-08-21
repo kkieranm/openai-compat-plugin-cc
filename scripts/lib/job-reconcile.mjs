@@ -33,8 +33,8 @@ function report(reason, message, hint) {
  * disappeared without recording anything.
  *
  * **A pending cancellation is not by itself proof that the cancellation is what
- * happened.** Until OAI-66 it was treated as proof, so a worker that CRASHED
- * while a cancel happened to be pending was published as a tidy `cancelled` with
+ * happened.** Treating it as proof lets a worker that CRASHED
+ * while a cancel happened to be pending get published as a tidy `cancelled` with
  * no failure and no note — the crash diagnosis existed and was thrown away. What
  * the dead pid establishes is that the process is gone, never why.
  *
@@ -94,10 +94,10 @@ function terminalizeDead(db, row, at) {
  * (`cmd-task-worker.mjs`). Calling that `failed` would report a granted request
  * as a fault.
  *
- * **The hint states what is known and stops there (OAI-66).** It used to say the
+ * **The hint states what is known and stops there.** It used to say the
  * submitting process *"most likely died before the worker was spawned"* — a cause
  * it cannot establish. It consults no evidence at all, and `spawned_at` would not
- * supply any: OAI-67 made a NULL `spawned_at` possible while a real worker
+ * supply any: a NULL `spawned_at` is possible while a real worker
  * exists, so conditioning on it would replace one false claim with another. What
  * is actually known is that no worker registered and this job will not run, which
  * is what the message already says.

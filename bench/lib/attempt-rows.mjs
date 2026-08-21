@@ -7,7 +7,7 @@
  * observed miss. But that same run is three requests, two of which the server
  * dropped, and a report showing only the first number says a sick server is
  * healthy. Recall reads logical runs; this reads every request that went on the
- * wire. See ADR 012 and BACKLOG.md OAI-20.
+ * wire.
  */
 
 /**
@@ -34,8 +34,8 @@ export const RESPONSE_BUCKETS = [RESPONSE_OBTAINED, NO_RESPONSE, NOT_RECORDED];
 /**
  * Which response bucket one failed attempt belongs in.
  *
- * The third category is the point. An attempt record written before OAI-35
- * carries no such field, and folding those into `false` would convert missing
+ * The third category is the point. An older attempt record carries no such
+ * field, and folding those into `false` would convert missing
  * instrumentation into an observation that nothing answered — the same defect
  * `byFirstText` avoids with its `== null`, arriving here by the opposite route.
  * That split has two buckets and needs a loose check to keep old records out of

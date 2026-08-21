@@ -9,7 +9,7 @@ import { closeHandle, pendUntilReplaced, reclassifiable } from './attempt-outcom
  * one entry per HTTP request, whatever caused it: the first try, a capability
  * degrade, the `response_format` fallback, or a retry after a delivery failure.
  * A failed attempt is missing data, never an observed miss — it must never reach
- * a recall denominator. See ADR 012 and BACKLOG.md OAI-20.
+ * a recall denominator.
  *
  * One ledger per command, not per call. `review-request.mjs` can call
  * `chatCompletion` twice for one review (the schema request, then the degraded
@@ -61,7 +61,7 @@ function newEntry(index, { body, cause, waitedMs }, dispatched) {
     entry: {
       index,
       cause,
-      // Request size, which OAI-20 asks the characterization to record — the
+      // Request size — the
       // axis that says whether failures cluster on large prompts. Characters
       // rather than tokens: this layer has no tokenizer, so a character count
       // is a measurement where a token figure would be an estimate.

@@ -35,7 +35,7 @@ const now = () => new Date().toISOString();
  * The endpoint comes from the row: re-deriving it from a provider name would let
  * a profile edited after submission redirect a job that was already validated
  * against somewhere else. Only the secret is looked up fresh, and only when the
- * frozen endpoint still matches what the profile resolves to now (OAI-63).
+ * frozen endpoint still matches what the profile resolves to now.
  *
  * **On the commitment path the query itself comes from the resolver, not from
  * the row** — `job.transport.query` does not exist there; the row carries only
@@ -175,7 +175,7 @@ function publishFailure(db, seq, error) {
  * **Its durability is bounded by the row's, and the row now outlives the sweep.**
  * `job-retention.mjs` exempts an `operator-abandoned` row that reached `running`
  * from pruning entirely, precisely so this line cannot be unlinked underneath a
- * worker still writing it — the loss that made **OAI-161**. So the answer lasts
+ * worker still writing it — the loss this exists to close. So the answer lasts
  * as long as the row, and the row is kept indefinitely.
  *
  * What that does NOT buy: this is still not a store. Nothing indexes the line,
@@ -192,9 +192,9 @@ function publishFailure(db, seq, error) {
  * The prefix is the whole point. This log also carries the progress heartbeat
  * and the model's own chatter, so an unmarked JSON dump would be recoverable in
  * principle and not in practice — the loss would have moved rather than gone.
- * `SALVAGED_OUTCOME` is fixed, greppable, and named in `adr/020` and in the
- * `worker-died` discussion above, so a reader told the worker died has one
- * string to search for.
+ * `SALVAGED_OUTCOME` is fixed, greppable, and named in the `worker-died`
+ * discussion above, so a reader told the worker died has one string to
+ * search for.
  *
  * Serialisation can itself throw — `outcome` holds only what `outcomeOf` built,
  * but a future field could be circular — and a throw here would replace the
@@ -228,7 +228,7 @@ async function runAndPublish(db, seq, job) {
   // Only now: a queued worker is already visible through the wait loop's beat,
   // and this is the stretch that would otherwise be silent.
   // `job.id` goes with it because the cancellation exit records that id beside
-  // the log, and that path may touch no database to look it up (OAI-66).
+  // the log, and that path may touch no database to look it up.
   const stopBeating = startHeartbeat(db, seq, { jobId: job.id });
   try {
     let outcome;
@@ -254,7 +254,8 @@ async function runAndPublish(db, seq, job) {
     // cause while the answer itself remains readable. Publishing it as `failed`
     // instead was worse (a paid-for answer reported as a model failure, on a
     // path where contention had by then cleared), which is why this line is
-    // where it is. The residual — the row's own state — is **OAI-106**.
+    // where it is. The residual — the row's own state remaining wrong — is
+    // not fixed by this.
     // TWO ways this write fails to land, and they differ in whether anything
     // went wrong. A THROW is storage refusing us, and is rethrown. A `false` is
     // the CAS matching no rows because the row is no longer `queued`/`running` —

@@ -138,7 +138,7 @@ export async function* readSse(response, what, outcome = {}) {
       } catch (error) {
         // The payload is server-controlled, and JSON.parse's own error
         // quotes a fragment of it — the streaming sibling of body.mjs's
-        // non-JSON leak (OAI-185). Neither may go on .message or .hint,
+        // non-JSON leak. Neither may go on .message or .hint,
         // which errorReport() persists into jobs.db and which an uncaught
         // worker error also writes to its own job log; the excerpt travels
         // on .bodyExcerpt instead.

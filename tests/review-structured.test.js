@@ -11,7 +11,7 @@
 // `response_format` schema exhausts its lexer's 250,000-state budget at roughly
 // 14,000 generated tokens, raising a fatal exception in the MLX generation thread
 // and taking the model process with it — about 38% of long requests, before
-// anyone read the server log. See OAI-51. Nothing in this file describes what an
+// anyone read the server log. Nothing in this file describes what an
 // ordinary run does, and a test that starts to belongs next door.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

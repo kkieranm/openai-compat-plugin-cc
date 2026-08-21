@@ -70,7 +70,7 @@ export function beatIsStale(row, nowMs) {
 /**
  * What the OS will say about a pid: `live`, `gone`, or `unreadable`.
  *
- * **Three facts, not two, and collapsing them was OAI-162.** `EPERM` means the
+ * **Three facts, not two.** `EPERM` means the
  * process exists and belongs to someone else, which is still alive — reading it
  * as dead would let one user's plugin terminalize another's running job. Only
  * `ESRCH` means gone. Everything else is an absence of evidence: a value that is
@@ -115,8 +115,7 @@ export function pidLiveness(pid) {
  *
  * A projection of `pidLiveness` kept because two test helpers ask exactly this
  * yes/no question of a real pid. It answers `false` for `gone` and `unreadable`
- * alike, so it must not be used where the difference decides anything — which is
- * the mistake it existed as for its whole life before OAI-162.
+ * alike, so it must not be used where the difference decides anything.
  */
 export function isAlive(pid) {
   return pidLiveness(pid) === 'live';
@@ -148,8 +147,8 @@ export function relevantPid(row) {
  * did not happen. Lives beside `relevantPid` because that is what feeds it.
  *
  * **`!== null`, never truthiness.** A recorded `0` is a pid that cannot be read,
- * not a pid that is absent, and `if (pid)` files it under the wrong one — which
- * is OAI-162's own defect wearing a different hat. Takes the VALUE, so a caller
+ * not a pid that is absent, and `if (pid)` files it under the wrong one.
+ * Takes the VALUE, so a caller
  * reading a raw column passes the column and a caller holding a view passes
  * `view.pid`; `relevantPid` has already normalised `undefined` to `null` for the
  * ones that go through it.
@@ -164,8 +163,8 @@ export function pidWasRecorded(pid) {
  *
  * `malformed` covers three shapes this build cannot produce and will not guess
  * at: a `running` row with no pid (state and pid are written in one statement
- * here, so it is legacy or corrupt), a timestamp that will not parse, and — since
- * OAI-162 — a pid that IS recorded and cannot be read as one. All are surfaced
+ * here, so it is legacy or corrupt), a timestamp that will not parse, and a
+ * pid that IS recorded and cannot be read as one. All are surfaced
  * rather than reconciled: failing closed costs a stuck queue the user is told
  * about, where guessing costs someone's live run.
  *

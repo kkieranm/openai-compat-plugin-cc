@@ -149,7 +149,7 @@ function report({ state, couldDrain, reason }, job) {
           // That bound used to be short: retention would prune this row, and a
           // worker waking afterwards would read `cancelRequested` as false. For a
           // row that RAN it is now indefinite — retention exempts an
-          // `operator-abandoned` row with a `started_at` (OAI-161). A row
+          // `operator-abandoned` row with a `started_at`. A row
           // abandoned while queued is still pruned on the ordinary schedule, and
           // it is the one that never had a worker to tell.
           ? 'A cancellation was already pending, and it still stands while this row lasts: if its'

@@ -5,18 +5,16 @@ import { join } from 'node:path';
 import { completionFrames, respondStream, startFakeServer, writeConfig } from './helpers.mjs';
 
 /**
- * Scaffolding for the OAI-34 end-to-end harness: a stub `lms`, the repo's fake
+ * Scaffolding for the end-to-end harness: a stub `lms`, the repo's fake
  * server, a temp out-dir, and an async launch of the real driver.
  *
  * Split from the test file at the 300-line ratchet, and the seam matches
  * `helpers.mjs`: fixtures here, assertions there. Not a `.test.js` name, so the
  * runner does not treat it as a suite.
  *
- * This file is the reason OAI-34 is not OAI-24. That item built the same
- * instrument, reviewed it twice, found 18 defects and withdrew it — and its own
- * retro named the cause: "the half nominated as 'exercised by running it' was
- * never run, and most of both passes' findings were in it". Reading cannot
- * substitute for executing a module whose job is to decide something.
+ * Reading cannot substitute for executing a module whose job is to decide
+ * something, so this harness actually runs the driver rather than just
+ * inspecting its code.
  *
  * So: a stub `lms`, the repo's fake server, sub-second TTLs, a temp out-dir, and
  * assertions on the manifest the driver actually wrote.
@@ -116,8 +114,7 @@ function runDriver(args, env) {
  *
  * `--out-dir` is not a convenience: a self-test writing into `bench/results/`
  * would recreate the junk-record incident the driver's own guard test exists to
- * prevent, and this time the junk would match the very glob OAI-34's
- * done-condition reads.
+ * prevent, and the junk would match the glob the done-condition reads.
  */
 async function runScenario(scenario, { episodes = 1, failFromCall = Infinity, destroyFromCall = Infinity, extraArgs = [] } = {}) {
   const work = mkdtempSync(join(tmpdir(), 'ttl-e2e-'));

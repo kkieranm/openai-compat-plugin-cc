@@ -186,7 +186,7 @@ test('a run that took two requests says so, so an odd prefill can be explained',
 });
 
 // `degraded` names one fact: a schema was asked for, refused, and the reply
-// parsed from prose instead. The default asks for none (OAI-51), so there is
+// parsed from prose instead. The default asks for none, so there is
 // nothing to refuse and nothing to degrade from — and deriving the flag from
 // "was the reply parsed from a grammar" reported `true` for every ordinary run,
 // which is what this pins. A run that sent one unconstrained request and got an

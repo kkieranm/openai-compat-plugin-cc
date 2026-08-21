@@ -160,7 +160,7 @@ export function assertDecodable(response, url) {
   // `encoding` is a raw, server-controlled header value — not a fixed enum
   // this client validated — so it goes on `.bodyExcerpt`, never `.message`,
   // the same discipline as `provider.mjs`'s `assertOk`, `body.mjs`'s
-  // `readJson` and `sse.mjs`'s `readSse` (OAI-185).
+  // `readJson` and `sse.mjs`'s `readSse`.
   const error = new UserError(`${url.host} sent a compressed response, which this client cannot decode.`, {
     hint: 'The request asks for `accept-encoding: identity`; a proxy or server is overriding it.',
   });

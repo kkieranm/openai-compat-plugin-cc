@@ -1,9 +1,8 @@
 // What a finished child process counts as.
 //
-// Split from `run.mjs` under the size ratchet, and the seam is the one the two
-// functions already shared: both read a completed run's stdout and decide what
-// it *means*, while `run.mjs` owns spawning it and the temp repo it ran in.
-// Neither knows anything about the corpus, the table, or the filesystem.
+// This file reads a completed run's stdout and decides what it *means*, while
+// `run.mjs` owns spawning it and the temp repo it ran in. Neither knows
+// anything about the corpus, the table, or the filesystem.
 //
 // Distinct from `run-buckets.mjs`, which classifies a run once it exists. This
 // file is what produces the record that file then sorts.
@@ -13,8 +12,7 @@ import { substitution } from '../../scripts/lib/model-identity.mjs';
  * Why a run failed, in the command's own vocabulary — or null when it did not say.
  *
  * Read from the `--json` error envelope on stdout. The alternative was matching
- * stderr for phrases like "timed out", which this repo has on file as a defect
- * class twice over (BACKLOG.md, OAI-13 items 1 and 2): a matcher that reads a
+ * stderr for phrases like "timed out": a matcher that reads a
  * server's prose asserts a cause it only guessed. `reason` is what the transport
  * itself decided; the stderr blob beside it stays the record of what happened.
  *
@@ -52,8 +50,8 @@ export function requestedModelFrom(stdout) {
 }
 
 /**
- * What a FAILED run had already reasoned, off the same envelope (OAI-138
- * salvage). `null` unless `errorReport` found real reasoning text to attach —
+ * What a FAILED run had already reasoned, off the same envelope.
+ * `null` unless `errorReport` found real reasoning text to attach —
  * most failures (a pre-stream refusal, an oversize refusal) carry nothing.
  */
 export function partialFrom(stdout) {
@@ -81,14 +79,13 @@ function failureEnvelope(stdout) {
  * reader takes this table to rule out.
  *
  * Deliberately not the same call as a truncated run. A cut run is this model
- * measured incompletely, and OAI-15 established those are scored because
- * discarding them cost half the corpus. This one is a *different model* measured
+ * measured incompletely, and those are scored anyway because discarding them
+ * cost half the corpus. This one is a *different model* measured
  * correctly: the number is not uncertain, it is mislabelled, and no amount of
  * sampling fixes a wrong label.
  *
- * Lifted out at the function size budget, and the seam is real: this decides
- * what a completed run counts as, while `reviewOnce` owns the subprocess and the
- * temp repo.
+ * This decides what a completed run counts as, while `reviewOnce` owns the
+ * subprocess and the temp repo.
  */
 export function outcomeFor(stdout, diffOnly) {
   const report = JSON.parse(stdout);

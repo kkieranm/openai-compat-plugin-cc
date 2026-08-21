@@ -1,5 +1,5 @@
-// The question OAI-140 asked and the 2026-08-09 run could not answer: was the
-// server healthy, or failing intermittently with the streak reset each time?
+// Was the server healthy, or failing intermittently with the streak reset each
+// time? A raw failure count can't distinguish those two cases.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { replayStreak, serverHealth } from '../bench/lib/sweep-health.mjs';

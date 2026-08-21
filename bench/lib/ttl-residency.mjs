@@ -6,7 +6,7 @@
  * `ttl-attempts.mjs`, reads the plugin's own attempt record. Neither decides
  * anything: the rule that says what an episode MEANS lives in the verdict module,
  * pure and unit-tested, so the reading of the result is fixed before the numbers
- * arrive. See ADR 013.
+ * arrive.
  */
 
 /**
@@ -21,7 +21,7 @@
  * `lastUsedTime` is recorded and never acted on. It is the anchor the server's
  * idle timer counts from, so whether it advances during a long prefill states
  * the hypothesis in the server's own terms — but its update semantics are
- * undocumented, and ADR 013 forbids a verdict resting on them. That prohibition
+ * undocumented, so a verdict must not rest on them. That prohibition
  * extends to using it as a CLOCK anchor, which would be acting on it in all but
  * name.
  */

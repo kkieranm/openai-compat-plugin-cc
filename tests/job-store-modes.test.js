@@ -2,16 +2,14 @@
 // (`mkdirSync(..., {mode: 0o700})`), but that argument is a no-op on a
 // directory that already exists — Node's own documented behaviour. A directory
 // left over from an older build, or widened by anything else, stayed loose on
-// every subsequent `openStore()` forever (OAI-65(b), and independently
-// OAI-150, which found the same missing repair through a different exploit:
-// a state dir at `0755` with `logs/` at `0777` lets another local principal
-// plant a forged `<seq>.cancel-ack` without ever touching `jobs.db`).
+// every subsequent `openStore()` forever: a state dir at `0755` with `logs/`
+// at `0777` lets another local principal plant a forged `<seq>.cancel-ack`
+// without ever touching `jobs.db`.
 //
 // `jobs.db` itself is already unconditionally `chmodSync`'d to `0600` on every
-// open (OAI-65(a) is a consequence of the directory gap, not a separate file
-// needing its own chmod: the WAL/SHM sidecars SQLite creates under WAL mode
-// live directly in this directory and inherit ITS mode, not the database
-// file's). This file pins the directory repair that closes both.
+// open, but that alone isn't enough: the WAL/SHM sidecars SQLite creates
+// under WAL mode live directly in this directory and inherit ITS mode, not
+// the database file's. This file pins the directory repair that closes both.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -56,13 +54,9 @@ test('a stricter-than-0700 state dir and logs/ are widened back to exactly 0700'
   });
 });
 
-// OAI-150's own filed text framed "state 0755 / logs 0700" as safe to leave
-// alone, on the reasoning that a plugin-created `logs/` at 0700 is already
-// protected regardless of the state directory's own mode. The converged
-// design decision supersedes that: OAI-65(a)'s WAL/SHM sidecars live directly
-// in the STATE directory (not logs/), so the state directory itself must also
-// be repaired unconditionally. This test asserts the actual current behaviour,
-// not the superseded acceptance criterion.
+// A `logs/` at 0700 is not enough on its own: the WAL/SHM sidecars live
+// directly in the STATE directory (not logs/), so the state directory itself
+// must also be repaired unconditionally, even when logs/ is already safe.
 test('state 0755 / logs 0700 is now ALSO repaired, superseding OAI-150s original "leave it alone" case', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   mkdirSync(`${state}/logs`, { recursive: true });

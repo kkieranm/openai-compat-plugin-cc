@@ -1,4 +1,4 @@
-// OAI-185. A background job's `baseUrl` can be secret-shaped, and a transport
+// A background job's `baseUrl` can be secret-shaped, and a transport
 // or protocol failure used to echo it verbatim into two persisted, longer-lived
 // places: `jobs.db`'s `row.failure.message`, and the worker's own job log
 // (`job-spawn.mjs`'s `stdio: ['ignore', log, log]` sends the worker's uncaught
@@ -8,7 +8,7 @@
 // `resolveTarget`) makes a live `/v1/models` probe BEFORE the job row exists —
 // so a simply-unreachable `baseUrl` fails at submission, never reaching the
 // worker at all. Both variants below let the probe succeed and fail only the
-// worker's own request, per the round-1 Codex finding on this plan.
+// worker's own request.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

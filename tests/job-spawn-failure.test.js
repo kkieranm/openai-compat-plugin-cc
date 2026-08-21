@@ -137,7 +137,7 @@ test('POSITIVE CONTROL: the pre-fix row shape does block a successor', { skip: N
 
 test('a non-busy sweep failure rejects before a row or a worker exists', { skip: NEEDS_SQLITE }, async () => {
   // The sweep still rethrows — that is deliberate, because a --json caller cannot
-  // see a stderr warning (OAI-108) and retention would fail silently forever.
+  // see a stderr warning and retention would fail silently forever.
   // What changed is WHERE it lands: before anything is created, so a broken
   // sweep costs a retry rather than a job whose worker may already be spending.
   await withSubmission(async ({ state }) => {
@@ -196,7 +196,7 @@ test('a non-busy sweep failure rejects before a row or a worker exists', { skip:
 // used to live at this line — busy is survivable, anything else is fatal — was
 // wrong in the one direction that costs money: a corrupt database is no more
 // recoverable for the user than a locked one, and both leave the same worker
-// running with the same id unprinted (OAI-67, review pass 3).
+// running with the same id unprinted.
 test('a NON-BUSY fault stamping the row still returns the id', { skip: NEEDS_SQLITE }, async () => {
   await withSubmission(async ({ state }) => {
     const { DatabaseSync } = await import('node:sqlite');

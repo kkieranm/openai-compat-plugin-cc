@@ -4,8 +4,7 @@
 // pid at all", "the OS says ESRCH", and "process.kill threw something we do not
 // interpret" — and `livenessOf` turned every one of them into the verdict
 // `dead`. Reconciliation then terminalized the row and `/oai:abandon` told the
-// operator its process was already gone, about a number that never denoted one
-// (OAI-162).
+// operator its process was already gone, about a number that never denoted one.
 //
 // The fixtures below are the shapes that make the difference observable, and the
 // reason they are worth naming individually is that they reach the answer by

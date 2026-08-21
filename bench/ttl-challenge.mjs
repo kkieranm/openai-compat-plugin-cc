@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * OAI-34 — does an in-flight prefill count as idle?
+ * Does an in-flight prefill count as idle?
  *
  * The hypothesis: LM Studio's JIT TTL does not count a long prefill as activity,
- * so a model is unloaded mid-prefill and the request dies as an empty completion
- * — the shape that dominated the 2026-07-30 failures.
+ * so a model is unloaded mid-prefill and the request dies as an empty completion.
  *
  * This does NOT estimate a failure rate, and it does NOT confirm the mechanism.
  * It tries to FALSIFY it, by shortening the TTL to 120s against `scaffold`'s
@@ -15,7 +14,7 @@
  *
  * I/O only. Every rule about what an episode MEANS lives in `lib/ttl-verdict.mjs`,
  * pure and unit-tested, so the reading of the result is fixed before the numbers
- * arrive. ADR 013 carries the rationale, the rejected designs and the limits.
+ * arrive.
  *
  * Run it: `node bench/ttl-challenge.mjs` with LM Studio serving and NOTHING else
  * connected — another resident model can trigger Auto-Evict and produce the

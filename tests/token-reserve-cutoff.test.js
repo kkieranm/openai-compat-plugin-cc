@@ -1,7 +1,7 @@
-// OAI-115: a reasoning model can spend its whole max_tokens pool reasoning and
+// A reasoning model can spend its whole max_tokens pool reasoning and
 // never write an answer. This is the live, per-frame watchdog that cuts the
 // stream before the pool is exhausted (stream-collect.mjs), generalized into
-// OAI-138's existing salvage mechanism (review-request.mjs's trySalvage).
+// the existing salvage mechanism (review-request.mjs's trySalvage).
 //
 // Modeled on tests/salvage.test.js's fixture shape (a server that streams
 // reasoning_content, a follow-up handler for the salvage attempt) since the two
@@ -76,13 +76,11 @@ function reasoningPastThresholdThenFollowUp(onFollowUp) {
 }
 
 test('the idle timer cannot overwrite a cutoff that already fired, even when the async iterator teardown is slow', async () => {
-  // review-ladder pass 1, codex-adversarial (round 2, re-checking its own
-  // just-applied throw-immediately fix): throwing out of a for-await loop
-  // still runs IteratorClose on the underlying async generator BEFORE this
-  // function's own catch executes, and that cleanup can itself await — a
-  // real gap in which the still-armed idle timer could fire and overwrite
-  // `expired`. Reproduced here exactly the way it was found: a controlled
-  // fake response.stream whose iterator .return() is deliberately slow (20ms),
+  // Throwing out of a for-await loop still runs IteratorClose on the
+  // underlying async generator BEFORE this function's own catch executes, and
+  // that cleanup can itself await — a real gap in which the still-armed idle
+  // timer could fire and overwrite `expired`. Reproduced here with a
+  // controlled fake response.stream whose iterator .return() is deliberately slow (20ms),
   // paired with an idleMs (1ms) shorter than that delay — no real network or
   // CLI involved, since the race is a pure async-JS-semantics timing window
   // that a real HTTP fixture cannot reliably reproduce without flaking.
@@ -169,14 +167,12 @@ test('a reasoning stream that crosses the reserve threshold is cut and salvaged,
 });
 
 test('a cutoff still fires even when the finish and [DONE] arrive in the SAME transport chunk as the crossing frame', async () => {
-  // review-ladder pass 1, codex-adversarial (reproduced directly): setting
-  // `expired` and calling response.dispose() without throwing let the loop
-  // keep draining whatever else `readSse` had already parsed from the same
-  // physical chunk — a finish frame and [DONE] bundled with the crossing
-  // frame meant the cutoff was silently discarded and the review returned as
-  // an ordinary
-  // success carrying the bundled (bogus) content. This writes all of it in
-  // ONE response.write() call, deliberately, to reproduce that exact shape.
+  // Setting `expired` and calling response.dispose() without throwing let the
+  // loop keep draining whatever else `readSse` had already parsed from the
+  // same physical chunk — a finish frame and [DONE] bundled with the crossing
+  // frame meant the cutoff was silently discarded and the caller received an
+  // ordinary success carrying the bundled (bogus) content. This writes all of
+  // it in ONE response.write() call, deliberately, to reproduce that exact shape.
   const bundled = [
     ...Array.from({ length: CHUNKS_PAST_THRESHOLD }, () => reasoningFrame()),
     finishFrame(JSON.stringify({ findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'MUST NOT be used' }], summary: 'bogus' })),
@@ -221,8 +217,8 @@ test('a cutoff still fires even when the finish and [DONE] arrive in the SAME tr
 });
 
 test('--structured-output never arms the watchdog — the answer legitimately lives on the reasoning channel there', async () => {
-  // review-ladder pass 1 (codex-adversarial): under a response_format grammar
-  // the model can never emit the token that closes its own think block, so
+  // Under a response_format grammar the model can never emit the token that
+  // closes its own think block, so
   // the real findings JSON arrives via reasoning_content, never content — the
   // watchdog's content.length === 0 guard is therefore always true regardless
   // of how much real answer has been written. Streaming well past what would
@@ -250,8 +246,8 @@ test('--structured-output never arms the watchdog — the answer legitimately li
     const result = await runCompanion(['review', '--json', '--structured-output'], { configPath, cwd: dir });
     const envelope = JSON.parse(result.stdout);
     // Exact reason, not just notEqual('token-reserve-cutoff') — a bare
-    // negative also passes on an unrelated failure (codex-plain, review-ladder
-    // pass 1), which would prove nothing about the exclusion specifically.
+    // negative also passes on any other unrelated failure, which would prove
+    // nothing about the exclusion specifically.
     assert.equal(result.status, 1);
     assert.equal(envelope.reason, 'idle-timeout', 'the exclusion must have kept the watchdog off under --structured-output');
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1, 'no cutoff means no salvage follow-up either');
@@ -281,7 +277,7 @@ test('a salvage attempt that itself fails falls back to reporting token-reserve-
 });
 
 test('content already underway permanently disarms the watchdog, however much reasoning follows', async () => {
-  // The false-trigger guard (OAI-115 decision 5): once any content has
+  // The false-trigger guard: once any content has
   // appeared, the watchdog never fires again for that stream — order here is
   // deliberately unrealistic (content before more reasoning) precisely to
   // isolate the guard from real model behaviour and prove it holds regardless.
@@ -320,7 +316,7 @@ test('content already underway permanently disarms the watchdog, however much re
 test('a small-window model where the reserve would exceed half the budget is never armed', async () => {
   // reserveFor()'s half-window branch on a 6000-token window gives a reserve
   // of 3000 — below 2 * TOKEN_RESERVE_TOKENS (4096), so the arm guard
-  // (OAI-115 decision 4) must leave the watchdog off entirely. Streamed
+  // must leave the watchdog off entirely. Streamed
   // reasoning well past what would trigger it on the default-window test
   // above must complete normally rather than dying on the very first delta.
   //
@@ -360,8 +356,8 @@ test('a small-window model where the reserve would exceed half the budget is nev
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     // Exact equality, not just notEqual('token-reserve-cutoff') — a bare
-    // negative also passes on an unrelated failure (codex-plain, review-ladder
-    // pass 1), which would prove nothing about the arm guard specifically.
+    // negative also passes on any other unrelated failure, which would prove
+    // nothing about the arm guard specifically.
     assert.equal(envelope.reason, 'idle-timeout', 'the arm guard must have kept the watchdog off on this small window');
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1, 'no cutoff means no salvage follow-up either');
   } finally {

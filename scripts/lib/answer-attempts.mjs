@@ -8,12 +8,11 @@ import { budgetError } from './http-errors.mjs';
  * Sending the request again when the server dropped it, rather than reporting a
  * dead request as a bad answer.
  *
- * Measured: across four full-corpus benchmark invocations on 2026-07-30, 27 of
+ * Measured: across four full-corpus benchmark invocations, 27 of
  * 72 runs (37.5%) died server-side on LM Studio, on both a dense and an MoE
  * model. Nothing in the request path retried — the only loops were capability
  * ladders — so a flaky server made the benchmark unable to produce a number at
  * all, and the arm that was supposed to re-establish a baseline closed blocked.
- * See ADR 012 and BACKLOG.md OAI-20.
  *
  * The loop lives here, spanning `postWithDegrade` **and** `finishAnswer`,
  * because that pair is the smallest unit that can see every failure shape: the

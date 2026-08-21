@@ -4,16 +4,16 @@
 //
 // That caller is the overnight sweep (`bench/review-sweep.mjs`): it walks
 // commits while nobody is watching and writes a coverage section saying what was
-// and was not reviewed. Token exhaustion is the dominant failure here — OAI-115
-// measures the model spending the entire shared `max_tokens` pool on reasoning
-// and emitting no findings — so a sweep that could not name it would report a
-// night that measured nothing as a night that found nothing.
+// and was not reviewed. Token exhaustion is the dominant failure here — the
+// model spending the entire shared `max_tokens` pool on reasoning and emitting
+// no findings — so a sweep that could not name it would report a night that
+// measured nothing as a night that found nothing.
 //
-// The repo already has this defect class on file twice over (OAI-13 items 1 and
-// 2: a harness that could distinguish a wall-clock cap from a 500 only by
-// pattern-matching prose), and `bench/lib/outcome.mjs` states the rule its own
-// readers keep — never regex a cause out of stderr. So the refusal carries a
-// `reason` and this test is what stops it being dropped again.
+// The repo has hit this defect class before: a harness that could distinguish
+// a wall-clock cap from a 500 only by pattern-matching prose. `bench/lib/outcome.mjs`
+// states the rule its own readers keep — never regex a cause out of stderr. So
+// the refusal carries a `reason` and this test is what stops it being dropped
+// again.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { completionFrames, respondStream, reviewScenario as scenario, runCompanion } from './helpers.mjs';
@@ -41,13 +41,13 @@ test('a token-exhausted review names its cause in a field, not only in prose', a
   }
 });
 
-// OAI-116: this is a POST-HOC classification of an otherwise-successful
-// transport interaction — the ledger already holds a closed, populated entry
-// for the request that produced this refusal — so the failure envelope must
-// carry it. Without this, `attempts` came back null for the dominant
-// overnight-sweep failure mode, making OAI-19's gate criterion G-E ("a
-// missing or self-inconsistent attempts[] invalidates the invocation")
-// structurally unpassable for any run that starved.
+// This is a POST-HOC classification of an otherwise-successful transport
+// interaction — the ledger already holds a closed, populated entry for the
+// request that produced this refusal — so the failure envelope must carry it.
+// Without this, `attempts` came back null for the dominant overnight-sweep
+// failure mode, making the gate rule that a missing or self-inconsistent
+// `attempts[]` invalidates the invocation structurally unpassable for any run
+// that starved.
 test('a token-exhausted review still carries the attempt that produced it', async () => {
   const { dir, server, configPath } = await scenario(replies({ finishReason: 'length' }));
   try {
@@ -76,13 +76,12 @@ test('the prose still says what happened, so a human loses nothing to the field'
   }
 });
 
-// OAI-116's second, narrower wrap: unparsedReply's OTHER throw path — a
-// reasoning-only reply (content empty, reasoning non-empty, so it is NOT the
-// wholly-blank shape the retry layer already catches as 'blank-completion')
-// that falls through to requireAnswer, not the finish_reason==='length'
-// branch above — must carry the same attempt record. This is not OAI-163's
-// concern (that item is about the null `reason` this throw carries, and the
-// sweep's outage classifier reading it) — only that `attempts` isn't dropped
+// unparsedReply's OTHER throw path — a reasoning-only reply (content empty,
+// reasoning non-empty, so it is NOT the wholly-blank shape the retry layer
+// already catches as 'blank-completion') that falls through to requireAnswer,
+// not the finish_reason==='length' branch above — must carry the same attempt
+// record. This is not about the null `reason` this throw carries, or the
+// sweep's outage classifier reading it — only that `attempts` isn't dropped
 // here either.
 test('a reasoning-only reply that falls through to requireAnswer still carries the attempt that produced it', async () => {
   const { dir, server, configPath } = await scenario(

@@ -5,7 +5,7 @@
  * spec's model object is id/created/object/owned_by, so every context field
  * below is a vendor extension. This module is the ONLY place that knows any
  * vendor dialect, and it branches on the *shape of a response*, never on a
- * provider's name (see adr/002).
+ * provider's name.
  *
  * The rule that matters: a probe yields a `window` only when the field is the
  * window actually being SERVED. Fields that report a model's ceiling
@@ -215,9 +215,9 @@ function merge(ids, detected) {
   // against: gating on "the dialect published a catalogue" while checking
   // "is it in the bare /v1/models list" mixes two sources in one decision, and
   // would refuse a model the dialect reports as `loaded` whenever /v1/models is
-  // narrower — filtered, aliased or permission-scoped. adr/011 says in as many
-  // words that absence from a bare /v1/models list is not evidence; this is
-  // what keeps that true. Found by the lean review, reproduced end to end.
+  // narrower — filtered, aliased or permission-scoped. Absence from a bare
+  // /v1/models list is not evidence a model isn't loaded; this is what keeps
+  // that true.
   //
   // Not every dialect's list is exhaustive, and that is safe rather than
   // overlooked: `readVllm` and `readOmlx` keep only entries carrying a window,
@@ -256,8 +256,8 @@ export function effectiveWindow(profile = {}, described, explicitModel) {
       source: 'config',
       modelId: plan.modelId,
       // Why that model, not just which. An auto-selected id is a fact with a
-      // source, and adr/002's rule is that a fact names its source so a guess
-      // never reads as a measurement. Carried on every branch that carries
+      // source, and a fact names its source so a guess never reads as a
+      // measurement. Carried on every branch that carries
       // `modelId`, because a caveat true on one path and absent from the next is
       // how two views of one run come to disagree.
       because: plan.because,

@@ -56,16 +56,15 @@ function completedRuns(runs) {
  * `durationMs`, which would relabel a whole run's wall clock as generation. The
  * count of what was measured is returned alongside the values so a cell can say
  * `2/3 measured` rather than quietly ranging over the runs that happened to
- * carry a figure. See ADR 009.
+ * carry a figure.
  */
 function timingSamples(runs, field, cold) {
   // A prefill served from cache is not a sample of prefill. Once a run can be
   // answered by a RETRY, the answering request may be a byte-identical repeat of
   // one the server already prefilled — so `--cold`'s promise that "every prefill
-  // figure is independent" stops being true, silently, in exactly the number
-  // OAI-19 reads off this report. Generation is unaffected: a prompt cache moves
-  // the first figure by ~37× and leaves the second alone, which is why the two
-  // were separated in the first place.
+  // figure is independent" stops being true, silently. Generation is unaffected:
+  // a prompt cache moves the first figure by ~37× and leaves the second alone,
+  // which is why the two were separated in the first place.
   //
   // Excluded rather than flagged, because a mean over contaminated samples is
   // not a figure with a caveat — it is a different quantity.
@@ -90,12 +89,8 @@ function answeredWarm(run) {
  *
  * It was a `reduce` summing every run's `prompt_tokens`, which is invisible at
  * N=1 (where sum equals per-run) and wrong by exactly a factor of `runs`
- * everywhere else. ADR 006 harvested all six of its per-case figures from an N=1
- * sweep and quotes them as prompt sizes — `config-origin` at 1,575, `model-info`
- * at 41,016 — so the first N>1 report printed 4,725 and 82,020 for those same
- * cases, in a column a reader has every reason to divide a generation figure by.
- * Two quantities welded into one number, which is the defect ADR 009 exists to
- * remove, surviving in the table it added its own columns to.
+ * everywhere else — two quantities welded into one number, in a column a
+ * reader has every reason to divide a generation figure by.
  *
  * A range rather than one number when runs disagree, because they can: `--cold`
  * prepends a per-run nonce, so the prompt genuinely differs run to run and a
@@ -207,7 +202,7 @@ function buckets(runs) {
 }
 
 /**
- * WHAT THE SERVER DID ABOUT THE SCHEMA, not what the operator asked for (OAI-135).
+ * WHAT THE SERVER DID ABOUT THE SCHEMA, not what the operator asked for.
  *
  * `--structured-output` is a REQUEST. `review-request.mjs` falls back to the unconstrained path when a
  * server rejects `response_format`, and the CLI already reports that as `degraded` — "asked for, and

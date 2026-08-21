@@ -57,10 +57,9 @@ export function reportIdentity(results, options) {
  *
  * And the *rendered* report beside the raw one, because the JSON does not carry
  * the caveats — those are prose, generated at render time, and they are the half
- * that says what the numbers may not be used for. Both arms of the 2026-07-30
- * OAI-19 attempt kept their reports only because each nohup log was copied here
- * by hand; a reused log path would have silently overwritten the first, which
- * the plan challenge caught before it happened rather than after.
+ * that says what the numbers may not be used for. A reused log path would
+ * silently overwrite an earlier run's report, so each run's artefacts are kept
+ * under their own stamp rather than a shared or reused path.
  *
  * One stamp for the pair, computed by the caller before rendering rather than
  * after, so the two files cannot end up named for different instants.

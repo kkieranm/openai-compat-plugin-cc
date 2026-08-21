@@ -58,7 +58,7 @@ function providerLines({ profile, rawProfile, models, error, built, described, l
     // `.endpoint` — always `profile.baseUrl`, already shown unconditionally
     // on this row's own header line above. A `serverResponded` failure with
     // real body detail always takes the `listUnavailable` branch instead, so
-    // composing it here would be dead weight (OAI-185 review-ladder pass 1).
+    // composing it here would be dead weight.
     lines.push(`      ${error.message}`);
     const hint = error.hint ?? START_HINTS[profile.name];
     if (hint) lines.push(`      ${hint}`);
@@ -137,7 +137,7 @@ export function renderSetupReport({ configPath, created, results, defaultProvide
  * this one does. A bare `424.6s` invites "the model is slow"; `424.6s | prefill:
  * 421.7s` says the model spent 421 of those seconds reading the prompt, and that
  * the same request served from the server's cache costs 14s. Measured, both
- * figures, on one prompt. See ADR 009.
+ * figures, on one prompt.
  *
  * Omitted rather than zeroed when unknown: on a non-streamed reply there is no
  * first-token boundary to have measured.
@@ -176,8 +176,8 @@ export function renderTaskFooter({
   // On the human path for the same reason prefill is, and it fails the same test
   // if left off: "is this model too slow to use" is a fact that changes what the
   // reader should believe, and it cannot be worked out from the numbers already
-  // here — ADR 009 established that `durationMs - prefillMs` is not generation,
-  // so no arithmetic on this footer recovers the rate.
+  // here — `durationMs - prefillMs` is not generation, so no arithmetic on this
+  // footer recovers the rate.
   //
   // Omitted, never zeroed, when either operand is missing. See throughput.mjs.
   const rate = formatRate(tokensPerSecond(usage, generationMs));

@@ -85,8 +85,8 @@ function outcomeNotes(stats) {
  * paragraphs above are gated by `sawReason`, whose `key === code` is one
  * loosened operator away from printing the `transport` note for a sweep whose
  * only failures were `non-retryable-transport`; nothing here reintroduces that
- * shape. That hazard is no longer only described: OAI-31 pinned it, and
- * `tests/bench-reason-notes.test.js` now fails on exactly that one-token edit.
+ * shape. That hazard is not only described: `tests/bench-reason-notes.test.js`
+ * fails on exactly that one-token edit.
  *
  * The claim is deliberately narrow, because the tempting one is false. A
  * measured prefill says the attempt crossed the first-model-text boundary, so

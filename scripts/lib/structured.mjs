@@ -1,6 +1,6 @@
 // Asking an OpenAI-compatible server for JSON, and reading what comes back as
-// findings. This is the one module that encodes structured-output dialect: see
-// ADR 003. Pulling JSON out of prose is NOT dialect and lives in `json-scan.mjs`.
+// findings. This is the one module that encodes structured-output dialect.
+// Pulling JSON out of prose is NOT dialect and lives in `json-scan.mjs`.
 import { extractJson } from './json-scan.mjs';
 import { findingsShaped } from './findings-candidate.mjs';
 import { findingsInYaml } from './findings-yaml.mjs';
@@ -15,7 +15,7 @@ export function responseFormatFor(schema, name = 'review') {
 /**
  * Did the server reject the *request shape* rather than the request?
  *
- * Tested on the response, never the provider name — the ADR 002 rule. LM Studio
+ * Tested on the response, never the provider name. LM Studio
  * answers `'response_format.type' must be 'json_schema' or 'text'`; other
  * servers word it differently but all name the field they refused.
  */
@@ -32,13 +32,13 @@ export function isFormatRejection(error) {
  * measured *under a grammar*: generation is constrained from the first token
  * there, so the model has no scratchpad and `analysis` has to be one — opening
  * with `findings` made it commit to defects before reading anything, and the
- * reviewer got worse (ADR 003).
+ * reviewer got worse.
  *
  * None of that holds without a grammar. The model reasons in its own channel
  * first — `reasoning_content`, measured at 38,956 characters on a 100-line file
  * — so asking it to reason again in `analysis` is asking twice, and the second
- * ask has nothing bounding it. Measured 2026-08-04: it spends the entire token
- * budget on `analysis` and never reaches the findings at all. So on this path
+ * ask has nothing bounding it. Measured: it spends the entire token budget on
+ * `analysis` and never reaches the findings at all. So on this path
  * the answer goes first, and a reply that runs out of room still carries it.
  *
  * Derived from the schema rather than written out, for the same reason
@@ -153,8 +153,7 @@ function capDiagnostics(parsed, { structured, schema }) {
     // JSON, `finish_reason: stop`, and usually an empty findings list — so the
     // user is shown "No defects reported" and a normal footer for a review that
     // was guillotined mid-sentence. Indistinguishable from a genuinely clean
-    // pass, which turns a loud failure into a confident wrong answer. ADR 004
-    // recorded this behaviour and mistook it for an acceptable trade.
+    // pass, which turns a loud failure into a confident wrong answer.
     analysisCut: structured && analysis !== null && analysis.length === cap,
     // The flag says a run was guillotined; these say how close every other run
     // came. A ceiling can only be sized from the distribution it truncates, and
@@ -170,7 +169,7 @@ function capDiagnostics(parsed, { structured, schema }) {
     // comparing `analysisLength` against it would be comparing against fiction.
     // It is no longer a constant either: the cap is derived per run from the
     // reply budget granted, so the number that bounded *this* reply is the only
-    // one worth recording. See ADR 008.
+    // one worth recording.
     analysisCap: cap,
   };
 }
@@ -183,7 +182,7 @@ function capDiagnostics(parsed, { structured, schema }) {
  * carries the constrained payload — and parsing it against the schema is what
  * proves that. Without a schema the same text is the model's scratchpad, and
  * presenting scratchpad as an answer is the defect class this repo keeps
- * re-finding (ADR 003).
+ * re-finding.
  */
 export function parseFindings({ content, reasoning }, { structured = false, schema = null } = {}) {
   // Not a default, because a default is exactly the bug. `analysisCut` compares
@@ -196,8 +195,8 @@ export function parseFindings({ content, reasoning }, { structured = false, sche
   if (structured && !schema) {
     throw new TypeError('parseFindings needs the exact schema the request sent when structured');
   }
-  // The channel list IS the ADR 003 guarantee, written where a reader can see
-  // it rather than inferred from a ternary further down. Without a schema there
+  // The channel list IS the guarantee, written where a reader can see it
+  // rather than inferred from a ternary further down. Without a schema there
   // is exactly one channel to read, and `reasoning` is not in the list at all —
   // so no later change to the parsing below can accidentally reach it.
   const channels = structured ? [content, reasoning] : [content];
@@ -232,8 +231,8 @@ const UNREADABLE = { kind: 'unreadable' };
 function findingsIn(text, { structured, schema }) {
   // Tried first, and ONLY on the unconstrained path — a structured request has
   // a schema-conforming JSON payload as its whole promise, and letting a
-  // whole-document YAML reading pre-empt it would be a bug OAI-156's own plan
-  // gate rejected (round 2): the two grammars are not disjoint in general (a
+  // whole-document YAML reading pre-empt it would be a bug: the two grammars
+  // are not disjoint in general (a
   // YAML value can carry an embedded balanced bracket run as ordinary scalar
   // text), so racing them on the structured path can silently prefer the wrong
   // one. Unconstrained, there is no schema to lose to, and a reply that is
@@ -252,7 +251,7 @@ function findingsIn(text, { structured, schema }) {
   // discarded — not on the `typeof` test, which arrays pass, but on
   // `parsed.findings` being undefined. Wrapped HERE, before anything downstream
   // reads it, so the two spellings cannot diverge rather than merely agreeing
-  // about accept/reject. See ADR 003.
+  // about accept/reject.
   const shaped = yaml ?? (Array.isArray(parsed) ? { findings: parsed } : parsed);
   if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return NO_PAYLOAD;
 
@@ -269,9 +268,9 @@ function findingsIn(text, { structured, schema }) {
   const normalized = shaped.findings.map(normalizeFinding);
   const kept = normalized.filter(Boolean);
   // A list the model filled with things that are not findings is NOT a clean
-  // review, and reporting it as one is trap instance 14 — the `null` versus `[]`
-  // distinction ADR 003 exists to protect, inverted. `[]` means the model looked
-  // and found nothing; a non-empty list none of whose entries survives
+  // review, and reporting it as one inverts the `null` versus `[]` distinction
+  // that matters here. `[]` means the model looked and found nothing; a
+  // non-empty list none of whose entries survives
   // normalization means it answered and we cannot read the answer, which is what
   // `null` means. Applied to both spellings, so accepting bare arrays did not
   // widen the set of replies that reach the false-clean.

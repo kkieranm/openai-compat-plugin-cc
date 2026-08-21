@@ -5,7 +5,7 @@
 // `bench/run.mjs` cannot be imported and therefore has no test at all.
 //
 // The classification tests carry most of the weight. On this hardware a review
-// that starved for tokens (OAI-115) and a review that found nothing both end
+// that starved for tokens and a review that found nothing both end
 // with no findings, and the whole value of the report is that it refuses to say
 // those are the same thing.
 import { test } from 'node:test';
@@ -52,7 +52,7 @@ test('a token-exhausted run is starved, read off the reason field rather than th
   assert.equal(entry.reason, 'token-exhaustion');
 });
 
-// OAI-115: the same starvation, caught earlier by a live watchdog instead of
+// The same starvation, caught earlier by a live watchdog instead of
 // the server's own terminal finish_reason — an UNSALVAGED cutoff is the same
 // outcome as token-exhaustion, not a generic failure.
 test('an unsalvaged token-reserve-cutoff is starved too, alongside token-exhaustion', () => {
@@ -220,7 +220,7 @@ test('--until advances the local calendar date, not a fixed 24 hours', () => {
   assert.equal(deadline.getDate(), 29);
 });
 
-// OAI-124: without a pinned start, a commit landing between benchmark arms
+// Without a pinned start, a commit landing between benchmark arms
 // shifts the window and two arms review different work.
 test('--from pins where enumeration starts, and defaults to HEAD', () => {
   const seen = [];

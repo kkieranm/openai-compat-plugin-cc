@@ -16,7 +16,7 @@ async function caught(promise) {
   return assert.fail('expected a rejection');
 }
 
-// OAI-22. `transport` used to be one bucket holding everything the request
+// `transport` used to be one bucket holding everything the request
 // layer could raise, and `isRetryable` said yes to all of it — so a permanent
 // failure this client could recognise, such as a TLS certificate rejection, cost
 // three requests and two 2-second sleeps to establish what the first one already
@@ -126,7 +126,7 @@ test('the handler still reports the failure, not only classifies it', () => {
 });
 
 test('a body cut off mid-flight is retryable — the shape OAI-20 exists to survive', async () => {
-  // The `!response.complete` branch, which had NO test at all before OAI-22 and
+  // The `!response.complete` branch, which had NO test at all and
   // is the most retryable shape here: the server took the prompt, generated, and
   // the socket died part way. It is also the one place `reason` is set without
   // going through `transportError`, so the classification tests above cannot
@@ -179,8 +179,8 @@ test('a pre-headers reset is retryable, the whitelist member that actually occur
 // and it used to build fresh errors to do it — dropping `reason`, `code` and
 // `cause` on exactly the codes this feature classifies. Every test above would
 // still have passed: they call `transportError` directly, one layer below the
-// place the classification was being thrown away. Found by the OAI-22
-// adversarial review; these are what stop it coming back.
+// place the classification was being thrown away. These tests stop it coming
+// back.
 
 test('a classified failure keeps its reason through the provider rewording', async () => {
   const error = await caught(request({ name: 'p', baseUrl: 'http://127.0.0.1:1/v1' }, '/models', { firstByteMs: 3_000 }));
@@ -205,7 +205,7 @@ test('EAI_AGAIN is marked retryable upstream — half of the pair the next test 
   // "try again" on demand, which a network-free suite cannot arrange, and the
   // alternative — exporting the private `reword` purely so a test can reach it —
   // is production indirection bought for testability, which this repo defers
-  // rather than takes (BACKLOG.md OAI-25).
+  // rather than takes.
   const direct = transportError(
     Object.assign(new Error('getaddrinfo EAI_AGAIN'), { code: 'EAI_AGAIN' }),
     new URL('http://example.test/v1'),
@@ -249,7 +249,7 @@ test('a server that sent headers is not reported as one that never answered', as
   assert.equal(error.serverResponded, true, 'it sent headers, so telling the user to start it is wrong');
 });
 
-// OAI-185. `describeFailure`'s three `reword(...)` sites used to bake
+// `describeFailure`'s three `reword(...)` sites used to bake
 // `profile.baseUrl` into `.message`, which `errorReport()` persists into
 // `jobs.db` and which an uncaught worker error also writes to its own job log.
 // `baseUrl` can be secret-shaped, so the endpoint now travels on a separate
@@ -286,7 +286,7 @@ test('the generic fallback (a non-transport, non-UserError throw) omits the endp
   assert.equal(error.endpoint, `http://${marker} not a valid url/v1`, 'it still travels on the structured field');
 });
 
-// OAI-185. `assertOk`'s non-2xx branch used to embed up to 400 chars of the
+// `assertOk`'s non-2xx branch used to embed up to 400 chars of the
 // SERVER's own response body into `.message` — and a server routinely echoes
 // the request path/query back in a 404/405 body, which can carry the same
 // secret-shaped `baseUrl` segment the tests above cover. The body now lives on

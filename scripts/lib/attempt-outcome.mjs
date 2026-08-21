@@ -10,8 +10,6 @@ import { COMPLETION_SHAPES } from './failure-shape.mjs';
  * request's ending MEANS. The two are asked different questions. "How many
  * requests did this run cost" is a property of the sequence; "was this one a
  * dropped request or a refused shape" is a property of the ending.
- *
- * See ADR 012 and BACKLOG.md OAI-20/OAI-23.
  */
 
 /**
@@ -78,8 +76,7 @@ function reachedTheModel(error, timings) {
  * `dispatched`.
  *
  * Four witnesses, which PARTITION the failure families rather than making every
- * site redundant — a distinction an earlier draft of this comment got wrong, and
- * a `lean-wide` verifier proved wrong by tracing the sites:
+ * site redundant — traced site by site to confirm it:
  *
  *   - a `status` — an HTTP status IS a response; nothing else can produce one.
  *     Covers the validation refusals, which `provider.mjs` also flags. Typed,
@@ -111,14 +108,13 @@ function reachedTheModel(error, timings) {
  * "model text at 7ms" and "nothing answered" at once, whatever a future site
  * forgets.
  *
- * And it has a cost, which the next review found and this comment must not hide:
- * a witness that reconstructs the value can MASK a test written to guard a site.
- * The end-to-end case for the delivered-body path measured a prefill, so it went
- * on passing with the flag write deleted. `tests/attempt-response-sites.test.js`
- * now drives each covered site with no model text at all, so the flag is the only
- * witness there and deleting it reddens exactly one case. That file also names
- * the two sites it does NOT reach — read it before believing any site here is
- * guarded, because two rounds of this comment claimed more than it could.
+ * And it has a cost: a witness that reconstructs the value can MASK a test
+ * written to guard a site. The end-to-end case for the delivered-body path
+ * measured a prefill, so it went on passing with the flag write deleted.
+ * `tests/attempt-response-sites.test.js` now drives each covered site with no
+ * model text at all, so the flag is the only witness there and deleting it
+ * reddens exactly one case. That file also names the two sites it does NOT
+ * reach — read it before believing any site here is guarded.
  *
  * What it does NOT establish is reachability. `false` is the absence of an
  * obtained response, not evidence about what was at the other end.
@@ -162,7 +158,7 @@ export function reclassifiable(entry) {
       // the record assert both at once — the same misleading-serialized-entry
       // defect this feature removes, moved from the outcome into the reason. It
       // also keeps a `refused` entry byte-identical to the records made before
-      // this change, which the OAI-19 re-measure is differenced against.
+      // this change, which a later re-measure is differenced against.
       entry.reason = error?.reason ?? null;
     },
   });
@@ -174,9 +170,9 @@ export function reclassifiable(entry) {
  *
  * The prediction is settled by `begin` — the dispatch of the replacement — never
  * by the statement itself, so a refusal that turns out to be terminal is left
- * saying so. That is the whole of OAI-23: `capBudgets` can refuse the
- * replacement before `begin` is reached, and an entry marked `refused` in
- * advance files a run that died as benign capability negotiation.
+ * saying so. `capBudgets` can refuse the replacement before `begin` is reached,
+ * and an entry marked `refused` in advance files a run that died as benign
+ * capability negotiation.
  *
  * It sits in this module rather than beside the slot it feeds, which is a seam
  * question a reviewer raised and this answers: what it *writes* is an ending —

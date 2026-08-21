@@ -228,8 +228,7 @@ test('the decision vocabulary this file pins is the one the module exports', { s
 });
 
 test('the malformed refusal tells a queued operator the truth about THIS row, both branches', { skip: NEEDS_SQLITE }, async () => {
-  // The one operator instruction OAI-162's plan gate required be changed that no
-  // suite pinned. Both branches of the ternary matter and they say opposite
+  // Both branches of the ternary matter and they say opposite
   // things, so each is the other's positive control: an assertion on one alone
   // would pass against a `REFUSALS.malformed` that had stopped emitting the
   // suffix entirely.

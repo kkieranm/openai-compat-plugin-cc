@@ -4,18 +4,18 @@
  * (`review-report.mjs` `jsonReport`/`errorReport`).
  *
  * The peer module to `ttl-residency.mjs`. Neither decides anything; the rule
- * lives in `ttl-verdict.mjs`. See ADR 013.
+ * lives in `ttl-verdict.mjs`.
  */
 
 /**
  * Did any attempt in this episode obtain an HTTP RESPONSE?
  *
  * Named for what it establishes and nothing more. It is deliberately NOT called
- * `reachedServer`: ADR 013 records that `serverResponded` settles whether a
- * response was obtained, while reachability is a separate axis that stays
- * unsettled — `ENOTFOUND`, `ECONNREFUSED` and a TLS rejection differ in how far
- * they got and all record `false`. It is also not called `dispatched`, which
- * already means something else in the ledger.
+ * `reachedServer`: `serverResponded` settles whether a response was obtained,
+ * while reachability is a separate axis that stays unsettled — `ENOTFOUND`,
+ * `ECONNREFUSED` and a TLS rejection differ in how far they got and all record
+ * `false`. It is also not called `dispatched`, which already means something
+ * else in the ledger.
  *
  * A non-empty `attempts` array is NOT evidence: `ledger.begin` mints an entry
  * before the socket is opened, so a run against a server that is simply down
@@ -23,7 +23,7 @@
  * driver was in, and an earlier draft rendered a verdict about the mechanism
  * from it.
  *
- * One witness, not four. OAI-35 made `serverResponded` the serialized contract:
+ * One witness, not four. `serverResponded` is the serialized contract:
  * `attempt-ledger.mjs` mints it `false`, the success closers set it directly,
  * and the failure closer sets it from `obtainedResponse(error, { prefillMs })`,
  * which already weighs the transport flag, an HTTP status, a completion shape
@@ -71,7 +71,8 @@ export function recordContradiction(attempts) {
  * envelope does not carry — `review-report.mjs`'s `runTimings` is spread onto the
  * success path only. The withdrawn draft read the top-level field, so
  * `firstTokenMs` was null on every FAILED episode: precisely the episodes this
- * experiment is about, and it silently disabled two of pass 1's own fixes.
+ * experiment is about, and it silently disabled two fixes already made
+ * elsewhere in this module.
  *
  * The answering attempt first, else the last attempt, else null — stated rather
  * than left to `--max-attempts 1` making the question moot, so it does not break

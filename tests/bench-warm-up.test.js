@@ -6,10 +6,10 @@ import { test } from 'node:test';
 import { persist } from '../bench/lib/record.mjs';
 import { pairFor, pairKey, runWithWarmUp, warmUpFlags } from '../bench/lib/warm-up.mjs';
 
-// OAI-21. Two things the 2026-07-30 arms had to do by hand: pay the JIT model
-// load before the first measured case, and keep the rendered report beside the
-// raw record. Both are the harness's job now, and these pin the parts that are
-// decidable without a server.
+// The harness pays the JIT model load before the first measured case, and
+// keeps the rendered report beside the raw record, so a bench arm doesn't
+// have to do either by hand. These pin the parts that are decidable without
+// a server.
 
 const CASES = [
   { id: 'a', provider: null, model: null },

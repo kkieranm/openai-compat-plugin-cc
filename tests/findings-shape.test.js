@@ -57,9 +57,9 @@ test('under a schema, unusable content falls through to a conforming reasoning p
 test('a list of things that are not findings is unreadable, not a clean review', () => {
   // `[]` means the model looked and found nothing. A non-empty list none of
   // whose entries survives normalization means it answered and we cannot read
-  // the answer — reporting that as "no defects reported" is trap instance 14
-  // inverted, and it is what accepting bare arrays would otherwise have
-  // introduced for a spelling that previously failed loudly.
+  // the answer — reporting that as "no defects reported" is what accepting
+  // bare arrays would otherwise have introduced for a spelling that
+  // previously failed loudly.
   const junk = [{ severity: 'low', summary: 'vague' }, { file: '', summary: '' }];
   assert.equal(parseFindings({ content: JSON.stringify(junk), reasoning: '' }, { structured: false }), null);
 

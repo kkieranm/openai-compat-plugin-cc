@@ -12,7 +12,7 @@ import { assertDecodable, budgetError, transportError } from './http-errors.mjs'
  * `fetch()`'s options. An `AbortSignal.timeout()` beside them can only *lower*
  * the effective bound, never raise it, so a configured 1800s was silently
  * `min(1800s, 300s)`: 14 of 18 benchmark runs died at five minutes while the
- * config insisted otherwise. See ADR 007.
+ * config insisted otherwise.
  *
  * This module bounds only what a transport can honestly measure:
  *
@@ -225,7 +225,7 @@ function onResponse({ request, response, state, target, resolve, fail, release }
  * iterator threw. So a request error arriving after headers is stashed here and
  * surfaces through the body path, where classifying it blind would file a live
  * delivery failure as one not worth retrying. `state.settled` is the answer: set
- * when headers resolve, it means "a response was obtained" (OAI-22, ADR 012).
+ * when headers resolve, it means "a response was obtained".
  *
  * Exported for the test, not for a caller — `TRANSPORTS` is module-private and
  * `send` takes no transport seam, so the post-header race cannot be driven end

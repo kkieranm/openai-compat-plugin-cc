@@ -113,7 +113,7 @@ test('a compressed response is refused by name, not parsed as noise', async () =
   const error = await caught(send(server.url, { firstByteMs: 5_000 }));
   await server.close();
 
-  // The encoding value is server-controlled (OAI-185), so it lives on
+  // The encoding value is server-controlled, so it lives on
   // .bodyExcerpt, not .message.
   assert.doesNotMatch(error?.message ?? '', /gzip/);
   assert.equal(error.bodyExcerpt, 'gzip');
@@ -144,7 +144,7 @@ test('a refused connection surfaces its transport code, not a timeout', async ()
   const error = await caught(send(`http://127.0.0.1:${port}/`, { firstByteMs: 5_000 }));
 
   assert.equal(error?.code, 'ECONNREFUSED');
-  // Not `transport`, and the change is the feature (OAI-22). A refusal will be
+  // Not `transport`: a refusal will be
   // refused again — retrying it three times buys nothing, delays the
   // start-your-server hint hanging off the code above by ~4s of retry sleeps,
   // and files three phantom server failures in the attempt record against a
@@ -226,7 +226,7 @@ test('a non-JSON reply names what it was and quotes the start', async () => {
   const error = await caught(readJson(response, 'lmstudio'));
   await server.close();
 
-  // The excerpt lives on `.bodyExcerpt`, not `.message` or `.hint` (OAI-185)
+  // The excerpt lives on `.bodyExcerpt`, not `.message` or `.hint`
   // — both of those are read unconditionally by callers this reply can reach
   // once persisted, and the reply body is server-controlled.
   assert.match(error?.message ?? '', /^lmstudio returned a non-JSON response\.$/);

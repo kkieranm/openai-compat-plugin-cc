@@ -5,7 +5,7 @@
 // buckets must partition the runs exactly — a run in none of them shrinks a
 // denominator invisibly, a run in two makes the row's arithmetic stop
 // reconciling — so they are defined together, in one place, rather than as four
-// independent predicates that agree by inspection. See ADR 008.
+// independent predicates that agree by inspection.
 
 /**
  * Runs guillotined by the `analysis` cap: complete JSON, `finish_reason: stop`,

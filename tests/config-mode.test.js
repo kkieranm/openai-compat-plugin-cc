@@ -3,8 +3,8 @@
 // what that fallback's confidentiality rests on. `writeFileSync`'s `mode`
 // argument protects a freshly-created file, but nothing repaired a
 // pre-existing one left loose by an older build or widened by anything else
-// — the same shape of gap OAI-65(b) closed for `job-store.mjs`'s directories
-// (OAI-72(a)). This file pins the repair that closes it.
+// — the same shape of gap closed for `job-store.mjs`'s directories.
+// This file pins the repair that closes it.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { chmodSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';

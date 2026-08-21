@@ -25,9 +25,9 @@ test('the size caveat fires above the ceiling and not at it', async () => {
 });
 
 test('a MISSING size is distinguishable from a small one, not folded into it', async () => {
-  // Trap instance 14's shape: an older persisted row with no recorded estimate
-  // must not render identically to a request known to be small, or a large run
-  // reads as a considered one.
+  // An older persisted row with no recorded estimate must not render
+  // identically to a request known to be small, or a large run reads as a
+  // considered one.
   const unknown = templateNotes({ name: 'advisor' });
   const small = templateNotes({ name: 'advisor', estimatedTokens: 100 });
 
@@ -72,8 +72,8 @@ test('a prototype-inherited name is not a template', async () => {
   // `TEMPLATES['toString']` finds Object.prototype.toString and is truthy, so a
   // bare lookup ACCEPTED `--template toString` — then ran with the DEFAULT system
   // prompt, persisted the name `Object` for `--template constructor`, and printed
-  // `undefined` where the discipline line belongs. Trap instance 14: a loud
-  // failure turned into a valid-looking wrong answer.
+  // `undefined` where the discipline line belongs: a loud failure turned into a
+  // valid-looking wrong answer.
   for (const name of ['toString', 'constructor', '__proto__', 'valueOf', 'hasOwnProperty']) {
     assert.throws(() => resolveTemplate(name), /Unknown --template/, `${name} must be refused`);
     const notes = templateNotes({ name, estimatedTokens: 100 });

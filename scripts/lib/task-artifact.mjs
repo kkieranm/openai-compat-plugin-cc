@@ -78,8 +78,7 @@ export function checkDiff(diff, { cwd }) {
  *
  * `applies` is the strongest claim available here and it is a weak one: a diff
  * that applies cleanly can still do the wrong thing. Saying so beside the good
- * news is the difference between a check and a false assurance — this repo's
- * instance 14 is a guard that turned a loud failure into a valid-looking result.
+ * news is the difference between a check and a false assurance.
  */
 export function artifactNote({ state, detail }) {
   if (state === 'applies') return 'PATCH: applies cleanly to the working tree. That it applies is not evidence it is right.';

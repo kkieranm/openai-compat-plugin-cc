@@ -16,7 +16,7 @@ import { UserError } from './errors.mjs';
  * Shared by the text report and `--json` rather than copied into each. These
  * are decisions about whether the run is reportable at all, so a second copy
  * would be free to disagree, and this repo keeps relearning that fixing the
- * branch in front of you leaves the adjacent one wrong (trap instance 11).
+ * branch in front of you leaves the adjacent one wrong.
  */
 export function unparsedReply(result, { structured, profile, ledger }) {
   // A reply we cut off mid-object is a token-budget problem, not a shape
@@ -30,12 +30,11 @@ export function unparsedReply(result, { structured, profile, ledger }) {
     // input `prepareRequest` may shrink the raised value straight back to the
     // window's leftovers. Reviewing less is the lever that moves both.
     //
-    // Wrapped with `withLedger` (OAI-116): this is a POST-HOC classification of
+    // Wrapped with `withLedger`: this is a POST-HOC classification of
     // an otherwise-successful transport interaction — the ledger already holds
     // a closed, populated entry for it — so the failure this throws must carry
     // that record rather than leave `errorReport()`'s `attempts` field null,
-    // which made OAI-19's gate criterion G-E unpassable for the dominant
-    // overnight-sweep failure mode.
+    // which left the dominant overnight-sweep failure mode unmeasurable.
     throw withLedger(new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
       // Tagged so a caller can tell "the budget ran out" from "the server broke"
       // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
@@ -70,7 +69,7 @@ export function unparsedReply(result, { structured, profile, ledger }) {
     if (content && reasoning) return `[content]\n${content}\n\n[reasoning]\n${reasoning}`;
     if (content || reasoning) return content || reasoning;
   }
-  // Narrowly wrapped (OAI-116) — only around this one call, not the whole
+  // Narrowly wrapped — only around this one call, not the whole
   // function body, so a programming error elsewhere in here is never
   // misreported as a ledger-carrying attempt failure.
   try {

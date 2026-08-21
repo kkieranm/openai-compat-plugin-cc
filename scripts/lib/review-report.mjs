@@ -28,7 +28,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
   // Every caveat, because a reply that came back as prose did not see more —
   // `salvaged` FIRST, same ordering as `caveats()` below: without it, a
   // salvage follow-up's prose reply carries no indication it came from a
-  // conclude-now request rather than the original review (OAI-138), even
+  // conclude-now request rather than the original review, even
   // though this branch already disclaims completeness on its own terms.
   const notes = [
     salvaged
@@ -54,7 +54,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * together — and the benchmark was averaging across the seam. Both are measured
  * inside the answering attempt rather than derived from `durationMs`, which
  * starts earlier and absorbs prompt building and any rejected attempt. Null on a
- * non-streamed reply, where no boundary was observed. See ADR 009.
+ * non-streamed reply, where no boundary was observed.
  *
  * `retried` is here because the timings cannot show it. They belong to the
  * attempt that answered; a refused attempt is rejected at request validation
@@ -73,8 +73,8 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * kept beside it for the narrower fact it actually names: the schema was refused
  * and the reply was parsed from prose.
  *
- * **Both were rewritten on 2026-08-04, when the default stopped sending a
- * schema (OAI-51).** `!structured` used to mean "we fell back", because a schema
+ * **Both were rewritten for when the default stopped sending a
+ * schema.** `!structured` used to mean "we fell back", because a schema
  * was always asked for; now it is true of every ordinary run, so the old
  * expressions claimed a retry for a run that sent one request and a fallback for
  * a schema nobody requested. `degraded` therefore needs BOTH facts — asked for,
@@ -83,8 +83,8 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * warns about, in the field added to prevent it, which is why it is written down
  * rather than quietly corrected.
  *
- * **Read off the shared ledger when one is available, not `result.requestCount`
- * (OAI-138 salvage).** `requestCount` is scoped to the one `answerWithRetry`
+ * **Read off the shared ledger when one is available, not `result.requestCount`.**
+ * `requestCount` is scoped to the one `answerWithRetry`
  * call that produced `result` — exactly right for the two ladders this
  * docstring already describes, both of which run inside a single call. Salvage
  * is a second, separate call on the same shared ledger: a review that failed
@@ -136,8 +136,7 @@ function parseFields(parsed, result, context) {
  * The same run, as one object.
  *
  * Every caveat the text report carries appears here too. A caller reading only
- * `findings` would otherwise score a guillotined review as a clean pass — trap
- * instance 14, the defect ADR 004 shipped and `528faba` fixed. Where the reply
+ * `findings` would otherwise score a guillotined review as a clean pass. Where the reply
  * could not be read, the three parse-derived flags are `null` rather than
  * `false`: nothing was determined about them, and `false` would assert that a
  * list nobody could count did not hit its cap.
@@ -150,8 +149,8 @@ export function jsonReport(parsed, context) {
     label: target.label,
     provider: profile.name,
     // A context-derived fact, not something read off the model's own reply —
-    // same shape as `hunksOnly`/`skippedUnsizedWindow` below (OAI-138 salvage).
-    // Non-negotiable per that item's own text: a salvaged review must never
+    // same shape as `hunksOnly`/`skippedUnsizedWindow` below.
+    // Non-negotiable: a salvaged review must never
     // read as an ordinary complete one, so this rides beside `findings` on
     // every path that can set it, never inferred from anything else here.
     salvaged: Boolean(salvaged),
@@ -188,7 +187,7 @@ export function jsonReport(parsed, context) {
     // caller could not tell from a checked one — with the size guard disarmed,
     // which is exactly when an oversized request goes out unrefused. This file
     // was created to stop a caveat being true on one path and absent on the
-    // next, and it shipped doing that. Instance 16.
+    // next.
     contextChecked: budget.checked,
     contextNote: budget.checked ? null : budget.note,
     durationMs,
@@ -209,9 +208,9 @@ export function jsonReport(parsed, context) {
  * Without it, `--json` was machine-readable on success and prose on failure, so
  * a harness could tell *that* a run failed but never *why*: `bench/run.mjs`
  * stored the whole of stderr and could only distinguish a wall-clock cap from a
- * 500 by pattern-matching the message. This repo has that pattern on file as a
- * defect class twice over (OAI-13 items 1 and 2), and the fix recorded there is
- * the same one taken here — read the structured field, not the prose.
+ * 500 by pattern-matching the message. This repo has hit that pattern
+ * twice over, and the fix is the same one taken here — read the structured
+ * field, not the prose.
  *
  * `reason` is the transport's own vocabulary where there is one
  * (`deadline-timeout`, `idle-timeout`, `oversize`, `protocol`, …) and `null`
@@ -229,7 +228,7 @@ export function errorReport(error) {
     message: error?.message ?? String(error),
     hint: error?.hint ?? null,
     // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt` /
-    // `error.finishReason` (OAI-185) are deliberately never copied here —
+    // `error.finishReason` are deliberately never copied here —
     // this object is what `publishFailure` persists into `jobs.db`, and all
     // four fields can be secret-shaped. Absence by construction: this is an
     // explicit field list, not a spread of `error`, so a new field on the
@@ -245,8 +244,8 @@ export function errorReport(error) {
     // only place the id survives — without it the reliability table cannot
     // attribute an all-failed sweep to the model that failed.
     requestedModel: error?.requestedModel ?? null,
-    // What the model had already produced when the failure cut it off (OAI-138
-    // salvage's tier 1) — `stream-collect.mjs` attaches `.answer` to every
+    // What the model had already produced when the failure cut it off —
+    // `stream-collect.mjs` attaches `.answer` to every
     // failure it catches, but most carry nothing (a pre-stream refusal, no
     // frame ever arrived). `null` unless there is real text — reasoning OR
     // content — to show for it, following the same "cannot live on one path

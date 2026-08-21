@@ -19,16 +19,15 @@ import { artifactKind, templateNotes } from './task-template.mjs';
  * and both sit behind the same refusal.
  *
  * `notes` is the load-bearing one. The text path prints the template's caveats
- * under the footer; an envelope that omitted them would be instance 16 on a new
- * path — a harness reading a large, crowded advisor reply with no indication it
- * was crowded. It is an ARRAY rather than joined text for the reason OAI-80(a)
- * gives about the attachments line: a delimiter inside a value is a forgeable
+ * under the footer; an envelope that omitted them would leave a harness reading
+ * a large, crowded advisor reply with no indication it was crowded. It is an
+ * ARRAY rather than joined text for the same reason as
+ * the attachments line: a delimiter inside a value is a forgeable
  * entry, and an array has no delimiter to forge.
  *
- * The answer itself stays an opaque string. ADR 016 is explicit that a template
- * asks for its shape in prose and nothing parses it; structuring the transport
- * does not change that, and this envelope must not grow a field claiming the
- * reply conformed.
+ * The answer itself stays an opaque string. A template asks for its shape in
+ * prose and nothing parses it; structuring the transport does not change that,
+ * and this envelope must not grow a field claiming the reply conformed.
  */
 function jsonTaskReport(outcome, answer) {
   const { result, profile, model, budget, estimatedTokens, durationMs, template, ledger } = outcome;
@@ -132,9 +131,8 @@ export function report(outcome, { json = false } = {}) {
   if (outcome.artifact) process.stdout.write(`\n${artifactNote(outcome.artifact)}\n`);
   // Same builder `cmd-result.mjs` calls for the same run collected later, and
   // the same seam `renderTaskFooter` already uses: one pure builder, and each
-  // path does its own writing. Instance 16 in `.claude/REPO_TRAPS.md` is this
-  // repo showing a caveat on one of two renderings of one run — what prevents
-  // that is the single builder, not a shared writer.
+  // path does its own writing, so a caveat on one of two renderings of one run
+  // can't happen — what prevents that is the single builder, not a shared writer.
   for (const note of templateNotes({ name: outcome.template, estimatedTokens: outcome.estimatedTokens })) {
     process.stdout.write(`\n${note}\n`);
   }

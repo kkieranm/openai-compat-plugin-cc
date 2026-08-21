@@ -11,7 +11,7 @@ import { rowsInState } from './job-record.mjs';
  * order, about the state this write leaves behind.
  *
  * **Both rungs, and the running one first.** Consulting the queued rung alone is
- * a defect this repo has already shipped once (OAI-64, finding 2): a queued row
+ * a defect this repo has already shipped once: a queued row
  * can be the head while a live `running` row refuses every caller before queue
  * order is ever consulted, and reporting drainage there is simply false.
  *

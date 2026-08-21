@@ -51,7 +51,7 @@
  * `unreadable` is visible and retryable, while accepting it would let a trailing
  * quoted empty beat real findings and report a SILENT clean review. Note too
  * that `objects([])` is vacuously true, so relaxing this would promote every
- * trailing bare `[]`, not merely the wrapped spelling. See ADR 003.
+ * trailing bare `[]`, not merely the wrapped spelling.
  *
  * **`some`, never `every`, and the same rule on BOTH spellings.** Both halves of
  * that sentence were learned the hard way and neither is safe to "tidy":

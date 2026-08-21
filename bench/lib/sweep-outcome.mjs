@@ -13,11 +13,10 @@
 // **The CLI already says which it was — in fields, not prose.** `analysisCut`
 // is the caveat meaning the model never finished looking; `atCap` means the
 // findings list was cut at the ceiling; `hunksOnly` means only the diff was
-// reviewed, whatever the cause — it is equally true of `--diff-only`, and the
-// wording here used to say "did not fit", which was already false for that flag
-// before OAI-139 added a second cause; `skippedUnsizedWindow` is one of those
-// causes named — nothing could size the window, so the whole-file rung was never
-// attempted, and the remedy is a `contextLength` in the provider config;
+// reviewed, whatever the cause — true of `--diff-only` and of
+// `skippedUnsizedWindow`, named separately because nothing could size the
+// window, so the whole-file rung was never attempted, and the remedy is a
+// `contextLength` in the provider config;
 // `dropped` counts findings the model DID
 // emit that normalization discarded. `review-report.mjs` states the rule these
 // serve — "a fact changing what the reader should believe cannot live on one
@@ -47,8 +46,7 @@ export const MAX_RAW = 256_000;
  *
  * 1. `TRANSPORT` / `NON_RETRYABLE_TRANSPORT` — the connection itself.
  * 2. `COMPLETION_SHAPES` — `empty-completion`, `stream-unfinished`,
- *    `blank-completion`. The load-bearing group on this hardware: ADR 012 and
- *    OAI-20 measure it as the dominant failure at 27 of 72 runs.
+ *    `blank-completion`. The load-bearing group on this hardware.
  * 3. **`idle-timeout` alone of the timeouts.**
  *
  * **The axis that separates the timeouts is what the clock MEASURES, not who
@@ -67,16 +65,13 @@ export const MAX_RAW = 256_000;
  * budget is armed only by `deadline.progress()`, called when a frame carried
  * text, so only a server that began generating and then went silent can emit it.
  *
- * **This predicate took FIVE iterations** — any `*-timeout`, then
- * `{deadline, idle}`, then `{idle}`, then none, now `{idle}` again — and the
- * fourth was a regression caught one pass later. Every wrong step generalised on
- * some property of the reason NAME. The rule above reads the CLI's own hint
- * instead, which is an artifact rather than an inference, and is why it is
- * written here rather than just the resulting set.
+ * **This predicate reads the CLI's own hint rather than the reason NAME.** A
+ * version that generalised on the name regressed each time the set of reason
+ * strings changed. The rule above reads an artifact rather than inferring one,
+ * which is why it is written here rather than just the resulting set.
  *
  * **Still excluded, each for its own reason:** `token-exhaustion` and
- * `token-reserve-cutoff` (both the model's own budget, never the server's —
- * OAI-115's live watchdog is a client-side cutoff, not a server symptom),
+ * `token-reserve-cutoff` (both the model's own budget, never the server's),
  * `oversize` and other input refusals (another commit may survive
  * them), and `output-too-large`, which is THIS HARNESS's own capture ceiling —
  * counting it would have the sweep diagnose the server for its own limit.
@@ -100,13 +95,13 @@ export function serverUnwell(reason) {
  * there is; and a reason `serverUnwell` recognises.
  *
  * **`output-too-large` is NOT here.** It is this harness's 64MB capture ceiling —
- * a sweep defect, in ADR 021's own words — and counting it would have the sweep
- * blame the server for its own limit, then stop the night saying so.
+ * a sweep defect — and counting it would have the sweep blame the server for
+ * its own limit, then stop the night saying so.
  *
  * **It lives here rather than in the harness because it now has two readers.**
  * The loop asks it to decide whether to abort; the report asks it to say how the
- * night went (ADR 022). Two copies of this boundary would let the morning
- * artifact describe an abort decision the run never took.
+ * night went. Two copies of this boundary would let the morning artifact
+ * describe an abort decision the run never took.
  */
 export function isOutage(entry) {
   if (entry.outcome === 'crashed') return true;
@@ -162,15 +157,14 @@ function usableReason(stdout) {
  * **`requestedModel` is deliberately NOT carried as `model`.** `errorReport`
  * emits that field precisely because a failed run produced no report — it is the
  * model that was ASKED, and nothing answered. Carrying it as `model` made the
- * report say "answered by X" about a model that never replied, which is the
- * requested-versus-served conflation `adr/011` exists to stop this plugin
- * making. It is kept under its own name so the record kkeeps the fact without
- * the renderer being able to mistake it.
+ * report say "answered by X" about a model that never replied, conflating what
+ * was requested with what actually served it. It is kept under its own name so
+ * the record kkeeps the fact without the renderer being able to mistake it.
  */
 // A model spending its whole reply budget reasoning and never reaching
 // content — `token-exhaustion` is the terminal shape (the server's own
-// finish_reason: length), `token-reserve-cutoff` is OAI-115's live watchdog
-// catching the same starvation earlier, before the terminal shape occurs. An
+// finish_reason: length), `token-reserve-cutoff` is a live watchdog catching
+// the same starvation earlier, before the terminal shape occurs. An
 // UNSALVAGED cutoff is classified alongside it rather than as a generic
 // failure — a salvaged one already returns as `outcome: 'ok'` upstream and
 // never reaches this function.
@@ -211,13 +205,13 @@ function reported(report) {
     // reconstructing it would be guessing at the run's inputs.
     skippedUnsizedWindow: report?.skippedUnsizedWindow ?? null,
     dropped: report?.dropped ?? null,
-    // OAI-138 salvage. Non-negotiable per that item's own text: a salvaged
-    // review must never read as an ordinary complete one, so this rides beside
-    // every other belief-changing field here rather than being inferred later.
+    // A salvaged review must never read as an ordinary complete one, so this
+    // rides beside every other belief-changing field here rather than being
+    // inferred later.
     salvaged: report?.salvaged ?? null,
   };
-  // `null` is "could not be read" and `[]` is "read, nothing found" — the
-  // distinction ADR 003 exists to protect.
+  // `null` is "could not be read" and `[]` is "read, nothing found" — a
+  // distinction worth keeping distinct.
   if (!Array.isArray(findings)) return { outcome: 'unreadable', ...caveats };
   if (report?.analysisCut) return { outcome: 'truncated', findings, ...caveats };
   return { outcome: findings.length > 0 ? 'findings' : 'clean', findings, ...caveats };

@@ -127,9 +127,9 @@ test('the test runner is scoped, so corpus snapshots are not discovered as tests
 });
 
 /**
- * Confirmed by the OAI-23 wide review, which proved it by mutation: moving
+ * Proved by mutation: moving
  * `capBudgets` below `ledger.begin` in `postWithDegrade` left all 370 tests
- * green while reopening the exact defect OAI-23 closed on the capability-rung
+ * green while reopening the exact defect this guards against on the capability-rung
  * path — a refusal reclassified as benign negotiation for a replacement that was
  * never dispatched, plus a phantom entry for it.
  *
@@ -137,7 +137,7 @@ test('the test runner is scoped, so corpus snapshots are not discovered as tests
  * invariant, pinned by nothing**. Two statements swap and the invariant is gone.
  * The suite no longer stays green when they do — `failure-shape.test.js` and
  * `cap-ordering.test.js` both go red — so this guard does not stand IN PLACE of
- * behavioural cover, as it once claimed to; OAI-25 refuted that. It localizes the
+ * behavioural cover, though it once claimed to. It localizes the
  * contract to the two statements carrying it, naming the rule where it lives.
  *
  * Comments are stripped first: both tokens now appear in the prose that explains
@@ -155,7 +155,7 @@ function functionBody(relativePath, declaration) {
   return source.slice(start, end).join('\n');
 }
 
-/** Every occurrence, because "exactly one" is the assertion OAI-22 needs. */
+/** Every occurrence, because "exactly one" is the assertion this guard needs. */
 function occurrences(haystack, needle) {
   return haystack.split(needle).length - 1;
 }
@@ -170,18 +170,18 @@ test('the wall-clock cap is checked before a ledger entry is minted, not after',
   assert.ok(
     cap < begin,
     'capBudgets must run BEFORE ledger.begin: an entry minted first files a request that never went ' +
-      'on the wire as a physical attempt, and settles a pending refusal that nothing replaced (OAI-23).',
+      'on the wire as a physical attempt, and settles a pending refusal that nothing replaced.',
   );
 });
 
 /**
- * OAI-22, and the reason the ordering guard above is no longer sufficient on its
+ * The reason the ordering guard above is no longer sufficient on its
  * own: it proves *a* cap check precedes the ledger entry, not that the checked
  * budget is the one the transport actually gets. While `postChat` re-evaluated
  * the cap on its own side, both statements could be true and a cap falling due
  * between them still minted an entry for a request that was never sent.
  *
- * Same class as the guard above, and behaviourally covered too since OAI-25:
+ * Same class as the guard above, and behaviourally covered too:
  * `cap-ordering.test.js` drives an expiry into that window with a controlled
  * clock, and fails if `postChat` recomputes. This pins where the rule lives.
  */
@@ -193,7 +193,7 @@ test('the cap is evaluated exactly once per dispatch, and that evaluation is wha
     occurrences(degrade, 'capBudgets('),
     1,
     'postWithDegrade must evaluate the cap ONCE: two evaluations can disagree, and the gap between ' +
-      'them is where a phantom ledger entry is minted (OAI-22).',
+      'them is where a phantom ledger entry is minted.',
   );
   const bound = /const (\w+) = capBudgets\(/.exec(degrade);
   assert.ok(bound, 'the cap evaluation must be BOUND to a name — an unbound call cannot be passed to postChat.');
@@ -209,7 +209,7 @@ test('the cap is evaluated exactly once per dispatch, and that evaluation is wha
   assert.equal(
     occurrences(post, 'capBudgets('),
     0,
-    'postChat must NOT re-evaluate the cap — that second call IS the OAI-22 defect.',
+    'postChat must NOT re-evaluate the cap — that second call IS the defect this guards against.',
   );
   // Proves the absence assertion above is not vacuous: an assert-absence over a
   // wrongly-bounded body would pass on an empty string. `postChat` genuinely
@@ -237,15 +237,15 @@ test('the body-stream catch classifies its failures as delivered, whatever code 
     body,
     /transportError\(error, url, \{ delivered: true \}\)/,
     'bodyStream must pass `delivered: true`: past headers a failure is a dropped delivery and is ' +
-      'retryable regardless of `error.code`, which Node does not promise to attach (OAI-22).',
+      'retryable regardless of `error.code`, which Node does not promise to attach.',
   );
 });
 
-// Confirmed FOUR times in one review-ladder run (OAI-185): a UserError message
+// Confirmed FOUR times: a UserError message
 // built at the HTTP response boundary interpolated something the SERVER
 // controls — profile.baseUrl, a redirect Location header, an echoed response
 // body, a JSON.parse error quoting the input, a raw content-encoding header —
-// each one independently discovered by a different reviewer pass because
+// each one independently discovered because
 // nothing forced the next call site to remember the others. `.message` is what
 // `errorReport()` persists into `jobs.db` and what an uncaught worker error
 // prints to its own job log, so this graduates from a reviewer's prompt to a
@@ -273,8 +273,7 @@ const RESPONSE_BOUNDARY_FILES = [
   // Not transport-layer, but the same server-payload risk: `finish_reason`
   // (completion.mjs's applyFrame/applyCompletion) is read off the server's
   // JSON with no validation, and both files construct a UserError from it —
-  // found by a pass-4 adversarial review after the first three passes'
-  // sweeps missed it entirely by staying inside the transport layer.
+  // missed by earlier sweeps that stayed inside the transport layer.
   'scripts/lib/completion.mjs',
   'scripts/lib/client.mjs',
 ];
@@ -286,7 +285,7 @@ const TAINTED_SUBSTRINGS = [
   // `message` generically: the original body.mjs leak (`${error.message}`,
   // JSON.parse's own error quoting a fragment of server input) is caught
   // only by this general rule, not by any of the specific field names above
-  // — a pass-5 adversarial review found the fixture for it slipped past
+  // — the fixture for it once slipped past
   // every named substring. `SAFE_MESSAGE_EXPRESSIONS` below is checked
   // FIRST, so the one legitimate exception is still excluded.
   'message',
@@ -335,10 +334,9 @@ function interpolations(text) {
  * `text`: `${...}` interpolations inside its backtick-quoted argument(s),
  * PLUS a bare (non-template, non-string-literal) `hint:` value — the exact
  * shape `sse.mjs`'s original leak used (`hint: error.message`, no
- * backticks at all), which no `${...}` scan can ever see. A pass-6
- * adversarial review found this exact gap: the fixture test below had been
- * quietly rewritten to use a templated hint, which is not what the real
- * historical bug looked like.
+ * backticks at all), which no `${...}` scan can ever see. The fixture test
+ * below had once been quietly rewritten to use a templated hint, which is
+ * not what the real historical bug looked like.
  */
 function messageTemplates(text) {
   const candidates = [];
@@ -417,18 +415,18 @@ test('no server-controlled value reaches a UserError message at the response bou
   );
 });
 
-// Pass-5 AND pass-6 adversarial findings, both on this same block: nothing
+// Nothing
 // proved the DETECTOR itself still catches the exact historical leaks it was
 // written from — a rename in TAINTED_SUBSTRINGS or a bug in
 // messageTemplates()/interpolations() could silently stop catching them, and
-// the guard above would report "clean" for the wrong reason. Pass 6 also
-// found the first version of this block was not what it claimed: fixtures
+// the guard above would report "clean" for the wrong reason. The first version
+// of this block was not what it claimed: fixtures
 // had been simplified (the body.mjs / sse.mjs snippets dropped their `.hint`
 // clause entirely, which is a SECOND, independent leak in the same call the
 // `.message` clause does not cover) and each fixture asserted only "at least
 // one offender found," which cannot catch one expression masking a second,
-// missed one in the same call. These are the pre-fix snippets, verbatim,
-// from this ladder's own passes 1-6 — never executed, just fed through the
+// missed one in the same call. These are the pre-fix snippets, verbatim —
+// never executed, just fed through the
 // same detector the guard above uses — each paired with EVERY expression it
 // must individually flag.
 const HISTORICAL_LEAKS = [

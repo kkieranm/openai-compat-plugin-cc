@@ -1,4 +1,4 @@
-// OAI-138 salvage: what happens to a review that hit --max-seconds mid-reasoning.
+// Salvage: what happens to a review that hit --max-seconds mid-reasoning.
 //
 // Tier 1 (keep the partial answer instead of discarding it) and tier 2 (a bounded
 // follow-up asking the model to conclude from it) both live in this one file
@@ -171,7 +171,7 @@ test('salvage sends a genuine multi-turn follow-up and reports it as salvaged, n
     const original = chatRequests[0].body.messages;
     assert.equal(followUp[0].content, original[0].content);
     assert.equal(followUp[1].content, original[1].content);
-    // OAI-115's reason-keyed budget branch must leave a deadline-timeout
+    // The reason-keyed budget branch must leave a deadline-timeout
     // salvage untouched: the follow-up's own max_tokens stays the original
     // built.reserve, never dropped to the token-reserve-cutoff branch's
     // smaller flat reserve.
@@ -187,8 +187,7 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
   // (the `first`/`prepareLadder` path, not `unconstrained`'s `built`) — before
   // the fix, a deadline-timeout there threw straight through `isFormatRejection`
   // without ever calling `trySalvage`, because that check only ever guarded the
-  // `response_format`-refusal retry, not a plain timeout. Codex pass 2 caught
-  // this by inspection; this is the live proof.
+  // `response_format`-refusal retry, not a plain timeout. This is the live proof.
   //
   // A second, sharper gap surfaced on the very fix for the first: the
   // structured-output rung's original request states its shape only via the
@@ -237,23 +236,21 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
     // The ORIGINAL request's own schema, straight off the wire — the source of
     // truth the follow-up's restated shape must actually match, not just
     // resemble. A regex alone would accept the wrong rung, stale caps, or a
-    // schema missing required fields (Codex pass 4 flagged exactly this gap).
+    // schema missing required fields.
     const sentSchema = chatRequests[0].body.response_format.json_schema.schema;
     const expected = findingsFirst(sentSchema);
 
     const followUp = chatRequests[1].body.messages;
-    // Pinned before indexing from the end, not just implied by the shape below
-    // — pass 7's own acceptance audit found the sibling test (further down in
-    // this file) already asserts this and this one didn't, so a stray extra
-    // turn appended after `ask` would silently become the new "last message"
-    // and slip past every assertion that follows, which all index relative to
-    // the end rather than an absolute position.
+    // Pinned before indexing from the end, not just implied by the shape below:
+    // a stray extra turn appended after `ask` would silently become the new
+    // "last message" and slip past every assertion that follows, which all
+    // index relative to the end rather than an absolute position.
     assert.equal(followUp.length, 4);
     const ask = followUp[followUp.length - 1];
     assert.equal(ask.role, 'user');
     // FULL equality on the entire turn, not `.includes()` plus a separate
-    // slice-from-first-'{' check — Codex pass 6 found that combination still
-    // leaves a gap: `.includes()` proves the override sentence is present
+    // slice-from-first-'{' check — that combination still leaves a gap:
+    // `.includes()` proves the override sentence is present
     // somewhere, but not that nothing else was inserted between it and the
     // schema instruction, since the schema check independently re-anchors on
     // the first '{' regardless of what precedes it. This turn is entirely
@@ -282,8 +279,8 @@ test('a successful salvage reports retried: true — it cost at least two physic
   // `retried` used to read off the salvage call's OWN `requestCount`, which is
   // always 1 for a first-try salvage success (it never retries itself) — so a
   // review that failed once and then salvaged reported `retried: false` despite
-  // the ledger holding two entries. Codex pass 2 caught this by inspection;
-  // this is the live proof, on the ledger the whole review actually shares.
+  // the ledger holding two entries. This is the live proof, on the ledger the
+  // whole review actually shares.
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({ findings: [], summary: 'salvaged, nothing found' })));

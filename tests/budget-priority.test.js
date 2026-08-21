@@ -2,8 +2,8 @@
 //
 // Its own suite because it is a different question from the rest of the
 // transport's tests: those ask what the client *does*, these ask what it
-// *says* — and OAI-17 made the second one load-bearing, because `bench/run.mjs`
-// now keys on the reason string rather than reading prose.
+// *says* — which is load-bearing because `bench/run.mjs` keys on the reason
+// string rather than reading prose.
 //
 // The five cases below are the whole truth table, and they exist because this is
 // the kind of branch that passes every end-to-end test while being backwards: a

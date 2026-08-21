@@ -2,16 +2,15 @@
  * The TTL challenge's decision rule. Pure, and separate from the driver on
  * purpose: what an episode MEANS is declared before the experiment runs and
  * unit-tested, so the reading of the result cannot be chosen once the numbers
- * are in. The driver beside it does I/O and nothing else. See ADR 013.
+ * are in. The driver beside it does I/O and nothing else.
  *
  * THIS INSTRUMENT REFUTES; IT DOES NOT CONFIRM. There is no verdict asserting
  * that an observed unload was a TTL eviction, because sampling cannot establish
  * one: proving an unload happened after expiry requires observing the model
  * still resident after expiry, and a mechanism that fires AT expiry makes that
  * observation impossible. Four successive designs for a confirming branch each
- * failed on a different axis before the branch was withdrawn (OAI-34 plan,
- * decision C). An observed absence is recorded in full and attributed to
- * nothing.
+ * failed on a different axis before the branch was withdrawn. An observed
+ * absence is recorded in full and attributed to nothing.
  */
 
 /**
@@ -39,8 +38,8 @@ import { calibrationSays } from './ttl-calibration.mjs';
 
 /**
  * Every SWEEP outcome `summarize` can return. The exhaustiveness guard reads it,
- * and so does the done-condition below — the outcome table in ADR 013 has already
- * lost a row to drift once.
+ * and so does the done-condition below — the outcome table has already lost a
+ * row to drift once.
  */
 export const SWEEP_VERDICTS = Object.freeze([
   'deterministic-form-refuted',
@@ -81,8 +80,7 @@ export const EPISODE_VERDICTS = Object.freeze([
  * say anything about the server.
  *
  * Returns the names that FAILED, so the manifest records which rather than only
- * that. Enforced in code, never left to the reader — ADR 013's "limits the
- * instrument MUST enforce in code" section is the requirement these discharge.
+ * that. Enforced in code, never left to the reader.
  */
 export function validityChecks({ appliedTtlMs, requestedTtlMs, competingModels, contradiction }) {
   const failed = [];
@@ -210,8 +208,8 @@ function refutedSays(count, minSlackMs) {
 }
 
 /**
- * What the sweep as a whole licenses. This wording is what OAI-19 may quote, and
- * NO outcome licenses naming JIT-TTL as the cause of the 37.5%.
+ * What the sweep as a whole licenses. NO outcome licenses naming JIT-TTL as
+ * the cause of the 37.5%.
  */
 export function summarize(verdicts, {
   calibrationCleared = true, calibrationFailures = [], causes = [], minSlackMs = null,

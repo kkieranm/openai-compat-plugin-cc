@@ -3,7 +3,7 @@
 // stands in for a grammar.
 //
 // Split from `review-request.mjs` under the size ratchet when the unconstrained
-// path became the default (OAI-51) and the file crossed 300 lines. The seam is a
+// path became the default and the file crossed 300 lines. The seam is a
 // real one rather than a place the knife happened to land: this module decides
 // what the model is SHOWN, while `review-request.mjs` decides how much budget
 // there is to show it in and what to do when a request comes back refused.
@@ -23,17 +23,16 @@ import { findingsFirst, schemaInstruction } from './structured.mjs';
  *
  * Only `target.changed` is droppable. `target.files` is code no diff covers —
  * untracked files, or `--file` where there is no diff at all — so dropping one
- * would review nothing and report a clean pass. See ADR 005.
+ * would review nothing and report a clean pass.
  *
  * The first rung needs a CHECKABLE window, not merely a non-empty `changed`
  * list. `windowKnown` already gated the prompt's completeness claim; it now also
  * gates whether those bodies are attached at all, because the two were the same
  * decision wearing one flag. Without this the guard returns unchecked, the
  * oversize refusal below never throws, and nothing else drops `changed` — so a
- * cold process shipped a request nobody could size (OAI-139: 492k prompt chars
- * against a 61,696 window, against 150k for the same commit once a model was
- * resident). The cost is real and is NOT hidden: an unknown window is not
- * evidence of a SMALL one, so a review that would have fitted is narrowed, and
+ * cold process shipped a request nobody could size. The cost is real and is
+ * NOT hidden: an unknown window is not evidence of a SMALL one, so a review
+ * that would have fitted is narrowed, and
  * `review.mjs` says so and names `contextLength` as the remedy.
  */
 export function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' }) {

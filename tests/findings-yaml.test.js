@@ -1,5 +1,3 @@
-// A whole-document YAML-ish findings reply, and the narrow acceptor that reads
-// it — OAI-156.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { findingsInYaml } from '../scripts/lib/findings-yaml.mjs';
@@ -68,8 +66,7 @@ test('a value starting with { is a flow collection and a flat reject', () => {
 });
 
 test('a flow-collection-shaped TRAILING top-level summary is also a flat reject', () => {
-  // Review-ladder finding, pass 1 (fork-opener + acceptance-audit, independently):
-  // the trailing `summary:` branch used to take its value with no leading-bracket
+  // The trailing `summary:` branch used to take its value with no leading-bracket
   // check at all, unlike every item field.
   const text = ['findings:', '  - file: a.js', '    summary: boom', 'summary: { oops: 1 }'].join('\n');
   assert.equal(findingsInYaml(text), null);
@@ -123,18 +120,16 @@ test('never throws, including on empty and garbage input', () => {
 });
 
 test('a value starting with # (a YAML comment) is a flat reject, not literal text', () => {
-  // Review-ladder finding, terminal verdict point (codex-adversarial): a
-  // leading '#' used to be accepted and kept verbatim as if it were the real
+  // A leading '#' used to be accepted and kept verbatim as if it were the real
   // scalar, e.g. "summary: # comment" parsed to summary: "# comment".
   const text = ['findings:', '  - file: a.js', '    summary: # comment'].join('\n');
   assert.equal(findingsInYaml(text), null);
 });
 
 test('a single __proto__ field key is a flat reject, not a silent drop', () => {
-  // Review-ladder finding, pass 1 (agent-closer): assigning a string to
-  // item.__proto__ is a silent no-op, never an own property — so it would
-  // otherwise defeat this exact pass's own duplicate-key fix (Object.hasOwn
-  // never sees it as already set) and silently drop the field.
+  // Assigning a string to item.__proto__ is a silent no-op, never an own
+  // property — so it would otherwise defeat the duplicate-key fix below
+  // (Object.hasOwn never sees it as already set) and silently drop the field.
   const text = ['findings:', '  - file: a.js', '    __proto__: evil', '    summary: boom'].join('\n');
   assert.equal(findingsInYaml(text), null);
 });
@@ -145,10 +140,9 @@ test('a repeated __proto__ field key is a flat reject too', () => {
 });
 
 test('a repeated field key on one item is a flat reject, not a silent overwrite', () => {
-  // Review-ladder finding, pass 1 (codex-adversarial + codex-plain, converging
-  // independently): the earlier code let a repeated key overwrite the first
-  // value silently, and also bypass MAX_FIELDS_PER_ITEM (which counted distinct
-  // keys, not field lines).
+  // The earlier code let a repeated key overwrite the first value silently, and
+  // also bypass MAX_FIELDS_PER_ITEM (which counted distinct keys, not field
+  // lines).
   const text = ['findings:', '  - file: a.js', '    file: b.js', '    summary: boom'].join('\n');
   assert.equal(findingsInYaml(text), null);
 });
@@ -166,18 +160,17 @@ test('an anchor/alias/tag/block-scalar-leading value is a flat reject', () => {
 });
 
 test('a continuation indent that does not textually extend the item indent is a flat reject', () => {
-  // Review-ladder finding, pass 1 (codex-plain): comparing indent by LENGTH
-  // alone let a tab-indented continuation pass as a "deeper" indent under a
-  // space-indented item, which is not a consistent single indentation scheme.
-  // Three tabs (length 3) is longer than the two-space item indent (length 2)
-  // but is not a textual extension of it — the length-only check would have
-  // wrongly accepted this as a valid continuation.
+  // Comparing indent by LENGTH alone let a tab-indented continuation pass as a
+  // "deeper" indent under a space-indented item, which is not a consistent
+  // single indentation scheme. Three tabs (length 3) is longer than the
+  // two-space item indent (length 2) but is not a textual extension of it —
+  // the length-only check would have wrongly accepted this as a valid
+  // continuation.
   const text = ['findings:', '  - file: a.js', '\t\t\tsummary: boom'].join('\n');
   assert.equal(findingsInYaml(text), null);
 });
 
-// The discriminating fixture from the plan gate (round 2 → round 3): one
-// document that is BOTH whole-document YAML-shaped AND contains a genuinely
+// A document that is BOTH whole-document YAML-shaped AND contains a genuinely
 // balanced, findings-shaped JSON object embedded in a value (not leading it,
 // so it does not trip the leading-bracket rule). The YAML reading and a
 // JSON-bracket-scan reading of the embedded object disagree on which finding
@@ -227,11 +220,11 @@ test('structured: the YAML acceptor never runs, and extractJson finds the embedd
 });
 
 test('a bracketed JSON reply is unaffected by the new acceptor (no regression)', () => {
-  // Review-ladder finding, pass 1 (acceptance-audit): comparing two calls of the
-  // same function to each other cannot fail regardless of any regression. Pinned
-  // against the actual expected shape `extractJson` has always produced for this
-  // fixture instead — findingsInYaml never runs at all for a bracketed reply
-  // (checked directly), and parseFindings' output matches FINDING byte for byte.
+  // Comparing two calls of the same function to each other cannot fail
+  // regardless of any regression. Pinned against the actual expected shape
+  // `extractJson` has always produced for this fixture instead — findingsInYaml
+  // never runs at all for a bracketed reply (checked directly), and
+  // parseFindings' output matches FINDING byte for byte.
   assert.equal(findingsInYaml(payload()), null);
   const parsed = parseFindings({ content: payload(), reasoning: '' }, { structured: false });
   assert.deepEqual(parsed, {

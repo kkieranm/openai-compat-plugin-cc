@@ -54,8 +54,7 @@ test('hunksOnly is carried, because it falsifies "the files were reviewed whole"
   assert.equal(classify(ok([], { hunksOnly: true })).hunksOnly, true);
 });
 
-// OAI-138 salvage. Non-negotiable per that item's own text: a salvaged review
-// must never read as an ordinary complete one — so `salvaged` rides the same
+// A salvaged review must never read as an ordinary complete one — so `salvaged` rides the same
 // path every other belief-changing caveat does, on both a `findings` and a
 // `clean` outcome, and is `null` (not `false`) when nothing determined it.
 test('salvaged is carried on a completed review, and null when the field is absent', () => {
@@ -67,7 +66,7 @@ test('salvaged is carried on a completed review, and null when the field is abse
   assert.equal(ordinaryEntry.salvaged, null, 'an ordinary review must not assert false — nothing determined it either way');
 });
 
-// OAI-138 salvage tier 1: what a FAILED run had already reasoned before the
+// Salvage tier 1: what a FAILED run had already reasoned before the
 // deadline cut it off, visible even where tier 2 never ran.
 test('a failed run carries what was salvageable, and null when nothing streamed', () => {
   const withPartial = classify(envelope('deadline-timeout', {
@@ -114,7 +113,7 @@ test('a dropped connection or an unusable reply shape still counts', () => {
 // server's health, so three large commits must never read as an outage.
 test('starvation and input refusals are NOT the server being unwell', () => {
   assert.equal(serverUnwell('token-exhaustion'), false);
-  // OAI-115's live watchdog is a client-side cutoff on the model's own
+  // The live watchdog is a client-side cutoff on the model's own
   // budget, exactly like token-exhaustion — never a server symptom.
   assert.equal(serverUnwell('token-reserve-cutoff'), false);
   assert.equal(serverUnwell('oversize'), false);
@@ -247,12 +246,12 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
   assert.equal(entries[4].outcome, 'skipped-abort');
 });
 
-// --- OAI-121: the rule, and the two shapes that prove it holds ---
+// --- the rule, and the two shapes that prove it holds ---
 
 // The carried report fields survive on EVERY report-derived path. `findings`
 // is separate on purpose: `unreadable` has no array to carry, which is why the
 // first draft of this invariant contradicted the code it describes.
-// `skippedUnsizedWindow` joined them in OAI-139: it is the CAUSE `hunksOnly`
+// `skippedUnsizedWindow` is the CAUSE `hunksOnly`
 // cannot carry, so a path keeping one and losing the other reports a diff-only
 // review with no way to tell a deliberate shed from an unmeasurable window.
 const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];

@@ -2,11 +2,8 @@
  * The three REASON codes a reader could misread, and the closed list of record
  * fields their prose is allowed to enumerate.
  *
- * Split out of `reliability-report.mjs` in OAI-35, at the 300-line ratchet, along
- * the seam that file already drew in a comment: `outcomeNotes` there describes an
- * `outcome`, and these describe a `reason`. The split was prescribed rather than
- * improvised — the note sat above `RECORD_FIELDS` telling whoever added the tenth
- * field to do exactly this instead of raising the ceiling.
+ * `outcomeNotes` in `reliability-report.mjs` describes an `outcome`; these
+ * describe a `reason`.
  */
 
 /**
@@ -23,24 +20,15 @@
  * review; only membership is mechanised, because membership is what drifted.
  *
  * It exists because the sentence below used to transcribe this list, and a
- * transcription is a mirror: its first draft named **eight** of the nine fields
- * there were at the time, with a key-set test sitting green beside it, and a
- * reviewer rather than the suite found the missing `outcome`. (Ten now — OAI-35
- * added one, and the mechanism below is what made that addition loud rather than
- * silent.) Rendering the sentence from the list means a
- * field cannot be silently omitted from the prose — only mislabelled, which a
- * human can see.
+ * transcription is a mirror: a hand-written prose list can drift from the
+ * schema while a key-set test sitting green beside it notices nothing, because
+ * that test only checks membership, not the prose. Rendering the sentence from
+ * the list means a field cannot be silently omitted from the prose — only
+ * mislabelled, which a human can see.
  *
  * Exported solely so that test can read it. That is a public symbol in a
  * rendering module, accepted deliberately: intentional coupling to the schema
  * beats an unguarded prose mirror of it.
- *
- * Headroom note for whoever adds the field after this one: the prediction above
- * came true — OAI-35 added `serverResponded`, the enumeration test went red on
- * exactly the edit below, and the split it prescribed is the file you are reading.
- * The size ratchet that prescribed it was retired 2026-08-17 — split at a seam
- * the code already draws when a file grows unwieldy regardless; there is no
- * enforced ceiling to raise or allowlist against any more.
  */
 export const RECORD_FIELDS = [
   ['index', 'its index'],
@@ -109,9 +97,7 @@ function recordList() {
  * transcribed either — it is rendered from `RECORD_FIELDS`, whose membership is
  * pinned against a closed ledger entry in `tests/bench-reason-notes.test.js`.
  * Adding any field turns that test red, and the sentence is re-read rather than
- * left quietly stale. That is no longer a prediction: OAI-35 added
- * `serverResponded`, the test failed on exactly that edit with the message it was
- * written to print, and the paragraph below gained its axis clause as a result.
+ * left quietly stale.
  *
  * One thing this paragraph may NOT do, learned at the cost of two drafts: claim
  * that no attempt carrying this code measured a prefill. `http-errors.mjs`

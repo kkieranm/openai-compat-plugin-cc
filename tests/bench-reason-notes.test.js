@@ -6,31 +6,25 @@ import { RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 
-// OAI-26. `Failures by reason` is a bare count table, and three of its codes are
-// ones a reader will misread in exactly the direction the attempt record exists
-// to prevent: `shape-rejected` sits among the delivery failures and is a client
+// `Failures by reason` is a bare count table, and three of its codes are ones
+// a reader will misread in exactly the direction the attempt record exists to
+// prevent: `shape-rejected` sits among the delivery failures and is a client
 // stop; `transport` is a retryability verdict rather than a count of server
 // misbehaviour; and `non-retryable-transport` says only that a retry was not
-// attempted — NOT, as an earlier draft of both the tracker item and this comment
-// asserted, that the peer was reached. `ENOTFOUND` carries that reason and
-// reached nothing, which is why the claim had to be withdrawn.
+// attempted — not that the peer was reached. `ENOTFOUND` carries that reason
+// and reaches nothing.
 //
-// OAI-35 corrected the correction, absorbing OAI-37. Pairing `ECONNREFUSED` with
-// `ENOTFOUND` as codes that "reached nothing" was itself false of one member: a
-// refused connection is a TCP reset FROM the host, so the machine was reached and
-// only no process was listening. The withdrawal was right about the code as a
-// whole and wrong about its example — the same class it was withdrawing, one
-// level down. What the paragraph now says is that reachability varies across
+// `ECONNREFUSED` must not be paired with `ENOTFOUND` as a code that "reached
+// nothing": a refused connection is a TCP reset FROM the host, so the machine
+// was reached and only no process was listening. Reachability varies across
 // these codes and the table does not settle it, while a separate and narrower
 // question — was an HTTP RESPONSE obtained — is settled, by `serverResponded`.
 //
-// Split out of `bench-reliability.test.js` in OAI-31, when the guards below grew
-// past the size ratchet. The seam is the one that file already drew in a
-// comment: that suite asks whether every request is ACCOUNTED for, this one asks
-// whether the prose explaining a reason code claims only what the record holds,
-// and which paragraphs the gating prints at all. OAI-31's own subject is that
-// three of these guards passed for the wrong reason, so each now carries the
-// mutation that proved it hollow.
+// This suite asks whether the prose explaining a reason code claims only what
+// the record holds, and which paragraphs the gating prints at all — distinct
+// from `bench-reliability.test.js`, which asks whether every request is
+// accounted for. Each guard below carries the mutation that proves it is not
+// passing for the wrong reason.
 
 /** One outright-failed run whose single attempt died with `reason`. */
 const deadRunWith = (reason) => ({
@@ -81,7 +75,7 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // "not a reachability finding" of the whole code asserted a fact that is false
   // of part of it.
   assert.doesNotMatch(para, /not a reachability finding/);
-  // Both still NAMED, and that survived OAI-35 moving them to opposite sides of
+  // Both still NAMED, on opposite sides of
   // the sentence — `ENOTFOUND` contacted nothing, `ECONNREFUSED` reached a host
   // that answered with a reset. A regex asserting only presence cannot see which
   // side each sits on, so it is the axis clause below that carries that, and this
@@ -183,7 +177,7 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   //
   // Pinning the full key set couples this to every ledger addition ON PURPOSE.
   // A new field is exactly when a human must re-read the sentence, and the
-  // record shape is deliberately stable: OAI-19 differences its runs against it.
+  // record shape is deliberately stable so other runs can be differenced against it.
   //
   // What this does NOT do: check the LABELS. Membership is mechanised because
   // membership is what drifted — the first draft transcribed eight of the nine
@@ -193,7 +187,7 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   // ordinary review.
   //
   // Read AFTER `fail()` closes the entry, never off the freshly minted one —
-  // `fail()` is where OAI-35 copies its flag across, so a check against the
+  // `fail()` is where the entry copies its flag across, so a check against the
   // constructor's shape alone would miss a field added there.
   const ledger = createLedger();
   const handle = ledger.begin({
@@ -225,9 +219,7 @@ test('every way an entry can close leaves the same ten fields, so the paragraph 
   //
   // JSON round-tripped, because that is the form the report is rendered from:
   // it also pins that `markRefused` stays non-enumerable and never appears as
-  // an ELEVENTH field. It was the tenth until OAI-35 added `serverResponded`,
-  // which is the kind of count a comment carries quietly past the change that
-  // invalidates it.
+  // an ELEVENTH field.
   const expected = RECORD_FIELDS.map(([field]) => field).sort();
   const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] };
   const cause = { answerAttempt: 1, degrade: null };
@@ -259,7 +251,7 @@ test('every way an entry can close leaves the same ten fields, so the paragraph 
 });
 
 test('the shape-rejected paragraph follows the refused one it calls itself the twin of', () => {
-  // The combination OAI-26 was written for, and the one the gates make easy to
+  // The combination the gates make easy to
   // get wrong: the paragraph names `refused` because both are gated, so ORDER is
   // what makes the pair readable rather than a forward reference to prose that
   // may not print at all.
@@ -279,7 +271,6 @@ test('the shape-rejected paragraph follows the refused one it calls itself the t
   assert.ok(refusedAt < twinAt, 'the twin reference must point BACKWARDS at printed prose');
 });
 
-// OAI-115: a fourth gated reason code, added alongside the original three.
 test('token-reserve-cutoff is explained as a client-side cutoff, never a server symptom', () => {
   const markdown = renderWith('token-reserve-cutoff');
   const para = paragraphAbout(markdown, 'token-reserve-cutoff');

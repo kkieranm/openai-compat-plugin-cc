@@ -183,14 +183,12 @@ export function resolveTemplate(name) {
  * because two renderings print it.
  *
  * `task-report.mjs` shows a foreground run and `cmd-result.mjs` shows the same
- * run collected later, and REPO_TRAPS instance 16 is this repo printing a caveat
- * on one of two renderings — inside the module built to stop exactly that. One
- * function, so they cannot drift.
+ * run collected later; both must show the same caveat, so it lives in one
+ * function here rather than being printed separately by each.
  *
  * The size states are THREE, not two. "Above the ceiling" and "below it" are the
  * obvious pair; the third is "the figure was not recorded". Folding that into
- * "below" would render a large request identically to a small one, which is trap
- * instance 14 wearing a new hat.
+ * "below" would render a large request identically to a small one.
  *
  * **What can actually reach that third state, stated precisely, because the first
  * version of this comment got it wrong and a review caught it.** NOT "an older

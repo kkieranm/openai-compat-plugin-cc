@@ -286,10 +286,10 @@ test('an unknown subcommand is rejected', async () => {
 });
 
 test('a command named after an inherited Object property is still unknown', async () => {
-  // OAI-185 hardening: `COMMANDS[command]` on a bare object treats `toString`
-  // as a real, dispatchable property via the prototype chain — this proves
-  // the dispatch actually refuses it rather than running
-  // `Object.prototype.toString` as a handler.
+  // `COMMANDS[command]` on a bare object treats `toString` as a real,
+  // dispatchable property via the prototype chain — this proves the dispatch
+  // actually refuses it rather than running `Object.prototype.toString` as a
+  // handler.
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });
 
   const result = await runCompanion(['toString'], { configPath: path });

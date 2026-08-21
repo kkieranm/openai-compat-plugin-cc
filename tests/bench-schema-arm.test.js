@@ -1,4 +1,4 @@
-// Whether the benchmark's schema arm actually measured a schema (OAI-135 item 4).
+// Whether the benchmark's schema arm actually measured a schema.
 //
 // `--structured-output` is a REQUEST. `review-request.mjs` falls back to the
 // unconstrained path when a server rejects `response_format`, and the CLI has
@@ -36,8 +36,8 @@ test('the schema arm says so when the server refused the schema on EVERY run', (
 });
 
 test('a PARTLY degraded arm is distinguished from a wholly degraded one', () => {
-  // Two runs per case — the configuration OAI-135 records as untested, and the
-  // one where a per-run count differs from a boolean at all.
+  // Two runs per case — an under-tested configuration, and the one where a
+  // per-run count differs from a boolean at all.
   const report = render([degradedRun(true), degradedRun(false)], { structuredOutput: true });
   assert.match(report, /only partly measured a schema/, 'a mixed arm is not the same claim as a dead one');
   assert.match(report, /1 of 2/);

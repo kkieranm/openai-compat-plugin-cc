@@ -1,25 +1,20 @@
-// Structural invariants: the tracker's own index (OAI-104).
+// Structural invariants: the tracker's own index.
 //
 // `BACKLOG.md` and CLAUDE.md both claim item bodies are asserted against each other by the sweep's
 // close-out, "so the two cannot drift apart silently". Until this file existed there was no such
 // script anywhere in the repo — the claim was the reason nobody looked, which is this repo's "a
 // check that reports success may be one that cannot fail" class applied to its own tracker.
 //
-// It caught real drift the day it was written: tier 12 still listed six IDs closed
-// the previous day, OAI-131 and OAI-106 were each indexed under two tiers, and one
-// body (OAI-123) sat out of ID order behind OAI-134.
-//
-// THE TIER-RANKING INDEX AND THE ABSORBED-ID REDIRECT TABLE WERE RETIRED 2026-08-20
-// (owner-directed, matching the same removal in `~/Code/backlog` and `~/Code/dotfiles`). This file
-// used to also assert the tier index's shape (no id indexed twice, the index covers the live set
-// exactly) and the absorbed-ID table's shape (every redirect resolves to a live body). The tier
-// checks have no replacement — there is no more priority-ranking pass over `BACKLOG.md`. The
-// absorbed-table check DOES have one, below ("every stub bullet's target resolves in the same
-// tracker"): a merged item now gets a one-line stub bullet (`- **OAI-n** — Absorbed into OAI-m; see
-// that item.`) wherever the item it merged into lives. The duplicate/ordering checks below see a
-// stub's OWN id, the same as any other bullet, but NOT its target — a stub whose target was
-// mistyped or renamed would pass every other check here silently, which is exactly what the old
-// absorbed-table test existed to catch.
+// The tier-ranking index and the absorbed-ID redirect table were retired. This file used to also
+// assert the tier index's shape (no id indexed twice, the index covers the live set exactly) and
+// the absorbed-ID table's shape (every redirect resolves to a live body). The tier checks have no
+// replacement — there is no more priority-ranking pass over `BACKLOG.md`. The absorbed-table check
+// DOES have one, below ("every stub bullet's target resolves in the same tracker"): a merged item
+// now gets a one-line stub bullet (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the
+// item it merged into lives. The duplicate/ordering checks below see a stub's OWN id, the same as
+// any other bullet, but NOT its target — a stub whose target was mistyped or renamed would pass
+// every other check here silently, which is exactly what the old absorbed-table test existed to
+// catch.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

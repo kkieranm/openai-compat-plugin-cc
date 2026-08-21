@@ -39,7 +39,7 @@ export function isBusy(error) {
  * state (`completed`, `failed`, `queue-timeout`); `markSpawned`, which runs after
  * a detached worker already exists; `registerWaiter`, whose caller has no catch,
  * so losing it costs a whole run; and the LAUNCH-OUTCOME terminal write in
- * `job-launch-outcome.mjs`, added for OAI-67, without which a row whose launch
+ * `job-launch-outcome.mjs`, without which a row whose launch
  * could not be confirmed AND WHICH NO WORKER HAS REGISTERED AGAINST blocks every job behind it
  * for the whole startup grace. What they share is that work exists which is lost
  * if the call does not land — for the seventh, the work is the queue's ability to
@@ -54,20 +54,18 @@ export function isBusy(error) {
  * Counting them, outside this module: seven `withBusyRetry` call sites, and
  * five `isBusy` call sites. The two sets are now DISJOINT — every remaining
  * `isBusy` is a skip-only caller that never retries. They overlapped until
- * OAI-67's third review pass: the one shared member was the spawn stamp's
- * exhaustion guard, and it went when that site stopped asking WHICH storage fault
- * it had suffered. No total is stated even so, and neither number
+ * the spawn stamp's exhaustion guard — the one shared member — stopped asking
+ * WHICH storage fault it had suffered. No total is stated even so, and neither number
  * appears without its noun. `tests/busy-site-count.test.js` counts both from
  * `scripts/lib` and reddens if either sentence here disagrees, because this count
- * drifted three times in three review passes when it was prose alone.
+ * drifted repeatedly when it was prose alone.
  *
  * **What is deliberately NOT wrapped, so nobody reads the list above as a
  * guarantee about the database as a whole:** `insertJob` (precedes the spawn — a
  * busy there is a clean failure with nothing running), `requestCancel` (a busy
  * surfaces to a user at a terminal who can simply run the command again), and
  * every write in `job-reconcile.mjs`, whose sweep re-runs on the next read and so
- * corrects itself. That last one is a judgement, not a proof — it is filed as
- * OAI-105 rather than asserted here.
+ * corrects itself. That last one is a judgement, not a proof asserted here.
  *
  * An earlier draft of this comment said "writing a job's terminal state" and
  * meant only two of the three: `timeOut`'s `queue-timeout` write was not wrapped,
@@ -120,8 +118,8 @@ export function isBusy(error) {
  * exactly this and it was false: it does not say there is no such request. There
  * may well be one — the paragraph above this says so outright — and this site is
  * safe because the sleep cannot touch it, never because it does not exist.
- * Unreachable is not nonexistent, and collapsing the two is the same conflation
- * OAI-67 exists to remove.
+ * Unreachable is not nonexistent, and collapsing the two is the conflation
+ * this argument exists to remove.
  *
  * Deliberately NOT argued from descriptors. An earlier version added that the
  * worker "holds no descriptor this process owns", which is false on exactly the

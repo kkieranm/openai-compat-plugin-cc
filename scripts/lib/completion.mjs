@@ -8,10 +8,10 @@ import { BLANK_COMPLETION, EMPTY_COMPLETION, STREAM_UNFINISHED } from './failure
  * One, deliberately. The two paths must agree about what counts as an answer,
  * and the guard they share is load-bearing: `chatCompletion` used to reject a
  * reply where neither channel was a string, and a delta accumulator initialised
- * to `''` makes that condition unreachable. That is REPO_TRAPS instance 10
- * verbatim — `typeof content !== 'string'` satisfied by `''`, a run that
- * produced nothing printing a footer and exiting 0 — so the accumulator records
- * whether a channel was ever *seen*, separately from what it collected.
+ * to `''` makes that condition unreachable — `typeof content !== 'string'`
+ * satisfied by `''`, a run that produced nothing printing a footer and exiting
+ * 0 — so the accumulator records whether a channel was ever *seen*, separately
+ * from what it collected.
  */
 
 export function emptyAnswer() {
@@ -135,7 +135,7 @@ function refuseUnusable(answer, { profile, sawDone, streamed }) {
     // `answer.finishReason` is read straight off the server's own payload
     // (completion.mjs's applyFrame/applyCompletion, no validation) — the same
     // secret-shape risk as every other server-controlled value this feature
-    // guards (OAI-185), so it travels on `.finishReason`, never inside
+    // guards, so it travels on `.finishReason`, never inside
     // `.message`. `transportDetail()` (provider.mjs) composes it for display.
     const failure = new UserError(`${profile.name} returned a completion with no message content.`, {
       reason: EMPTY_COMPLETION,

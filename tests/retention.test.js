@@ -25,20 +25,6 @@ test('sweep deletes finished jobs beyond the newest 50 and keeps the newest 50',
   assert.deepEqual(left, seqs.slice(5), 'and what remains is exactly the newest 50');
 });
 
-// OAI-177: the "never deleted" (existence) half of this exemption was, like
-// the two below it, unmeasured until now. Measured 2026-08-17 by
-// widening `STATES` to also bind 'queued' and 'running' (and the `.all(...)`
-// call to match — a coordinated edit, same bind-arity reason as OAI-170's):
-// reddened this test as predicted, on `assert.ok(!deleted.includes(queued))`
-// below — the FIRST assertion, same as the operator-abandoned test below it.
-// `readJob(state, 'ancientq')`/`readJob(state, 'ancientr')` are consequently
-// never reached under this mutation, for the same structural reason OAI-170
-// recorded for the foreign-version pair: a `DELETE ... RETURNING seq` cannot
-// disagree with the row it deleted, so the `deleted` array always fails first.
-// The same mutation also reddens this exemption's own placement-half sibling,
-// "an active job does not consume one of those places either" — by the
-// counted-not-deleted mechanism that test exists to pin, not this one.
-// Restored, `npm test` green.
 test('a job that is still active is exempt however old it is', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   const month = 30 * 24 * 60 * 60 * 1000;
@@ -64,21 +50,6 @@ test('a row a newer plugin wrote is never deleted', { skip: NEEDS_SQLITE }, () =
   // Two finished rows in the same position — the two oldest of all — differing
   // in nothing but the version stamped on them. That is what makes the two
   // verdicts attributable to the version rather than to age or to order.
-  //
-  // OAI-166 mutation-tested the sibling below ("not counted"), never this one
-  // ("never deleted") — an assumed, not measured, witness. Measured 2026-08-17
-  // (OAI-170): dropping `schema_version <= ?` from `PRUNE`'s WHERE alone breaks
-  // bind arity (`prune()` binds positionally), so this is two coordinated edits
-  // — the clause AND the `ROW_SCHEMA_VERSION` argument to `.all(...)` — each
-  // landed and proved separately. Reddened this test as predicted: `deleted`
-  // gained the foreign row, so `deepEqual` below throws and `readJob(state,
-  // 'foreign')` is never reached. It also reached "a row a newer plugin wrote
-  // does not consume one of those places either" below, by a DIFFERENT
-  // mechanism — there the foreign row consumes a kept place instead of being
-  // deleted, so `deleted` gains a different ordinary row and that test's own
-  // `readJob` is equally never reached. OAI-166 tested that sibling by
-  // relocating the clause; this removes it outright, reaching both. Restored,
-  // `npm test` green.
   insertSynthetic(state, { id: 'foreign', state: 'completed', version: 99 });
   const ours = insertSynthetic(state, { id: 'ours', state: 'completed', version: 1 });
   fillTerminal(state, RETAIN);
@@ -89,27 +60,6 @@ test('a row a newer plugin wrote is never deleted', { skip: NEEDS_SQLITE }, () =
   assert.ok(readJob(state, 'foreign'), 'erasing a newer build\'s completed job is data loss, not housekeeping');
 });
 
-// OAI-177: this exemption's "never deleted" (existence) half was the other
-// unmeasured one OAI-170 left open. Measured 2026-08-17 by removing the
-// `AND NOT (started_at IS NOT NULL AND (CASE ...) IS ?)` clause from `PRUNE`
-// and its bind argument together (bind-arity, same as OAI-170's schema_version
-// mutation): reddened this test as predicted, on `assert.deepEqual(deleted,
-// [control], ...)` below — the FIRST assertion. `readJob(state, 'abandoned')`
-// is consequently never reached under this mutation, for the same structural
-// reason OAI-170 recorded for the foreign-version pair (a `DELETE ...
-// RETURNING seq` cannot disagree with the row it deleted). The same mutation
-// also reddened two siblings, for the SAME exemption but two DIFFERENT
-// mechanisms — a first draft of this note wrongly called both "the same
-// reason", caught by an independent verdict-point review. "An abandoned
-// row does not consume one of the places kept for ordinary history" below
-// reddens by this exemption's OWN placement half — a formerly-uncounted
-// abandoned row is counted and evicts an ordinary one, not deleted directly.
-// "A row abandoned before it ever ran is pruned like any other" reddens by a
-// different mechanism again: removing the exemption clause also removes the
-// `started_at` narrowing it carries, so that test's own formerly-exempt
-// `ranAndAbandoned` row is DELETED directly, the same mechanism as this test,
-// not the placement one — it documents the narrowing, not this exemption's
-// placement. Restored, `npm test` green.
 test('a row an operator abandoned after it ran is never deleted, and keeps its log', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Two `failed` rows in the same position — the two oldest of all — differing in
@@ -137,7 +87,7 @@ test('a row an operator abandoned after it ran is never deleted, and keeps its l
   // The point of the whole exemption. Deleting the row is not itself the harm —
   // unlinking the log is, because `job-spawn.mjs` handed that file to the worker
   // as its stdout descriptor, and a worker that later salvages its answer into an
-  // unlinked inode loses it when the process exits (OAI-161).
+  // unlinked inode loses it when the process exits.
   assert.equal(existsSync(logPath(state, abandoned)), true, 'the salvaged answer lives in this file');
   assert.equal(existsSync(logPath(state, control)), false, "and the control's log went with its row");
 });
@@ -210,7 +160,7 @@ test('a row whose failure payload is corrupt does not sink the sweep', { skip: N
 test('an abandoned row does not consume one of the places kept for ordinary history', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // The other half of the exemption, and the half the fixture above cannot see.
-  // Measured during OAI-161: with the exempt row as the OLDEST, the clause in the
+  // With the exempt row as the OLDEST, the clause in the
   // inner `SELECT` and the same clause moved to the outer `DELETE` return an
   // identical `deleted` — a row below the cutoff can never displace anything. It
   // discriminates only from the other end, where sparing the row while still

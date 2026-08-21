@@ -94,8 +94,9 @@ function renderFinding(finding) {
 /**
  * A fact about the *request*, so every path that shows output derived from it
  * says the same thing — defined once rather than written out at each. The
- * parsed and unparseable paths diverging is how this repo produced instance 11:
- * the branch in front of you gets the fix and the adjacent one does not.
+ * parsed and unparseable paths diverging is how this repo produces that
+ * failure: the branch in front of you gets the fix and the adjacent one does
+ * not.
  */
 export function unreadableNote(unreadable) {
   if (!unreadable?.length) return null;
@@ -125,7 +126,7 @@ export function unreadableNote(unreadable) {
  *
  * Scoped to the DIFF-COVERED files: `target.files` — untracked, or `--file` —
  * is still sent whole, so "the changed files were not sent whole" would be false
- * on a mixed target and would collide with the two-list rule ADR 005 rests on.
+ * on a mixed target and would collide with the two-list rule this depends on.
  */
 export function unsizedWindowNote(skipped, profile) {
   if (!skipped) return null;
@@ -154,11 +155,11 @@ export function unsizedWindowNote(skipped, profile) {
 function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, salvaged }, profile) {
   const notes = [];
 
-  // First and loudest — OAI-138 salvage. These findings were not written in
+  // First and loudest — these findings were not written in
   // the model's ordinary findings-first pass: its normal run hit the deadline
   // mid-reasoning, and what is shown is a SECOND, separate request asking it
-  // to conclude from that cut-off reasoning. Non-negotiable per that item's
-  // own text: a salvaged review must never read as an ordinary complete one.
+  // to conclude from that cut-off reasoning. Non-negotiable: a salvaged
+  // review must never read as an ordinary complete one.
   if (salvaged) {
     notes.push(
       'WARNING: this review was SALVAGED. The model ran out of time while reasoning; these findings ' +

@@ -12,19 +12,16 @@ import {
   scriptOf,
 } from './helpers.mjs';
 
-// OAI-24. A failed attempt's timings are already kept — `attempt-outcome.mjs`
+// A failed attempt's timings are already kept — `attempt-outcome.mjs`
 // retains them so the record can say "whether failures cluster before or after
 // the first token". This suite guards the reader of that, and in particular
 // guards the two ways its claim could quietly become false: counting a record
 // that predates the field as a measurement, and printing the paragraph on a
 // sweep that observed no failure at all.
 //
-// Its own file rather than `bench-reliability.test.js`, which was close to the
-// 300-line ratchet when this was written. OAI-31 later split that file — the
-// reason-code prose guards are now in `bench-reason-notes.test.js` — so the
-// pressure is gone, but the seam still holds: this asks what a `prefillMs`
-// establishes, which is neither attempt accounting nor reason-code prose. A
-// line count is deliberately not quoted here; the one that was went stale.
+// Its own file rather than `bench-reliability.test.js`: this asks what a
+// `prefillMs` establishes, which is neither attempt accounting (covered there)
+// nor reason-code prose (covered in `bench-reason-notes.test.js`).
 
 const failed = (reason, extra = {}) => ({
   index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,

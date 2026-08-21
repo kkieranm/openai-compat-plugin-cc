@@ -19,9 +19,9 @@ import { HERE, TEN_MINUTES, THERE, breakStamps, myJob, theirHead, viewHere } fro
 
 test('the off-workspace head is shown, marked, and is what tryAcquire blocks on', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // The reproduction recorded in OAI-64: alive, but silent for ten minutes. Note
-  // this is an ORDINARY row — `queuedRole` calls it `head`, not `blocks` — which
-  // is why admitting only the pathological shapes would not have fixed it.
+  // Alive, but silent for ten minutes. Note this is an ORDINARY row —
+  // `queuedRole` calls it `head`, not `blocks` — which is why admitting only
+  // the pathological shapes would not have fixed it.
   theirHead(state, { beatAgoMs: TEN_MINUTES });
   const mine = myJob(state);
 

@@ -6,10 +6,9 @@ import {
   EPISODE_VERDICTS, EXPOSURE_MARGIN, episodeVerdict, summarize, validityChecks,
 } from '../bench/lib/ttl-verdict.mjs';
 
-// OAI-34. The decision rule, tested rather than trusted — it is declared in code
+// The decision rule, tested rather than trusted — it is declared in code
 // precisely so the reading of the result cannot be chosen after the numbers
-// arrive. The I/O half is exercised in `ttl-challenge-e2e.test.js`, which is the
-// half OAI-24 never ran.
+// arrive. The I/O half is exercised in `ttl-challenge-e2e.test.js`.
 
 const ttlMs = 120_000;
 const past = 300_000; // clears 120s x 1.5 comfortably — a real exposure

@@ -46,9 +46,9 @@ test('a recovered record refuses to claim an end it never saw', () => {
   assert.match(record.stoppedBecause, /Last activity observed at 2026-08-13T01:10:00\.000Z/);
 });
 
-// OAI-165 (adversarial review): every header this codebase WRITES now carries
+// Every header this codebase WRITES now carries
 // `repo` via `envelopeFor`, so every fixture built from it does too — which
-// means the "no `repo` key at all" shape a PRE-OAI-165 ledger actually has on
+// means the "no `repo` key at all" shape an older ledger actually has on
 // disk was never exercised. Built by hand, deliberately without the key,
 // rather than by calling `envelopeFor`.
 test('a header from before OAI-165, with no `repo` key at all, recovers and renders without crashing', () => {

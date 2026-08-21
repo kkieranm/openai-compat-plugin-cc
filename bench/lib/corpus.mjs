@@ -177,7 +177,7 @@ function initRepo() {
  * whole-file request, where the file bulk still caches, but `--diff-only` sends
  * no file blocks at all, so they land within the first few hundred characters
  * and effectively nothing cached. The A/B control this repo uses was the arm
- * being accidentally cache-busted. See ADR 009.
+ * being accidentally cache-busted.
  */
 export const CASE_COMMIT_DATE = '2026-01-01T00:00:00+00:00';
 

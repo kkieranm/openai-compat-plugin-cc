@@ -30,7 +30,7 @@ export const realWorkspace = (tag) => realpathSync(mkdtempSync(join(tmpdir(), `o
  * reaches `malformed` through the *queued* branch cannot be inserted by the
  * helper at all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
  *
- * **It is no longer the only queued malformed shape.** Since OAI-162 a queued row
+ * **It is no longer the only queued malformed shape.** A queued row
  * holding an unreadable `waiter_pid` is malformed too, and that one IS reachable
  * through `insertSynthetic` — `waiterPid: 'garbage'` binds straight through a
  * prepared statement into a non-`STRICT` column. The two are not

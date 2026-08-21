@@ -49,7 +49,7 @@ export async function postWithDegrade(profile, budgets, negotiation) {
     // ahead of the check files a request that never went on the wire as a failed
     // physical attempt, inventing server unreliability out of a deadline this
     // plugin imposed — and a *second* evaluation downstream reopens the same gap
-    // one call frame later. See `capBudgets` (OAI-22, OAI-23).
+    // one call frame later. See `capBudgets`.
     const budget = capBudgets(profile, budgets.expiresAt, budgets.maxMs);
     const handle = budgets.ledger?.begin({
       body: negotiation.payload,
@@ -69,10 +69,10 @@ export async function postWithDegrade(profile, budgets, negotiation) {
       // different shape has actually been dispatched. `refuse` closes the entry
       // as the failure it is and reclassifies it when the next iteration reaches
       // `ledger.begin`, which is *after* the `capBudgets` above: a cap that falls
-      // due in between ends the run with nothing replaced (OAI-23).
+      // due in between ends the run with nothing replaced.
       //
       // That entry is now proof of dispatch, not merely of intent to dispatch:
-      // OAI-22 removed `postChat`'s second cap check, so nothing between
+      // `postChat` has no second cap check, so nothing between
       // `ledger.begin` and the socket can refuse the request any more.
       if (rung) handle?.refuse(error);
       else handle?.fail(error, error?.timings ?? {});
@@ -117,7 +117,7 @@ export async function postWithDegrade(profile, budgets, negotiation) {
  * milliseconds, against a cap measured in seconds. A request dispatched a hair
  * after expiry is then granted the duration that remained at the check. Bounded
  * and immaterial at these scales — and the price of never recording a request
- * that was not sent. OAI-22; ADR 012.
+ * that was not sent.
  */
 function capBudgets(profile, expiresAt, maxMs) {
   if (!Number.isFinite(expiresAt)) return {};
@@ -138,7 +138,7 @@ function capBudgets(profile, expiresAt, maxMs) {
 
 /**
  * `budget` is REQUIRED, and is the caller's already-evaluated cap — never
- * recomputed here, which would reopen the window OAI-22 closed (see
+ * recomputed here, which would reopen a window already closed (see
  * `capBudgets`). Required rather than defaulted so a future caller cannot omit
  * the contract and run a request the cap should have refused.
  */
@@ -165,7 +165,7 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, reaso
   const answer = emptyAnswer();
   // Chosen by response shape, not by config: a server that ignores `stream`
   // answers with a whole JSON completion, and that is the same answer read a
-  // different way (ADR 002's shape-not-name rule).
+  // different way.
   if (response.contentType !== 'text/event-stream') {
     // A finite document, so bytes are the right signal — and without this the
     // first chunk retires the only budget and a stalled body hangs forever.
@@ -193,7 +193,7 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, reaso
     onProgress,
     reasoningReserveTokens,
     // A value distinct from `reasoningReserveTokens` — the request's own raw
-    // completion-token budget, not the merged reserve (OAI-115). `body` is
+    // completion-token budget, not the merged reserve. `body` is
     // already in scope; `body.max_tokens` is only set when the caller passed
     // one (see `chatCompletion` above), so this is `undefined` for a caller
     // that never named a budget.

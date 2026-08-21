@@ -165,7 +165,7 @@ test('the notice is unconditional — a plain endpoint still says what is stored
 });
 
 test('the notice promises nothing about who can read the file', { skip: NEEDS_SQLITE }, async () => {
-  // `job-store.mjs` hardens best-effort and swallows every failure (OAI-95), so
+  // `job-store.mjs` hardens best-effort and swallows every failure, so
   // "readable only by you" was a guarantee the code could not give. The exact
   // match is what enforces it: any REPLACEMENT assurance changes the sentence,
   // and a changed sentence fails — which naming one phrase cannot do.
@@ -179,8 +179,8 @@ test('a query credential in the CONFIGURED provider is announced too', { skip: N
   // No `--base-url` anywhere: the endpoint comes from the config file, which is
   // where a real one lives. Pins the notice to submission rather than to a flag.
   //
-  // This is the OAI-55 fix's headline invariant changing sign: a query string on
-  // an endpoint resolved from `providers.json` is no longer stored raw. So this
+  // A query string on an endpoint resolved from `providers.json` is no longer
+  // stored raw. So this
   // no longer asserts `row.transport.query.includes(SECRET)` — that field does
   // not exist on this row shape at all, and asserting it would TypeError. What
   // is asserted instead is the commitment shape (`queryHash` + `querySalt`,

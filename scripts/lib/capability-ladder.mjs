@@ -10,8 +10,8 @@
 /** A 400 that names the field it refused, rather than the request as a whole. */
 function refusedField(error, pattern) {
   if (error?.status !== 400 && error?.status !== 422) return false;
-  // The refusal wording lives in the server's response body, not `.message`
-  // (OAI-185) — `assertOk()` puts it on `.responseBody` specifically so a
+  // The refusal wording lives in the server's response body, not `.message` —
+  // `assertOk()` puts it on `.responseBody` specifically so a
   // secret-shaped echoed URL never reaches `.message`.
   return pattern.test(error.responseBody ?? '');
 }

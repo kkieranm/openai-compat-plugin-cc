@@ -7,7 +7,7 @@
 // The sizing is the point of this module. A ceiling here is not decoration: a
 // grammar enforces `maxLength` as a hard cut at exactly the limit with
 // `finish_reason: stop`, so a reply that hits one is complete, valid JSON that
-// merely stopped thinking mid-sentence. See ADR 008.
+// merely stopped thinking mid-sentence.
 import { CHARS_PER_TOKEN } from './context-guard.mjs';
 
 /**
@@ -34,9 +34,9 @@ export const MAX_FINDINGS = 20;
  * it was taken *under* the old cap, and more reasoning room may itself produce
  * more findings — so "six, plus headroom" is a bet about a distribution this
  * change is about to move, and it should be revisited against post-change data
- * rather than treated as settled. What it buys is stated plainly in ADR 008: a
- * reply that does carry many long findings on a tight window overruns
- * `max_tokens` and fails loudly, which is the trade taken deliberately.
+ * rather than treated as settled. What it buys: a reply that does carry many
+ * long findings on a tight window overruns `max_tokens` and fails loudly,
+ * which is the trade taken deliberately.
  */
 export const BUDGETED_FINDINGS = 8;
 
@@ -146,7 +146,7 @@ export function reviewSchemaFor(reserveTokens) {
       // model, same prompt, with this field ahead of the findings, produced a
       // path-by-path analysis and found a real credential-stripping bug.
       // Reasoning space is not decoration here; removing it is what made the
-      // reviewer useless (ADR 003).
+      // reviewer useless.
       analysis: { type: 'string', maxLength: analysisCapFor(reserveTokens) },
       findings: {
         type: 'array',
@@ -164,8 +164,8 @@ export function reviewSchemaFor(reserveTokens) {
             // of source, and one truncated mid-token is not checkable against
             // the code. 400 was the first guess and it cut a real finding on the
             // first diff tried — the model writes prose here rather than a bare
-            // line, which ADR 003 already records as a known limit of requiring
-            // a field versus making it useful. Sized to clear that.
+            // line, a known limit of requiring a field versus making it useful.
+            // Sized to clear that.
             evidence: { type: 'string', maxLength: EVIDENCE_CHARS },
           },
         },

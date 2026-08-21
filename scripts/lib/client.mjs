@@ -9,7 +9,7 @@ export { authHeaders };
  * The first-token budget. Raised from 300s on measurement, not taste: a
  * cache-busted 52k-token prompt took 393.7s to its first token on the author's
  * machine (~132 tok/s of prefill), and the benchmark corpus's largest case is
- * bigger still, projecting to ~485s. See ADR 007.
+ * bigger still, projecting to ~485s.
  */
 export const DEFAULT_TIMEOUT_MS = 600_000;
 
@@ -34,7 +34,7 @@ export async function fetchModels(profile, { timeoutMs = MODELS_TIMEOUT_MS } = {
  * Both text channels are returned. A reasoning model can leave `content` empty
  * and put everything in `reasoning_content` — under a constrained grammar it
  * always does, because it can never emit the token that closes its think block
- * (ADR 003). Which channel is legitimate depends on what was asked for, so that
+ * Which channel is legitimate depends on what was asked for, so that
  * decision belongs to the caller, not here.
  */
 export async function chatCompletion(profile, options) {
@@ -78,13 +78,12 @@ export async function chatCompletion(profile, options) {
     // One ledger per command where the caller minted one, so a review's two
     // completion calls share indexes instead of each starting from 1.
     ledger: options.ledger,
-    // OAI-115's reasoning-reserve watchdog opt-in — undefined for every
-    // caller that never asked for it. Named explicitly rather than spread
-    // (like every other field here) because this function already builds an
+    // The reasoning-reserve watchdog opt-in — undefined for every caller
+    // that never asked for it. Named explicitly rather than spread (like
+    // every other field here) because this function already builds an
     // explicit object for `answerWithRetry`; a field left off here is
-    // silently dropped, which is exactly the defect this line exists to
-    // avoid (OAI-115's plan-gate found it structurally identical one hop
-    // later in `chat.mjs`'s `postChat`).
+    // silently dropped, which is exactly the defect that also showed up
+    // one hop later in `chat.mjs`'s `postChat`.
     reasoningReserveTokens: options.reasoningReserveTokens,
   });
 }
@@ -114,7 +113,7 @@ export function requireAnswer(result, profile) {
       hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
     });
   }
-  // result.finishReason is unvalidated server payload (OAI-185) — travels on
+  // result.finishReason is unvalidated server payload — travels on
   // .finishReason, never .message; see completion.mjs's refuseUnusable.
   const failure = new UserError(`${profile.name} returned an empty answer.`, {
     hint: 'Try again, or check the server log — nothing was generated.',

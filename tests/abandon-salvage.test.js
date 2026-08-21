@@ -121,8 +121,8 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     const log = join(scenario.state, 'logs', `${row.seq}.log`);
 
     // Retention, run against the real row while its worker is still holding the
-    // model call — the exact window OAI-161 exists to close, and the only place it
-    // is exercised end to end. `tests/retention.test.js` proves the exemption on
+    // model call — the exact window this exemption exists to close, and the only
+    // place it is exercised end to end. `tests/retention.test.js` proves the exemption on
     // synthetic rows; this proves the file the live worker was handed as its
     // stdout descriptor survives a real sweep of the row it belongs to.
     //
@@ -163,7 +163,7 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     assert.deepEqual(swept.deleted, [controlSeq], 'the ordinary row went; the abandoned one did not');
     assert.ok(readJob(scenario.state, id), 'the row survived a sweep that took everything else');
     assert.equal(existsSync(log), true, 'and so did the file the worker is about to write its answer into');
-    // The file half, which is the actual OAI-161 harm. Without the control here,
+    // The file half, which is the actual harm the exemption guards against. Without the control here,
     // "the abandoned log survived" is indistinguishable from "`orphanSeqs`
     // collected nothing at all".
     assert.ok(swept.logs.includes(controlSeq), 'the orphan sweep ran and collected the control');

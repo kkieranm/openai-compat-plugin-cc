@@ -92,7 +92,7 @@ export function readJob(state, id) {
  * test would pass without ever asking the OS anything.
  *
  * That avoided fixture is now a subject in its own right rather than a hazard:
- * since OAI-162 an unreadable pid is `malformed`, not `dead`, and
+ * an unreadable pid is `malformed`, not `dead`, and
  * `tests/liveness-unreadable-pid.test.js` covers the shape case ON PURPOSE. This
  * helper is still what the `dead` verdict must be asked with — it is the only one
  * that reaches `ESRCH`.
@@ -277,7 +277,7 @@ export function submitWithSlowStderr(args, { configPath, state }) {
     // delivered before the wedge. So the backstop fails by name or not at all.
     // 30s because this is a hang backstop and not a functional assertion — a tight
     // timer under load would add a second flake source to the file that most needs
-    // to be trustworthy (OAI-97).
+    // to be trustworthy.
     const deadline = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error('the companion never exited: the slow-stderr fixture wedged'));

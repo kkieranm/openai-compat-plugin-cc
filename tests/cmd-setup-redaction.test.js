@@ -5,7 +5,7 @@
 // configured `apiKeyEnv`'s environment variable is unset) used to build its
 // fallback row straight from the raw, un-normalized `rawProfile.baseUrl`,
 // bypassing that redaction entirely — `render.mjs` then prints it to stdout
-// verbatim (OAI-72(b)). This file pins the fix that closes it.
+// verbatim.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 

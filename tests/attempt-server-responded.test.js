@@ -5,14 +5,14 @@ import { EMPTY_COMPLETION, TRANSPORT } from '../scripts/lib/failure-shape.mjs';
 import { request } from '../scripts/lib/provider.mjs';
 import { closedPort } from './helpers.mjs';
 
-// OAI-35. `serverResponded` answers ONE question — did an HTTP response arrive —
+// `serverResponded` answers ONE question — did an HTTP response arrive —
 // and the record was blocked on it because nothing else in an attempt entry can
 // separate "the server took the request and then died on it" from "nothing was
 // ever served". The TTL instrument reads that distinction off the record, so
 // these pin what the flag means on each closing path rather than merely that the
 // key exists.
 //
-// Scope, corrected in review: this file asks whether the LEDGER carries the flag
+// Scope: this file asks whether the LEDGER carries the flag
 // correctly — every test below hands `fail()`/`refuse()` an error and reads the
 // entry back. Whether anything SETS it is a different question, and lives in
 // `attempt-response-sites.test.js`, which drives the real minting sites through a

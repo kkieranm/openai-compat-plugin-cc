@@ -6,7 +6,7 @@
 // reimplemented any of the pipeline would be measuring itself. What it adds is
 // the honest bookkeeping an unwatched run needs, because the failure that
 // matters here is silent. On this hardware the model routinely spends its whole
-// shared token budget reasoning and emits nothing (OAI-115), which looks
+// shared token budget reasoning and emits nothing, which looks
 // identical to a clean review unless something insists on the difference.
 //
 // Structured after `bench/task-run.mjs`, NOT `bench/run.mjs`: that one calls
@@ -45,15 +45,12 @@ const DEFAULTS = {
   include: ['scripts', 'bench', 'tests'],
   maxCommits: 40,
   scanLimit: 200,
-  // Raised from 900 to 1800 (see ADR 021): 900 lost half the corpus to
-  // deadline-timeout. Doubled again to 3600 (2026-08-19, user-directed,
-  // landing alongside OAI-138's salvage mechanism rather than a repeat of that
-  // item's own worst-case-tail experiment): raising the cap alone recovers
+  // 900 lost half the corpus to deadline-timeout; raising the cap alone recovers
   // only the commits that merely needed more time, not the ones whose
   // reasoning has no natural end on this server — salvage is what turns THOSE
   // into real findings instead of a wasted 3600s. Read them as complementary.
   maxSeconds: 3600,
-  // 2 rather than 1: the starvation path records no attempts (OAI-116), so what
+  // 2 rather than 1: the starvation path records no attempts, so what
   // that ceiling costs there is unmeasured rather than known-idle.
   maxAttempts: 2,
   abortAfter: 3,
@@ -231,10 +228,10 @@ function positive(value, flag, fallback) {
  * `--include <prefix>` normalized to what `touchesIncluded` actually compares
  * against — a bare git-relative segment, no leading `./` and no trailing `/`.
  * Without this, `--include src/` or `--include ./src` parse, pass the
- * non-empty check below, and then match NOTHING (adversarial review): the
- * exact silent hollow-sweep failure OAI-165 exists to prevent, one flag over.
+ * non-empty check below, and then match NOTHING — a silent hollow sweep, one
+ * flag over.
  *
- * Stripping the one leading `./` is not enough (agent-closer, same pass): git
+ * Stripping the one leading `./` is not enough: git
  * never emits a path that is absolute, that is exactly `.` or `..`, that is a
  * traversal (`../x`), or that a POSIX normalize would rewrite (an internal
  * `/./` or `//`) — `--include .` (the most plausible way to type "review
@@ -242,7 +239,7 @@ function positive(value, flag, fallback) {
  * check, and matched nothing. All of those shapes are refused here.
  *
  * Trimmed FIRST, and the trimmed value is what both validation and the
- * returned entry use (Codex, same pass): a surrounding-whitespace value like
+ * returned entry use: a surrounding-whitespace value like
  * `--include 'src '` used to validate against a trimmed copy but return the
  * untrimmed one, matching nothing — the same silent-hollow-sweep failure one
  * character over. `..startsWith('..')` also used to refuse a legitimate name
@@ -262,18 +259,17 @@ function normalizedInclude(raw) {
 }
 
 // `--repo` resolves to `options.repo`, what `git()`/`invoke()` root at
-// (OAI-165: both hardcoded ROOT). `DEFAULTS.include` is THIS repo's layout,
+// (both hardcoded ROOT). `DEFAULTS.include` is THIS repo's layout,
 // so a --repo resolving to a FOREIGN path with no --include is refused, not
-// defaulted — naming this tool's own root back is a no-op, not a footgun
-// (adversarial review: comparing syntactic presence, not resolved identity,
-// made `--repo <ROOT>` refuse for no reason and misreport why). `--repo`
+// defaulted — naming this tool's own root back is a no-op, not a footgun,
+// and comparing resolved identity rather than syntactic presence is what
+// keeps `--repo <ROOT>` from refusing for no reason. `--repo`
 // given as an empty/whitespace value is refused rather than silently read as
 // "not given" — a mistyped `--repo=` must not fall back to self-review.
 // **DEFERRED, not missed**: `resolve()` compares lexical paths, not git
 // identity, so `--repo` naming this tool through a symlink or a subdirectory
-// still reads as foreign and asks for `--include` unnecessarily — the same
-// "no preflight repo-identity check" cut this item's plan already made, one
-// path-comparison deeper. `--include` handles a false "foreign" harmlessly;
+// still reads as foreign and asks for `--include` unnecessarily. `--include`
+// handles a false "foreign" harmlessly;
 // only a false negative (a real foreign repo missing the guard) would be a
 // defect, and lexical resolve() never produces one.
 //
@@ -309,8 +305,8 @@ export function optionsFrom(parsed, startMs, root = ROOT) {
     outDir: parsed['out-dir'] ?? join(root, 'bench', 'results'),
     repo,
     // ONE definition of "is this a foreign repo", consumed by `main()` below —
-    // not recomputed there (adversarial review: two independent comparisons
-    // of the same fact only agreed by construction, not by a shared source).
+    // not recomputed there: two independent comparisons of the same fact only
+    // agree by construction, not by a shared source.
     foreignRepo,
   };
 }

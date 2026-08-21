@@ -88,9 +88,10 @@ export function resolveConfig(argv) {
  * Is this the shipped experiment, or something else wearing its filename?
  *
  * `--out-dir` alone does NOT clear it — writing the record elsewhere does not
- * change what was measured. Everything else does. The done-condition for OAI-34
- * reads this field, because "a file matching the glob exists" was already
- * satisfied by a junk record from a draft that never dispatched a request.
+ * change what was measured. Everything else does. A done-condition that only
+ * checks "a file matching the glob exists" can be satisfied by a junk record
+ * from a draft that never dispatched a request, so this field is what
+ * distinguishes a real measurement from that.
  */
 export function isCanonical(config) {
   return EXPERIMENTAL.every((key) => config[key] === DEFAULTS[key]);

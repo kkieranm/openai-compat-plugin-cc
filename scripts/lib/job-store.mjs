@@ -6,7 +6,7 @@
 // every round's fix produced the next round's defect. A transaction, an
 // `AUTOINCREMENT` and a guarded `UPDATE` answer all three, and the OS releases
 // the locks when a process dies — which is the one primitive node core does not
-// otherwise offer. See ADR 014.
+// otherwise offer.
 import { chmodSync, existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +25,7 @@ import { withBusyRetry } from './job-busy.mjs';
  * `--experimental-sqlite` until v22.13.0 (v23.4.0 on the 23.x line), so a version
  * comparison admits 22.5–22.12 where the import still throws — and a build
  * compiled without SQLite, or one merely started with `--no-experimental-sqlite`,
- * would be admitted at any version at all. See ADR 018.
+ * would be admitted at any version at all.
  *
  * The failure is CAPTURED here and classified at first use, never acted on at
  * module scope. Throwing here would take down every command that never opens a
@@ -55,8 +55,8 @@ try {
  * directories, `openStoreForReading` before its existence check — because that
  * function returns `null` for "no database exists, nothing to report", and
  * rendering an unavailable runtime as `null` would report a missing capability as
- * an absence of jobs (the `findings: null` versus `[]` confusion ADR 003 exists
- * to prevent, one subsystem over) — and `submitTask` before it probes the server.
+ * an absence of jobs (the same `findings: null` versus `[]` confusion, one
+ * subsystem over) — and `submitTask` before it probes the server.
  *
  * `ERR_UNKNOWN_BUILTIN_MODULE` is the ONLY shape that means "this runtime does
  * not offer it", and that is measured rather than assumed: the `node:` scheme
@@ -95,7 +95,7 @@ export const USER_VERSION = 1;
 /**
  * The payload version stamped on rows this build writes.
  *
- * Bumped to 2 for OAI-55: a `transport` may now carry `queryHash`/`querySalt`
+ * Bumped to 2: a `transport` may now carry `queryHash`/`querySalt`
  * instead of a raw `query`, and an `auth` blob may now carry
  * `apiKeyAuthorized`. No table change accompanies this — `USER_VERSION` stays
  * 1, because `transport`/`auth` are JSON blob columns and this is a payload
@@ -106,7 +106,7 @@ export const USER_VERSION = 1;
  * that refusal name the actual reason instead of reporting "no longer
  * supplies a credential".
  *
- * Bumped to 3 for OAI-183: an `auth` blob whose key was authorized may now
+ * Bumped to 3: an `auth` blob whose key was authorized may now
  * carry `credentialSource` (`{kind:'env', name}` or `{kind:'inline'}`),
  * pinning which credential SOURCE `resolveCredential` may use — closing a gap
  * where a `providers.json` `apiKeyEnv` repoint, with the endpoint unchanged,
@@ -279,7 +279,7 @@ export function openStore() {
  * file-descriptor-based directory operations (`O_DIRECTORY|O_NOFOLLOW` plus
  * `fchmodSync`, and `mkdirat`/`openat`/`fchmodat` equivalents Node's
  * synchronous `fs` API does not expose), not attempted here. Accepted on the
- * same terms as this repo's other documented narrow local races (OAI-149).
+ * same terms as this repo's other documented narrow local races.
  *
  * Exported for testing only — `openOnce` and `openStoreForReading` are the
  * real callers. A non-ENOENT
@@ -344,10 +344,9 @@ function openOnce() {
   // by `repairDir`, the same way `jobs.db` itself is repaired below: the
   // WAL/SHM sidecars SQLite creates under WAL mode live directly in this
   // directory and hold the same prompt/source data `jobs.db` does, so a loose
-  // directory defeats the file-level chmod regardless of it (OAI-65). This is
-  // also what closes OAI-150: a state dir at `0755` with `logs/` at `0777` let
-  // another local principal plant a forged `<seq>.cancel-ack` without ever
-  // touching `jobs.db`.
+  // directory defeats the file-level chmod regardless of it. A state dir at
+  // `0755` with `logs/` at `0777` let another local principal plant a forged
+  // `<seq>.cancel-ack` without ever touching `jobs.db`.
   repairDir(state);
   // `logs` and `path` are both subpaths of `state` — string joins computed
   // once above, not filesystem lookups — so what they resolve to depends on

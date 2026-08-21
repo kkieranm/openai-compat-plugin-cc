@@ -57,9 +57,8 @@ test('cancel records the request and terminalizes nothing', { skip: NEEDS_SQLITE
     const status = await scenario.run(['status', 'inflight']);
     assert.match(status.stdout, /job inflight\s+cancelling/);
     assert.match(status.stdout, /stops at its next check-in/);
-    // **Both outcomes, because an exit alone stopped deciding the verdict.** This
-    // note used to promise the row "reads cancelled once its worker has exited",
-    // which OAI-66 falsified: a worker that crashes, or whose acknowledgement will
+    // **Both outcomes, because an exit alone stopped deciding the verdict.** A
+    // worker that crashes, or whose acknowledgement will
     // not write, exits and reads `cancel-unconfirmed`. Someone told the first and
     // shown the second would think their cancellation had been lost. Asserted on
     // the RENDERED line rather than the template, so the promise cannot come back
@@ -183,8 +182,7 @@ test('a cancelled job nothing ever picked up reads cancelled, not failed', { ski
     assert.equal(abandoned.failure.reason, 'worker-never-started');
     // The hint consults no evidence at all, so it may not name a cause. It used
     // to say the submitting process "most likely died", which this row cannot
-    // establish and `spawned_at` cannot supply — OAI-67 made that column NULL
-    // while a real worker exists.
+    // establish: `spawned_at` can be NULL while a real worker exists.
     assert.doesNotMatch(abandoned.failure.hint, /submitted it/, 'a hint that consults nothing may not name a cause');
     // It may not assert an ABSENCE either: a worker that started and died before
     // registering can have printed its own reason to the log this row's grace then

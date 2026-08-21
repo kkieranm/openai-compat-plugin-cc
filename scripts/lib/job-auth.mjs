@@ -53,7 +53,7 @@ export function queryCommitment(salt, query) {
  * would send an ad hoc `--base-url` row's synthetic `custom` profile through
  * `resolveProfile` and fail every ad hoc job carrying any query string at all.
  *
- * **`credentialSource` is written only when a key was authorized (OAI-183), and the field
+ * **`credentialSource` is written only when a key was authorized, and the field
  * is absent entirely — not `undefined`-valued — when it was not.** A query-only profile has
  * no credential source to pin, and the existing escalation guard in `resolveCredential`
  * already handles "no key was authorized" without needing one. Written unconditionally
@@ -90,7 +90,7 @@ export function authPolicyFor(profile) {
  * only thing it is for.
  *
  * **The real gate binds the freshly resolved credential to the frozen
- * ENDPOINT, not the origin (OAI-63).** `originOf` drops the path and query, so
+ * ENDPOINT, not the origin.** `originOf` drops the path and query, so
  * on a path-multiplexed gateway (LiteLLM, Azure APIM, Cloudflare AI Gateway) a
  * profile repointed to a *different tenant at the same origin* between
  * submission and execution would pass an origin-only check and hand that
@@ -182,7 +182,7 @@ export function resolveCredential(auth, transport, schemaVersion) {
     if (!current.apiKey) {
       throw new UserError(`credential-unavailable: provider "${auth.profile}" no longer supplies a credential.`);
     }
-    // **The credential SOURCE gate (OAI-183).** Placed after the refusal above, not before —
+    // **The credential SOURCE gate.** Placed after the refusal above, not before —
     // a v3 row whose profile was stripped of its key keeps the more informative "no longer
     // supplies a credential" message rather than this one.
     //
@@ -196,8 +196,8 @@ export function resolveCredential(auth, transport, schemaVersion) {
       const pinValid = pin?.kind === 'inline'
         || (pin?.kind === 'env' && typeof pin.name === 'string' && pin.name !== '');
       // A missing or malformed pin fails closed rather than defaulting to the current
-      // source — defaulting would silently reproduce the OAI-183 gap under a migration or
-      // hand-edited-row gap. This can only fire on a corrupt or hand-edited row: a
+      // source — defaulting would silently reproduce the same gap under a migration or
+      // hand-edited row. This can only fire on a corrupt or hand-edited row: a
       // legitimately submitted key-authorized row always carries a pin, because
       // `authPolicyFor` writes one exactly when `resolveApiKey` returned a key.
       //

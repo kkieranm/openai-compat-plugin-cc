@@ -61,13 +61,13 @@ test('setup reports an unreachable provider with remediation and still exits 0',
 test('setup still shows a probe failure\'s echoed response body in the text view', async () => {
   // /oai:setup is unambiguously interactive — the operator's own terminal,
   // echoing their own config back to them — so it must not lose diagnostic
-  // detail just because .message itself is now generic (OAI-185). The marker
+  // detail just because .message itself is now generic. The marker
   // sits only in the /v1/models response body here, never in baseUrl, so a
   // pass would be meaningless if it only reflected the (separately accepted,
   // unconditional) baseUrl display on the provider's own header line.
   //
   // Text-only here: the --json view of this same case is covered separately
-  // below (OAI-193).
+  // below.
   const marker = 'SECRET_MARKER_probebody';
   const server = await startFakeServer((request, response) => {
     respondJson(response, { error: `no models here: ${marker}` }, 404);

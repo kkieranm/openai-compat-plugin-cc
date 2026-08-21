@@ -1,4 +1,4 @@
-// OAI-165: `--repo` + `--include`, driven through the REAL CLI against a real
+// `--repo` + `--include`, driven through the REAL CLI against a real
 // second git repo — not the exported functions, because `git()` and `invoke()`
 // are module-private and the defect this covers was both of them independently
 // hardcoding this tool's own ROOT as `cwd`. A unit test against `optionsFrom`
@@ -64,7 +64,7 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
   const subjects = record.entries.map((entry) => entry.subject);
   assert.ok(subjects.includes(SUBJECT), `expected the scratch repo's own commit subject among ${JSON.stringify(subjects)}`);
 
-  // Adversarial review (OAI-165): the JSON record and rendered report must
+  // The JSON record and rendered report must
   // name the repo they describe, or a foreign-repo artifact is unattributed
   // and indistinguishable from this tool's own history.
   assert.equal(record.repo, target);
@@ -73,8 +73,8 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
 
 // The test above proves enumeration is rooted at the target repo, but every
 // commit is deliberately INELIGIBLE, so `runSweep` never calls `execute` and
-// `invoke()`'s own `cwd` wiring — the other of the two OAI-165 call sites
-// Codex found hardcoding ROOT — goes unexercised. This one makes the commit
+// `invoke()`'s own `cwd` wiring — the other of the two call sites that
+// hardcoded ROOT — goes unexercised. This one makes the commit
 // ELIGIBLE and lets the real companion process run, pointed at a closed local
 // port so it fails fast without a network dependency. The two possible
 // failures are distinguishable: wrong cwd resolves `git show <sha>` against
@@ -82,7 +82,7 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
 // correct cwd resolves it, gets past commit resolution, and fails only on the
 // unreachable model server ("connection refused").
 //
-// **Isolated from the ambient machine** (adversarial review): a throwaway
+// **Isolated from the ambient machine**: a throwaway
 // `OAI_PLUGIN_CONFIG` — the same override `runCompanion` uses — stops this
 // from reading, or first-run CREATING, the real `~/.config/oai-plugin/`; a
 // `closedPort()` server-then-close, not a guessed always-closed port number,

@@ -41,7 +41,7 @@ function normalize(text) {
  * "inherited property" are the same demonstration, and a case that listed only
  * one spelling would measure phrasing. `contradictions` are markers that
  * AFFIRMATIVELY show the answer got it wrong, which is a different outcome from
- * silence and must not collapse into it — ADR 016's zsh result named the right
+ * silence and must not collapse into it — the zsh result named the right
  * expression and the wrong mechanism, and a scorer that reported that as a plain
  * miss would lose the most informative thing about it.
  */
@@ -131,7 +131,7 @@ export const PROFILES = ['exact', 'partial', 'missed', 'contradicted'];
 /**
  * Tally profiles across runs, and refuse to hide an arm that never ran.
  *
- * `incomplete` is the framing guard ADR 016 earns: framing was the dominant
+ * `incomplete` is the framing guard: framing was the dominant
  * variable, so a sweep that ran only the favourable arm must say so rather than
  * present a number that reads as framing-independent. Never averaged across
  * arms for the same reason.

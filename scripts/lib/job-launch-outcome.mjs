@@ -53,7 +53,7 @@ const reportToStderr = (message) => writeSync(2, message);
  * "nothing was determined", and something here IS determined. The remaining
  * uncertainty is named in the value instead of being papered over by it.
  * (`job-queue.mjs`'s `timeOut` is the precedent for a diagnosed terminal write;
- * OAI-145 is the root fix that would remove the ambiguity at source.)
+ * removing the ambiguity at the source is a separate, larger fix.)
  *
  * **The verb is `abandonUnstarted`, never `finish`.** `finish` guards
  * `WHERE state IN ('queued','running')`, deliberately permissive so a worker can
@@ -82,9 +82,9 @@ export function terminalizeSpawnFailure(db, seq, job, error, { report = reportTo
   try {
     withBusyRetry(() => abandonUnstarted(db, seq, { state: 'failed', failure, at: new Date().toISOString() }));
   } catch (storageError) {
-    // NOT discarded, and not tested for `isBusy` either — both halves are
-    // `adr/020`'s settled policy for the structurally identical site, the
-    // worker's own `failed` write. Which storage fault occurred does not change
+    // NOT discarded, and not tested for `isBusy` either — both halves match the
+    // settled policy for the structurally identical site, the worker's own
+    // `failed` write. Which storage fault occurred does not change
     // what a reader needs, so the fault is reported by MESSAGE and the launch
     // error travels by propagating. Its first version caught the busy and
     // rethrew everything else, which left a disk error, a corrupt file or a
@@ -92,18 +92,17 @@ export function terminalizeSpawnFailure(db, seq, job, error, { report = reportTo
     //
     // `writeSync` rather than `process.stderr.write`, and that is a drainage
     // requirement rather than a style choice: the error rethrown below reaches
-    // `oai-companion.mjs`, which writes and then calls `process.exit(2)` —
-    // and `adr/019` records for this repo that `process.exit(2)` DISCARDS
-    // UNDRAINED STDERR. On darwin, stderr to a pipe is asynchronous, and a pipe
-    // is what every capturing caller supplies. An async write here MAY therefore
-    // be queued and lost to the exit — not on every execution, since whether an
-    // undrained write survives depends on timing this code does not control.
-    // That is the reason not to leave it to chance, and it is stated as a risk
-    // rather than a certainty because only the risk is established.
+    // `oai-companion.mjs`, which writes and then calls `process.exit(2)` — and
+    // `process.exit(2)` DISCARDS UNDRAINED STDERR. On darwin, stderr to a pipe
+    // is asynchronous, and a pipe is what every capturing caller supplies. An
+    // async write here MAY therefore be queued and lost to the exit — not on
+    // every execution, since whether an undrained write survives depends on
+    // timing this code does not control. That is the reason not to leave it to
+    // chance, and it is stated as a risk rather than a certainty because only
+    // the risk is established.
     //
     // Wrapped, because a throw raised inside a `catch` REPLACES the pending
-    // rethrow — `adr/020` records that exact defect costing a diagnosis once
-    // already. A failing report is the one thing here that is silently dropped:
+    // rethrow. A failing report is the one thing here that is silently dropped:
     // at that point nothing can be told to anyone, and the launch error is still
     // the most useful fact available.
     //

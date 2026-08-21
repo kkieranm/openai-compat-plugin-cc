@@ -6,15 +6,15 @@ import { execFileSync } from 'node:child_process';
  *
  * `--cold` busts the server's *prompt* cache and deliberately so, but it does
  * nothing about the model itself: LM Studio loads on demand, so the first
- * request of an arm carries a JIT load that belongs to no case. The 2026-07-30
- * arms worked around this with a warm-up request scripted around the harness by
+ * request of an arm carries a JIT load that belongs to no case. Earlier arms
+ * worked around this with a warm-up request scripted around the harness by
  * hand, which is the kind of step that is remembered once and forgotten twice.
  *
  * The request is unscored on purpose and its outcome does not gate the run: its
  * job is to make the server load the weights, and a server that refuses a
  * two-token prompt will refuse the corpus too — one case later, where the
  * failure is reported properly. So a failed warm-up is *recorded* and the bench
- * carries on. See ADR 006.
+ * carries on.
  *
  * **`answered` is not "the load was paid", and the field is named for what it
  * actually observes.** A reasoning model spends its whole token budget thinking
@@ -134,15 +134,15 @@ export function warmUpPair(pair, options, { companion, cwd, beforeCase }) {
  *
  * The alternative that also fixes it — grouping the cases by pair — was rejected
  * because it reorders them. Cases are scored independently, but they do not run
- * independently: model residency, prompt cache, thermal state and the correlated
- * failure conditions OAI-20 exists to survive are all shared mutable state, so
- * reordering one arm changes which cases meet which conditions and weakens any
- * cross-arm comparison the corpus is used for. Order is preserved; only the
- * warm-ups move.
+ * independently: model residency, prompt cache, thermal state and the
+ * correlated failure conditions this bench must survive are all shared mutable
+ * state, so reordering one arm changes which cases meet which conditions and
+ * weakens any cross-arm comparison the corpus is used for. Order is preserved;
+ * only the warm-ups move.
  *
- * On a single-pair invocation — which is every arm OAI-19 runs, since a
- * command-line `--model` overrides every case — this collapses to exactly one
- * warm-up before the first case, identical to the behaviour it replaces.
+ * On a single-pair invocation — the common case, since a command-line
+ * `--model` overrides every case — this collapses to exactly one warm-up
+ * before the first case, identical to the behaviour it replaces.
  *
  * `warm` and `run` are injected because `bench/run.mjs` calls `main()` at
  * import, so the loop is otherwise unreachable from a test — and a pair-change

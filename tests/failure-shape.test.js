@@ -6,7 +6,7 @@ import { createNegotiation, postWithDegrade } from '../scripts/lib/chat.mjs';
 import { emptyAnswer, finishAnswer } from '../scripts/lib/completion.mjs';
 import { isRetryable } from '../scripts/lib/failure-shape.mjs';
 
-// OAI-20, the rules in isolation. `retry.test.js` drives these through the real
+// The rules in isolation. `retry.test.js` drives these through the real
 // CLI; these pin the two decisions that a request-count assertion cannot see —
 // which replies count as a dropped request, and when a later attempt may be
 // called warm-eligible. Split from that file at the size budget, and the seam is
@@ -87,7 +87,7 @@ test('a capability refusal closes as `refused` once the replacement is dispatche
 });
 
 test('a capability refusal whose replacement is never dispatched stays a FAILURE', () => {
-  // OAI-23. `postWithDegrade` re-checks the wall-clock cap at the top of every
+  // `postWithDegrade` re-checks the wall-clock cap at the top of every
   // iteration, BEFORE `ledger.begin` — so a cap falling due between the refusal
   // and the next dispatch ends the run with nothing replaced. Recorded as
   // negotiation, that terminal failure reads as `0 failed, 1 refused` and
@@ -177,7 +177,7 @@ test('the layer that actually sends a different shape marks it as negotiation', 
 });
 
 test('a response_format refusal whose fallback is never dispatched stays a FAILURE', () => {
-  // The other half of OAI-23, on the other call site. `degraded()` announces the
+  // The other half of this, on the other call site. `degraded()` announces the
   // refusal and then calls `chatCompletion`, whose first act is the same
   // wall-clock cap check that precedes `ledger.begin` — so the fallback can be
   // refused before it is ever sent.
@@ -222,15 +222,15 @@ test('a 400 that nobody reclassifies stays a failure', () => {
 });
 
 test('a cap that has ALREADY expired mints no ledger entry at all', () => {
-  // OAI-22's behavioural half, and the direction that matters: the record must
+  // The behavioural half, and the direction that matters: the record must
   // never contain a physical attempt that never went on the wire. A deadline the
   // caller imposed is not evidence about the server, and an entry for it inflates
-  // the failure rate OAI-19 reads with the plugin's own limit.
+  // the server's measured failure rate with the plugin's own limit.
   //
   // No clock seam needed for this one — an expiry in the past is the expired
   // state. The narrower mid-window case, where the cap falls due *between* the
-  // check and the dispatch, does need one and gets it in `cap-ordering.test.js`
-  // (OAI-25): a controlled clock reaches it after all, retiring this file's
+  // check and the dispatch, does need one and gets it in `cap-ordering.test.js`:
+  // a controlled clock reaches it after all, retiring this file's
   // earlier claim that only a structural guard could stand for it.
   const ledger = createLedger();
   const profile = { name: 'p', baseUrl: 'http://127.0.0.1:1/v1' };

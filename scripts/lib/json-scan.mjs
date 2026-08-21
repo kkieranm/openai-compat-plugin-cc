@@ -137,7 +137,7 @@ function scanFor(text, open, close, accept) {
  * judgement about how models reply, not a measurement**; the corpus cannot check
  * it, because a decoy that wins still parses and is recorded as a clean run. Its
  * symmetric failure is a reply that trails commentary containing JSON after the
- * payload, judged rarer than leading quoted source. See ADR 003.
+ * payload, judged rarer than leading quoted source.
  *
  * `outermost` is what makes "last" safe, and without it last-wins is broken:
  * every accepted `{findings: […]}` wrapper CONTAINS an accepted array — its own

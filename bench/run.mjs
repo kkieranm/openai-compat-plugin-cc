@@ -10,7 +10,7 @@
 // second version of the fit decision, free to disagree with the first.
 //
 // Deliberately not part of `npm test`: it needs a real model and is
-// non-deterministic. See ADR 006.
+// non-deterministic.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -57,15 +57,15 @@ const INVOCATION = randomUUID();
 // EXPORTED for `tests/bench-review-flags.test.js`. `main()` here is unexported and
 // runs only under the `process.argv[1]` guard, so nothing could reach the command
 // line this builds — which is how `--structured-output` came to be missing from
-// SPEC for as long as it was (OAI-117), and is the shape OAI-125 names as the one
-// to stop copying. Exporting the composition is the seam, not another end-to-end test.
+// SPEC for as long as it was. Exporting the composition is the seam, not another
+// end-to-end test.
 export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
   const flags = ['review', ...materializedArgs, '--json'];
   if (diffOnly) flags.push('--diff-only');
-  // OAI-117. Without this the corpus's large cases — the only ones that reliably
-  // starve the model (OAI-115) — could not be run under a schema at all, so
-  // OAI-19's T2 could establish that the schema CAUSES the transport drops but
-  // not whether it fixes token exhaustion. The flag exists to ask that question,
+  // Without this the corpus's large cases — the only ones that reliably
+  // starve the model — could not be run under a schema at all, leaving no way
+  // to establish whether the schema causes the transport drops or fixes token
+  // exhaustion. The flag exists to ask that question,
   // NOT because a schema is a fix: `commands/review.md` records that on this
   // backend the grammar exhausts its lexer after ~14k generated tokens and takes
   // the model process with it. An arm run with this on is measuring one failure
@@ -77,7 +77,7 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
   // The manifest may pin its own provider/model, so a case can name the model
   // it is a fair test of; the command line overrides it. This is what makes
-  // OAI-11's cross-model passes configuration rather than a rewrite.
+  // This is what makes a cross-model pass configuration rather than a rewrite.
   const provider = options.provider ?? caseDef.provider;
   const model = options.model ?? caseDef.model;
   if (provider) flags.push('--provider', provider);
@@ -151,8 +151,7 @@ function reviewOnce(caseDef, options, runIndex) {
  * calls itself the evidence the harness exists to keep.
  *
  * `reason` is the category beside the prose, read from the command's own
- * `--json` envelope rather than matched out of stderr — a defect class this repo
- * has on file twice over (OAI-13 items 1 and 2).
+ * `--json` envelope rather than matched out of stderr.
  */
 function failedRun(error, caseDef, options, diffOnly) {
   const said = String(error.stderr ?? '').trim();
@@ -269,7 +268,7 @@ async function main() {
     cold: Boolean(options.cold),
     // In the ARTIFACT, not just the command line: two arms differing only in
     // whether a schema was enforced are not comparable, and a reader who cannot
-    // tell them apart will difference them anyway. Same reasoning as OAI-124.
+    // tell them apart will difference them anyway.
     structuredOutput: Boolean(options['structured-output']),
     timeoutSeconds: options.timeout,
     maxSeconds: options['max-seconds'],
@@ -280,8 +279,8 @@ async function main() {
   process.stderr.write(`\nPer-run records: ${recordPath}\nRendered report: ${reportPath}\n`);
 }
 
-// GUARDED, and it was not until 2026-08-09 (OAI-117's seam found it). `main()` ran
-// on IMPORT, so the moment anything in `tests/` imported this file to exercise a
+// GUARDED. `main()` ran on IMPORT, so the moment anything in `tests/` imported
+// this file to exercise a
 // pure function, `node --test` launched a full six-case benchmark against whatever
 // server was or was not up and wrote a report and a record into `bench/results/` —
 // artifacts indistinguishable from a real arm. `review-sweep.mjs:291` already had

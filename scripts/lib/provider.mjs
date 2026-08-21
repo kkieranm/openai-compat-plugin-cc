@@ -30,8 +30,8 @@ function buildHeaders(profile) {
  *
  * This function used to build bare `UserError`s, and that silently discarded
  * `reason`, `code` and `cause` for exactly the three codes it names below. The
- * consequence was invisible until the retry set was split (OAI-22): a real
- * `EAI_AGAIN` is classified retryable by `transportError` and then arrived at
+ * consequence: a real `EAI_AGAIN` is classified retryable by `transportError`
+ * and then arrived at
  * `answerWithRetry` with **no reason at all**, so it was never retried; and a
  * terminal `ENOTFOUND` or `ECONNREFUSED` was recorded in the attempt ledger as
  * `unclassified`, beside genuinely unrecognised failures, in the very table the
@@ -53,7 +53,7 @@ function reword(error, message, options) {
 }
 
 /**
- * The endpoint a transport failure names, kept OFF `.message` (OAI-185).
+ * The endpoint a transport failure names, kept OFF `.message`.
  *
  * `.message` is what `errorReport()` persists into `jobs.db` and what an
  * uncaught worker error prints to its own job log — both longer-lived than
@@ -98,7 +98,7 @@ function describeFailure(error, profile) {
 /**
  * Non-2xx, kept here rather than in the transport: the message carries the
  * provider's name and HTTP status, and the first 400 characters of the body
- * go on `.responseBody` rather than `.message` (OAI-185) — a server routinely
+ * go on `.responseBody` rather than `.message` — a server routinely
  * echoes the request path back in a 404/405 body, which can carry the same
  * secret-shaped `baseUrl` segment `describeFailure()` guards against.
  * `structured.mjs` pattern-matches that body via `.responseBody`, not
@@ -110,11 +110,11 @@ function describeFailure(error, profile) {
  * displayable through the same interactive-allowlist path the body uses,
  * instead of naming a URL that then has nowhere to show up. `statusText`
  * folds onto the same field for the same reason, rather than being dropped
- * outright: a pass-7 review found a server that signals a capability
- * refusal purely through the HTTP reason phrase, with an empty body, would
- * otherwise have `isFormatRejection`/`refusedField` lose that signal
- * entirely — both read `.responseBody`, so it must carry everything the old
- * `.message` did, not just the body half of it.
+ * outright: a server that signals a capability refusal purely through the
+ * HTTP reason phrase, with an empty body, would otherwise have
+ * `isFormatRejection`/`refusedField` lose that signal entirely — both read
+ * `.responseBody`, so it must carry everything the old `.message` did, not
+ * just the body half of it.
  */
 async function assertOk(profile, path, response) {
   if (response.status >= 200 && response.status < 300) return;
@@ -154,7 +154,7 @@ async function assertOk(profile, path, response) {
 
 /**
  * The server/endpoint-controlled detail an error carries off `.message`
- * (OAI-185) — `.endpoint`, `.responseBody`, `.bodyExcerpt`, `.finishReason`
+ * — `.endpoint`, `.responseBody`, `.bodyExcerpt`, `.finishReason`
  * (completion.mjs / client.mjs — unvalidated server payload, not transport
  * data, but the same discipline) — joined for a genuinely interactive
  * display. One definition: `oai-companion.mjs`'s top-level catch and

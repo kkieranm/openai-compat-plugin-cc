@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deltaFrame, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
 
-// OAI-35, pass 2. The sites that MINT `serverResponded` on an error, driven
+// The sites that MINT `serverResponded` on an error, driven
 // through the real CLI and a real fake server.
 //
 // Split from `attempt-server-responded.test.js`, and the seam is the whole point

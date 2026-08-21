@@ -1,15 +1,12 @@
-// The command line `bench` builds for one run (OAI-117).
+// The command line `bench` builds for one run.
 //
 // `bench/run.mjs` drives the real CLI, so what it does or does not put on that
 // command line IS the experiment. `--structured-output` was absent from `SPEC`
 // for as long as it was precisely because nothing could reach `reviewFlags`.
 //
-// Writing this file found a second defect and it is worth recording where the
-// evidence is: `main()` was called UNCONDITIONALLY at module scope, so the first
-// import of this module from `tests/` ran a whole six-case benchmark and wrote a
-// report and a record into `bench/results/`. It was fixed with the
-// `process.argv[1]` guard `review-sweep.mjs:291` already had. The claim that the
-// guard existed was one I made before checking — the check is what disproved it.
+// `bench/run.mjs`'s `main()` only runs when invoked as the entry script (a
+// `process.argv[1]` guard), so importing it from here does not itself trigger
+// a benchmark run and write into `bench/results/`.
 //
 // Each assertion here has a NEGATIVE twin. A test that only checks a flag appears
 // when asked for cannot distinguish "forwarded correctly" from "always on", which

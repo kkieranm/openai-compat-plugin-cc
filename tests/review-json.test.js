@@ -94,9 +94,9 @@ test('an unreadable reply is parsed:false with the raw text, never an empty find
 });
 
 test('a cut analysis reaches the JSON, so a guillotined run cannot score as clean', async () => {
-  // Trap instance 14 in machine-readable form: bounding `analysis` makes a
-  // truncated review *valid* — complete JSON, finish_reason stop, empty
-  // findings — and indistinguishable from a genuinely clean pass without this.
+  // Bounding `analysis` makes a truncated review *valid* — complete JSON,
+  // finish_reason stop, empty findings — and indistinguishable from a
+  // genuinely clean pass without this.
   // Built from the schema the request actually carried, not from a constant.
   // The cap is derived per run now, so this run is cut only if the schema that
   // was sent is the same instance the parser compared the reply against — which
@@ -222,10 +222,9 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   assert.equal(result.status, 1, 'a run that ran out of tokens is not a reportable result');
   assert.match(result.stderr, /ran out of tokens/);
 
-  // Stdout is no longer empty here — OAI-17 made `--json` machine-readable on
-  // the failure path too — but the invariant this test was written to protect is
-  // unchanged and is now asserted directly rather than via emptiness: whatever
-  // is printed must be unmistakably *not* a report. A caller keying on
+  // Stdout is no longer empty here — `--json` is machine-readable on the
+  // failure path too — so the invariant is asserted directly rather than via
+  // emptiness: whatever is printed must be unmistakably *not* a report. A caller keying on
   // `findings` or `parsed` must find neither, so a budget failure can never be
   // read as a finished run that found nothing.
   const envelope = JSON.parse(result.stdout);

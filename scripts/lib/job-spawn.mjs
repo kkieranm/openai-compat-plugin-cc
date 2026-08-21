@@ -32,8 +32,8 @@ const COMPANION = fileURLToPath(new URL('../oai-companion.mjs', import.meta.url)
 export async function spawnWorker(seq) {
   // `O_NOFOLLOW`: this path is predictable (`logs/<seq>.log`), so a symlink
   // planted there ahead of the worker would otherwise be followed and
-  // appended to (OAI-65(c)). No `O_EXCL` — a pre-existing REGULAR file at this
-  // path is a different, already-closed concern (OAI-65(d)/OAI-67), not what
+  // appended to. No `O_EXCL` — a pre-existing REGULAR file at this
+  // path is a different, already-closed concern, not what
   // this flag guards against.
   const log = openSync(
     logPathFor(seq),

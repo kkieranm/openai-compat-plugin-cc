@@ -118,7 +118,7 @@ export function selectModel(profile, explicit, described) {
  *
  * The server is consulted every time, and it did not used to be: a profile
  * answering both questions in config — `defaultModel` plus `contextLength` —
- * skipped the probe entirely, which ADR 002 recorded as a feature. That became
+ * skipped the probe entirely. That became
  * untenable the moment `planSelection` could refuse an id for being absent from
  * the catalogue, because `/oai:setup` probes unconditionally and this did not.
  * Same authority, two different inputs: setup printed `reachable, but /oai:task
@@ -193,7 +193,7 @@ export function prepareRequest({
 /**
  * How long to wait for the model's *first token* — connect and prefill, which
  * are legitimately silent. It used to mean total wall clock, and meant nothing
- * above five minutes: undici capped it at 300s regardless (ADR 007).
+ * above five minutes: undici capped it at 300s regardless.
  */
 export function resolveTimeout(profile, timeoutSeconds) {
   if (timeoutSeconds) return timeoutSeconds * 1000;
@@ -216,8 +216,8 @@ export function resolveIdle(profile, idleSeconds) {
  * **No default, deliberately.** The two budgets above have one because a request
  * with no bound at all is a hang; this one is a ceiling on work that is
  * *succeeding*, and a default would be a number picked from the successful runs
- * this repo happens to have observed. That is precisely the shape OAI-15 had to
- * undo on the `analysis` cap, which was set "above every observed successful
+ * this repo happens to have observed. That is precisely the shape that had to
+ * be undone on the `analysis` cap, which was set "above every observed successful
  * run" from a sample that had not yet seen a normal run reason long, and spent
  * its life truncating working reviews. So the unset case is the old behaviour,
  * exactly: unbounded once tokens are flowing.

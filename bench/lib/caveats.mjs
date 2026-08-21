@@ -152,13 +152,13 @@ function capNote(rows, maxSeconds) {
 
 
 /**
- * The schema arm's note (OAI-117), split out at the function size budget.
+ * The schema arm's note, split out at the function size budget.
  *
  * It names the TRADE rather than the flag, because the sharpest misreading is to
  * treat a schema arm as the same measurement with a tidier reply: a schema was
- * measured to CAUSE the transport drops (OAI-19 T2), while the unconstrained
- * default was measured to reason through its whole budget and emit nothing
- * (OAI-115). Failures are expected to move between columns, not disappear.
+ * measured to CAUSE the transport drops, while the unconstrained default was
+ * measured to reason through its whole budget and emit nothing. Failures are
+ * expected to move between columns, not disappear.
  */
 function schemaNote(structuredOutput, rows) {
   if (!structuredOutput) return [];
@@ -170,7 +170,7 @@ function schemaNote(structuredOutput, rows) {
     + 'described in prose and parsed leniently. This is NOT the default path. **Measured on LM '
     + "Studio's MLX backend, 2026-08-04**: the grammar built from the schema exhausted its lexer at "
     + '13,956–14,744 generated tokens and segfaulted the model process, which is the cause of the '
-    + 'empty-completion and stream-drop failures recorded there (ADR 003). The other side of the trade '
+    + 'empty-completion and stream-drop failures recorded there. The other side of the trade '
     + 'was measured **on that same server**: the unconstrained default can spend its entire shared '
     + '`max_tokens` budget reasoning and emit no findings at all (OAI-115). **Both halves are '
     + 'observations about that one server, and neither is inferred for whichever provider this run '
@@ -242,10 +242,9 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
  * The caveats, stated every time rather than left to the reader's memory.
  *
  * Each is a way this table is narrower than it looks, and each has already
- * misled someone in this repo's own record: a single run was read as a result
- * (OAI-9 measured a 20% hit rate per run), a cut run was read as a clean pass
- * (trap instance 14), and an unmatched finding was called a false positive when
- * it may be a real catch the anchor missed.
+ * misled someone in this repo's own record: a single run was read as a result,
+ * a cut run was read as a clean pass, and an unmatched finding was called a
+ * false positive when it may be a real catch the anchor missed.
  */
 function caveats(rows, runsPerCase, flags) {
   const notes = flagNotes(rows, flags);

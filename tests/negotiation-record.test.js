@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { completionFrames, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
 
-// OAI-23. The attempt ledger reclassifies a refused request as benign
+// The attempt ledger reclassifies a refused request as benign
 // capability negotiation only as a consequence of the replacement request
 // actually being dispatched. Split from `retry.test.js` at the file size
 // budget, and the seam is real: those tests are about a DROPPED request being
@@ -17,7 +17,7 @@ const FINDINGS = JSON.stringify({
 });
 
 /**
- * OAI-23's positive controls, one per call site.
+ * The positive controls, one per call site.
  *
  * The negative case — a refusal whose replacement is never dispatched — is
  * pinned in `failure-shape.test.js` and, end to end, by the oversize case in
@@ -46,7 +46,7 @@ test('a response_format refusal whose fallback IS sent is recorded as negotiatio
   assert.equal(report.attempts[0].outcome, 'refused', 'a different shape was accepted, so this is not unreliability');
   // NOT `shape-rejected`: that code means the shape was rejected and nothing
   // replaced it, and something did. Pinned so the choice stays a decision — and
-  // so a `refused` entry stays byte-identical to the pre-OAI-23 records.
+  // so a `refused` entry stays byte-identical to earlier records.
   assert.equal(report.attempts[0].reason, null);
   assert.equal(report.attempts[1].outcome, 'answered');
   // The fallback rewrites the prompt with the schema as prose, so it is NOT a

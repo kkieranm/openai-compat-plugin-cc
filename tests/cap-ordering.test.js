@@ -5,7 +5,7 @@ import { SHAPE_REJECTED } from '../scripts/lib/attempt-outcome.mjs';
 import { createNegotiation, postWithDegrade } from '../scripts/lib/chat.mjs';
 import { completion, respondJson, startFakeServer } from './helpers.mjs';
 
-// OAI-25: the wall-clock cap's ORDERING against the attempt ledger, driven through
+// The wall-clock cap's ORDERING against the attempt ledger, driven through
 // the real `postWithDegrade` loop under a clock the test controls.
 //
 // Separate from `failure-shape.test.js`, which scopes itself to the rules in
@@ -26,9 +26,9 @@ const CAP_MS = 30_000;
  * clock back afterwards however it ends.
  *
  * `capBudgets` reads the bare global, so this needs no seam in production code —
- * which is the point. OAI-25 raised injecting a `now` parameter and it was
- * rejected: a production signature widened for a test is a cost paid forever,
- * and `globalThis.performance` costs one `finally`.
+ * which is the point. Injecting a `now` parameter instead would widen a
+ * production signature just for a test, a cost paid forever, where
+ * `globalThis.performance` costs one `finally`.
  *
  * The stub delegates to the real clock plus an offset rather than returning a
  * fixed number. Everything downstream of the cap — `prefillMs`, `generationMs`,
@@ -78,12 +78,11 @@ function ledgerHooked(ledger, { onBegin = () => {}, onRefuse = () => {} } = {}) 
 }
 
 test('a cap falling due after the ledger entry still dispatches the request it checked', async () => {
-  // OAI-22's invariant, from the outside. `postWithDegrade` evaluates the cap
-  // once and carries the result into `postChat`; if `postChat` re-evaluated it —
-  // which it did before OAI-22 — an expiry landing in this window would throw
-  // *after* the entry was minted, leaving a record of a physical attempt that
-  // never reached a socket and inflating the failure rate OAI-19 reads with the
-  // plugin's own deadline.
+  // `postWithDegrade` evaluates the cap once and carries the result into
+  // `postChat`; if `postChat` re-evaluated it instead, an expiry landing in this
+  // window would throw *after* the entry was minted, leaving a record of a
+  // physical attempt that never reached a socket and inflating the failure rate
+  // read off against the plugin's own deadline.
   //
   // So the clock is moved past expiry at the one instant that distinguishes the
   // two designs: after `ledger.begin`, before the request is written.
@@ -134,7 +133,7 @@ test('a cap falling due after the ledger entry still dispatches the request it c
 });
 
 test('a cap falling due after a refusal leaves it a FAILURE, with no entry for the replacement', async () => {
-  // OAI-23's invariant on the rung path, and the route to it that nothing drove.
+  // The invariant on the rung path, and the route to it that nothing drove.
   // `review-budget.test.js` reaches the same `shape-rejected` outcome by having
   // the replacement refused for being oversized; the comment in `chat.mjs` names
   // a second route — the wall-clock cap falling due between the refusal and the

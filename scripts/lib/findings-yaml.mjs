@@ -22,9 +22,7 @@ const KEY = '[A-Za-z_][A-Za-z0-9_]*';
 const ITEM_START = new RegExp(`^(\\s*)-\\s+(${KEY}):\\s*(.*)$`);
 const FIELD = new RegExp(`^(${KEY}):\\s*(.*)$`);
 
-// Review-ladder finding (pass 1, codex-adversarial + codex-plain, converging
-// independently, plus '#' at the terminal verdict point, codex-adversarial
-// again): a value beginning with any of these is a YAML construct this narrow
+// A value beginning with any of these is a YAML construct this narrow
 // acceptor does not implement — a flow collection, a quoted scalar (whose
 // escapes it cannot decode), an anchor, an alias, a tag, a block scalar, or a
 // comment — and reading it as a bare, literal scalar would silently
@@ -44,12 +42,11 @@ function isDisqualifyingScalar(value) {
 }
 
 function addField(item, key, rawValue) {
-  // Review-ladder finding (pass 1, codex-adversarial + codex-plain, converging
-  // independently): a repeated key used to overwrite the earlier value silently
+  // A repeated key used to overwrite the earlier value silently
   // AND bypass MAX_FIELDS_PER_ITEM (which counted distinct keys, not field
   // lines) — a document with an ambiguous, repeated mapping is disqualifying
   // content, not a last-write-wins update.
-  // Review-ladder finding (pass 1, agent-closer): `__proto__` is a key this
+  // `__proto__` is a key this
   // plain-object container cannot store faithfully — assigning a string to it
   // is a silent no-op, never an own property — so it must be disqualifying
   // content, same as any other key/value this acceptor cannot read faithfully.
@@ -112,7 +109,7 @@ export function findingsInYaml(text) {
     }
 
     // A continuation must textually EXTEND the item's own indent, not merely be
-    // longer — review-ladder finding (pass 1, codex-plain): comparing by length
+    // longer — comparing by length
     // alone let a tab-indented or otherwise unrelated-prefix line pass as a
     // continuation of a space-indented item, which is not a consistent single
     // indentation scheme at all.
@@ -139,8 +136,7 @@ export function findingsInYaml(text) {
     if (trailing && summary === undefined) {
       // Same disqualifying-scalar rule as any other value — a top-level summary
       // this acceptor cannot read faithfully is disqualifying content, not a
-      // shorthand. Review-ladder finding (pass 1, fork-opener + acceptance-audit):
-      // this branch used to take the raw remainder with no gate at all.
+      // shorthand. This branch used to take the raw remainder with no gate at all.
       if (isDisqualifyingScalar(trailing[1])) return null;
       summary = trailing[1].trim();
       continue;

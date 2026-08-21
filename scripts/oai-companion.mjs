@@ -40,7 +40,7 @@ async function main() {
 
 main().catch((error) => {
   if (error instanceof UserError) {
-    // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt` (OAI-185)
+    // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt`
     // are appended here only — never inside `.message` or `.hint` themselves,
     // which `errorReport()` persists into `jobs.db` and which an uncaught
     // worker error also writes to its own job log (`job-spawn.mjs`'s

@@ -1,7 +1,7 @@
 // Turn an interrupted run's ledger into the report that run never got to write.
 //
 // The ledger exists because a sweep that dies at hour eight used to lose all
-// forty commits (OAI-132). But a file of JSON lines nobody can read as a report
+// forty commits. But a file of JSON lines nobody can read as a report
 // only moves the problem: the disposition table is what makes a night legible,
 // and rebuilding it by eye at 07:00 is not recovery. So this is the reader, and
 // it is a SEPARATE COMMAND rather than something the next sweep does on startup

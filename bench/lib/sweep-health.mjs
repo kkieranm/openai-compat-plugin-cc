@@ -1,13 +1,13 @@
 // What the server did to the night, replayed from the record rather than stored.
 //
 // The sweep aborts after `--abort-after` CONSECUTIVE outages, and any non-outage
-// zeroes that counter (OAI-140). So a server failing every other commit, with a
+// zeroes that counter. So a server failing every other commit, with a
 // slow commit in between, produces `outage, timeout, outage, timeout, …` and the
 // streak never reaches the threshold — the sweep runs its full wall clock against
 // a dead server and reports the result as coverage.
 //
-// The run on 2026-08-09 recorded 20 deadline-timeouts and zero aborts, and that
-// was read as the fail-fast holding. **The same data cannot distinguish "no
+// A run recording many timeouts and zero aborts can look like the fail-fast
+// holding when it is not. **The same data cannot distinguish "no
 // outage occurred" from "outages occurred and were repeatedly reset"**, because
 // nothing recorded the counter's history. This is that history — and it is
 // DERIVED, not stored.
@@ -55,8 +55,8 @@ function clock(iso) {
  *
  * `resets` counts the times a non-outage zeroed a LIVE streak — a reset from
  * zero is not a reset, it is an ordinary healthy commit, and counting those
- * would report a number the size of the run. That distinction is the whole
- * question OAI-140 asks, so it is the number the reader is given.
+ * would report a number the size of the run. That distinction is why this is
+ * the number the reader is given.
  */
 export function replayStreak(entries) {
   let streak = 0;

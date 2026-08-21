@@ -1,4 +1,4 @@
-// Whether a worker said its exit WAS the cancellation (OAI-66).
+// Whether a worker said its exit WAS the cancellation.
 //
 // Without this fact, a reader finding a dead worker with a cancellation pending
 // cannot tell a cooperative exit from a crash — and this repo published both as a
@@ -23,7 +23,7 @@
 // safe, and state `0777` lets the attacker replace `logs/` and `jobs.db` alike, so
 // the distinction disappears rather than worsening. `job-store.mjs` requests `0700`
 // at creation only and never repairs an inherited directory, which is what makes
-// the middle case reachable. Tracked as OAI-150.
+// the middle case reachable.
 //
 // **Nothing here throws.** The read runs inside the queue's `BEGIN IMMEDIATE`
 // (`job-queue.mjs` `decide`), where a throw rolls back the transaction, escapes

@@ -27,13 +27,11 @@ function filesUnder(dir) {
 // two forms this repo uses deliberately.
 const STATIC_IMPORT = /^\s*import\s+(?:[^;'"]*\s+from\s+)?['"]node:sqlite['"]/m;
 
-// Promoted to a guard after the class was CONFIRMED THREE TIMES by review — twice
-// in `runtime-capability.test.js` (a version-gated CLI flag, then a `node:module`
-// API newer than the declared floor) and once here, when `job-helpers.mjs` carried
-// a static `node:sqlite` import that killed ELEVEN test files at link time on
-// every runtime OAI-61 exists to support. `node:sqlite` is unavailable on Node
-// 18.18–22.12, on builds compiled without SQLite, and under
-// `--no-experimental-sqlite`; this package declares `engines: >=18.18`.
+// `job-helpers.mjs` once carried a static `node:sqlite` import that killed
+// ELEVEN test files at link time on every runtime this package supports.
+// `node:sqlite` is unavailable on Node 18.18–22.12, on builds compiled
+// without SQLite, and under `--no-experimental-sqlite`; this package
+// declares `engines: >=18.18`.
 //
 // Why this cannot be left to the suite: a static import fails during LINKING, so
 // no `skip` can report it, no assertion runs, and the file's entire contents

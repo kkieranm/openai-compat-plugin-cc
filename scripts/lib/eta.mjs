@@ -6,8 +6,8 @@
 // difference between "leave it running" and "use --background", and it is
 // invisible at the moment the decision has to be made.
 //
-// **Rates are configuration, never code.** ADR 001: providers are config data,
-// so nothing here knows what a "dense model" is or which server is slow. A
+// **Rates are configuration, never code.** Providers are config data, so
+// nothing here knows what a "dense model" is or which server is slow. A
 // profile that has not been measured gets NO estimate, and the caller says so
 // rather than printing a number derived from someone else's hardware.
 
@@ -28,8 +28,8 @@ function human(total) {
 /**
  * What the two halves of a run are expected to cost, separately.
  *
- * Separately because they are not interchangeable and ADR 009 established that
- * no arithmetic on a footer recovers one from the other: prefill scales with the
+ * Separately because they are not interchangeable — no arithmetic on a footer
+ * recovers one from the other: prefill scales with the
  * input and is silent, generation scales with the reply and is visible. A single
  * blended figure would hide exactly the fact that makes `--background` the right
  * call — that most of the wait happens before anything appears.

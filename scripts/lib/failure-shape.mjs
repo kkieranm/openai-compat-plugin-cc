@@ -2,15 +2,15 @@
  * The shapes in which a request dies without the model having said no — and
  * which of them are worth sending again.
  *
- * Measured, not guessed. Across four full-corpus benchmark invocations on
- * 2026-07-30, **27 of 72 runs died server-side (37.5%)**, on both a dense 27B
+ * Measured, not guessed. Across four full-corpus benchmark invocations,
+ * **27 of 72 runs died server-side (37.5%)**, on both a dense 27B
  * and an MoE 35B-A3B — so the locus is LM Studio's shared serving path rather
  * than either model. Every one of them was a failure of *delivery*: an empty
  * completion, or a stream closed part-way through reasoning. None was a refusal,
- * a timeout, or a bad answer. See ADR 012 and BACKLOG.md OAI-20.
+ * a timeout, or a bad answer.
  *
  * A code, never a phrase. This repo has the prose-matching defect class on file
- * twice over (OAI-13 items 1 and 2): a matcher reading a server's wording
+ * twice over: a matcher reading a server's wording
  * asserts a cause it only guessed, and one vendor rewording its error text turns
  * a retry into a silent no-op. So each shape is tagged where it is *detected* —
  * by the code that already knows what it saw — and every consumer reads the tag.

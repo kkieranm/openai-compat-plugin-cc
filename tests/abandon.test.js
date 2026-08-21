@@ -94,7 +94,7 @@ test('a dead pid is a refusal, not an abandonment', { skip: NEEDS_SQLITE }, asyn
 
 test('a pid that is recorded but unreadable is malformed, not a death', { skip: NEEDS_SQLITE }, () => {
   const now = Date.now();
-  // OAI-162's whole subject. Each of these reached `isAlive` and came back
+  // Each of these reached `isAlive` and came back
   // `false`, which `livenessOf` read as `dead` — so the row was handed to
   // ordinary recovery and terminalized, and the operator was told its process
   // was already gone about a value that never denoted a process.

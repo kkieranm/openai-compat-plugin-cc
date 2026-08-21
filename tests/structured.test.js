@@ -182,7 +182,7 @@ test('a reply without a findings array is not findings', () => {
 });
 
 test('only a rejection of the format itself triggers the fallback', () => {
-  // The refusal wording lives on `.responseBody` (OAI-185), not `.message` —
+  // The refusal wording lives on `.responseBody`, not `.message` —
   // `assertOk()` puts the server's echoed body there so a secret-shaped URL
   // never reaches the persisted `.message`.
   const rejection = Object.assign(new Error('a generic 400'), {

@@ -1,15 +1,14 @@
 // The per-commit wall-clock cap's DEFAULT, which nothing could see change.
 //
-// Its own file because `review-sweep.test.js` sat at the size ratchet (retired 2026-08-17), and
+// Its own file because `review-sweep.test.js` sat at the size ratchet, and
 // because this guards a different thing from the classification tests there: not
 // what a reply means, but whether a constant this harness's coverage depends on
 // actually reaches the process that enforces it.
 //
-// Raised 900 -> 1800 on 2026-08-10 (OAI-138) after the first sweep run
+// Raised 900 -> 1800 after the first sweep run
 // to completion lost HALF its eligible corpus to the old value — 20 of 40
-// commits, every one `deadline-timeout`. Raised again 1800 -> 3600 on
-// 2026-08-19 (OAI-138, user-directed, landing alongside the salvage
-// mechanism) after a night at 1800 still lost 15 of 34 attempted to
+// commits, every one `deadline-timeout`. Raised again 1800 -> 3600
+// after a night at 1800 still lost 15 of 34 attempted to
 // `deadline-timeout`. Nothing would have noticed either change going
 // back: every fixture in the sweep suite passes its own `maxSeconds`, so the
 // whole suite stayed green against any value. That is the same shape as the

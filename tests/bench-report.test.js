@@ -245,7 +245,7 @@ test('the control case is not reported as a recall failure', () => {
 });
 
 
-// OAI-117. The flag is worth nothing to a reader who cannot tell which arm they
+// The flag is worth nothing to a reader who cannot tell which arm they
 // are holding, so the artifact carries it twice: in the header, where two report
 // files are compared, and as a caveat naming the trade. Both halves are asserted
 // with their negative twin — a marker that is always present distinguishes

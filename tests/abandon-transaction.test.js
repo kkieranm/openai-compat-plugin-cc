@@ -124,8 +124,8 @@ test('a queued head abandoned under a LIVE running row does not drain, and does 
     const outcome = abandonRow(db, 'head', { at: at() });
     assert.equal(outcome.outcome, 'abandoned', 'the head is still written off');
     // The running rung is consulted FIRST and refuses every caller before queue
-    // order is reached. Reporting drainage here is the defect OAI-64 shipped
-    // once already, from consulting the queued rung alone.
+    // order is reached. Reporting drainage here would be wrong: consulting the
+    // queued rung alone misses a running row that still blocks everyone.
     assert.equal(outcome.couldDrain, false);
     assert.equal(tryAcquire(db, behind, process.pid), 'blocked');
   });

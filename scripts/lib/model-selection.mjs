@@ -50,8 +50,8 @@ function refusesUnlisted(described) {
  *
  * Only against a catalogue whose semantics are known. A bare `/v1/models` list
  * may be aliases, routed names or permission-filtered, so absence there is not
- * evidence. That is adr/002's shape-not-name rule applied to the catalogue
- * instead of the window.
+ * evidence. That is the shape-not-name rule applied to the catalogue instead
+ * of the window.
  *
  * The gate is a published catalogue, NOT merely a recognised dialect, and the
  * difference is a real server: llama.cpp's `/props` and TGI's `/info` are
@@ -126,7 +126,7 @@ function unservedProblem(id, described) {
  * evidence said was resident. Same data, two trust levels.
  *
  * A non-empty string is the whole test. No list of vendor state values, for the
- * reason adr/002 gives about every other field here: shape, not vocabulary.
+ * same reason as every other field here: shape, not vocabulary.
  * `'loaded'` is simply the one value that selects.
  */
 function statesUsable(candidates) {
@@ -142,7 +142,7 @@ function statesUsable(candidates) {
  * establish — and the remediation differs too: one needs a download, the other
  * needs a load.
  *
- * NEITHER HINT PROMISES THE LOAD (OAI-134). Both used to end "to have it loaded
+ * NEITHER HINT PROMISES THE LOAD. Both used to end "to have it loaded
  * on demand" — an outcome this plugin does not control and cannot predict, and
  * one that observably differs between servers. So neither hint predicts an
  * outcome: the no-candidates hint says nothing about outcomes at all, and the

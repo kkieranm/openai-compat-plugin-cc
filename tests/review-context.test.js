@@ -146,25 +146,12 @@ test('--diff-only with --file refuses instead of sending nothing', async () => {
 });
 
 test('an unknown window withholds the files, and the report says why', async () => {
-  // REVERSED 2026-08-12 (OAI-139), and the old decision is written out because
-  // it was deliberate and half of it still stands.
-  //
-  // This test used to be `an unknown window sends the files but never claims
-  // they are complete`, asserting `--- FILE: seed.txt ---` was present with the
-  // message "the files still go — we have no basis to withhold them". Its
-  // reasoning: with no window figure the guard is unarmed, so we cannot rule out
-  // the server truncating the request, and telling a model it holds a whole file
-  // it does not hold is the defect that feature existed to remove.
-  //
-  // The half that stands: never claim completeness. Still asserted below, still
-  // enforced by the `wholeFiles` gate.
-  //
-  // The half that fell: "no basis to withhold". There is now a basis. Measured
-  // 2026-08-10 — a cold process built 492,053 prompt chars against a 61,696
-  // window and the review DIED (`empty-completion`, 14s, all three attempts),
-  // while the same commit with a model resident built 150,056 and completed. The
-  // old reasoning anticipated truncation and concluded sending was harmless; the
-  // failure is not a degraded review but no review at all.
+  // With no window figure the guard is unarmed, so the request could be
+  // silently truncated server-side — sending a whole file and calling it
+  // complete would be the actual defect. Withholding the file body costs
+  // less than it looks: a cold process building a large prompt against a
+  // small window can die outright (empty completion, no retries recover it)
+  // rather than merely degrade, so there is no safe way to send it anyway.
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
   const server = await startFakeServer((request, response) => {

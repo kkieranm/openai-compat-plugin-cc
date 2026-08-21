@@ -11,8 +11,6 @@
  * 56,805-token request spent 421.7s reaching its first token and ~3s generating,
  * so dividing by the total would have reported ~7× low — and reported it lower
  * on a cold run than a warm one, which is the opposite of a throughput figure.
- * ADR 009 exists to keep those two quantities apart; this is what they were kept
- * apart for.
  *
  * **What the number is, stated exactly: provider-reported completion tokens per
  * measured generation second.** One operand is ours and one is the vendor's.
@@ -43,8 +41,7 @@
  * know: a provider that delays its terminator after generation inflates the
  * divisor by however long it delays, with no bound. Nothing here detects it.
  * Within one server the figure is sound; across two it is only sound if both
- * terminate promptly. Filed against OAI-11, which is where cross-server
- * comparison actually happens.
+ * terminate promptly.
  *
  * Null rather than a number whenever either operand is missing or nonsensical,
  * because every caller renders "—" for null and a fabricated 0 would be a

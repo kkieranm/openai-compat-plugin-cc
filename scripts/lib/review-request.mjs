@@ -23,17 +23,16 @@ import { findingsFirst, isFormatRejection, responseFormatFor, schemaInstruction 
  * Big, because the schema's `analysis` field is where the model does its actual
  * reasoning: one 135-line file drew 6k output tokens and was still mid-analysis.
  * A review that runs out of tokens part way returns nothing usable at all, which
- * is why this is nowhere near DEFAULT_RESERVE_TOKENS (1024) — see ADR 003.
+ * is why this is nowhere near DEFAULT_RESERVE_TOKENS (1024).
  *
- * Raised from 16,384 on 2026-07-28, reversing ADR 004's refusal on the evidence
- * that made it. The refusal was written when nothing bounded the reply and more
- * room bought only a longer runaway; with the schema bounded it buys larger
- * caps instead. What settled it is that the cost the refusal was protecting no
- * longer exists: `prepareRequest` shrinks the reserve toward `REVIEW_MIN_TOKENS`
- * when a large input needs the window, so this number withholds nothing from the
- * input — a review is refused only when under `REVIEW_MIN_TOKENS` remain,
- * whatever this says. The half-window rule below binds first on every model in
- * use here. See ADR 008.
+ * Raised from 16,384. The earlier ceiling was written when nothing bounded the
+ * reply and more room bought only a longer runaway; with the schema bounded it
+ * buys larger caps instead. What settled it is that the cost that ceiling was
+ * protecting no longer exists: `prepareRequest` shrinks the reserve toward
+ * `REVIEW_MIN_TOKENS` when a large input needs the window, so this number
+ * withholds nothing from the input — a review is refused only when under
+ * `REVIEW_MIN_TOKENS` remain, whatever this says. The half-window rule below
+ * binds first on every model in use here.
  */
 export const REVIEW_MAX_TOKENS = 32_768;
 
@@ -42,7 +41,7 @@ export const REVIEW_MAX_TOKENS = 32_768;
  *
  * With no window there is no shrink and no budget check, so this number goes on
  * the wire as `max_tokens` against a server whose capacity is a guess. That is
- * already a filed defect (OAI-13 item 4, where `/oai:task` sends none at all);
+ * already a known defect (`/oai:task` sends none at all);
  * doubling the guess would deepen it for no gain, since the caps that need the
  * room are derived from the reserve either way.
  */
@@ -61,7 +60,7 @@ export const REVIEW_UNKNOWN_WINDOW_TOKENS = 16_384;
 export const REVIEW_MIN_TOKENS = 4096;
 
 /**
- * The reasoning-reserve watchdog's floor (OAI-115): ~1.8x the largest
+ * The reasoning-reserve watchdog's floor: ~1.8x the largest
  * observed successful answer (1,116 tokens) across a 17-run sample, well
  * above the median (~420). Hardcoded rather than configurable for v1 — one
  * measurement supports one policy, not a tunable range.
@@ -73,9 +72,9 @@ export const TOKEN_RESERVE_TOKENS = 2_048;
  * reasoning as for the reserve itself — below that, the cutoff would fire on
  * the very first reasoning delta and every request on a small-window model
  * would die with nothing salvageable (`reserveFor`'s half-window branch
- * deliberately drops under the schema minimum on small windows, and ADR 004
- * pins the resulting `finish_reason: length` behaviour as chosen, by test;
- * an unguarded watchdog would silently overturn that decision).
+ * deliberately drops under the schema minimum on small windows, and the
+ * resulting `finish_reason: length` behaviour is chosen on purpose, pinned by
+ * test; an unguarded watchdog would silently overturn that decision).
  */
 function armedReserve(reserve) {
   return reserve >= 2 * TOKEN_RESERVE_TOKENS ? TOKEN_RESERVE_TOKENS : undefined;
@@ -110,11 +109,11 @@ export function reserveFor(contextLength, requested) {
   // The two situations differ. An explicit `--max-tokens` too small to hold the
   // reply is a *mistake*, and refusing it costs nothing. A model whose window is
   // simply small is not a mistake, and refusing every review on it would deny
-  // work that usually succeeds: ADR 004 measured good runs at 1,333–5,450 output
+  // work that usually succeeds: measured good runs at 1,333–5,450 output
   // tokens, most of which fit a half-window reserve on an 8k model. Below
   // ~7,824 tokens of window the half-window reserve does drop under the schema's
   // minimum, and there the reply may overrun and fail loudly with
-  // `finish_reason: length` — the behaviour ADR 004 chose on purpose, and which
+  // `finish_reason: length` — a chosen behaviour, which
   // `unparsedReply` reports with a remedy. Pinned by a test so the asymmetry
   // stays a decision.
   return Math.min(REVIEW_MAX_TOKENS, Math.floor(contextLength / 2));
@@ -128,7 +127,7 @@ export function reserveFor(contextLength, requested) {
  * may stay cached. A suffix would not work at all: a prefix cache reuses the
  * longest shared *prefix*, so a marker at the end leaves everything before it
  * cached. Measured: the same 56,805-token prompt reached first token in 421.7s
- * cold and 11.5s warm, and a head marker restored the cold cost. See ADR 009.
+ * cold and 11.5s warm, and a head marker restored the cold cost.
  *
  * The prompt itself depends on whether a grammar will hold the model to it —
  * see `reviewSystemPrompt`.
@@ -159,7 +158,7 @@ function sharedRequest(profile, plan) {
 /**
  * The request with no grammar behind it — the shape asked for in prose.
  *
- * **The default since 2026-08-04 (OAI-51, ADR 003), and still the fallback after
+ * **The default, and still the fallback after
  * a refused schema.** One function rather than two copies: the request is the
  * same either way, and only what must be said and recorded first differs, which
  * is what the hooks are for.
@@ -176,7 +175,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
   let built;
   try {
     // Predicted to be negotiation, settled as such only once the replacement
-    // exists — `refuseLast` registers, `ledger.begin` decides (OAI-23). Two
+    // exists — `refuseLast` registers, `ledger.begin` decides. Two
     // things after it can stop the replacement being sent (an oversized prompt,
     // the wall-clock cap), and in both the entry must stay a `shape-rejected`
     // failure rather than a run that died dressed as benign negotiation.
@@ -193,8 +192,8 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     announce?.();
     // `reasoningReserveTokens` is passed HERE, not added to `send` — `send` is
     // also spread into `trySalvage`'s own follow-up call below, which must
-    // never carry it (OAI-115; re-arming the watchdog against the follow-up's
-    // own small budget could cut the salvage attempt off before it concludes).
+    // never carry it — re-arming the watchdog against the follow-up's
+    // own small budget could cut the salvage attempt off before it concludes.
     const result = await chatCompletion(profile, {
       ...send,
       maxTokens: built.reserve,
@@ -203,7 +202,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     });
     return { result, structured: false, ...built };
   } catch (fallbackError) {
-    // OAI-138 salvage tier 2: one bounded attempt to conclude from whatever
+    // Salvage tier 2: one bounded attempt to conclude from whatever
     // reasoning the deadline cut short, before giving up. `built` is undefined
     // when the ladder itself refused (nothing streamed, nothing to salvage).
     const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
@@ -214,7 +213,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
 
 /**
  * How long a salvage follow-up gets, once. Sized for "conclude now", not
- * "review the commit" — OAI-138's own estimate is ~2-4 minutes given
+ * "review the commit" — the estimate is ~2-4 minutes given
  * prefill-is-cheap economics (the original system+user turns should hit the
  * server's prefix cache, so only the new turns cost fresh compute). Generous
  * headroom over that estimate, not a measured ceiling: a fixed constant for
@@ -229,8 +228,8 @@ const SALVAGE_MAX_MS = 300_000;
 const SALVAGE_MIN_REASONING_CHARS = 500;
 
 /**
- * The reasons `trySalvage` will attempt to recover from (OAI-138's
- * `deadline-timeout`, OAI-115's `token-reserve-cutoff`). Both leave the model
+ * The reasons `trySalvage` will attempt to recover from
+ * (`deadline-timeout`, `token-reserve-cutoff`). Both leave the model
  * actively working when the cut happens — the one shape a "conclude now" ask
  * can plausibly answer. `idle-timeout` and a raw transport drop mean the
  * SERVER stalled or died; asking it to continue is asking the thing that
@@ -240,12 +239,12 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
 
 /**
  * Ask the model to conclude from reasoning a cut short, instead of
- * discarding it (OAI-138 salvage tier 2, generalized for OAI-115).
+ * discarding it (salvage tier 2).
  *
  * **Only a reason in `SALVAGE_REASONS`.**
  * **Only substantial reasoning with empty/near-empty content** — the
  * documented majority shape (findings JSON is emitted only after reasoning
- * completes, per OAI-115's own measurement: 87-98% of every completion is
+ * completes, per measurement: 87-98% of every completion is
  * reasoning). A cut mid-CONTENT is a different, rarer shape — resuming a
  * truncated JSON array reliably is a harder prompting problem than
  * "conclude from pure reasoning", and is deliberately not attempted here;
@@ -264,7 +263,7 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
  * see the re-check below.
  *
  * **`schema` is the follow-up turn's OWN source of truth for the shape, never
- * an assumption that `built.messages` already stated it (pass 3).** The
+ * an assumption that `built.messages` already stated it.** The
  * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
  * appends the same instruction to every rung, schema or no). The
  * `--structured-output` call site does not: its first request relies purely
@@ -274,7 +273,7 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
  * resizing a request every other window-budget test is tuned against.
  *
  * **Always findings-first, and said explicitly enough to override whatever the
- * inherited system turn said (pass 4).** `built.messages`/`first.messages`'
+ * inherited system turn said.** `built.messages`/`first.messages`'
  * unchanged system turn may be `ANALYSIS_FIRST` (`review.mjs`) — the ordering a
  * grammar-constrained rung needs, because that model has no scratchpad of its
  * own. This follow-up sends no grammar at all, so that reasoning does not
@@ -311,7 +310,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
   // would very likely overrun the window this exact check exists to enforce,
   // reproducing the original starvation one request later. `deadline-timeout`
   // carries no such consumption and keeps its existing, previously re-verified
-  // `built.reserve` ceiling unchanged (OAI-115 plan-gate rounds 1-2).
+  // `built.reserve` ceiling unchanged.
   const salvageReserve = fallbackError.reason === 'token-reserve-cutoff' ? TOKEN_RESERVE_TOKENS : built.reserve;
 
   // The grown prompt must clear the SAME window check every other request
@@ -359,7 +358,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
 /**
  * Ask for findings — unconstrained by default, with a grammar only on request.
  *
- * **The default flipped on 2026-08-04 (OAI-51):** `response_format` builds a
+ * **Unconstrained is now the default:** `response_format` builds a
  * grammar whose lexer dies at ~14k generated tokens and takes the model process
  * with it, so the schema is opt-in via `--structured-output`. When it IS asked
  * for, the old fallback still stands — the retry is near-free, an unsupported
@@ -396,8 +395,7 @@ export async function requestFindings(profile, plan) {
   // differ whenever a large input made the reserve shrink.
   const schema = reviewSchemaFor(first.reserve);
   try {
-    // NEVER armed here (review-ladder pass 1, codex-adversarial): under a
-    // `response_format` grammar the model can never emit the token that
+    // NEVER armed here: under a `response_format` grammar the model can never emit the token that
     // closes its own think block, so the actual findings JSON legitimately
     // arrives on the `reasoning` channel, not `content` — this is already
     // documented above `client.mjs`'s `requireAnswer` and in this repo's own
@@ -416,7 +414,7 @@ export async function requestFindings(profile, plan) {
     });
     return { result, structured: true, schema, ...first };
   } catch (error) {
-    // OAI-138 salvage tier 2, same as `unconstrained`'s own catch: a
+    // Salvage tier 2, same as `unconstrained`'s own catch: a
     // deadline-timeout here is a schema-constrained request that ran out of
     // time reasoning, not a rejected schema — `isFormatRejection` would never
     // be true for it, so without this the structured-output path fell straight
@@ -434,7 +432,7 @@ export async function requestFindings(profile, plan) {
       ledger,
       refuse: () => ledger?.refuseLast(error),
       // The rejection detail lives on `.responseBody` now, not `.message`
-      // (OAI-185) — present by construction here, since `isFormatRejection`
+      // — present by construction here, since `isFormatRejection`
       // just matched against it. Truncated: the body can run to 400 chars,
       // and this is one stderr line.
       announce: () => process.stderr.write(

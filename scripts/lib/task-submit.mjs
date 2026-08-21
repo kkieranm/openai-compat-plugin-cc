@@ -33,14 +33,13 @@ function digestsOf(files) {
  * `normalizeBaseUrl` keeps in `baseUrl` regardless of how the endpoint was
  * named — puts a real secret into persisted state. A query string on an
  * endpoint resolved from `providers.json` no longer does: `buildJob` commits
- * it instead of storing it raw (OAI-55). **"Named profile" is not the
+ * it instead of storing it raw. **"Named profile" is not the
  * discriminator** — `--provider vendor --base-url <that vendor's own
  * endpoint>?api_key=…` is a named profile whose query still lands on the raw
  * path, because it takes `resolveProfile`'s `baseUrl` branch and comes back
  * `adHoc`. The notice below is worded around where the endpoint came from,
  * not around whether a provider was named. Three things about this notice are
- * deliberate, and each replaces a wording an execution path falsified
- * (`adr/019`):
+ * deliberate, and each replaces a wording an execution path falsified:
  *
  * It takes **no argument**, because a function handed the URL is a function
  * that will eventually interpolate it: the version this replaces printed the
@@ -56,7 +55,7 @@ function digestsOf(files) {
  * submission creates a job record" survives a failure before `insertJob`, and
  * the worker-start clause is true precisely because `spawnWorker` runs after
  * it. It promises nothing about who can read the file: that guarantee belongs
- * to hardening this tree does not yet have (OAI-95).
+ * to hardening this tree does not yet have.
  *
  * The sentence is NOT exported, and `tests/credential-notice.test.js` writes it
  * out again rather than importing it. That duplication is deliberate: an
@@ -122,8 +121,8 @@ function buildJob(prep) {
  * rather than swallowed: a blanket catch would turn a broken sweep into an
  * unbounded table nobody ever hears about.
  *
- * **That first sentence was FALSE until 2026-08-12 (OAI-67), and the fix was
- * position rather than wording.** This ran AFTER the spawn, so a non-busy throw
+ * **That first sentence was once FALSE, and the fix was position rather than
+ * wording.** This ran AFTER the spawn, so a non-busy throw
  * rejected `submitTask` with a detached worker already created and expected to be
  * calling a paid model, and the id never printed — costing the user their handle
  * on the job they had just submitted, plus a retry that CAN duplicate the spend. Not "precisely
@@ -133,7 +132,7 @@ function buildJob(prep) {
  * is created, where the sentence is simply true: there is no job yet to cost.
  * The rethrow is deliberately KEPT — dropping it would make retention
  * best-effort, and a `--json` caller cannot see the stderr warning that would
- * replace it (OAI-108), so the store could grow unbounded with no signal.
+ * replace it, so the store could grow unbounded with no signal.
  */
 function sweepQuietly(db) {
   try {
@@ -197,9 +196,8 @@ function sweepQuietly(db) {
  * Reported on stderr and NOWHERE ELSE, which is a known gap rather than an
  * oversight: a machine caller reads `--json`, whose background envelope is the
  * same `{id, background: true}` a recorded start produces, so nothing in that
- * channel distinguishes them. A field carrying it was built during review and
- * reverted — it changed a published contract this feature's plan never
- * approved — and the gap is filed as **OAI-108** instead.
+ * channel distinguishes them. Adding a field to carry it would change a
+ * published contract, which is a larger commitment than this gap justifies.
  */
 async function spawnAndStamp(db, seq, job, spawn) {
   let pid;
@@ -209,8 +207,8 @@ async function spawnAndStamp(db, seq, job, spawn) {
     terminalizeSpawnFailure(db, seq, job, error);
     throw error;
   }
-  // ANY storage fault, never `isBusy` alone — `adr/020`'s converting group, argued
-  // there. Rethrowing all but a busy lost the id the same way (OAI-67, pass 3).
+  // ANY storage fault, never `isBusy` alone — rethrowing all but a busy loses the id
+  // the same way.
   try {
     withBusyRetry(() => markSpawned(db, seq, new Date().toISOString()));
   } catch (error) {

@@ -40,9 +40,9 @@ export const BEAT_MS = 5_000;
  * request, and tells the operator the overlap is now possible. The rule this
  * paragraph states is intact for every path that is not that command.
  *
- * What IS new (OAI-66) is a file beside the job log saying the exit was asked
- * for. Without it a later reader cannot tell this exit from a crash, and it
- * published both as a clean `cancelled` — discarding a real crash diagnosis.
+ * A file beside the job log records that the exit was asked for. Without it a
+ * later reader cannot tell this exit from a crash, and it published both as a
+ * clean `cancelled` — discarding a real crash diagnosis.
  *
  * **A write that fails is not WAITED ON — which is a claim about the code's
  * control flow and not about latency.** Its outcome is discarded rather than

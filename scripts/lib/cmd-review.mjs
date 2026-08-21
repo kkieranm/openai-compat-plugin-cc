@@ -103,10 +103,10 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
     // whose lexer exhausts a 250,000-state budget at ~14k generated tokens,
     // which raises a fatal exception in the MLX generation thread and SEGFAULTS
     // the model process — a ~38% request failure rate this repo spent four days
-    // attributing to an unreliable server. See OAI-51.
+    // attributing to an unreliable server.
     //
     // A flag rather than a deletion, because the fault is in one backend's
-    // grammar engine and this plugin is generic by construction (ADR 001): a
+    // grammar engine and this plugin is generic by construction: a
     // server that enforces a schema without that engine is still better served
     // by one. The default protects the machine in front of us; the flag keeps
     // the capability honest for the ones that are not.

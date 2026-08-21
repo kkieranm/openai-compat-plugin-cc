@@ -60,7 +60,7 @@ export function excerptOf(row) {
  * queue" there would be a relational claim made by a function with no caller to
  * be relational about.
  *
- * Then split by whether a pid was RECORDED, because since OAI-162 the two queued
+ * Then split by whether a pid was RECORDED, because the two queued
  * shapes no longer have the same future. `registerWaiter` carries `AND waiter_pid
  * IS NULL`, so a row with unparseable timestamps and no pid can still have a
  * worker attach and start running, while one already holding a value that cannot
@@ -80,7 +80,7 @@ function malformedNote(view) {
   const recorded = pidWasRecorded(view.pid);
   // **A row a newer plugin wrote says so, whatever else is wrong with it.** It
   // used to: such a row reached `displayOf`'s `dead`/`never-started` arm, whose
-  // note names its schema. Since OAI-162 an unreadable pid resolves `malformed`
+  // note names its schema. An unreadable pid resolves `malformed`
   // FIRST, which took that arm — and with it the one fact an operator could act
   // on, because `/oai:abandon` refuses an unknown version above its malformed
   // rung and no flag lifts it.
@@ -130,7 +130,7 @@ function noteFor(view, nowMs, readOnly) {
   }
   if (view.display === 'cancelling') {
     // **The second half is CONDITIONAL, and saying "reads cancelled once its
-    // worker has exited" made it a promise this build cannot keep (OAI-66).** An
+    // worker has exited" made it a promise this build cannot keep.** An
     // exit alone no longer decides the verdict: the worker must also leave the
     // acknowledgement beside its log, and a worker that crashed — or whose
     // acknowledgement would not write — exits and reads `failed` /
@@ -156,31 +156,26 @@ function noteFor(view, nowMs, readOnly) {
     // routes reach here with no such examination: (1) a row a foreign or
     // corrupt writer left in a state its own abandonUnstarted update never
     // matches (not `queued`, not `running`) survives untouched on every run,
-    // not just this one, so a specific per-row claim would be false on repeat
-    // (review-ladder pass 1, codex-plain); (2) reconcileAll works from a
-    // listJobs() SNAPSHOT taken before it iterates, so a row a concurrent
-    // submission inserts after that snapshot — whose worker then dies before
-    // this render reads it — reaches this branch never having been iterated
-    // by reconciliation at all, not merely left unchanged (review-ladder pass
-    // 2, codex-adversarial + codex-plain, independently converging); (3) a
-    // row reconciliation DID examine and leave alone can still have its
-    // liveness or a timing threshold like STARTUP_GRACE_MS move between that
-    // probe and this render (also not "its worker changed state" — a queued
-    // row can reach `never-started` with no worker ever having existed to
-    // change anything; Codex adversarial review, plan-gate pass 1). The
-    // wording below commits to none of the three: its parenthetical offers
-    // only (2) and (3), and only as hedged "may" candidates, while route (1)
-    // surfaces solely through the persistence clause — which is what
-    // actually discriminates route (1) from routes (2) and (3): a genuine
-    // race clears on its own, a stuck shape does not (review-ladder pass 4 —
-    // the prior wording here, "makes no claim about which of the three
-    // happened," overclaimed symmetry the string doesn't have). Deliberately
-    // also no FREQUENCY word — "usually a benign race" was an unmeasured
-    // lean toward routes (2)/(3) that contradicted this very sentence, and
-    // inverted for exactly the readers who see the note more than once:
-    // routes (2)/(3) are one-shot and self-clear, so a reader seeing this
-    // note on repeated runs is, on every one of those reads, in route (1) —
-    // the case "usually" pointed away from (review-ladder pass 3).
+    // not just this one, so a specific per-row claim would be false on repeat;
+    // (2) reconcileAll works from a listJobs() SNAPSHOT taken before it
+    // iterates, so a row a concurrent submission inserts after that snapshot —
+    // whose worker then dies before this render reads it — reaches this branch
+    // never having been iterated by reconciliation at all, not merely left
+    // unchanged; (3) a row reconciliation DID examine and leave alone can still
+    // have its liveness or a timing threshold like STARTUP_GRACE_MS move
+    // between that probe and this render (also not "its worker changed state"
+    // — a queued row can reach `never-started` with no worker ever having
+    // existed to change anything). The wording below commits to none of the
+    // three: its parenthetical offers only (2) and (3), and only as hedged
+    // "may" candidates, while route (1) surfaces solely through the
+    // persistence clause — which is what actually discriminates route (1) from
+    // routes (2) and (3): a genuine race clears on its own, a stuck shape does
+    // not. Deliberately also no FREQUENCY word — "usually a benign race" was an
+    // unmeasured lean toward routes (2)/(3) that contradicted this very
+    // sentence, and inverted for exactly the readers who see the note more
+    // than once: routes (2)/(3) are one-shot and self-clear, so a reader
+    // seeing this note on repeated runs is, on every one of those reads, in
+    // route (1) — the case "usually" pointed away from.
     return `its own schema (${view.schema_version}) is understood, and this build's reconciliation ran`
       + ` against the database this run — but this row reads ${view.display} at render time anyway`
       + ' (this row may have appeared, or its liveness or a timing threshold like the startup'

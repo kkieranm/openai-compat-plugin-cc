@@ -1,6 +1,6 @@
 // The wall-clock cap, and the machine-readable reason a capped run reports.
 //
-// Both halves of OAI-17's failure path. Before it, `--timeout` bounded only the
+// Both halves of the original failure path. Before this, `--timeout` bounded only the
 // wait for the *first* token: once text arrived the idle budget took over and
 // reset on every text-bearing frame, so a model that kept emitting ran forever
 // and a 6-case corpus at N=3 had no worst case at all. And when a run did fail,
@@ -62,7 +62,7 @@ test('--max-seconds ends a run that is still producing output', async () => {
     assert.equal(result.status, 1);
     // The reason, not the prose. A harness reading this must not have to
     // pattern-match a message to tell a cap from a server error — that matcher
-    // is the fragile-guessing class BACKLOG.md records as OAI-13 items 1 and 2.
+    // is a fragile-guessing class of bug.
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.error, true);
     assert.equal(envelope.reason, 'deadline-timeout');

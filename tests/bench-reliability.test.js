@@ -5,14 +5,14 @@ import { caseRows } from '../bench/lib/case-rows.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 
-// OAI-20. Scoring reads LOGICAL runs — the attempt that answered — while
+// Scoring reads LOGICAL runs — the attempt that answered — while
 // reliability reads every PHYSICAL request. A run whose first two attempts died
 // and whose third answered is one scored run and three requests, and a report
 // that shows only the first number says a sick server is healthy.
 //
 // This suite is the ACCOUNTING half: is every physical request counted, in the
 // right bucket, against the right denominator. The prose explaining what each
-// reason code MEANS is `bench-reason-notes.test.js`, split out in OAI-31.
+// reason code MEANS is `bench-reason-notes.test.js`.
 
 const answered = (extra = {}) => ({
   index: 2, cause: { answerAttempt: 2, degrade: null }, warmEligible: true, waitedMs: 2000,
@@ -37,7 +37,7 @@ function retriedRun() {
 
 test('the response split keeps legacy records out of BOTH answers, in a bucket of their own', () => {
   // The defect this exists to stop, and it is a silent one. `failedAttempt` here
-  // is a record written before OAI-35 — it carries no `serverResponded` at all,
+  // is a record written before `serverResponded` existed — it carries none at all,
   // which is what every entry in `bench/results/` looks like. A two-bucket split
   // would file each of those as "nothing answered", turning missing
   // instrumentation into a measurement that a server went quiet, and the
@@ -109,7 +109,7 @@ test('a clean sweep prints no response table at all, like every other failure sp
 });
 
 test('a non-boolean is reported as a writer defect, never laundered into `not recorded`', () => {
-  // `undefined` means the field is absent — a record written before OAI-35. A
+  // `undefined` means the field is absent — a record written before `serverResponded` existed. A
   // string means something WROTE it and wrote it wrong. Folding the second into
   // the first would let a live writer bug read as a benign old file, so it gets
   // its own row, outside the partition and deliberately unseeded: it prints only
@@ -211,7 +211,7 @@ test('a warm-eligible answering attempt is excluded from the cold prefill sample
   // The trap this closes: `--cold` mints its cache-buster per RUN, but a retry
   // re-sends the prompt byte-for-byte on purpose. So the answering attempt's
   // prefill may be a cache hit, and quoting it as a cold measurement corrupts
-  // the exact figure OAI-19 reads off this report.
+  // the exact figure this report is read for.
   const [row] = caseRows([{ caseDef: CASE, runs: [retriedRun()] }], { cold: true });
   assert.deepEqual(row.prefill.values, [], 'a warm-eligible prefill is not a prefill sample');
   assert.deepEqual(row.generation.values, [1500], 'generation is untouched by a prompt cache, so it stays');

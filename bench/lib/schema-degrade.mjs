@@ -1,17 +1,12 @@
-// Whether the benchmark's schema arm actually measured a schema (OAI-135 item 4).
+// Whether the benchmark's schema arm actually measured a schema.
 //
-// Its own module rather than a fifth note inside `caveats.mjs`, which the size
-// ratchet refused. The refusal was right and the first two attempts at it were
-// not: both trimmed load-bearing comments elsewhere in that file to buy lines,
-// and every one of those records a claim someone made and had to retract. A
-// budget is a prompt to find the seam, not a licence to delete the evidence.
-//
-// The seam is real. Every other note in `caveats.mjs` qualifies a FIGURE in the
-// table. This one qualifies the table's TITLE — whether the arm is the thing it
-// says it is — and it prints before the rest for that reason.
+// Its own module rather than a note inside `caveats.mjs`: every other note in
+// that file qualifies a FIGURE in the table. This one qualifies the table's
+// TITLE — whether the arm is the thing it says it is — and it prints before
+// the rest for that reason.
 
 /**
- * What the SERVER did about the schema, before what the schema MEANS (OAI-135).
+ * What the SERVER did about the schema, before what the schema MEANS.
  *
  * The note below describes a trade between two failure classes, and that is
  * worth nothing if the arm never sent a schema. It could not previously say so:

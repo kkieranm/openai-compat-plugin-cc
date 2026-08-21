@@ -7,7 +7,7 @@
 // column-by-name reader, and a second hand-maintained copy of either would drift
 // exactly as silently as the numbers these tests exist to guard.
 //
-// `bench-reliability.test.js` split the same way in OAI-31, at the same kind of
+// `bench-reliability.test.js` split the same way, at the same kind of
 // seam: attempt ACCOUNTING (one logical run, N physical attempts) against the
 // reason-code PROSE in `bench-reason-notes.test.js`. Only `failedAttempt`
 // crosses that seam, so only it moved here — `answered` and `retriedRun` are

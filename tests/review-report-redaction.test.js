@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { errorReport } from '../scripts/lib/review-report.mjs';
 
-// OAI-185. `errorReport()`'s return value is what `publishFailure` persists
+// `errorReport()`'s return value is what `publishFailure` persists
 // into `jobs.db`'s `row.failure`, and later shown to any reader of
 // `/oai:result`. `error.endpoint` / `error.responseBody` can be secret-shaped
 // (a `baseUrl` credential, or a server's echoed request body) — this pins
@@ -11,10 +11,9 @@ import { errorReport } from '../scripts/lib/review-report.mjs';
 // what the source error carries.
 
 test('errorReport never copies .endpoint, .responseBody, .bodyExcerpt or .finishReason, even when all four are present', () => {
-  // All four fields this feature introduced, pinned together — a pass-5
-  // adversarial review found this test previously covered only the first
-  // two, which is how a regression on the other two could have shipped
-  // silently even though the production code (an explicit field list) was
+  // All four fields this feature introduced, pinned together — a test that
+  // covers only some of them lets a regression on the others ship silently
+  // even though the production code (an explicit field list) was
   // already safe.
   const marker = 'SECRET_MARKER';
   const error = Object.assign(new Error('Cannot reach p — connection refused.'), {

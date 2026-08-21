@@ -17,13 +17,13 @@
 //    worker's `finish()` misses its compare-and-set and writes the answer to its
 //    job log as `SALVAGED_OUTCOME` instead — and `job-spawn.mjs` gave it that log
 //    as its stdout descriptor, so pruning the row unlinks the file underneath a
-//    live writer and the answer dies with the process (OAI-161).
+//    live writer and the answer dies with the process.
 //
 //    **It reads no pid, deliberately.** Keying on whether the worker is still
 //    alive would be cheaper and is wrong twice over: the exemption would end when
 //    the process exits, which is exactly when the log stops being rewritable and
-//    starts being the only copy; and it would inherit OAI-162, where a malformed
-//    pid reads as dead and the row would prune anyway.
+//    starts being the only copy; and a malformed pid reads as dead, which would
+//    let the row prune anyway.
 //
 //    **Narrowed to `started_at`** because `claimJob` sets it atomically with
 //    `running`, before the worker can reach the server — so a row abandoned while
@@ -75,16 +75,16 @@ const STATES = TERMINAL_STATES.map(() => '?').join(',');
  *   submission, not merely misfile a row. The guard turns it into a NULL.
  *
  * On this build both are reachable only when `started_at IS NOT NULL` — measured
- * against a control **in OAI-161's probe record, not in the suite beside this
- * file**: the same unguarded query threw on a malformed payload whose row had a
+ * against a control **not in the suite beside this file**: the same unguarded
+ * query threw on a malformed payload whose row had a
  * `started_at` and did not on one without. The tests carry only the
  * `started_at`-present half, so do not go looking for that pair. **That is the
  * planner's evaluation order, not a guarantee SQLite documents**, so the `CASE` is
  * not conditional on it: if the order ever changed, the guard is what keeps a
  * corrupt payload from throwing here, and only the reachability note goes stale.
  *
- * Both are pinned by `tests/retention.test.js`, as is each exemption's placement
- * (OAI-166). Which fixture pins what is written there and not restated here.
+ * Both are pinned by `tests/retention.test.js`, as is each exemption's placement.
+ * Which fixture pins what is written there and not restated here.
  */
 const PRUNE = `
   DELETE FROM jobs WHERE seq IN (
@@ -163,7 +163,7 @@ function ownedSeq(name) {
  * the unlink below then takes a LIVE job's files. The race predates this key — a
  * surviving `<seq>.log` could always start it — and the union widens which residues
  * can. Closing it needs the key bound to a store incarnation, which is a schema
- * change this feature's grill declined: **OAI-149**.
+ * change this feature does not make.
  *
  * **Names are matched, and a name is not a provenance.** The check says the file
  * is SHAPED like one this plugin writes and has no row to explain it; it cannot
@@ -173,13 +173,13 @@ function ownedSeq(name) {
  * anything NOT of that shape is left alone.
  *
  * **The key is the UNION of both names this plugin writes, not `<seq>.log`
- * alone (OAI-66).** Deletion below tolerates every failure, so a job whose log
+ * alone.** Deletion below tolerates every failure, so a job whose log
  * unlinked while its acknowledgement did not would never be enumerated again if
  * the scan keyed on logs — leaking permanently in the one directory whose
  * survival past a database recreation is what `cancel-ack.mjs` names as its
  * accepted residual.
  *
- * **`readdirSync` is not caught here (OAI-167).** A `logs/` that cannot be
+ * **`readdirSync` is not caught here.** A `logs/` that cannot be
  * listed is not an empty one, and `sweepQuietly` is the one place this repo
  * decided what to do about a broken sweep: rethrow, unless the fault is
  * contention. That decision would be defeated by tolerating the fault a step

@@ -1,8 +1,8 @@
 // The run's own log, written while the run is happening.
 //
 // The sweep used to hold every settled commit in memory and write once, at the
-// end. Its last full run took 8h22m and produced its first byte of output in the
-// final second of it (OAI-132) — so a crash, a panic or a kill at hour eight
+// end. A full run can take 8+ hours and produce its first byte of output in
+// the final second of it — so a crash, a panic or a kill at hour eight
 // lost all forty commits, not degraded but gone. This module is the other half
 // of that trade: each commit reaches disk as it settles, so what survives an
 // interrupted night is what the night had actually finished. **Not every settled
@@ -14,7 +14,7 @@
 // per-commit `INSERT` would buy transactional atomicity across rows, which one
 // line per commit does not need, and it would buy no better flush guarantee
 // against the failures this exists for. What it would cost is real: `node:sqlite`
-// is gated as a CAPABILITY rather than a version (ADR 018) precisely so a runtime
+// is gated as a CAPABILITY rather than a version precisely so a runtime
 // lacking that builtin loses background jobs alone — depending on it here would
 // make an unattended run's crash protection conditional on the one thing the job
 // store was careful to keep optional.
@@ -73,8 +73,8 @@ function createExclusively(path) {
  *
  * **No `fsync`, deliberately.** A synchronous write has already reached the
  * kernel, so the bytes outlive the process and outlive the machine sleeping —
- * which are the failures OAI-132 actually names. `fsync` would additionally
- * survive a power cut, at the cost of a disk flush per commit.
+ * which are the failures this module actually guards against. `fsync` would
+ * additionally survive a power cut, at the cost of a disk flush per commit.
  *
  * **Three residual exposures, and naming only the first understates it.** A torn
  * final line, which `readLedger` discards rather than failing over. An entry lost
@@ -160,8 +160,8 @@ export function envelopeFor(options, commits, startMs) {
     abortAfter: options.abortAfter,
     // The repo actually swept — `null` when the caller didn't record one (e.g.
     // `recover-sweep.mjs`'s own synthesized envelope), never assumed to be this
-    // tool's own. OAI-165: without this, a foreign --repo run's ledger, record
-    // and report carry commit SHAs and subjects with no repo attribution.
+    // tool's own — without it, a foreign --repo run's ledger, record and
+    // report carry commit SHAs and subjects with no repo attribution.
     repo: options.repo ?? null,
     include: options.include,
     // Which window was enumerated. A report that cannot say this cannot be

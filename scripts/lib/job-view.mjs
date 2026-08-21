@@ -78,7 +78,7 @@ export function deadlineOf(row) {
  *
  * `dead` and `never-started` reach here whenever this row's own liveness, read
  * at THIS moment, says so — which is not always the same as "reconciliation
- * could not touch it" (OAI-160). A row a newer plugin wrote is one real cause:
+ * could not touch it". A row a newer plugin wrote is one real cause:
  * `reconcile` refuses it (job-reconcile.mjs), so it is never mutated and
  * always shows this way. But `reconcileAll` and this function each probe
  * liveness separately, at different moments in the same command — a row this
@@ -175,7 +175,7 @@ export function viewOf(row, nowMs = Date.now()) {
  * worker to it, after which it reads `live` — so excluding it hides the blocker
  * for that window: a transient false negative, accepted because the alternative
  * is a confident false accusation. By contrast, **a row holding an unreadable pid is excluded
- * PERMANENTLY, and correctly** (OAI-162): `registerWaiter`'s `AND waiter_pid IS
+ * PERMANENTLY, and correctly**: `registerWaiter`'s `AND waiter_pid IS
  * NULL` can never match it and `claimJob`'s `AND waiter_pid = ?` can never match
  * it either, so no path here takes it to `running` — which is the rule three
  * paragraphs up applying exactly as written, not an exception to it. Such a row

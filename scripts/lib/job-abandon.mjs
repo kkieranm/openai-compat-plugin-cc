@@ -138,13 +138,13 @@ export function abandonDecision(row, nowMs, { override = false, liveness } = {})
 /**
  * What the row says afterwards.
  *
- * `failed`, never `cancelled`: OAI-66 established that a stop nobody confirmed
+ * `failed`, never `cancelled`: a stop nobody confirmed
  * must not read as a tidy cancellation, and this stop is confirmed by less than
  * any of those — the process was never even asked. The reason names the ROW's
  * fate rather than the worker's, because the worker's is exactly what is unknown.
  *
  * **Two arms.** A `malformed` row was never probed at all — no pid recorded,
- * timestamps that will not parse, or (OAI-162) a value that is not a pid. Only
+ * timestamps that will not parse, or a value that is not a pid. Only
  * the readable-pid arm may say a probe answered, and only it names the pid. The
  * UNREADABLE-pid shape's value is never quoted in the record; the item says why.
  */

@@ -6,7 +6,7 @@ import {
 } from '../bench/lib/ttl-verdict.mjs';
 
 /**
- * OAI-34 — the instrument's VOCABULARY contract, split from the decision rule at
+ * The instrument's VOCABULARY contract, split from the decision rule at
  * the size ratchet.
  *
  * Two separate sets of names (per-episode verdicts, per-sweep outcomes) and one
@@ -90,12 +90,13 @@ test('the tracker names the same verdicts the code calls conclusive', () => {
   // `instrument-failed`", so adding "and `no-exposure`" to the acceptance clause
   // would have passed. A guard that looks exhaustive and is not is worse than
   // none.
-  // Reads BACKLOG_DONE.md since 2026-08-04: OAI-34 ran, and the entry moved with
-  // its completion. The guard followed it rather than being retired, because the
-  // entry still states which verdicts were acceptable — a later change to
-  // CONCLUSIVE would silently falsify a historical claim, which is the same drift
-  // in a file nobody re-reads. It failed CLOSED on the move (the anchor assert
-  // below), which is how the relocation was caught rather than missed.
+  // Reads BACKLOG_DONE.md, not BACKLOG.md: the entry this test tracks was
+  // completed and moved. The guard followed it rather than being retired,
+  // because the entry still states which verdicts were acceptable — a later
+  // change to CONCLUSIVE would silently falsify a historical claim, which is
+  // the same drift in a file nobody re-reads. It failed CLOSED on the move
+  // (the anchor assert below), which is how the relocation was caught rather
+  // than missed.
   const backlog = readFileSync(new URL('../BACKLOG_DONE.md', import.meta.url), 'utf8');
   const start = backlog.indexOf('- **OAI-34**');
   // The NEXT entry, not a named neighbour: this file is newest-first, so pinning

@@ -76,13 +76,9 @@ async function argv(shell, template, files) {
   // `canon` and `root` are the recipe's own containment machinery, stubbed to
   // identity so this suite tests ARGUMENT CONSTRUCTION only.
   //
-  // **Say what that leaves uncovered, precisely, because the first version of
-  // this comment claimed containment was "already covered in
-  // tests/plugin.test.js" and a review disproved it by mutation: deleting the
-  // `"$root"/*` boundary check leaves the whole suite green.** Nothing anywhere
-  // in `tests/` exercises the recipe's containment — not the boundary check,
-  // not `canon`'s `--` argument-injection defence, not its control-character
-  // refusal. That gap is real and is filed as OAI-86; it is not closed here,
+  // Nothing anywhere in `tests/` exercises the recipe's containment — not the
+  // boundary check, not `canon`'s `--` argument-injection defence, not its
+  // control-character refusal. That gap is real; it is not closed here,
   // because widening this suite to cover it would make it a second, worse copy
   // of a containment test rather than the argument-construction test it is.
   const script = `dir='${dir}'

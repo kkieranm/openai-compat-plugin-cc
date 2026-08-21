@@ -10,7 +10,7 @@ import { readSse } from './sse.mjs';
  * triggering the reserve watchdog early: guessing too low only costs a little
  * preserved reasoning before asking for conclusions, guessing too high risks
  * losing the review outright or overrunning the salvage follow-up's own
- * context check (OAI-115).
+ * context check.
  */
 const REASONING_CHARS_PER_TOKEN = 3.0;
 
@@ -68,8 +68,7 @@ function createDeadline({ firstTokenMs, idleMs, reportMs, onExpire }) {
  * them by ~37× and leaves the other alone: the same 56,805-token prompt reached
  * its first token in 421.7s cold and 11.5s warm on this machine, generating for
  * ~3s in both. A single total welds the two together, and the benchmark then
- * ranged `13–425` across three runs of one case and called it a result. See
- * ADR 009.
+ * ranged `13–425` across three runs of one case and called it a result.
  *
  * `performance.now()`, not `Date.now()`. A 400-second prefill is long enough for
  * a wall-clock adjustment to land inside it, and a duration measured across one
@@ -101,21 +100,20 @@ export async function collectStream(
     reportMs,
     idleMs,
     onExpire: (budget, ms) => {
-      // Idempotent (review-ladder pass 1, codex-adversarial round 2):
-      // throwing the token-reserve cutoff from inside the for-await loop
-      // still triggers IteratorClose on `readSse`'s async generator before
-      // this function's own `catch` ever runs, and that cleanup can itself
-      // await — a real gap in which this timer can fire and overwrite an
-      // `expired` a cutoff already set, reproduced directly with a delayed
-      // iterator `return()`. Once something has already claimed `expired`,
-      // a later timer firing has nothing left to report.
+      // Idempotent: throwing the token-reserve cutoff from inside the
+      // for-await loop still triggers IteratorClose on `readSse`'s async
+      // generator before this function's own `catch` ever runs, and that
+      // cleanup can itself await — a real gap in which this timer can fire
+      // and overwrite an `expired` a cutoff already set. Once something has
+      // already claimed `expired`, a later timer firing has nothing left to
+      // report.
       if (expired !== null) return;
       expired = budgetError(budget, ms, answer.content.length + answer.reasoning.length, profile.name);
       response.dispose();
     },
   });
 
-  // Opt-in only (OAI-115): `reasoningReserveTokens` is undefined for every
+  // Opt-in only: `reasoningReserveTokens` is undefined for every
   // caller that never asked for it — `/oai:task`, capability probes, and the
   // salvage follow-up itself (`review-request.mjs` never puts it on the
   // shared `send` object precisely so this stays disarmed there). Watches a
@@ -129,7 +127,7 @@ export async function collectStream(
   // `maxTokens >= 2 * reserve`): if that guard were ever skipped, a
   // non-positive cutoff would otherwise fire on the very first reasoning
   // delta, which is exactly the failure this repo has twice built a guard to
-  // prevent elsewhere (OAI-115's own plan-gate history).
+  // prevent elsewhere.
   const reserveArmed = reasoningReserveTokens !== undefined && Number.isFinite(maxTokens);
   const cutoffChars = reserveArmed ? (maxTokens - reasoningReserveTokens) * REASONING_CHARS_PER_TOKEN : 0;
 
@@ -171,9 +169,8 @@ export async function collectStream(
         failure.serverResponded = true;
         expired = failure;
         // Cleared here, not left to the outer `finally` — belt and suspenders
-        // alongside `onExpire`'s own idempotency guard above (review-ladder
-        // pass 1, codex-adversarial round 2): throwing out of a `for-await`
-        // loop still runs `IteratorClose` on `readSse`'s async generator
+        // alongside `onExpire`'s own idempotency guard above: throwing out of
+        // a `for-await` loop still runs `IteratorClose` on `readSse`'s async generator
         // BEFORE this function's own `catch` ever executes, and that
         // generator's cleanup can itself await — a real gap, reproduced
         // directly with a delayed iterator `return()`, in which the idle
@@ -181,17 +178,16 @@ export async function collectStream(
         // timer outright removes that race rather than merely surviving it.
         deadline.clear();
         response.dispose();
-        // Thrown immediately, never left to a later async rejection
-        // (review-ladder pass 1, codex-adversarial): `readSse` can have MORE
-        // than one event already buffered from the same physical chunk — a
-        // finish frame and `[DONE]` can arrive alongside the frame that
-        // crossed the threshold, and `drain()` yields all of them
-        // synchronously with no await in between, so a bare `dispose()` here
-        // would let the loop keep consuming those buffered events and return
-        // a normal success, discarding `expired` entirely. codex-plain,
-        // independently, found a DIFFERENT race in the same block — the
-        // deadline watchdog's own `onExpire` unconditionally overwriting
-        // `expired` — closed above by the idempotency guard and the early
+        // Thrown immediately, never left to a later async rejection:
+        // `readSse` can have MORE than one event already buffered from the
+        // same physical chunk — a finish frame and `[DONE]` can arrive
+        // alongside the frame that crossed the threshold, and `drain()`
+        // yields all of them synchronously with no await in between, so a
+        // bare `dispose()` here would let the loop keep consuming those
+        // buffered events and return a normal success, discarding `expired`
+        // entirely. A separate race exists in the same block — the deadline
+        // watchdog's own `onExpire` unconditionally overwriting `expired` —
+        // closed above by the idempotency guard and the early
         // `deadline.clear()`, not by this throw.
         throw failure;
       }
@@ -211,7 +207,7 @@ export async function collectStream(
       failure.timings = timings(startedAt, firstTextAt, performance.now());
     }
     // Same move, same reasoning, for the text itself rather than just its
-    // duration (OAI-138 salvage). `answer` is this function's own accumulator —
+    // duration. `answer` is this function's own accumulator —
     // in scope here regardless of which budget produced `failure` (deadline,
     // idle, a raw transport drop) — so attaching it is unconditional and cheap;
     // content/reasoning are simply empty when nothing had streamed yet.

@@ -14,11 +14,10 @@ import {
   writeConfig,
 } from './helpers.mjs';
 
-// OAI-20. LM Studio dropped 27 of 72 long requests (37.5%) across four
-// full-corpus bench invocations on 2026-07-30, on both a dense and an MoE model.
-// Nothing retried, so a dropped request was reported as a bad answer and the
-// benchmark could not produce a number. These pin the shapes that are retried,
-// the ones that must not be, and the record that separates the two.
+// LM Studio can silently drop long requests without retrying, so a dropped
+// request gets reported as a bad answer and the benchmark can't produce a
+// number. These pin the shapes that are retried, the ones that must not be,
+// and the record that separates the two.
 
 /**
  * A server that plays `scripts` in order, one per **chat** request.
@@ -175,9 +174,9 @@ test('a capability already negotiated away is not offered again on a retry', asy
 /**
  * The attempt record, end to end through the real command.
  *
- * The counts above prove retry *happens*; these prove the thing OAI-20 actually
- * ships — a record that separates the run that was scored from the requests the
- * server dropped. Without these the deliverable is untested and only its side
+ * The counts above prove retry *happens*; these prove the deliverable a
+ * caller actually needs — a record that separates the run that was scored
+ * from the requests the server dropped. Without these the deliverable is untested and only its side
  * effect is covered.
  */
 test('--json carries one entry per physical request, with the failure classified', async () => {

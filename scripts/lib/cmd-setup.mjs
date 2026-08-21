@@ -8,8 +8,8 @@ import { renderSetupReport } from './render.mjs';
 
 /**
  * The most this report will ever show for a baseUrl that failed to build a
- * profile — never the raw string, which may carry a query-embedded credential
- * (OAI-72(b)). `normalizeBaseUrl` is what the success path already uses to
+ * profile — never the raw string, which may carry a query-embedded credential.
+ * `normalizeBaseUrl` is what the success path already uses to
  * split that query out before display; run it here too rather than falling
  * back to the untouched value. If the raw string isn't even a valid URL —
  * plausibly why `buildProfile` itself threw — there is nothing safe to show.
@@ -51,7 +51,7 @@ export async function probeProvider(name, rawProfile) {
     if (error.serverResponded) {
       // `/oai:setup` is unambiguously interactive — the operator's own
       // terminal, echoing their own config back to them — so it composes the
-      // structured OAI-185 fields into the message itself, the same as
+      // structured error fields into the message itself, the same as
       // `oai-companion.mjs`'s top-level catch does for every other command.
       const detail = transportDetail(error);
       const listUnavailable = detail ? `${error.message} (${detail})` : error.message;
@@ -70,9 +70,9 @@ function jsonRow({ profile, rawProfile, models, error, described, listUnavailabl
   // below): every error stored in this field is pre-response, carrying only
   // `.endpoint` — always `profile.baseUrl`, already reported on the `baseUrl`
   // field below. A `serverResponded` failure with real body detail always
-  // takes the `listUnavailable` branch instead (OAI-185 review-ladder pass
-  // 1), which `listUnavailable` below now surfaces (OAI-193) — `reachable`
-  // stays `true` in that case, since the server genuinely answered.
+  // takes the `listUnavailable` branch instead, which `listUnavailable` below
+  // surfaces — `reachable` stays `true` in that case, since the server
+  // genuinely answered.
   return {
     name: profile.name,
     baseUrl: profile.baseUrl,

@@ -65,7 +65,7 @@ function loadConfigAttempt(attempt) {
     // A profile may carry an inline `apiKey` (`apiKeyEnv` is preferred, but
     // `apiKey` is a supported fallback) — this file can hold a secret from the
     // moment it exists, so `mode` is passed at creation rather than left to a
-    // later repair (OAI-72(a), the same posture `job-store.mjs` gives `jobs.db`).
+    // later repair (the same posture `job-store.mjs` gives `jobs.db`).
     // `flag: 'wx'` rather than the default `'w'`: the ENOENT above only proves
     // the file didn't exist at the READ a moment ago — a concurrent creator in
     // the gap between that check and this write would otherwise have its file
@@ -85,7 +85,7 @@ function loadConfigAttempt(attempt) {
   // Unconditional, immediately after a successful read and before validating
   // its CONTENT — a file left loose by an older build (or widened by anything
   // else) would otherwise stay that way for as long as it happens to be
-  // invalid JSON or the wrong shape, the same lesson OAI-65(b) drew for
+  // invalid JSON or the wrong shape, the same lesson drawn for
   // `jobs.db`'s containing directory. The file's mode is a property of the
   // file, not of whether its content currently parses. Only `ENOSYS`
   // ("chmod not implemented") and `EINVAL` (the mode argument itself refused
@@ -109,7 +109,7 @@ function loadConfigAttempt(attempt) {
   try {
     config = JSON.parse(raw);
   } catch {
-    // Never interpolate the parse error's own message (OAI-72(b), same
+    // Never interpolate the parse error's own message (same
     // discipline as `normalizeBaseUrl`'s throws below): V8's SyntaxError
     // routinely quotes a slice of the surrounding raw text, not just a
     // position — `JSON.parse('{"apiKey": sk-SECRET}')` throws a message
@@ -135,7 +135,7 @@ function validateConfig(config, path) {
     if (!profile || typeof profile.baseUrl !== 'string' || !profile.baseUrl) {
       throw new UserError(`Provider "${name}" in ${path} needs a "baseUrl" string.`);
     }
-    // Checked HERE, at load, not in `resolveApiKey` (OAI-183) — `resolveProfile` deletes
+    // Checked HERE, at load, not in `resolveApiKey` — `resolveProfile` deletes
     // `apiKeyEnv` from the raw profile before `buildProfile` runs on the cross-endpoint
     // `--base-url` branch, so a check placed in `resolveApiKey` would never see it on that
     // path. Keyed on PRESENCE (`in`), not truthiness: an empty string is falsy and a
@@ -207,13 +207,13 @@ export function normalizeBaseUrl(raw) {
   try {
     url = new URL(raw);
   } catch {
-    // Never interpolate `raw` into a thrown message (OAI-72(b)) — this
+    // Never interpolate `raw` into a thrown message — this
     // function's whole job is validating a value the caller does not yet
     // trust, so it is exactly the wrong place to echo that value back
     // un-redacted. A malformed baseUrl reaches here carrying a query-string
     // secret or embedded userinfo just as often as it reaches here at all,
     // and this function has no way to know which. Structural, not a scrub:
-    // OAI-63 tried scrubbing a wrapped message like this and was defeated
+    // scrubbing a wrapped message like this was defeated
     // four times by a narrower shape each round; nothing raw is quoted here,
     // so there is nothing to scrub and nothing to bypass.
     throw new UserError('The configured baseUrl is not a valid URL.', { hint });
@@ -238,7 +238,7 @@ export function normalizeBaseUrl(raw) {
 
 /**
  * Whether two base URLs name the same request target — not merely the same
- * origin (OAI-63(c)). A credential belongs to the endpoint it was configured
+ * origin. A credential belongs to the endpoint it was configured
  * for, and on a path-multiplexed gateway (LiteLLM, Azure APIM, Cloudflare AI
  * Gateway) two different tenants share an origin and differ only in path or
  * query — `same.example/tenant-a` and `same.example/tenant-b` are the same
@@ -259,7 +259,7 @@ function sameEndpoint(a, b) {
 
 /**
  * Resolve the API key without ever returning it to display code — and say which SOURCE
- * supplied it (OAI-183). `resolveCredential` needs this to tell a legitimate key rotation
+ * supplied it. `resolveCredential` needs this to tell a legitimate key rotation
  * (a new value behind the same source) from an `apiKeyEnv` repoint or an env/inline
  * transition (a different source entirely) — the value alone cannot distinguish them, and
  * the credential itself is deliberately never persisted (see job-auth.mjs).
@@ -301,7 +301,7 @@ export function buildProfile(name, rawProfile) {
     maxSeconds: rawProfile.maxSeconds,
     retrySeconds: rawProfile.retrySeconds,
     // Measured throughput, used only to estimate a wait before one is spent.
-    // Rates rather than a hardcoded model class, because ADR 001 makes providers
+    // Rates rather than a hardcoded model class, because providers are
     // configuration and nothing here may know which server is slow. Absent means
     // no estimate is offered at all — see `eta.mjs`, which refuses to invent one.
     prefillTokensPerSecond: rawProfile.prefillTokensPerSecond,
@@ -341,7 +341,7 @@ export function resolveProfile(config, { provider, baseUrl } = {}) {
   if (baseUrl) {
     const overridden = { ...named, baseUrl };
     // A credential belongs to the ENDPOINT it was configured for, not merely
-    // its origin (OAI-63(c)) — a same-origin, different-path override on a
+    // its origin — a same-origin, different-path override on a
     // path-multiplexed gateway is a different tenant, not the same one with a
     // longer URL.
     const crossEndpoint = named && !sameEndpoint(named.baseUrl, baseUrl);

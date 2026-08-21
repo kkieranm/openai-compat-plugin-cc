@@ -1,7 +1,7 @@
 // /oai:review end to end on the ORDINARY path: what an unconstrained reply is
 // read as, and the refusals that must stay loud.
 //
-// A review sends no `response_format` (OAI-51), so the reply arrives in the
+// A review sends no `response_format`, so the reply arrives in the
 // content channel and is parsed leniently. The opt-in grammar and everything it
 // makes possible live in review-structured.test.js; a test needing
 // `--structured-output` belongs there, not here.
@@ -43,7 +43,7 @@ test('a review from a server that ignores stream: true is read as a whole comple
   assert.equal(chatRequests(server)[0].body.stream, true, 'the request asked for a stream regardless');
 });
 
-// OAI-51, and the reason this is a guard rather than a preference. A
+// This is a guard rather than a preference: a
 // `response_format` schema makes LM Studio's LLGuidance build a grammar whose
 // lexer exhausts a 250,000-state budget at ~14k generated tokens, raising a fatal
 // exception in the MLX generation thread and SEGFAULTING the model process — a
@@ -121,7 +121,7 @@ test('a reply with nothing in either channel is a failure, not an empty verbatim
   await server.close();
 
   assert.equal(result.status, 1);
-  // Refused by `finishAnswer` as `blank-completion` (OAI-20), not by the caller
+  // Refused by `finishAnswer` as `blank-completion`, not by the caller
   // downstream. The refusal is the same refusal; what changed is that it now
   // carries a machine-readable shape, so the retry layer and the benchmark can
   // tell this apart from a model that answered badly.

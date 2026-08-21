@@ -1,9 +1,9 @@
 // Whether a worker may send a credential minutes after the session that asked
 // for the job has gone.
 //
-// `job-auth.mjs` shipped with OAI-3 untested on both sides (OAI-52 item 1),
+// `job-auth.mjs` shipped untested on both sides,
 // which mattered more than the other five gaps: the real gate compares the
-// freshly resolved profile against the frozen `transport` endpoint (OAI-63),
+// freshly resolved profile against the frozen `transport` endpoint,
 // with the tautological origin check ahead of it catching only a hand-edited
 // or corrupt row, and nothing executed either side. `tests/config.test.js`
 // covers the foreground analogue — `resolveProfile` not carrying a key to
@@ -53,7 +53,7 @@ const vendorEnvConfig = (baseUrl, apiKeyEnv) => ({
  * Set an env var for the duration of one call, restoring whatever was there
  * before — `await`s `fn()` itself, since an async `fn` returns a pending
  * promise synchronously and a bare `finally` would restore the env var before
- * the awaited body (a real background submission and worker, for the OAI-183
+ * the awaited body (a real background submission and worker, for the
  * end-to-end case) ever runs.
  */
 async function withEnv(name, value, fn) {
@@ -167,7 +167,7 @@ test('a v2 auth blob missing apiKeyAuthorized does NOT fall back to the legacy d
   });
 });
 
-// OAI-183: the credential SOURCE gate. A repointed `apiKeyEnv` (or an
+// The credential SOURCE gate. A repointed `apiKeyEnv` (or an
 // env/inline transition) between submission and execution must be refused,
 // but a legitimate rotation — a new value behind the SAME source — must not.
 const AUTHORISED_ENV_A = {
@@ -281,7 +281,7 @@ test('a profile that has since moved origin cannot lend its new key to the old e
   });
 });
 
-// OAI-63: the origin-only check this replaced would have let this through —
+// The origin-only check this replaced would have let this through —
 // same origin as TRANSPORT, different path. The endpoint check must not.
 test('a profile that has since moved PATH, same origin, cannot lend its new key to the old endpoint either', () => {
   withConfig(vendorConfig('https://real.example/tenant-b', 'sk-b'), () => {
@@ -401,7 +401,7 @@ test('a query mismatch refusal never echoes either query value', () => {
   });
 });
 
-// OAI-63's other confirmed variant: the same origin AND path, differing only
+// Another confirmed variant: the same origin AND path, differing only
 // in the QUERY string — a gateway that multiplexes tenants by ?tenant=. The
 // old origin-only check would have missed this one too.
 test('a profile that has since moved QUERY, same origin and path, cannot lend its new key to the old endpoint either', () => {
@@ -618,7 +618,7 @@ test('the same fixture, config left alone, reaches the model carrying the key', 
   }
 });
 
-// OAI-183 end-to-end arm: every other env-sourced case in the matrix above is
+// The end-to-end arm: every other env-sourced case in the matrix above is
 // unit-level (a hand-built `auth` blob) — this is the one that proves a real
 // `--background` submission under an `apiKeyEnv` profile actually persists an
 // `{kind:'env'}` pin, not just that `resolveCredential` accepts one if handed it.

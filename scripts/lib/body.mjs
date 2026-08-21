@@ -44,9 +44,9 @@ export async function readJson(response, what, { maxChars } = {}) {
   } catch (error) {
     // Quoting the reply is what identifies a proxy login page or an HTML error
     // in the path — but the reply is server-controlled and can carry the same
-    // secret-shaped content `provider.mjs`'s `assertOk` guards against
-    // (OAI-185), and `error.message` from `JSON.parse` itself quotes a
-    // fragment of the input, so neither may go on `.message` or `.hint`:
+    // secret-shaped content `provider.mjs`'s `assertOk` guards against, and
+    // `error.message` from `JSON.parse` itself quotes a fragment of the
+    // input, so neither may go on `.message` or `.hint`:
     // both are read unconditionally by `describeFailure` (this reason,
     // `bad-json`, passes through untouched) and by `oai-companion.mjs`'s
     // top-level catch. The excerpt travels on `.bodyExcerpt` instead — the

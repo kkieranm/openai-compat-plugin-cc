@@ -233,8 +233,8 @@ test('the remedy reaches the real CLI, and a too-new database withholds it', { s
 
 test('a queued row with an unreadable pid is told the truth about its future, not the timestamp shape\'s', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // The two queued malformed shapes have opposite futures, and before OAI-162
-  // they shared one sentence. `registerWaiter` carries `AND waiter_pid IS NULL`,
+  // The two queued malformed shapes have opposite futures, and used to share one
+  // sentence. `registerWaiter` carries `AND waiter_pid IS NULL`,
   // so a row already holding a value can never be attached by anything —
   // telling the operator a worker might still pick it up argues them out of the
   // only action that clears it.

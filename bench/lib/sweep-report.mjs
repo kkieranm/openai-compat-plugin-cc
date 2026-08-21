@@ -1,8 +1,8 @@
 // The morning artifact: what the night looked at, what it found, and — the part
 // that takes the most care — what it did NOT look at.
 //
-// A sweep's coverage section is not a footnote. Token exhaustion (OAI-115) is
-// the dominant failure mode on this hardware, and a starved run produces no
+// A sweep's coverage section is not a footnote. Token exhaustion is the
+// dominant failure mode on this hardware, and a starved run produces no
 // findings for exactly the same reason a clean one does: an empty list. If the
 // report renders both as silence, a night that measured almost nothing reads as
 // a night that found almost nothing, and the reader draws the opposite
@@ -56,8 +56,8 @@ const WHY = {
  * Reads `entry.model`, which only a completed report sets. A failure envelope's
  * `requestedModel` is deliberately kept under its own name and is NOT rendered
  * here: it is the model that was asked, and on a failed row nothing answered.
- * Saying "answered by X" there is the requested-versus-served conflation
- * `adr/011` exists to stop this plugin making.
+ * Saying "answered by X" there would conflate what was requested with what
+ * actually served the request, which this plugin must not do.
  */
 function answeredBy(entry) {
   return entry.model ? ` *(answered by \`${entry.model}\`)*` : '';
@@ -165,10 +165,10 @@ function coverageSection(entries) {
     const why = entry.reason ? `${WHY[entry.outcome] ?? 'no explanation recorded'} (\`${entry.reason}\`)` : (WHY[entry.outcome] ?? 'no explanation recorded');
     lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
     if (hasFindings(entry)) {
-      // A review that did not complete can still have reported something real,
-      // and those leads are why OAI-120 mattered. They are rendered HERE rather
-      // than in the Findings section so the commit is disposed of exactly once —
-      // with the same detail, flagged by the outcome that disqualifies it.
+      // A review that did not complete can still have reported something real.
+      // Those leads are rendered HERE rather than in the Findings section so
+      // the commit is disposed of exactly once — with the same detail,
+      // flagged by the outcome that disqualifies it.
       lines.push('', `  **It reported the following before it was disqualified — treat as leads only:**`, '');
       lines.push(...findingsBlock(entry, '  ', { attribute: false }));
     } else {
@@ -225,8 +225,8 @@ function header(record) {
     // has no end, and the last thing observed is stated in `stoppedBecause`
     // where it can be labelled as an observation rather than an ending.
     `- **Started** ${record.startedAt} · **ended** ${record.endedAt ?? 'not observed'}`,
-    // Always, even for a self-review: its ABSENCE is exactly what let a
-    // foreign --repo run's artifact go unattributed (OAI-165 review).
+    // Always, even for a self-review: its ABSENCE is exactly what would let a
+    // foreign --repo run's artifact go unattributed.
     `- **Repository** \`${record.repo ?? '(not recorded)'}\``,
     `- **Stopped because** ${record.stoppedBecause}`,
     `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
@@ -248,7 +248,7 @@ function header(record) {
  * this run read the code to check one. Saying so in the file means a reader who
  * finds it weeks later, with no memory of how it was produced, still knows what
  * it is worth. The commit-local point matters just as much: a commit-scoped
- * review sees AT MOST the changed files whole (ADR 005) and nothing the commit
+ * review sees AT MOST the changed files whole and nothing the commit
  * did not touch, so it cannot see a defect in an existing caller elsewhere. "At
  * most" because this section covers every entry, so it must hold for the worst.
  */

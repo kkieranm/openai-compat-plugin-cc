@@ -1,9 +1,9 @@
 // A worker's exit is announced or it is not, and this is where that difference
-// becomes a verdict (OAI-66).
+// becomes a verdict.
 //
-// Before it, a dead worker with a cancellation pending was published as a tidy
-// `cancelled` whatever had actually happened — so a crash was reported as a
-// granted request and its diagnosis thrown away. Every test here drives a row
+// Without it, a dead worker with a cancellation pending would be published as
+// a tidy `cancelled` whatever had actually happened — so a crash would be
+// reported as a granted request and its diagnosis thrown away. Every test here drives a row
 // whose worker has genuinely exited, and reads the verdict back out of the real
 // command, because the mechanism is a file's presence and a process's death.
 import assert from 'node:assert/strict';

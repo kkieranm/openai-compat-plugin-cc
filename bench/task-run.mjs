@@ -73,7 +73,7 @@ export function invoke(caseDef, arm, options) {
  * The alternation is not tidiness. Both arms send a nearly identical prefix, and
  * a server-side prompt cache moves first-token latency by tens of times, so a
  * fixed order would systematically bill one arm the cold prefill and the other
- * the warm one. ADR 009 measured 421.7s cold against 11.5s warm on the same
+ * the warm one. A measured run saw 421.7s cold against 11.5s warm on the same
  * prefix here.
  */
 export function runSweep(cases, options, { execute = invoke } = {}) {
@@ -135,7 +135,7 @@ function modelCell(runs) {
 /**
  * The report, which must state what it is not.
  *
- * Arms are reported side by side and NEVER averaged: ADR 016 found framing to be
+ * Arms are reported side by side and NEVER averaged: framing was found to be
  * the dominant variable, so a single number across both would describe a
  * measurement nobody made. A sweep that ran one arm says so in its own heading
  * rather than looking complete.

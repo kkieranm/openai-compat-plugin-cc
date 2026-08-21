@@ -135,7 +135,7 @@ test('a worker that registered is never abandoned, however long it waits', { ski
 test('a running row with an UNREADABLE pid blocks the queue rather than being collected', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // The shape OAI-162 was filed about. `'garbage'` reaches the column because
+    // `'garbage'` reaches the column because
     // the jobs table is not STRICT, so INTEGER is an affinity rather than a
     // constraint and a foreign writer's TEXT value lands verbatim. Before the
     // fix this read as `dead` — no OS probe was even attempted — and
@@ -189,8 +189,8 @@ test('a newer plugin\'s row with an UNREADABLE pid wedges this build, and names 
   // above liveness, which no flag lifts. So this build can neither run past the
   // row nor write it off.
   //
-  // That combination already existed for a newer row with no pid at all; OAI-162
-  // extends it to this input, and removing it is queue-core work filed separately.
+  // That combination already existed for a newer row with no pid at all, and
+  // extending it to this input the same way is queue-core work, not this fix.
   // What ships here is that the row SAYS which schema it carries, because the
   // note that used to carry that number is no longer the one it reaches. It does
   // not say which build can clear it — see the last assertion for why.
@@ -272,7 +272,7 @@ test('a row THIS build understands is not told a newer plugin wrote it', { skip:
 });
 
 /**
- * OAI-160 case B, made deterministic: `reconcileAll` and `viewOf` each probe
+ * Made deterministic: `reconcileAll` and `viewOf` each probe
  * liveness separately, so a row can be fine at the first probe and dead by the
  * second — a real timing race this repo's black-box CLI harness has no seam to
  * force. Calling `renderList`/`statusView` directly, on a row seeded straight
@@ -293,10 +293,10 @@ test('a known-schema dead row on a writable database is not blamed on a version 
   assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
   assert.match(text, /schema \(1\) is understood/);
   assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row');
-  // Verdict-point round 1, Codex: fragment-only assertions above would still
+  // Fragment-only assertions above would still
   // pass for a semantically-different regression phrased differently (e.g.
   // "reconciliation inspected this row"), since none of them pins the whole
-  // sentence. Verdict-point round 2, Codex: an `includes()` pin of the
+  // sentence. And an `includes()` pin of the
   // complete sentence still passes if something is APPENDED alongside it, so
   // this is equality against the row's own note line (the last line of
   // output here — this test seeds exactly one row) rather than substring
@@ -326,7 +326,7 @@ test('a known-schema never-started row on a writable database is not blamed on a
   assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
   assert.match(text, /schema \(1\) is understood/);
   assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row, same branch as the dead-row test above');
-  // Verdict-point round 1 + 2, Codex: same reasoning as the dead-row test
+  // Same reasoning as the dead-row test
   // above — equality against the row's own note line, not substring
   // containment, so nothing can be appended alongside a correct match.
   assert.equal(text.trim().split('\n').pop(),

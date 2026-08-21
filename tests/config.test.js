@@ -41,7 +41,7 @@ test('credentials embedded in the URL are refused rather than dropped', () => {
   assert.throws(() => normalizeBaseUrl('https://user:pw@api.example.com/v1'), /embeds credentials in the URL/);
 });
 
-// OAI-72(b): a caller that displays or logs a UserError's message (cmd-setup.mjs's
+// A caller that displays or logs a UserError's message (cmd-setup.mjs's
 // report, or an uncaught throw reaching oai-companion.mjs's top-level stderr
 // write) must never end up echoing the raw input this function was asked to
 // validate — the whole reason it's being validated is that it isn't trusted
@@ -104,7 +104,7 @@ test('a credential is never forwarded to a different endpoint via --base-url', (
   assert.equal(elsewhere.apiKey, undefined, 'key must not follow the request to another origin');
   assert.equal(elsewhere.credentialWithheld, true);
 
-  // OAI-63(c): same host, DIFFERENT path — on a path-multiplexed gateway
+  // Same host, DIFFERENT path — on a path-multiplexed gateway
   // (LiteLLM, Azure APIM, Cloudflare AI Gateway) that is a different tenant,
   // not "still the provider the key belongs to". The key must not follow.
   const samePath = resolveProfile(config, { provider: 'p', baseUrl: 'https://real.example/v2' });
@@ -155,7 +155,7 @@ test('apiKeyEnv reads the environment and fails loudly when unset', () => {
   assert.throws(() => resolveProfile(config, {}), /apiKeyEnv "OAI_TEST_KEY" but that variable is empty/);
 });
 
-// OAI-183: `apiKeyEnv` must be validated as a non-empty string at LOAD, not at
+// `apiKeyEnv` must be validated as a non-empty string at LOAD, not at
 // resolution — `resolveProfile` deletes `apiKeyEnv` before `buildProfile` runs
 // on the cross-endpoint `--base-url` path, so a check placed in `resolveApiKey`
 // would never see it there. `loadConfig` runs on every command, so this must
