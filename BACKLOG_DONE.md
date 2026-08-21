@@ -1,3 +1,45 @@
+## 2026-08-21 — OAI-114 shipped: findingsShaped stops discarding a whole list for one non-object sibling (`16997a3`), OAI-195 filed (`d33aa36`)
+
+- **OAI-114** — `findingsShaped`'s candidate-selection predicate required EVERY element of a
+  candidate list to be a real object, so one non-object sibling (e.g. a malformed string) discarded
+  a whole reply that had a genuine finding sitting right beside it, contradicting ADR 003's stated
+  guarantee that a bare array is the same reply as `{findings: […]}` with malformed siblings counted,
+  not fatal. Fixed by splitting the predicate into `record`/`named`/`usable`: a candidate is admitted
+  when either every element is a real object (preserving the legacy all-objects boundary) or at least
+  one element is a genuinely named finding (the actual fix).
+
+  **Unusually deep for its apparent size.** Went through 3 review-ladder diff passes plus a full
+  pass, each finding and fixing a real edge case: pass 1 (`codex-plain`) found `named`'s optional
+  chaining could throw on a truthy non-function `.trim` value, closed with explicit `typeof` guards;
+  pass 1's `agent-closer` found the docstring overclaimed defense against trailing decoys. Pass 2
+  (`codex-plain`) found a genuine regression the pass-1-approved fix introduced — a mixed whole-array
+  containing a nested `{findings:[...]}` wrapper could lose a recoverable finding to all-dropped
+  normalization, where pre-fix base behavior recovered it via a fallback candidate — closed by
+  changing the whole-reply branch to `list.every(record) || list.some(named)`; pass 2's
+  `codex-adversarial` found the pass-1 docstring rewrite was itself self-contradictory and too
+  narrow, rewritten again. Pass 3's `codex-adversarial` raised a further case (a whole array
+  containing only a wrapper object, no primitive at all) — verified via a `git worktree` checkout of
+  the pre-fix base commit to be IDENTICAL behavior before and after, not a regression, and dismissed
+  as out of scope. The full pass's `codex-adversarial` (via `task`) found the docstring's "some,
+  never every" heading had become false once `every(record)` was reintroduced as a disjunct, and that
+  no test directly pinned the `NO_PAYLOAD`-vs-`UNREADABLE` boundary at the `findingsShaped` level
+  (both fixed).
+
+  **At the verdict point, Codex split from a fable-pinned verdict subagent** on two grounds: (1) a
+  real but pre-existing, out-of-scope defect in `structured.mjs`'s `normalizeFinding` — `String()`/
+  `Number()` coercion on `severity`/`line` throws on a JSON-producible object with no primitive
+  coercion, verified identical at base and shipped code — deferred and filed as **OAI-195**; (2) the
+  plan document itself had drifted from the shipped design across the review-ladder passes and was
+  never amended at the time, a real process gap. Fixing that took **two further plan re-challenge
+  rounds**: the first amendment attempt had its own internal contradictions (a Tests-section heading
+  mismatching its own item list, a Docstring-section heading mismatching its own bullets, plus a
+  genuine pass-attribution error Codex caught by re-tracing session history) — caught independently
+  by both approvers and fixed in a second attempt, which received clean dual approval. Three plan-gate
+  rounds total, archived in `plans/oai-114-findings-shaped-primitive-sibling.approved/`.
+
+  Shipped in `16997a3` (fix + tests + plan). OAI-195 filed separately in `d33aa36`, since it is
+  residue rather than part of this fix. Full suite green throughout (1114/1114 final).
+
 ## 2026-08-21 — OAI-160 shipped: dead/never-started note stops blaming a foreign plugin (`b04a3bf`, `5970422`)
 
 - **OAI-160** — `job-render.mjs`'s `noteFor` had one unconditional message for a `dead`/

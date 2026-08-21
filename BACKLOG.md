@@ -675,16 +675,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   linear pass with a stack, or cap scan work and fail unreadable past the cap. Wants a performance
   regression test with a large malformed prefix. Independent of OAI-112 and fixable before it.
 
-- **OAI-114** — **One primitive sibling discards a whole findings list — a REGRESSION FROM BASE.**
-  Filed 2026-08-07, live today. `objects(list)` requires EVERY element to be an object, so
-  `{"findings":[{valid},"junk"]}` returns `null`. At base `4f6975a` the valid finding survived and the
-  junk was counted as `dropped: 1`. It contradicts a guarantee ADR 003 states in its own words — that
-  a bare array is the same reply as `{findings: […]}` and malformed siblings are counted rather than
-  fatal. **The guard that should have caught it is the tenth instance of this repo's signature defect**:
-  the test named `one malformed entry does not discard its siblings, in any spelling` uses an OBJECT
-  missing fields, which `objects()` accepts, so the primitive case its name promises was never covered.
-  Fix: admit a list with at least one normalizable finding and let normalization drop the rest.
-
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
   SQLite", and deliberately not built there.
