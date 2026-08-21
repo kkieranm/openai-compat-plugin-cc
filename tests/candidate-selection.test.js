@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFindings } from '../scripts/lib/structured.mjs';
+import { findingsShaped } from '../scripts/lib/findings-candidate.mjs';
 
 import { FINDING } from './findings-fixtures.mjs';
 
@@ -112,6 +113,45 @@ test('one malformed entry does not discard its siblings, in any spelling', () =>
   }
 });
 
+test('a non-object sibling does not discard the list either, in any spelling', () => {
+  // The malformed-object case above didn't cover this: a non-object primitive
+  // sibling vetoed the whole candidate under the old `every`-based gate,
+  // discarding a real finding sitting right beside it.
+  const mixed = [FINDING, 'junk'];
+  const expected = { findings: [FINDING], dropped: 1 };
+  for (const [spelling, content] of [
+    ['prose-wrapped', `Findings: ${JSON.stringify(mixed)}`],
+    ['whole reply', JSON.stringify(mixed)],
+    ['object-wrapped', JSON.stringify({ findings: mixed })],
+  ]) {
+    const parsed = parse(content);
+    assert.equal(parsed?.findings.length, expected.findings.length, `${spelling}: the valid finding must survive`);
+    assert.equal(parsed.dropped, expected.dropped, `${spelling}: the non-object sibling must be counted, not fatal`);
+  }
+});
+
+test('a malformed field that is truthy but not a string does not crash candidate selection', () => {
+  // `item.file?.trim?.()` looks guarded but is not: optional chaining only skips
+  // a call on null/undefined, so a truthy non-function `trim` (e.g. an object
+  // with its own `trim` key) still gets invoked and throws. That throw used to
+  // be unreachable here because the old all-objects gate rejected any list
+  // carrying a non-object sibling before `named` ever ran on this element; once
+  // that gate was relaxed, a hostile malformed object sitting beside a real
+  // finding could crash candidate selection and take the real finding down
+  // with it. Explicit `typeof === 'string'` checks close that.
+  const mixed = [{ file: { trim: 1 }, summary: 'x' }, 'junk', FINDING];
+  const expected = { findings: [FINDING], dropped: 2 };
+  for (const [spelling, content] of [
+    ['prose-wrapped', `Findings: ${JSON.stringify(mixed)}`],
+    ['whole reply', JSON.stringify(mixed)],
+    ['object-wrapped', JSON.stringify({ findings: mixed })],
+  ]) {
+    const parsed = parse(content);
+    assert.equal(parsed?.findings.length, expected.findings.length, `${spelling}: the valid finding must survive`);
+    assert.equal(parsed.dropped, expected.dropped, `${spelling}: both malformed siblings must be counted, not fatal`);
+  }
+});
+
 test('a wrapper is never replaced by the array nested inside it', () => {
   // What makes "last wins" safe. Every accepted wrapper contains an accepted
   // array — its own `findings` — which starts later, so a global last-candidate
@@ -127,6 +167,48 @@ test('a bare array that IS the whole reply keeps the generous rule', () => {
   // rule exists to protect. Tightening the scanned case must not reach these.
   assert.deepEqual(parseFindings({ content: '[]', reasoning: '' }, { structured: false }).findings, []);
   assert.equal(parseFindings({ content: '[{"id":1}]', reasoning: '' }, { structured: false }), null);
+});
+
+test('findingsShaped itself distinguishes not-a-candidate from a candidate that reads unreadable', () => {
+  // `parseFindings` collapses NO_PAYLOAD and UNREADABLE to the same `null`, so
+  // a test at that layer cannot prove `[{"id":1},"junk"]` is REJECTED as a
+  // candidate (the every(record) boundary holding) rather than merely ending
+  // up unreadable for some other reason. Asserted directly against the
+  // exported predicate instead.
+  assert.equal(findingsShaped([{ id: 1 }], true), true, 'an all-object, none-named whole list is still a candidate — it reads unreadable downstream, not absent');
+  assert.equal(findingsShaped([{ id: 1 }, 'junk'], true), false, 'adding a non-object sibling with nothing named anywhere makes it NOT a candidate at all — the every(record) boundary');
+  assert.equal(findingsShaped([FINDING, 'junk'], true), true, 'a non-object sibling beside a genuinely named finding IS a candidate — the some(named) fix');
+  assert.equal(findingsShaped([1, 2, 3], true), false, 'an all-primitive whole list is not a candidate');
+  assert.equal(findingsShaped([], true), true, 'an empty whole list is a candidate — the clean-review case');
+});
+
+test('a whole-reply array does not preempt recovery of a valid wrapper nested inside it', () => {
+  // A whole array containing SOME real object (but none of them named) used to
+  // win as the candidate over the wrapper nested inside one of its elements,
+  // then normalize to nothing and report unreadable — discarding a finding a
+  // rejected outer array would have let a later scan recover from the wrapper.
+  // `usable` for a whole reply now requires either every element be a real
+  // object (the original gate, still covering the pure-unnamed-objects case
+  // above) or some element be a genuinely named finding — a wrapper alone
+  // satisfies neither, so the outer array is correctly not a candidate here.
+  const wrapper = JSON.stringify({ findings: [FINDING], summary: 'one defect' });
+  const parsed = parse(`[${wrapper}, "junk"]`);
+  assert.deepEqual(parsed?.findings, [FINDING], 'the wrapper nested inside the rejected outer array must still be found');
+});
+
+test('a fully-formed trailing decoy still wins on position — accepted, not a defect', () => {
+  // Content alone cannot distinguish a one-finding real reply from a
+  // one-finding decoy; only position tries, and a decoy that TRAILS the real
+  // payload wins there. Pinned so this known, accepted trade cannot silently
+  // regress into "found" or "fixed" without anyone noticing the change.
+  const real = JSON.stringify({ findings: [FINDING], summary: 'the real one' });
+  const decoy = JSON.stringify([{ file: 'fake.js', summary: 'fake' }]);
+  const parsed = parse(`${real}\n\nAlso note: ${decoy}`);
+  assert.deepEqual(
+    parsed?.findings,
+    [{ file: 'fake.js', line: null, severity: 'medium', summary: 'fake', evidence: '' }],
+    'a trailing well-formed decoy wins on position, by design',
+  );
 });
 
 // Pass 5's set. Two of these guard behaviour the pass repaired; three guard
