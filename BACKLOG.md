@@ -665,16 +665,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   disclosure rather than correctness, which is why it is filed rather than folded into an
   argument-construction suite.
 
-- **OAI-113** — **The OAI-84 batch made prose scanning QUADRATIC on model-controlled input.** Filed
-  2026-08-07, live today. `scanFor` skips a start position whose bracket never closes, but re-scans the
-  entire remaining suffix before advancing ONE byte, so a reply carrying many unmatched openers costs
-  O(n²). Measured **through the real CLI**, not at component level: a 200KB reply of unmatched `[`
-  takes **39.15s**, against **0.13s** for a same-size clean reply and **0.14s** for the identical input
-  before the batch — ~280×, and nothing upstream bounds it (`--max-seconds` is a transport deadline;
-  this CPU is spent after the bytes arrive). Fix shape: enumerate bracket spans in one string-aware
-  linear pass with a stack, or cap scan work and fail unreadable past the cap. Wants a performance
-  regression test with a large malformed prefix. Independent of OAI-112 and fixable before it.
-
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
   SQLite", and deliberately not built there.

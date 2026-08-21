@@ -1,3 +1,38 @@
+## 2026-08-21 — OAI-113 shipped: scanFor is no longer quadratic on unmatched brackets (`e0c085a`)
+
+- **OAI-113** — `scanFor`'s restart-based scanning re-scanned the same trailing suffix once per
+  unmatched opener, costing O(n²) on a reply of many unmatched brackets — a 200KB reply of unmatched
+  `[` took ~36s through the real `extractJson()` entry point. Fixed by merging `balanced()`+`scanFor()`
+  into one single linear pass: a stack of open-bracket positions LIFO-matches closes to opens, and a
+  separate ordered list preserves opening-position order for evaluating `accept()` (a stack alone
+  would emit closing-order, breaking a caller with a stateful `accept`). Now ~16ms for the same input —
+  ~2200x measured speedup.
+
+  Two deliberate, tested behavior changes ship with this: content fully inside a closed OR unclosed
+  quoted string is no longer independently scanned as a candidate, since string/escape tracking is now
+  continuous across the whole pass rather than reset per restart position. The true scope is wider
+  than "content inside a quote" — one unbalanced quote anywhere in the text blinds the scan for the
+  entire remainder, a plausible trigger given this repo's own review prompt orders quoting a source
+  line that may itself contain an odd count of quote characters.
+
+  **Went through 2 plan-gate rounds before any code existed**: round 1 caught the behavior-change
+  section understating its scope (closed-quote content is affected too, not just unclosed) — fixed
+  and re-approved round 2 with clean dual approval. **The review-ladder then independently found 4
+  more real issues after code existed**: a diff pass found a genuine mutation-coverage gap (the
+  LIFO-pop mutation witness didn't cover escape-handling; a separate `escaped`-flag mutation survived
+  the whole suite until a properly-designed fixture — a bracket genuinely between two escaped quotes,
+  not merely adjacent to them — was added), plus a docstring blast-radius correction; a full pass
+  found two absolute "every balanced run" claims that had become overclaims, plus a claim that a
+  quote-blinded reply returns "unreadable" that was verified false against the actual code — it
+  returns `null`, which `structured.mjs` maps to `NO_PAYLOAD` (try next channel), not its own
+  `UNREADABLE` (stop searching) sentinel.
+
+  A genuinely thorough result for what looked like a small algorithmic swap on shared parsing logic
+  exercised by every review/task response in the plugin. Shipped in `e0c085a`. Full plan history and
+  every finding's disposition: `plans/oai-113-scanfor-linear-pass.md` and its `.approved/` archive (2
+  plan-gate rounds; note round 1 has no archive file, since a dissent writes nothing). Full suite
+  green throughout (1119/1119 final).
+
 ## 2026-08-21 — OAI-114 shipped: findingsShaped stops discarding a whole list for one non-object sibling (`16997a3`), OAI-195 filed (`d33aa36`)
 
 - **OAI-114** — `findingsShaped`'s candidate-selection predicate required EVERY element of a
