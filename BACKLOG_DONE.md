@@ -1,3 +1,73 @@
+## 2026-08-21 — OAI-160 shipped: dead/never-started note stops blaming a foreign plugin (`b04a3bf`, `5970422`)
+
+- **OAI-160** — `job-render.mjs`'s `noteFor` had one unconditional message for a `dead`/
+  `never-started` row: "written by a newer plugin", even for a row whose own `schema_version` this
+  build understands fine. Two real, distinguishable causes reach that display state without a
+  foreign row: (A) the DATABASE itself is too new (`user_version`), so `reconcileAll` never runs
+  for any row this session, proved by execution against a seeded row; (B) reconciliation ran fine,
+  but the row's liveness or a timing threshold (`STARTUP_GRACE_MS`) changed in the narrow window
+  between that check and render — a benign TOCTOU race, found by Codex at plan-gate round 2, not a
+  version story at all. `noteFor` now branches three ways on `isKnownVersion(view)` and a newly
+  threaded `readOnly` parameter (through `renderList`, `renderDetail`, `cmd-status.mjs`'s `showOne`),
+  naming the real cause per case; `job-view.mjs`'s `displayOf` docblock is corrected to stop claiming
+  the old two-cause story is exhaustive. Plan-gate: episode 1 rounds 1-3 (two CHANGES-REQUIRED — a
+  stale docblock claim, then the TOCTOU race the round-1 design missed — then APPROVE, digest
+  `1d87a63b88e3`). Episode 2, opened AFTER that design was implemented, when review-ladder pass 1
+  found the shipped case-B wording falsely claimed "the worker changed state" for the
+  `never-started` sub-case (which can have no worker to change — a queued row crossing
+  `STARTUP_GRACE_MS` with none ever registered), rounds 1-3 (two more CHANGES-REQUIRED, then APPROVE,
+  digest `8b2f929c09c0`) — landed at `b04a3bf`.
+
+  **`b04a3bf`'s own commit message is inaccurate** and is left uncorrected rather than amended: it
+  describes episode 1's round-3 approval as "superseded before implementation by a mid-build
+  amendment," but the amendment (episode 2) happened AFTER implementation, once review-ladder pass 1
+  found the case-B bug on the already-implemented code. Disclosed as permanent git-history residue.
+
+  **A resumed review-ladder pass over `b04a3bf` (four discovery passes) found the case-B message
+  still made false per-row claims, fixed in `5970422`:** pass 1 removed "this build did reconcile
+  the database this run" (implied THIS row was checked; false for a row stuck in an unsupported
+  state `abandonUnstarted`'s `WHERE state = 'queued'` never matches, which survives every run
+  untouched — codex-plain). Pass 2 removed "left this row exactly as found" (also a per-row claim;
+  false for a row a concurrent submission inserts after `reconcileAll`'s `listJobs()` snapshot, whose
+  worker then dies before render — never examined at all — codex-adversarial + codex-plain,
+  independently converging). Pass 3 removed "usually a benign race" (an unmeasured frequency lean
+  contradicting the design's own no-lean comment, and inverted for exactly the readers who see the
+  note more than once — a scout, confirmed by codex-adversarial). Pass 4 (terminal) closed two more
+  candidates as non-blocking for the shipped string (a comment-only overclaim, fixed as an exempt
+  post-approval reword; a re-confirmation that the persistence clause is vacuous-not-false for a
+  `dead` display, first dispositioned at pass 2) — both judged by two independent reviewers plus a
+  closer.
+
+  **The verdict point itself then took three rounds**, each closing a real gap in the tests rather
+  than the shipped string: round 1 (Codex CHANGES-REQUIRED) found the two `queue-reconcile.test.js`
+  regression tests used only fragment assertions (`doesNotMatch`/short `match`), which a
+  differently-phrased regression could still pass — fixed with `text.includes()` of the complete
+  literal note. Round 2 (Codex CHANGES-REQUIRED again) found `includes()` tolerates appended text
+  alongside a correct match — fixed by switching to `assert.equal` against the row's own note line
+  (`text.trim().split('\n').pop()`, valid because each fixture seeds exactly one row). Round 3: both
+  approvers (Codex + an independent fable-pinned Claude verdict subagent) approved, digest
+  `d4bb8e8376f2`. Every one of the seven fixes across both the pass chain and the verdict-point chain
+  is mutation-proven — a targeted substitution or, for the verdict-point rounds, a specifically
+  appended-text mutation, each reproducing exactly the assertion built to catch it; restored and
+  reconfirmed green (1109/1109) every time.
+
+  **Process notes, disclosed rather than hidden:**
+  - The review-ladder pass that first found the case-B wording bug (on the original `b04a3bf` code)
+    ran all three groups correctly against one frozen version, but its fix was applied mid-pass,
+    before `agent-closer` ran — breaking the one-version-per-pass invariant. Caught by the advisor
+    before the verdict point; fixed by treating it as pass 1 truncated-and-resumed (full stage
+    re-run against the fixed version) rather than proceeding on a mixed-version read. The code was
+    also committed (`b04a3bf`) before that resumed pass ran at all — a second, related slip, fixed
+    the same way: the resumed pass ran against the committed bytes rather than being skipped because
+    a commit had already landed.
+  - Group-boundary git-status/hash checkpoints (the ladder's own requirement — after each of Groups
+    A/B/C, plus once before the verdict digest) were skipped in the resumed pass's first three
+    discovery passes (only opening baselines were taken); pass 4 took them properly at every
+    boundary, all clean, no drift found.
+  - OAI-184 and OAI-193, shipped earlier the same session, took their verdict points at diff-shaped
+    review-ladder passes rather than a guaranteed first full pass — not reopened, but noted here so
+    a later session catches it earlier.
+
 ## 2026-08-20 — OAI-193 shipped: setup --json surfaces listUnavailable (`1988153`)
 
 - **OAI-193** — `cmd-setup.mjs`'s `jsonRow` never read the `listUnavailable` field `probeProvider`

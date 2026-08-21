@@ -729,28 +729,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
 
-- **OAI-160** — **`displayOf`'s `dead`/`never-started` note mislabels an ORDINARY row this build
-  understands as "written by a newer plugin."** Filed 2026-08-14 from OAI-64's confirmation pass as
-  pure coverage debt across twelve branches in the background-job display and queue modules; **AMENDED
-  2026-08-16 from OAI-162's review, because the premise under two of those entries turned out FALSE.**
-  `displayOf`'s `dead`/`never-started` arms and `noteFor`'s matching note were filed as
-  "reachable only for a row a newer plugin wrote." They are also reachable for an ORDINARY row whose
-  own `schema_version` this build understands, when only the DATABASE's `PRAGMA user_version` is
-  too new: `cmd-status.mjs` then skips reconciliation entirely, so a genuinely dead worker's row is
-  never collected and renders `dead`. **Proved by execution** against the real CLI on a seeded row —
-  a `schema_version: 1` row with a reaped `worker_pid` under `user_version = 2` renders `!
-  written by a newer plugin (row schema 1), so this build will not touch it.` That sentence
-  contradicts itself in its own parentheses: it names the row's schema as `1`, which is exactly what
-  this build understands, while attributing the row to a newer plugin. The unconditional text is
-  `job-render.mjs`'s `noteFor`. **This is wrong right now** — the row it mislabels is dead or
-  never-started, so no live work is at risk, but the message a human reads is false about why. **Fix
-  shape:** correct the branch to name which version is actually too new (the database's
-  `user_version`, not the row's `schema_version`), then pin it with a test seeding exactly this row
-  shape. The eleven pure-coverage-debt branches this pass also enumerated, and the two unpinned
-  constants (`STARTUP_GRACE_MS`, `STALE_BEAT_MS`) it found, carried no live defect and were split
-  out as **OAI-191**, 2026-08-19, so this item stays scoped to the one thing that is actually wrong
-  today. See `BACKLOG_PARKED.md` for that residue.
-
 - **OAI-181** — **Let a caller pick which model a delegated call uses, per call.** Filed 2026-08-17
   from a direct user request ("we should be able to specify per call what model to use"). `--model` is
   already a per-call flag on `/oai:task` and `/oai:review` (`commands/task.md:3,18`,
