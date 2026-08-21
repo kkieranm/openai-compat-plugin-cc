@@ -764,3 +764,15 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   foreground-only exposure (this message on an operator's own terminal) is judged to need the same
   structured-field treatment OAI-185 gave the transport layer.
 
+- **OAI-195** — **`normalizeFinding`'s `String(raw.severity)` and `Number(raw.line)` throw on a
+  JSON-producible value whose `severity`/`line` is an object with no usable primitive coercion** (e.g.
+  `severity: {toString: null, valueOf: null}`), crashing the whole review reply instead of dropping
+  that one malformed finding. Found by Codex during OAI-114's review-ladder verdict point, deferred
+  there rather than fixed: reproduced identically via a `git worktree` checkout of the pre-OAI-114 base
+  commit (`b8a8a7eb07a44937101149d3480947130cecbb43`) and current HEAD — same `TypeError: Cannot
+  convert object to primitive value` both before and after OAI-114's fix, so this predates that item
+  entirely and sits in `structured.mjs`, a file OAI-114's approved plan never touched. Fix shape:
+  `normalizeFinding` should guard `severity`/`line` the same way it already guards `file`/`summary` —
+  `typeof === 'string'`/`typeof === 'number'` (or `Number.isFinite`) before coercing, dropping the
+  finding via the existing all-dropped/UNREADABLE path rather than throwing.
+
