@@ -186,6 +186,11 @@ test('a database a newer plugin wrote is read, said so, and never written to', {
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stderr, /newer version of the plugin \(schema 99\)/);
     assert.match(status.stdout, /foreign/, 'refusing to write is not a reason to refuse to look');
+    // OAI-160: the row's own schema (1) is one this build understands fine —
+    // the per-row note must blame the DATABASE's too-new version, not claim a
+    // newer plugin wrote this row, which would be self-contradictory.
+    assert.doesNotMatch(status.stdout, /written by a newer plugin \(row schema 1\)/);
+    assert.match(status.stdout, /database itself was written by a newer version of the plugin/);
 
     // A submission, by contrast, is refused outright — and as a user error with
     // a remedy, not as a crash.

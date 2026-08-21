@@ -14,6 +14,7 @@ import { renderList } from '../scripts/lib/job-render.mjs';
 import { registerWaiter } from '../scripts/lib/job-record.mjs';
 import { statusView } from '../scripts/lib/job-view.mjs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, queueScenario, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
+import { STARTUP_GRACE_MS } from '../scripts/lib/job-liveness.mjs';
 
 const THREE_MINUTES = 180_000;
 
@@ -268,4 +269,38 @@ test('a row THIS build understands is not told a newer plugin wrote it', { skip:
   assert.doesNotMatch(lineFor('ours-queued'), /row schema/, 'and the queued arm appends the clause too');
   // The positive control, same render: the foreign row DOES carry it.
   assert.match(lineFor('theirs-running'), /row schema is 99/);
+});
+
+/**
+ * OAI-160 case B, made deterministic: `reconcileAll` and `viewOf` each probe
+ * liveness separately, so a row can be fine at the first probe and dead by the
+ * second — a real timing race this repo's black-box CLI harness has no seam to
+ * force. Calling `renderList`/`statusView` directly, on a row seeded straight
+ * into the store, skips `reconcileAll` entirely — which is exactly what a row
+ * that died AFTER reconciliation observed it alive would look like by render
+ * time, without needing to land the actual race.
+ */
+test('a known-schema dead row on a writable database is not blamed on a version or a worker it does not have', { skip: NEEDS_SQLITE }, async () => {
+  const state = stateDir();
+  insertSynthetic(state, { id: 'raced-dead', state: 'running', workerPid: await deadPid() });
+
+  const text = withStore(state, (db) => renderList(statusView(db, { cwd: '/tmp', all: true }), { cwd: '/tmp', all: true, readOnly: false }));
+
+  assert.doesNotMatch(text, /written by a newer plugin/, 'the row is not foreign');
+  assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
+  assert.match(text, /schema \(1\) is understood/);
+});
+
+test('a known-schema never-started row on a writable database is not blamed on a worker that never existed', { skip: NEEDS_SQLITE }, () => {
+  const state = stateDir();
+  // Queued, no pid ever registered, aged past STARTUP_GRACE_MS: livenessOf
+  // reads this as 'never-started' with no worker to have changed state at all.
+  insertSynthetic(state, { id: 'raced-never-started', agedMs: STARTUP_GRACE_MS + 1000 });
+
+  const text = withStore(state, (db) => renderList(statusView(db, { cwd: '/tmp', all: true }), { cwd: '/tmp', all: true, readOnly: false }));
+
+  assert.doesNotMatch(text, /written by a newer plugin/, 'the row is not foreign');
+  assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
+  assert.doesNotMatch(text, /worker likely changed state/, 'a never-started row has no worker to have changed state');
+  assert.match(text, /schema \(1\) is understood/);
 });

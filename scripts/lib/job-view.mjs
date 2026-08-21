@@ -76,10 +76,18 @@ export function deadlineOf(row) {
 /**
  * The word to show, in precedence order.
  *
- * `dead` and `never-started` reach here only on a row reconciliation could not
- * touch — one a newer plugin wrote, which is never mutated. Showing it is the
- * whole remedy available: it is the row a user has to be told about, because
- * nothing in this build will ever clear it.
+ * `dead` and `never-started` reach here whenever this row's own liveness, read
+ * at THIS moment, says so — which is not always the same as "reconciliation
+ * could not touch it" (OAI-160). A row a newer plugin wrote is one real cause:
+ * `reconcile` refuses it (job-reconcile.mjs), so it is never mutated and
+ * always shows this way. But `reconcileAll` and this function each probe
+ * liveness separately, at different moments in the same command — a row this
+ * build understands fine can be alive at the first probe (nothing to
+ * reconcile) and dead by the second, showing here with no foreign-plugin
+ * story at all. And when the DATABASE's own version is too new, reconciliation
+ * never runs for any row regardless of that row's own schema. `job-render.mjs`'s
+ * `noteFor` is what tells a reader which of these it is; this list is not
+ * exhaustive by construction and must not be read as one.
  *
  * `cancelling` comes *after* `overdue` and `stalled` and not before: a worker
  * that has stopped checking in is never going to see the cancellation, and

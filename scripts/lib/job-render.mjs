@@ -116,7 +116,7 @@ function malformedNote(view) {
  * running does not need explaining, and a note under every row is a note nobody
  * reads.
  */
-function noteFor(view, nowMs) {
+function noteFor(view, nowMs, readOnly) {
   if (view.display === 'malformed') return malformedNote(view);
   if (view.display === 'overdue') {
     return `past its own ${Math.round((view.deadline - Date.parse(view.started_at)) / 1000)}s cap, and pid ${view.pid} is still alive.`;
@@ -141,7 +141,24 @@ function noteFor(view, nowMs) {
       + ' without saying so.';
   }
   if (view.display === 'dead' || view.display === 'never-started') {
-    return `written by a newer plugin (row schema ${view.schema_version}), so this build will not touch it.`;
+    if (!isKnownVersion(view)) {
+      return `written by a newer plugin (row schema ${view.schema_version}), so this build will not touch it.`;
+    }
+    if (readOnly) {
+      return `the job database itself was written by a newer version of the plugin, not this row —`
+        + ` its own schema (${view.schema_version}) is understood, but nothing here was reconciled,`
+        + ' collected or written this run.';
+    }
+    // Not a version story at all: this build reconciled the database this run
+    // and found nothing to collect from this row at the time. Deliberately not
+    // "its worker changed state" — a queued row can reach `never-started` by
+    // crossing STARTUP_GRACE_MS with no worker ever having existed to change
+    // anything (Codex adversarial review, plan-gate pass 1), so the wording
+    // stays cause-neutral between a liveness change and a timing threshold.
+    return `its own schema (${view.schema_version}) is understood and this build did reconcile the`
+      + ` database this run, but the row still shows ${view.display} — something about it (its`
+      + ' liveness, or a timing threshold like the startup grace period) changed between that check'
+      + ' and this render.';
   }
   if (view.display === 'failed') return view.failure?.message ?? 'failed with no message recorded.';
   return null;
@@ -220,7 +237,7 @@ export function renderList({ shown, elsewhere, blockingSeq = null }, { cwd, all,
       const remedy = remedyFor(view, readOnly, nowMs);
       if (remedy) lines.push(`  ! ${remedy}`);
     }
-    const note = noteFor(view, nowMs);
+    const note = noteFor(view, nowMs, readOnly);
     if (note) lines.push(`  ! ${note}`);
   }
   return lines.join('\n');
@@ -253,11 +270,11 @@ function fields(view, nowMs) {
 }
 
 /** One job in full — what `/oai:status <id>` prints. */
-export function renderDetail(view, { nowMs = Date.now() } = {}) {
+export function renderDetail(view, { nowMs = Date.now(), readOnly = false } = {}) {
   const width = 12;
   const lines = [`job ${view.id}  ${view.display}`];
   for (const [label, value] of fields(view, nowMs)) lines.push(`  ${label.padEnd(width)}${value}`);
-  const note = noteFor(view, nowMs);
+  const note = noteFor(view, nowMs, readOnly);
   if (note) lines.push(`\n! ${note}`);
   if (view.unreadable?.length) {
     lines.push(`\n! this build could not parse: ${view.unreadable.join(', ')}. The lifecycle columns above are still sound.`);

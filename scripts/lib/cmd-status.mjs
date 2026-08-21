@@ -30,12 +30,12 @@ function tooNewNotice(version) {
   );
 }
 
-function showOne(db, id, nowMs) {
+function showOne(db, id, nowMs, readOnly) {
   const row = jobById(db, id);
   if (!row) {
     throw new UserError(`No job with id "${id}".`, { hint: 'Run /oai:status with no arguments to list what there is.' });
   }
-  process.stdout.write(`${renderDetail(viewOf(row, nowMs), { nowMs })}\n`);
+  process.stdout.write(`${renderDetail(viewOf(row, nowMs), { nowMs, readOnly })}\n`);
 }
 
 export async function runStatus(argv) {
@@ -58,7 +58,7 @@ export async function runStatus(argv) {
   // An id resolves from anywhere. Scoping it to the current directory would mean
   // an id handed between sessions stopped working the moment someone cd'd.
   if (id) {
-    showOne(db, id, nowMs);
+    showOne(db, id, nowMs, readOnly);
     return;
   }
 
