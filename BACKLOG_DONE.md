@@ -1,3 +1,35 @@
+## 2026-08-21 — OAI-28 (B)+(C) shipped: bodyStream's two untested transport writes now have direct coverage (`80fd3a6`)
+
+- **OAI-28** (merged 2026-08-05 from OAI-28/OAI-30/OAI-41; part (A) already closed as moot, part (D)
+  already withdrawn as a duplicate of (B) — see BACKLOG.md history) — parts (B) and (C) shipped.
+  `scripts/lib/http.mjs`'s `bodyStream` generator had two writes with no behavioral test: the
+  `!response.complete` branch (`error.reason = TRANSPORT`, `error.serverResponded = true`) and the
+  catch block's `transportError(error, url, { delivered: true })` one line below. Both are
+  unreachable through a real `node:http` server on Node 26.3 — measured, both ways of cutting a body
+  (short content-length, chunked-no-terminator) raise on the stream instead. Fixed by exporting
+  `bodyStream` under the same "exported for the test, not for a caller" precedent already documented
+  on `requestErrorHandler` in the same file, and driving it directly with two stub async iterables in
+  `tests/transport-classification.test.js`. No runtime behavior change. `tests/structure.test.js`'s
+  locator regex and doc comment (which overclaimed "nothing behavioural can pin it") were corrected.
+
+  2 plan-gate rounds: Codex round 1 found that exporting `bodyStream` breaks the structural test's
+  line-anchored locator regex (`/^async function\* bodyStream\b/` stops matching once the declaration
+  reads `export async function* bodyStream`) — caught before any code existed. The review-ladder's
+  single pass then found one more real issue after code existed: `agent-closer` (fable) caught a
+  sibling overclaim left in the same comment block being edited — the pre-existing text "deleting
+  `{ delivered: true }` changes nothing today" is false as literally stated, since `delivered: true`
+  also sets `serverResponded` unconditionally and dropping it visibly changes that field today,
+  caught by an existing real-server test. Verified live against `http-errors.mjs` before fixing;
+  amended to scope the claim to the retry verdict specifically. Fixed as exempt prose. Mutation-landed
+  proof performed by hand for both writes before commit. Full suite green throughout, 1121/1121 at
+  final state.
+
+- **OAI-30** — Absorbed into OAI-28 (part C); see that item.
+
+- **OAI-38** — Absorbed into OAI-28 (part D); see that item.
+
+- **OAI-41** — Absorbed into OAI-28 (part A); see that item.
+
 ## 2026-08-21 — OAI-113 shipped: scanFor is no longer quadratic on unmatched brackets (`e0c085a`)
 
 - **OAI-113** — `scanFor`'s restart-based scanning re-scanned the same trailing suffix once per
