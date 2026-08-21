@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { NON_RETRYABLE_TRANSPORT, TRANSPORT, isRetryable } from '../scripts/lib/failure-shape.mjs';
 import { transportError } from '../scripts/lib/http-errors.mjs';
-import { requestErrorHandler, send } from '../scripts/lib/http.mjs';
+import { bodyStream, requestErrorHandler, send } from '../scripts/lib/http.mjs';
 import { request } from '../scripts/lib/provider.mjs';
 
 /** The rejection, or a failure saying nothing was thrown. */
@@ -158,6 +158,65 @@ test('a body cut off mid-flight is retryable — the shape OAI-20 exists to surv
   assert.ok(error, 'a truncated body must not read as a complete answer');
   assert.equal(error.reason, TRANSPORT, 'a dropped delivery is the one thing worth sending again');
   assert.equal(isRetryable(error), true);
+});
+
+function minimalState() {
+  return { received: 0, firstByteTimer: null, idleMs: null, idleTimer: null, totalTimer: null, aborted: null };
+}
+
+test('the !response.complete branch sets both reason and serverResponded — no real server reaches it', async () => {
+  // Neither cut Node can be measured to produce ends cleanly (see the test
+  // above): both raise on the stream instead, so this branch is unreachable
+  // through a real server on Node 26.3. A stub iterable that finishes without
+  // throwing, with `complete` left false, drives it directly. Proved by
+  // mutation before this test existed: deleting either write left the whole
+  // suite green.
+  const response = {
+    complete: false,
+    async *[Symbol.asyncIterator]() {
+      yield 'partial';
+    },
+  };
+  const request = { destroy() {} };
+  const url = new URL('http://example.test/');
+
+  let error = null;
+  try {
+    for await (const _chunk of bodyStream(request, response, minimalState(), { url })) { /* drain */ }
+  } catch (thrown) {
+    error = thrown;
+  }
+
+  assert.ok(error, 'an incomplete response must not read as a finished one');
+  assert.equal(error.reason, TRANSPORT);
+  assert.equal(error.serverResponded, true);
+});
+
+test('the catch below classifies a code-less delivery failure as retryable', async () => {
+  // The real-server fixture above always carries ECONNRESET. This is the path
+  // that fixture cannot reach: Node does not promise a `.code`, and
+  // `transportError`'s retry classification must not depend on one being
+  // present once a response was already being delivered.
+  const response = {
+    complete: false,
+    async *[Symbol.asyncIterator]() {
+      yield 'partial';
+      throw new Error('stream ended abruptly');
+    },
+  };
+  const request = { destroy() {} };
+  const url = new URL('http://example.test/');
+
+  let error = null;
+  try {
+    for await (const _chunk of bodyStream(request, response, minimalState(), { url })) { /* drain */ }
+  } catch (thrown) {
+    error = thrown;
+  }
+
+  assert.ok(error, 'a mid-body throw must surface');
+  assert.equal(error.code, undefined, 'this fixture is only meaningful if Node attached no code');
+  assert.equal(isRetryable(error), true, 'a dropped delivery is retryable whether or not it carries a code');
 });
 
 test('a pre-headers reset is retryable, the whitelist member that actually occurs there', () => {

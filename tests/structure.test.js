@@ -218,20 +218,29 @@ test('the cap is evaluated exactly once per dispatch, and that evaluation is wha
 });
 
 /**
- * The one call-site argument in the transport that decides retryability, and
- * nothing behavioural can pin it.
+ * The one call-site argument in the transport that decides retryability.
  *
  * `bodyStream`'s catch only ever runs past headers, so its failures are dropped
  * *deliveries* and must stay retryable whether or not Node attached a `code`.
  * Measured on Node 26.3: a socket cut mid-body arrives as `Error: aborted`
  * carrying `ECONNRESET`, which the transient whitelist happens to accept — so
- * deleting `{ delivered: true }` changes nothing today and everything on a Node
- * that hands over the same error bare, which the comment at that catch records
- * having already seen once. A test cannot make Node drop the code on demand;
- * this can.
+ * deleting `{ delivered: true }` leaves the retry verdict unchanged today
+ * (the whitelist alone still classifies it retryable) and wrong on a Node that
+ * hands over the same error bare, which the comment at that catch records
+ * having already seen once. `serverResponded` is a separate story: `delivered`
+ * sets it unconditionally, so the deletion changes that field today, visibly,
+ * caught by `tests/transport-classification.test.js`'s
+ * `'a server that sent headers is not reported as one that never answered'`.
+ * No real server on Node 26.3 can be driven into
+ * dropping the code — `tests/transport-classification.test.js`'s
+ * `'the catch below classifies a code-less delivery failure as retryable'`
+ * drives `bodyStream` directly with a stub iterable to pin that behaviourally;
+ * this structural check is the second, independent guard on the same call-site
+ * argument, kept because a passing behavioural test elsewhere doesn't prove
+ * this line still reads `{ delivered: true }`.
  */
 test('the body-stream catch classifies its failures as delivered, whatever code Node attached', () => {
-  const body = functionBody('scripts/lib/http.mjs', /^async function\* bodyStream\b/);
+  const body = functionBody('scripts/lib/http.mjs', /^export async function\* bodyStream\b/);
 
   assert.match(
     body,

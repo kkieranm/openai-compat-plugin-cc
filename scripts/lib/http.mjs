@@ -66,8 +66,15 @@ export function mediaType(headerValue) {
  * A generator with a `finally`, because a consumer that stops early — `readSse`
  * returns at `[DONE]` — must still release the timer and the socket. Without it
  * a live timer sits behind a half-read connection.
+ *
+ * Exported for the test, not for a caller — same reason as `requestErrorHandler`
+ * below. Both ways of cutting a body that Node can be measured with on 26.3
+ * (a short content-length, chunked with no terminator) raise on the stream
+ * instead of ending cleanly, so neither the `!response.complete` branch below
+ * nor the catch's code-less path is reachable through a real `node:http`
+ * server. A stub async iterable reaches both directly.
  */
-async function* bodyStream(request, response, state, { url }) {
+export async function* bodyStream(request, response, state, { url }) {
   try {
     for await (const chunk of response) {
       if (state.received === 0) {
