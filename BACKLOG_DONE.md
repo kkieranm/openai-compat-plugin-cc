@@ -1,3 +1,36 @@
+## 2026-08-22 — OAI-195 shipped: normalizeFinding no longer throws on a hostile-coercion severity/line (`b96ae2c`)
+
+- **OAI-195** — `normalizeFinding`'s `String(raw.severity ?? '')` and `Number(raw.line)` threw a
+  `TypeError` when either was a JSON-producible object with no usable primitive coercion (own
+  `toString`/`valueOf` set to `null`), crashing the whole reply's findings parse instead of dropping
+  just that one malformed finding. Fixed by guarding both with a `typeof` check before coercion, the
+  same pattern `normalizeFinding` already used for `file`/`summary`.
+
+  **Fix shape deliberately diverges from what was originally filed**: the item as filed prescribed
+  dropping the whole finding (the all-dropped/UNREADABLE path). Instead, a hostile-object
+  severity/line is **kept**, defaulted to `'medium'`/`null` — converged on independently by a Codex
+  STEER and a fable-model verdict (both, separately, landed on "keep and default"), reasoning that
+  `file`/`summary` gate on the finding being *unverifiable*, which a garbage severity/line does not
+  touch, and that treating only the non-coercible subset of malformed values as disqualifying (a
+  plain `{}` already coerced to `'medium'`/`null` pre-fix and was kept) would be an arbitrary line no
+  reader could predict. Both verdicts landed via the plan gate — dual-approved over two rounds; round
+  1 caught an inaccurate mutation-check claim in the plan's own verification wording (fixed in round
+  2). A fable-flagged implementation trap was folded into the fix: `Number("12")` already resolved to
+  `12` pre-fix, so a numeric-*string* `line` had to keep resolving to a real integer — the guard
+  admits `string | number` before coercing, not `typeof === 'number'` alone; pinned by a new test.
+
+  Review ladder: one full pass, dual-approved, no findings — every stage (two `acceptance-audit`
+  instruments, `fork-opener`, `codex-adversarial`, `codex-plain`, `agent-closer`) came back clean or
+  with a confirmed-non-blocking note (the fix also changes behavior for other previously-coercing
+  shapes, e.g. `severity: ['high']` now defaults instead of coercing — confirmed intentional, the
+  same reject branch the new tests already exercise, not an accidental widening).
+
+  **Not filed as new residue**: the full-file scout noted `scripts/lib/model-info.mjs:181`'s
+  `matchKey(id)` does the same unguarded `String(id)` coercion on a server-reported model id — a
+  genuine analogue of this bug's rationale, but never observed to have actually thrown (a plausible
+  future, not a dated instance), so it fails the filing worth bar and is recorded here rather than
+  given a tracker id.
+
 ## 2026-08-21 — OAI-28 (B)+(C) shipped: bodyStream's two untested transport writes now have direct coverage (`80fd3a6`)
 
 - **OAI-28** (merged 2026-08-05 from OAI-28/OAI-30/OAI-41; part (A) already closed as moot, part (D)
