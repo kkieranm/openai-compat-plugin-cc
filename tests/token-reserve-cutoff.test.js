@@ -276,6 +276,59 @@ test('a salvage attempt that itself fails falls back to reporting token-reserve-
   }
 });
 
+// A salvage attempt that fails on a large window can produce a failure
+// envelope, identical in shape to the test above, big enough to cross a pipe's
+// OS buffer (64KB on darwin) — well short of MAX_RAW (256000) or any bound
+// this harness controls. `cmd-review.mjs` writes that envelope with the ASYNC
+// `process.stdout.write`, then rethrows; `oai-companion.mjs`'s catch sets
+// `process.exitCode` rather than calling `process.exit()`, so Node drains the
+// queued write before it exits on its own — the pipe's receiving end,
+// `execFileSync` callers (`bench/review-sweep.mjs`) included, sees the whole
+// write and never a partial one. Needs a wider window than the test above so
+// the cutoff fires only once the reasoning it carries is itself big enough to
+// push the whole envelope past 64KB.
+const WIDE_CONTEXT_LENGTH = 51_200; // reserve 25600, cutoffChars (25600-2048)*3.0 = 70,656
+const WIDE_CHUNKS_PAST_THRESHOLD = 1_450; // 1,450 * 51 = 73,950 chars, clears 70,656 with margin
+
+function wideReasoningPastThresholdThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    for (let i = 0; i < WIDE_CHUNKS_PAST_THRESHOLD; i += 1) response.write(reasoningFrame());
+  };
+}
+
+test('a large failure envelope reaches stdout whole, not cut at a 64KB pipe boundary', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(500, { 'content-type': 'application/json' });
+    response.end('not json');
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1, result.stderr);
+    // The bug this reproduces: stdout cut mid-string at exactly 65536 bytes
+    // (the OS pipe buffer), so a raw length assertion — not JSON.parse, which
+    // would just throw either way — is what pins the specific mechanism.
+    assert.ok(result.stdout.length > 65_536, `stdout was cut at the pipe boundary (${result.stdout.length} bytes)`);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'token-reserve-cutoff');
+    assert.ok(envelope.partial?.reasoning?.length >= 70_656);
+  } finally {
+    await server.close();
+  }
+});
+
 test('content already underway permanently disarms the watchdog, however much reasoning follows', async () => {
   // The false-trigger guard: once any content has
   // appeared, the watchdog never fires again for that stream — order here is

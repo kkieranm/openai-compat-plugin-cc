@@ -39,6 +39,22 @@ async function main() {
 }
 
 main().catch((error) => {
+  // `process.exitCode`, never `process.exit()`, here — deliberately matching
+  // the success path, which has no explicit exit call at all (see
+  // `job-heartbeat.mjs`'s own rationale for that asymmetry: every watchdog
+  // timer in this codebase is `.unref()`'d, and the handful that deliberately
+  // are not (`answer-attempts.mjs`'s retry delay, `job-queue.mjs`'s poll sleep)
+  // are awaited work rather than a budget, so none can still be pending when an
+  // error reaches this catch — so nothing keeps a healthy process alive past
+  // its own writes).
+  // `process.exit()` tears the process down as soon as it is called, without
+  // waiting for a queued write to drain — and `--json`'s failure envelope,
+  // written just above this handler in `cmd-review.mjs` via the ASYNC
+  // `process.stdout.write`, can still be sitting in that queue when this runs,
+  // especially once a large `partial.reasoning` pushes it past a pipe's OS
+  // buffer (64KB on darwin), cutting it mid-string well short of this
+  // harness's own 256000 capture ceiling. Setting the code and returning lets
+  // Node drain stdout and stderr before it exits on its own.
   if (error instanceof UserError) {
     // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt`
     // are appended here only — never inside `.message` or `.hint` themselves,
@@ -54,8 +70,9 @@ main().catch((error) => {
     const detail = interactive ? transportDetail(error) : '';
     process.stderr.write(`${error.message}${detail ? ` (${detail})` : ''}\n`);
     if (error.hint) process.stderr.write(`${error.hint}\n`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   process.stderr.write(`Unexpected failure: ${error?.stack ?? error}\n`);
-  process.exit(2);
+  process.exitCode = 2;
 });

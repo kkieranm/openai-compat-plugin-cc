@@ -50,12 +50,20 @@ export async function spawnWorker(seq) {
       child.once('spawn', resolve);
       child.once('error', reject);
     });
+    // Unref as soon as the spawn is confirmed — still after the outcome, per
+    // the comment above, but now also BEFORE `closeSync` rather than after the
+    // whole `finally`. A referenced `ChildProcess` keeps this process's event
+    // loop alive until the detached worker itself exits; `oai-companion.mjs`'s
+    // top-level catch no longer forces an exit on a thrown error, so a
+    // `closeSync` that throws here would otherwise leave a successfully
+    // spawned child REFERENCED — never unref'd at all — and the submitter
+    // waiting on a worker that has nothing to do with it finishing.
+    child.unref();
   } finally {
     // The submitter's own copy of the descriptor is not the worker's; leaving it
     // open would hold the log file for the life of a process that no longer
     // needs it.
     closeSync(log);
   }
-  child.unref();
   return child.pid;
 }

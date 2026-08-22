@@ -70,8 +70,10 @@ function endlessReasoningThenFollowUp(onFollowUp) {
 
 test('a deadline-timeout keeps the partial reasoning instead of discarding it', async () => {
   // No follow-up expected in THIS test's assertions — the fixture answers one
-  // anyway (real findings, fast) since a real run would try tier 2, but what is
-  // asserted here is specifically tier 1: the ORIGINAL failure's partial field.
+  // anyway (real findings, fast) since a real run would try tier 2. What the
+  // assertions below actually check is the tier-2 success envelope; tier 1's
+  // own guarantee is inferred from it rather than asserted directly — see the
+  // comment at the assertions for why that inference holds.
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({ findings: [], summary: 'salvaged, nothing found' })));

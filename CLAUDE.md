@@ -292,9 +292,9 @@ relabelled a stale Node.
 
 `task-submit.mjs` `noteEndpointPersistence()` warns that a background submission persists its
 endpoint by **taking no argument, gating on nothing, and running before anything else writes to
-stderr** — the code cannot know which part of a URL is a secret, and `process.exit(2)` discards
-undrained stderr, so the notice describes the storage rather than the credential and is emitted where
-no preamble can crowd it out. A query string on an endpoint resolved from `providers.json` is
+stderr** — the code cannot know which part of a URL is a secret, so the notice describes the storage
+rather than the credential and is emitted where no preamble can crowd it out. A query string on an
+endpoint resolved from `providers.json` is
 committed via `job-auth.mjs`'s `queryCommitment`/`querySalt` rather than stored (OAI-55), with
 key-authorization (`apiKeyAuthorized`) tracked separately from profile provenance so a query-only
 credential can be re-resolved without ever authorizing a key nothing granted at submission; a query
@@ -449,7 +449,8 @@ Domain:
   order. **`tests/backlog-structure.test.js` enforces this on every `npm test`** (OAI-104,
   2026-08-09 — before it, the same guarantee was prose naming a script that did not exist, and it
   found three classes of live drift on its first run): no ID repeats among the live bodies, the
-  bodies are in ID order, and nothing is live and closed out at once. **The tier-ranking priority
+  bodies are in ID order, nothing is live and closed out at once, and every stub bullet's target
+  resolves in the same tracker and never to another stub. **The tier-ranking priority
   index and the absorbed-ID redirect table were retired 2026-08-20**, owner-directed, matching the
   same removal in `~/Code/backlog` and `~/Code/dotfiles` — there is no more priority-ranking pass
   over this file. A merged item now gets a one-line stub bullet

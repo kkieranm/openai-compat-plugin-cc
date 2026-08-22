@@ -677,3 +677,35 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `typeof === 'string'`/`typeof === 'number'` (or `Number.isFinite`) before coercing, dropping the
   finding via the existing all-dropped/UNREADABLE path rather than throwing.
 
+- **OAI-196** — **`tests/credential-notice.test.js`'s "the notice survives a preamble larger than the
+  pipe buffer" test can no longer fail for the regression it documents.** Its whole premise was that
+  `process.exit(2)` discarded undrained stderr, so the endpoint-persistence notice had to be emitted
+  *before* `prepareTask`'s own preamble to survive; the fix that closed the sweep-crash pipe-buffer
+  bug (`oai-companion.mjs`'s catch now sets `process.exitCode` instead of calling `process.exit()`)
+  drains stdio regardless of ordering or size, as a side effect. Confirmed by mutation: reintroducing
+  the exact regression the test exists to catch (moving the `noteEndpointPersistence()` call below
+  `prepareTask()` in `task-submit.mjs`) still leaves the test green. The notice/no-secret/orphaned-row
+  assertions in the same test still hold real coverage; only the pipe-buffer-specific framing and its
+  ordering-dependent mutation-catching are dead. Needs a rewrite of the test's premise (what ordering
+  guarantee, if any, still matters now that draining is unconditional) rather than a fix — found and
+  deliberately left unfixed during the review ladder that fixed the sweep-crash pipe-buffer bug
+  (2026-08-22), Codex-steered to file rather than widen that ladder's batch.
+
+- **OAI-197** — **Two more comments state the removed `process.exit(2)` behavior as current fact**,
+  the same falsehood class OAI-196's sibling fix corrected in `CLAUDE.md`: `job-launch-outcome.mjs:93-102`'s
+  `writeSync` rationale ("the error rethrown below reaches `oai-companion.mjs`, which writes and then
+  calls `process.exit(2)`") and `tests/job-helpers.mjs:264`'s `submitWithSlowStderr` docstring ("leaves
+  nothing pending for `process.exit(2)` to discard"). Both are now false — `oai-companion.mjs` sets
+  `process.exitCode` and lets Node drain naturally — though the code beside each comment stays correct
+  either way (`writeSync` is still defensible belt-and-braces; the slow-stderr fixture still exercises
+  a real drain path). Found during the same review ladder as OAI-196, Codex-steered to file rather than
+  widen that ladder's batch.
+
+- **OAI-198** — **`bench/review-sweep.mjs`'s own `main()` has the same defect class the sweep-crash fix
+  closed in `oai-companion.mjs`**: it calls `process.exit(1)` synchronously right after two
+  `process.stderr.write` calls, so a large enough stderr payload could still be truncated at the OS
+  pipe buffer before it drains. Lower risk than the fixed case — this path only ever writes one error
+  message plus a hint line, nowhere near the 64KB boundary in practice — but it is the identical shape.
+  Found during OAI-196/197's review ladder; out of scope for that ladder (a different CLI entrypoint,
+  not one of the files it touched).
+

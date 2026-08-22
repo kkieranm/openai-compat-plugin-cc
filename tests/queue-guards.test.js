@@ -50,6 +50,31 @@ test('the detached worker never inherits a descriptor from its parent', () => {
   assert.match(source, /detached:\s*true/, 'a worker that is not detached dies with the session that submitted it');
 });
 
+test('a successfully spawned worker is unref()d before closeSync can throw', () => {
+  // `oai-companion.mjs`'s top-level catch no longer forces an exit on a thrown
+  // error, so a referenced `ChildProcess` can now keep this process alive until
+  // the detached worker it points at exits on its own. `unref()` has to run in
+  // the same synchronous continuation as the confirmed spawn — before
+  // `closeSync(log)`, which can throw — or a failing close silently reintroduces
+  // the hang. Placement is a fact about the source; no behavioural test can
+  // schedule a real closeSync failure racing a real detached child to catch a
+  // regression here.
+  // Each literal must be UNIQUE before its position means anything — a bare
+  // `indexOf` would happily match a stray mention inside a comment above the
+  // real call and pass while the actual ordering had rotted.
+  const occurrences = (text, needle) => text.split(needle).length - 1;
+  const source = readFileSync(join(ROOT, 'lib/job-spawn.mjs'), 'utf8');
+  const unrefCount = occurrences(source, 'child.unref()');
+  const closeSyncCount = occurrences(source, 'closeSync(log)');
+
+  assert.equal(unrefCount, 1, `expected exactly one 'child.unref()' in job-spawn.mjs, found ${unrefCount}`);
+  assert.equal(closeSyncCount, 1, `expected exactly one 'closeSync(log)' in job-spawn.mjs, found ${closeSyncCount}`);
+  assert.ok(
+    source.indexOf('child.unref()') < source.indexOf('closeSync(log)'),
+    'child.unref() must run before closeSync(log) can throw, not after',
+  );
+});
+
 test('abandonment reads, decides and writes inside ONE immediate transaction', () => {
   // The property is placement, and placement is a fact about the source. No
   // behavioural test in this repo can reach it: `node:sqlite` is synchronous, so

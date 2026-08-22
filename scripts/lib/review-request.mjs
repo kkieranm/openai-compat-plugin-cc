@@ -242,10 +242,12 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
  * discarding it (salvage tier 2).
  *
  * **Only a reason in `SALVAGE_REASONS`.**
- * **Only substantial reasoning with empty/near-empty content** — the
- * documented majority shape (findings JSON is emitted only after reasoning
- * completes, per measurement: 87-98% of every completion is
- * reasoning). A cut mid-CONTENT is a different, rarer shape — resuming a
+ * **Only substantial reasoning with STRICTLY empty content** — the gate below
+ * trims content first and disqualifies anything left over, however short —
+ * matching the documented
+ * majority shape (findings JSON is emitted only after reasoning completes, per
+ * measurement: 87-98% of every completion is reasoning). A cut mid-CONTENT is
+ * a different, rarer shape — resuming a
  * truncated JSON array reliably is a harder prompting problem than
  * "conclude from pure reasoning", and is deliberately not attempted here;
  * tier 1 still preserves that answer on the ordinary failure path.
