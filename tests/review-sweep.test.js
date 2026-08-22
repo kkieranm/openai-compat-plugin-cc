@@ -61,6 +61,15 @@ test('an unsalvaged token-reserve-cutoff is starved too, alongside token-exhaust
   assert.equal(entry.reason, 'token-reserve-cutoff');
 });
 
+// The same starvation, discovered post-hoc rather than via a live cutoff — a
+// clean stream that never left its reasoning channel. An UNSALVAGED
+// reasoning-only failure is starved too, not a generic failure.
+test('an unsalvaged reasoning-only is starved too, alongside token-exhaustion', () => {
+  const entry = classify(envelope('reasoning-only'));
+  assert.equal(entry.outcome, 'starved');
+  assert.equal(entry.reason, 'reasoning-only');
+});
+
 test('any other failure envelope is failed, and keeps its reason for the report', () => {
   const entry = classify(envelope('transport'));
   assert.equal(entry.outcome, 'failed');

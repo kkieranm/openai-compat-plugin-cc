@@ -73,8 +73,14 @@ export const MAX_RAW = 256_000;
  * **Still excluded, each for its own reason:** `token-exhaustion` and
  * `token-reserve-cutoff` (both the model's own budget, never the server's),
  * `oversize` and other input refusals (another commit may survive
- * them), and `output-too-large`, which is THIS HARNESS's own capture ceiling —
- * counting it would have the sweep diagnose the server for its own limit.
+ * them), `output-too-large`, which is THIS HARNESS's own capture ceiling —
+ * counting it would have the sweep diagnose the server for its own limit —
+ * and `reasoning-only`, which fires only after a clean, server-terminated
+ * stream: a genuine server-side stream drop is already covered separately by
+ * `COMPLETION_SHAPES`'s `stream-unfinished`/`empty-completion`/
+ * `blank-completion`, so counting `reasoning-only` too would double-count the
+ * same server failure under two names while also flagging a pure model
+ * quirk as a server symptom.
  */
 const UNWELL_TIMEOUTS = new Set(['idle-timeout']);
 
@@ -164,11 +170,17 @@ function usableReason(stdout) {
 // A model spending its whole reply budget reasoning and never reaching
 // content — `token-exhaustion` is the terminal shape (the server's own
 // finish_reason: length), `token-reserve-cutoff` is a live watchdog catching
-// the same starvation earlier, before the terminal shape occurs. An
-// UNSALVAGED cutoff is classified alongside it rather than as a generic
-// failure — a salvaged one already returns as `outcome: 'ok'` upstream and
-// never reaches this function.
-const STARVED_REASONS = new Set(['token-exhaustion', 'token-reserve-cutoff']);
+// the same starvation earlier, before the terminal shape occurs, and
+// `reasoning-only` is the same phenomenon discovered post-hoc: the stream
+// finished cleanly, but content stayed empty after real reasoning.
+// `token-reserve-cutoff` and `reasoning-only` are also `SALVAGE_REASONS`
+// (`token-exhaustion` deliberately is not — its terminal shape means the
+// reply budget is already spent, with no room left for a follow-up to
+// conclude in); an UNSALVAGED one of any of the three is classified
+// alongside the others rather than as a generic failure — a salvaged one
+// already returns as `outcome: 'ok'` upstream and never reaches this
+// function.
+const STARVED_REASONS = new Set(['token-exhaustion', 'token-reserve-cutoff', 'reasoning-only']);
 
 function failure(stdout, status) {
   const reason = usableReason(stdout);

@@ -26,6 +26,14 @@ import { REVIEWED } from './sweep-outcome.mjs';
  * Prose lives here rather than at the call site so that adding an outcome
  * without explaining it is a visible omission rather than a blank cell.
  */
+// `starved` now covers a reason that never ran out of tokens at all —
+// `reasoning-only` is a clean stream that simply never left its reasoning
+// channel, not a budget exhausted mid-answer — so the outcome alone is no
+// longer enough to pick the prose; `entry.reason` decides.
+const STARVED_WHY = {
+  'reasoning-only': 'reasoned at length but never wrote an answer, even though the stream ended cleanly — a model quirk, not a token budget running out',
+};
+
 const WHY = {
   starved: 'ran out of tokens before writing findings — the model reasoned until the budget was gone (OAI-115)',
   truncated: 'the model\'s analysis was cut off before it finished looking, so whatever it managed to say is not a review of this commit',
@@ -161,8 +169,12 @@ function coverageSection(entries) {
   for (const entry of missed) {
     // `entry.reason` is the code the classifier captured; without it every
     // failure renders identically and a `bad-json` night is indistinguishable
-    // from a `deadline-timeout` one.
-    const why = entry.reason ? `${WHY[entry.outcome] ?? 'no explanation recorded'} (\`${entry.reason}\`)` : (WHY[entry.outcome] ?? 'no explanation recorded');
+    // from a `deadline-timeout` one. For `starved` specifically, the reason
+    // also picks WHICH prose applies — see `STARVED_WHY` above.
+    const explanation = entry.outcome === 'starved' && entry.reason in STARVED_WHY
+      ? STARVED_WHY[entry.reason]
+      : (WHY[entry.outcome] ?? 'no explanation recorded');
+    const why = entry.reason ? `${explanation} (\`${entry.reason}\`)` : explanation;
     lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
     if (hasFindings(entry)) {
       // A review that did not complete can still have reported something real.

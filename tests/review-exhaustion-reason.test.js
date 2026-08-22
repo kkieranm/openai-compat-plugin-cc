@@ -76,14 +76,16 @@ test('the prose still says what happened, so a human loses nothing to the field'
   }
 });
 
-// unparsedReply's OTHER throw path — a reasoning-only reply (content empty,
-// reasoning non-empty, so it is NOT the wholly-blank shape the retry layer
-// already catches as 'blank-completion') that falls through to requireAnswer,
-// not the finish_reason==='length' branch above — must carry the same attempt
-// record. This is not about the null `reason` this throw carries, or the
-// sweep's outage classifier reading it — only that `attempts` isn't dropped
-// here either.
-test('a reasoning-only reply that falls through to requireAnswer still carries the attempt that produced it', async () => {
+// A reasoning-only reply (content empty, reasoning non-empty, so it is NOT
+// the wholly-blank shape the retry layer already catches as
+// 'blank-completion') is now intercepted inside review-request.mjs's
+// unconstrained(), before it ever reaches requireAnswer on this path — see
+// scripts/lib/client.mjs's isReasoningOnly. This fixture's reasoning (28
+// chars) is well under SALVAGE_MIN_REASONING_CHARS, so trySalvage declines
+// without ever sending a follow-up request, and the original error still
+// rethrows via the same ledger-carrying path — this test is what pins that
+// `attempts` isn't dropped along the way.
+test('a reasoning-only reply intercepted before requireAnswer still carries the attempt that produced it', async () => {
   const { dir, server, configPath } = await scenario(
     (request, response) => respondStream(response, completionFrames('reasoned but never answered', { channel: 'reasoning', finishReason: 'stop' })),
   );
@@ -92,6 +94,7 @@ test('a reasoning-only reply that falls through to requireAnswer still carries t
     assert.notEqual(result.status, 0);
     const report = JSON.parse(result.stdout);
     assert.equal(report.error, true);
+    assert.equal(report.reason, 'reasoning-only');
     assert.deepEqual(
       report.attempts.map(({ index, outcome, reason, serverResponded }) => ({ index, outcome, reason, serverResponded })),
       [{ index: 1, outcome: 'answered', reason: null, serverResponded: true }],

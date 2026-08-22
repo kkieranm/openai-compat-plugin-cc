@@ -187,6 +187,24 @@ test('an empty findings section warns rather than reading as a clean night', () 
   assert.match(out, /Read the coverage section before concluding anything/);
 });
 
+// The false-diagnosis this guards against: `starved` now covers a reason that
+// never ran out of tokens at all — a `reasoning-only` failure is a stream that
+// ended CLEANLY. Sharing token-exhaustion's "ran out of tokens... budget was
+// gone" prose for it would tell the reader something that didn't happen.
+test('a starved reasoning-only commit is NOT described as having run out of tokens', () => {
+  const out = render(commit({ outcome: 'starved', reason: 'reasoning-only' }));
+  assert.doesNotMatch(out, /ran out of tokens/);
+  assert.doesNotMatch(out, /budget was gone/);
+  assert.match(out, /never wrote an answer/);
+  assert.match(out, /stream ended cleanly/);
+});
+
+// The control: token-exhaustion's own prose must survive this change unchanged.
+test('a starved token-exhaustion commit still says it ran out of tokens', () => {
+  const out = render(commit({ outcome: 'starved', reason: 'token-exhaustion' }));
+  assert.match(out, /ran out of tokens/);
+});
+
 // The window this run walked. Without it the artifact cannot say what it
 // enumerated FROM, so two benchmark arms cannot be shown to have reviewed the
 // same commits — which is the whole purpose of pinning.

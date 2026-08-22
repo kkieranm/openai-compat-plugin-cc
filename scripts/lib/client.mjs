@@ -89,6 +89,29 @@ export async function chatCompletion(profile, options) {
 }
 
 /**
+ * The model finished cleanly (`finishReason !== 'length'`) with nothing on the
+ * content channel but something real on the reasoning channel — the shape
+ * `requireAnswer` refuses on its own, and the one `review-request.mjs`'s
+ * `unconstrained()` needs to recognize BEFORE that refusal, so a salvage
+ * attempt can run on the still-in-scope built messages.
+ */
+export function isReasoningOnly(result) {
+  return !result.content.trim() && result.finishReason !== 'length' && Boolean(result.reasoning.trim());
+}
+
+/**
+ * The one message/hint pair for the reasoning-only refusal, shared by
+ * `requireAnswer` below and `review-request.mjs`'s `unconstrained()` — two
+ * throw sites for the same shape, never two wordings that can drift apart.
+ */
+export function reasoningOnlyRefusal(profile) {
+  return {
+    message: `${profile.name} returned only internal reasoning and no answer.`,
+    hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
+  };
+}
+
+/**
  * The answer to an unconstrained request, or a loud failure.
  *
  * There is deliberately no fallback to `reasoning` here. That text is the
@@ -108,10 +131,9 @@ export function requireAnswer(result, profile) {
       { hint: 'Raise --max-tokens (reasoning models can think for thousands of tokens before replying).' },
     );
   }
-  if (result.reasoning.trim()) {
-    throw new UserError(`${profile.name} returned only internal reasoning and no answer.`, {
-      hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
-    });
+  if (isReasoningOnly(result)) {
+    const { message, hint } = reasoningOnlyRefusal(profile);
+    throw new UserError(message, { hint });
   }
   // result.finishReason is unvalidated server payload — travels on
   // .finishReason, never .message; see completion.mjs's refuseUnusable.

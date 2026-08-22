@@ -124,10 +124,19 @@ channel rather than `content` (see `client.mjs`'s `requireAnswer` above) — the
 false-trigger guard (`content.length === 0`) is therefore always true throughout a structured request
 regardless of how much real answer has been written, and arming it there would cut off a reply that
 is actively finishing. `trySalvage` (OAI-138's original salvage mechanism) is generalized via a
-`SALVAGE_REASONS` allowlist (`deadline-timeout`, `token-reserve-cutoff`) rather than forked, with the
-follow-up's own budget branching on the reason: `token-reserve-cutoff` gets a flat
-`TOKEN_RESERVE_TOKENS`, since the window is already consumed down to that headroom by construction;
-`deadline-timeout` keeps its original `built.reserve` ceiling unchanged. `bench/lib/reason-notes.mjs`
+`SALVAGE_REASONS` allowlist (`deadline-timeout`, `token-reserve-cutoff`, `reasoning-only`) rather than
+forked, with the follow-up's own budget branching on the reason: `token-reserve-cutoff` and
+`reasoning-only` both get a flat `TOKEN_RESERVE_TOKENS` — the window is already consumed down to that
+headroom by construction for the former (the watchdog fires exactly there), and by the same logic
+applied more conservatively for the latter, where only `SALVAGE_MIN_REASONING_CHARS` of consumption is
+actually guaranteed; `deadline-timeout` keeps its original `built.reserve` ceiling unchanged.
+`client.mjs`'s `isReasoningOnly` is the shared predicate for a clean stream that left content empty
+after real reasoning; `unconstrained()` checks it right after its own `chatCompletion` call succeeds so
+the resulting throw lands in its own catch with `built` already in scope, since `requireAnswer`'s own
+throw for the identical shape happens too late — after a separate, later call chain
+(`unparsedReply`) — for `trySalvage` ever to see it. `bench/lib/sweep-outcome.mjs`'s `serverUnwell`
+deliberately excludes `reasoning-only`: it fires only after a clean, server-terminated stream, which a
+genuine server-side drop already reaches through `COMPLETION_SHAPES` instead. `bench/lib/reason-notes.mjs`
 and `bench/lib/sweep-outcome.mjs` classify an unsalvaged `token-reserve-cutoff` alongside
 `token-exhaustion` as `starved`, never as a generic failure or a server-health symptom.
 

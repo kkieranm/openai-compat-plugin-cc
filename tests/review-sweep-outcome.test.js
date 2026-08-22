@@ -117,6 +117,8 @@ test('starvation and input refusals are NOT the server being unwell', () => {
   // budget, exactly like token-exhaustion — never a server symptom.
   assert.equal(serverUnwell('token-reserve-cutoff'), false);
   assert.equal(serverUnwell('oversize'), false);
+  // Fires only after a clean, server-terminated stream — never a server symptom.
+  assert.equal(serverUnwell('reasoning-only'), false);
 });
 
 test('a stream-drop outage trips the fail-fast, which it previously could not', () => {

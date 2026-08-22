@@ -9,7 +9,7 @@
 // them behind would have meant either a circular import or two homes for one
 // number, and this repo has already paid for the second.
 import { withLedger } from './attempt-ledger.mjs';
-import { chatCompletion } from './client.mjs';
+import { chatCompletion, isReasoningOnly, reasoningOnlyRefusal } from './client.mjs';
 import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { reviewSystemPrompt } from './review.mjs';
@@ -200,6 +200,20 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
       reasoningReserveTokens: armedReserve(built.reserve),
       messages: built.messages,
     });
+    // A clean stream that never left its reasoning channel is not a transport
+    // or budget failure — chatCompletion succeeded — but it is not an answer
+    // either. Thrown here, not returned, so it lands in THIS function's own
+    // catch below where `built` is already in scope for a salvage attempt,
+    // exactly like `deadline-timeout`/`token-reserve-cutoff`. Never applies to
+    // the `--structured-output` path: under a response_format grammar the
+    // reasoning channel legitimately carries the answer (see `client.mjs`'s
+    // `requireAnswer` docstring), so that branch has no counterpart check.
+    if (isReasoningOnly(result)) {
+      const { message, hint } = reasoningOnlyRefusal(profile);
+      const failure = new UserError(message, { reason: 'reasoning-only', hint });
+      failure.answer = { reasoning: result.reasoning, content: result.content };
+      throw failure;
+    }
     return { result, structured: false, ...built };
   } catch (fallbackError) {
     // Salvage tier 2: one bounded attempt to conclude from whatever
@@ -229,13 +243,15 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
 
 /**
  * The reasons `trySalvage` will attempt to recover from
- * (`deadline-timeout`, `token-reserve-cutoff`). Both leave the model
- * actively working when the cut happens — the one shape a "conclude now" ask
- * can plausibly answer. `idle-timeout` and a raw transport drop mean the
- * SERVER stalled or died; asking it to continue is asking the thing that
- * already stopped answering.
+ * (`deadline-timeout`, `token-reserve-cutoff`, `reasoning-only`). The first
+ * two leave the model actively working when the cut happens; `reasoning-only`
+ * is discovered post-hoc — the stream already finished cleanly — but the same
+ * logic applies: real reasoning exists, the model simply never transitioned to
+ * an answer, and a "conclude now" ask can plausibly still answer it.
+ * `idle-timeout` and a raw transport drop mean the SERVER stalled or died;
+ * asking it to continue is asking the thing that already stopped answering.
  */
-const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff']);
+const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 'reasoning-only']);
 
 /**
  * Ask the model to conclude from reasoning a cut short, instead of
@@ -310,10 +326,15 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
   // tokens of reasoning on the ORIGINAL request — appending that reasoning back
   // into this follow-up and then re-reserving the full `built.reserve` again
   // would very likely overrun the window this exact check exists to enforce,
-  // reproducing the original starvation one request later. `deadline-timeout`
-  // carries no such consumption and keeps its existing, previously re-verified
-  // `built.reserve` ceiling unchanged.
-  const salvageReserve = fallbackError.reason === 'token-reserve-cutoff' ? TOKEN_RESERVE_TOKENS : built.reserve;
+  // reproducing the original starvation one request later. `reasoning-only` is
+  // the same shape by a different route: the model spent most or all of
+  // `built.reserve` producing that reasoning before the stream ended cleanly,
+  // so it gets the same small reserve. `deadline-timeout` carries no such
+  // consumption and keeps its existing, previously re-verified `built.reserve`
+  // ceiling unchanged.
+  const salvageReserve = ['token-reserve-cutoff', 'reasoning-only'].includes(fallbackError.reason)
+    ? TOKEN_RESERVE_TOKENS
+    : built.reserve;
 
   // The grown prompt must clear the SAME window check every other request
   // path clears before going out — appending the partial reasoning back in as
@@ -351,6 +372,18 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
       expiresAt: performance.now() + SALVAGE_MAX_MS,
       maxAttempts: 1,
     });
+    // A follow-up that itself lands empty-handed is a salvage FAILURE, not a
+    // success — `chatCompletion` succeeding only means the transport worked.
+    // Left unchecked, this returns as `salvaged: true` and fails much later at
+    // `requireAnswer`, which tags nothing (only `unconstrained()`'s own throw
+    // site does), so `isOutage`'s reasonless-failure arm then reads a model
+    // repeating its own quirk on retry as a server outage — the one thing
+    // `SALVAGE_REASONS` naming this reason exists to prevent. `content`, not
+    // `isReasoningOnly`, because a wholly blank follow-up is the same failure
+    // and the follow-up never carries a grammar (see this function's docstring),
+    // so `content` is the only legitimate answer channel here regardless of
+    // whether the original request was `--structured-output`.
+    if (!result.content.trim()) return null;
     return { result, structured: false, ...built, budget, estimatedTokens, salvaged: true };
   } catch {
     return null;
