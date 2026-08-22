@@ -113,8 +113,12 @@ function normalizeFinding(raw) {
   // an unverifiable finding is worse than no finding.
   if (!file || !summary) return null;
 
-  const severity = String(raw.severity ?? '').toLowerCase();
-  const line = Number(raw.line);
+  // Guarded before coercion, not after: an object with own toString/valueOf set
+  // to null survives a JSON round trip and throws out of a bare String()/Number()
+  // rather than producing NaN or "[object Object]" — which used to crash the
+  // whole reply's parse for one malformed finding.
+  const severity = (typeof raw.severity === 'string' ? raw.severity : '').toLowerCase();
+  const line = Number(typeof raw.line === 'string' || typeof raw.line === 'number' ? raw.line : NaN);
   return {
     file,
     line: Number.isInteger(line) && line > 0 ? line : null,

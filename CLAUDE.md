@@ -61,6 +61,9 @@ for that channel; on `null`, the unconstrained path falls through to the unchang
 exactly as before this change. `MAX_ITEMS` (200) and `MAX_FIELDS_PER_ITEM` (20) are flat-reject
 backstops against unbounded work on a pathological reply, not truncation — truncating would silently
 under-report findings the model actually sent, the same honesty `capDiagnostics` protects elsewhere.
+`normalizeFinding` guards `severity`/`line` with a `typeof` check before coercing, the same way it
+already guards `file`/`summary`, so a hostile-object value (own `toString`/`valueOf` set to `null`)
+defaults rather than throwing out of the whole reply's parse.
 
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as

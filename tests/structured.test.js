@@ -151,6 +151,23 @@ test('a non-numeric line becomes null instead of NaN', () => {
   assert.equal(parsed.findings[0].line, null);
 });
 
+test('a severity with no usable primitive coercion is kept as medium, not thrown', () => {
+  const hostile = { toString: null, valueOf: null };
+  const parsed = parseFindings({ content: payload([{ ...FINDING, severity: hostile }]), reasoning: '' }, { structured: false });
+  assert.equal(parsed.findings[0].severity, 'medium');
+});
+
+test('a line with no usable primitive coercion is kept as null, not thrown', () => {
+  const hostile = { toString: null, valueOf: null };
+  const parsed = parseFindings({ content: payload([{ ...FINDING, line: hostile }]), reasoning: '' }, { structured: false });
+  assert.equal(parsed.findings[0].line, null);
+});
+
+test('a numeric-string line still resolves to a real line number', () => {
+  const parsed = parseFindings({ content: payload([{ ...FINDING, line: '42' }]), reasoning: '' }, { structured: false });
+  assert.equal(parsed.findings[0].line, 42);
+});
+
 test('under a schema, a reply that misses a required key is rejected, not repaired', () => {
   // The schema is the whole proof that the reasoning channel holds the answer
   // rather than a draft, so a near-miss must not be patched up into findings.
