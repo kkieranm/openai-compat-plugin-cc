@@ -42,7 +42,7 @@ function containmentBlock() {
 
 /** Just `canon()` itself, self-contained — no boundary check present to mask a result either way. */
 function canonBlock() {
-  const start = AGENT_SOURCE.indexOf('  canon() { node -e ');
+  const start = AGENT_SOURCE.indexOf('  canon() { env -i PATH="$PATH" node -e ');
   const end = AGENT_SOURCE.indexOf('\n\n', start);
   assert.ok(start !== -1 && end > start, 'the recipe must define canon() as a single self-contained function');
   return AGENT_SOURCE.slice(start, end);
@@ -208,6 +208,104 @@ test('canon resolves a --require= manifest entry correctly, in isolation', async
     const script = `${canonBlock()}\ncanon "$1"`;
     const { stdout } = await run(SHELL, ['-c', script, '_', '--require=./evil.js'], { cwd: repo });
     assert.equal(stdout, real(join(repo, '--require=.', 'evil.js')));
+  });
+});
+
+test('canon defeats an inherited NODE_OPTIONS preload that would forge its result, in isolation', async () => {
+  // Found alongside the identical vulnerability in the model-id validator
+  // (this pass's own verdict point, round 3, codex-adversarial): a preload
+  // loaded via an inherited NODE_OPTIONS can write to stdout before canon's
+  // own script runs, forging the "resolved path" this recipe trusts — the
+  // same class of hazard an unrefused `--eval=…` argument already defends
+  // against, but `--` cannot help here, since NODE_OPTIONS is not an argv
+  // flag. Fixed by clearing NODE_OPTIONS for this invocation; this test
+  // proves the fix by confirming a hostile preload's injected text never
+  // reaches the resolved path canon() returns.
+  await withScratchRepo(async (repo) => {
+    writeFileSync(join(repo, 'clean.txt'), 'hi');
+    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-containment-preload-'));
+    const preload = join(preloadDir, 'preload.js');
+    writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
+    const script = `${canonBlock()}\ncanon "$1"`;
+    const { stdout } = await run(SHELL, ['-c', script, '_', join(repo, 'clean.txt')], {
+      env: { ...process.env, NODE_OPTIONS: `--require=${preload}` },
+    });
+    assert.equal(stdout, real(join(repo, 'clean.txt')));
+  });
+});
+
+test('canon defeats an inherited OPENSSL_CONF that would crash it before it resolves anything, in isolation', async () => {
+  // Found at this pass's own verdict point, round 4 (codex-adversarial):
+  // NODE_OPTIONS was not the only startup input Node consults before -e
+  // runs — OPENSSL_CONF is a second, independent one, and this vulnerability
+  // applies to canon() the same way it applies to the model-id validator.
+  // Originally fixed by adding OPENSSL_CONF= alongside NODE_OPTIONS=; finding
+  // 15 (below) replaced that pairwise clearing with env -i PATH="$PATH",
+  // which still defeats this exact reproduction — this test still passes
+  // unchanged under the current fix.
+  await withScratchRepo(async (repo) => {
+    writeFileSync(join(repo, 'clean.txt'), 'hi');
+    const confDir = mkdtempSync(join(tmpdir(), 'oai-containment-openssl-conf-'));
+    const conf = join(confDir, 'malformed.cnf');
+    writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
+    const script = `${canonBlock()}\ncanon "$1"`;
+    const { stdout } = await run(SHELL, ['-c', script, '_', join(repo, 'clean.txt')], {
+      env: { ...process.env, OPENSSL_CONF: conf },
+    });
+    assert.equal(stdout, real(join(repo, 'clean.txt')));
+  });
+});
+
+test('canon defeats an inherited Node IPC/cluster channel that would inject bytes into its result, in isolation', async () => {
+  // Found at this pass's own verdict point, round 5 (codex-adversarial): a
+  // third independent startup input, Node's own IPC/cluster bootstrap
+  // (NODE_CHANNEL_FD/NODE_UNIQUE_ID), applies to canon() the same way it
+  // applies to the model-id validator. This is the finding that prompted
+  // finding 15's redesign: env -i PATH="$PATH" runs this invocation under an
+  // empty environment rather than clearing named variables one discovery at
+  // a time.
+  //
+  // `timeout` is deliberate and load-bearing, not defensive padding — see
+  // the identical note on this same test's twin in delegate-template.test.js:
+  // an UNFIXED invocation under this exact env-var combination does not
+  // merely misbehave, it can HANG indefinitely, discovered while
+  // mutation-testing this test's own fix.
+  await withScratchRepo(async (repo) => {
+    writeFileSync(join(repo, 'clean.txt'), 'hi');
+    const script = `${canonBlock()}\ncanon "$1"`;
+    const { stdout } = await run(SHELL, ['-c', script, '_', join(repo, 'clean.txt')], {
+      env: { ...process.env, NODE_CHANNEL_FD: '1', NODE_UNIQUE_ID: 'oai-containment-test' },
+      timeout: 10000,
+    });
+    assert.equal(stdout, real(join(repo, 'clean.txt')));
+  });
+});
+
+test('canon runs cleanly under an empty environment with every hostile variable set at once, in isolation', async () => {
+  // The positive control for finding 15's redesign, mirroring the same test
+  // in delegate-template.test.js: every hostile variable findings 13-15
+  // individually demonstrated, set simultaneously, proving env -i
+  // PATH="$PATH" defeats all of them at once.
+  await withScratchRepo(async (repo) => {
+    writeFileSync(join(repo, 'clean.txt'), 'hi');
+    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-containment-kitchensink-preload-'));
+    const preload = join(preloadDir, 'preload.js');
+    writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
+    const confDir = mkdtempSync(join(tmpdir(), 'oai-containment-kitchensink-conf-'));
+    const conf = join(confDir, 'malformed.cnf');
+    writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
+    const script = `${canonBlock()}\ncanon "$1"`;
+    const { stdout } = await run(SHELL, ['-c', script, '_', join(repo, 'clean.txt')], {
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--require=${preload}`,
+        OPENSSL_CONF: conf,
+        NODE_CHANNEL_FD: '1',
+        NODE_UNIQUE_ID: 'oai-containment-kitchensink',
+      },
+      timeout: 10000,
+    });
+    assert.equal(stdout, real(join(repo, 'clean.txt')));
   });
 });
 

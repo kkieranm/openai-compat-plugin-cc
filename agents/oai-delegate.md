@@ -63,8 +63,8 @@ Making the call — four steps, in this order:
   note honestly what that does and does not buy: it narrows the window, it does not close it, because
   the `Write` has already happened by then. `[ -d ]` proves the directory exists, never that it is
   still private.
-- **Then write two files there with the `Write` tool** — never a shell heredoc, which ends early on a
-  line matching its delimiter and executes everything after it as shell:
+- **Then write the following files there with the `Write` tool** — never a shell heredoc, which ends
+  early on a line matching its delimiter and executes everything after it as shell:
   - `prompt.md` — the task text. It holds no attachment bodies; those are read by the companion.
   - `files` — the attachment paths, **one per line**, raw: no quoting, no escaping, no wrapping.
     This is what keeps a path out of the shell entirely: a repository can contain a file whose *name*
@@ -72,6 +72,14 @@ Making the call — four steps, in this order:
     have to keep. The shell below reads this file into its argument list and never parses the names.
     **Refuse — do not attach — any path containing a newline or a control character**, which this
     format cannot represent and which no legitimate source file in this repository has.
+  - `model` — **optional**, present only when the person who invoked you named a specific model as
+    part of their own request. One line, raw: the model id exactly as named, no quoting, no
+    escaping. Omit this file entirely when no model was named — do not write an empty file. The same
+    reason `files` is a raw file and not a shell argument applies here: a model id is caller-supplied
+    text, not a value this agent chooses from a closed set the way `--template` is, and hand-quoting
+    it correctly every time is a promise this file already declines to make elsewhere. **Refuse — do
+    not write — a model id containing a newline or a control character**, the same restriction
+    `files` already states.
 - **Then one Bash call** that submits and waits together, with the tool's `timeout` set to 600000.
   Shell state does not survive between `Bash` calls, so a job id captured in one call is gone in the
   next; splitting this up sends an empty id, silently gets the job *list* instead of the job, and polls
@@ -96,7 +104,38 @@ Making the call — four steps, in this order:
   # yields `target` — a path that was never canonicalised. If a sibling `target`
   # exists and points outside the tree, containment passes on the truncated
   # string and the sibling is read and recorded under an innocent in-tree name.
-  canon() { node -e '
+  # An ambient environment variable set by the operator's own shell — for
+  # reasons having nothing to do with this recipe — can make Node run code,
+  # write to stdout, or set an exit code BEFORE `-e`'s own script ever
+  # executes, forging the captured "resolved path" the same way an unrefused
+  # `--eval=…` argument already does. `--` cannot stop this: none of these
+  # are argv flags. Found and fixed incrementally, this pass's own verdict
+  # point, three rounds running (`codex-adversarial` each time): round 3,
+  # `NODE_OPTIONS` (a preload writing to stdout or forging `process.exitCode`
+  # via `--import`/`--require`); round 4, `OPENSSL_CONF` (an OpenSSL 3.x
+  # config can load a PROVIDER — arbitrary native code — during Node's own
+  # startup consultation of it, verified directly: a broken config crashed
+  # node with `NODE_OPTIONS` already cleared); round 5, Node's own IPC/
+  # cluster bootstrap (`NODE_CHANNEL_FD`, `NODE_CHANNEL_SERIALIZATION_MODE`,
+  # `NODE_UNIQUE_ID`) — verified directly: `NODE_CHANNEL_FD=1
+  # NODE_UNIQUE_ID=x node -e '...'` wrote a `{"cmd":"NODE_CLUSTER",...}` JSON
+  # line to stdout, ahead of the script's own output, with exit 0, even with
+  # both prior fixes in place. Three rounds finding a NEW inherited variable
+  # each time is the recurring pattern this repo's own review discipline
+  # names: not one more blocklist entry, but a redesign. Rather than
+  # continuing to enumerate every hazardous variable Node might ever
+  # consult — a search with no proof it terminates — this invocation now
+  # runs under an EMPTY environment, built back up to hold only what it
+  # needs: `env -i PATH="$PATH"` clears every inherited variable
+  # unconditionally and restores only `PATH`, which is the one thing this
+  # command needs from the caller's environment (to find `node` itself).
+  # Verified directly: with all three prior hostile variables set
+  # simultaneously (a broken `OPENSSL_CONF`, an `--import` preload, and the
+  # IPC/cluster pair), `env -i PATH="$PATH" node -e …` produced clean,
+  # unmangled output in all four shells, both standalone and inside a
+  # `$(...)` command substitution — the exact context this recipe uses it in
+  # below.
+  canon() { env -i PATH="$PATH" node -e '
     const p = require("fs").realpathSync(process.argv[1]);
     if (/[\x00-\x1f]/.test(p)) throw new Error("control character in resolved path");
     process.stdout.write(p);
@@ -128,10 +167,201 @@ Making the call — four steps, in this order:
     patch) set -- --template patch ;;
     *) echo "refusing: unknown template $template"; exit 1 ;;
   esac
-  # How many arguments the template contributed, so the attachment check below
-  # still counts FILES. Comparing against a bare 0 once the template occupies two
-  # slots would let a job with no attachments through — a containment guard
-  # disarmed as a side effect of a fix somewhere else.
+  # A caller-named model, read from a file rather than a shell variable a
+  # caller's text would ever populate directly — the same reason `files` is a
+  # raw file and not a shell argument. Empty when no model was named.
+  model=''
+  # Validated in NODE, not shell — three rounds of shell-level fixes each
+  # closed one byte class and reopened another: `IFS= read -r` truncated at
+  # the first embedded `\n` before any guard ran; the `$(cat …)` that fixed
+  # that then dropped an embedded NUL in bash/sh/dash (POSIX shell variables
+  # are C-string-backed there, only zsh preserves a NUL) *and* still silently
+  # stripped a trailing `\n` as a side effect of command substitution,
+  # contrary to the unconditional "refuse a newline" rule above; a code-level
+  # `[[:cntrl:]]` case guard sitting on top of that is itself locale- and
+  # shell-dependent — a Unicode control character (e.g. U+0085 NEXT LINE,
+  # UTF-8 `c2 85`) was demonstrated to pass dash under one locale and fail it
+  # under another, on otherwise-identical bytes. All independently found by
+  # review-ladder passes (Codex `codex-adversarial`/`codex-plain`, and
+  # `fork-opener`), on three consecutive rounds — the recurring pattern this
+  # rewrite responds to, not one more byte-class patch. One Node read closes
+  # the whole class at once, the same reasoning `canon` above already applies
+  # to a resolved path: read the raw bytes once, strip AT MOST one trailing
+  # `\n` (mirroring what `IFS= read -r` always did for a well-formed id, so a
+  # file a text editor terminated normally still works), then refuse on any
+  # control character left in what remains — C0 (`\x00`-`\x1f`), DEL
+  # (`\x7f`), and C1 (`\x80`-`\x9f`, which is where U+0085 lives) — checked
+  # by JS regex, which has no locale dependency to exploit. A caller who
+  # still wants `--model` after a refusal here submits again with a clean
+  # `model` file; nothing here retries or coerces the value.
+  #
+  # The ONE trailing `\n` stripped above is deliberately not itself refused,
+  # even though the prose rule says "refuse a newline": it is the file's own
+  # terminator, not part of the id — the same distinction `files` already
+  # draws between a newline that SEPARATES entries and one embedded inside a
+  # single entry, and exactly what `IFS= read -r` always did before any of
+  # this rewrite existed. What is refused is everything the earlier fixes
+  # were actually chasing: a SECOND trailing newline, one embedded before the
+  # end, or any other control byte — all of which leave a control character
+  # in `s` after exactly one trailing `\n` is gone.
+  if [ -f "$dir/model" ]; then
+    # Found in the review-ladder pass that followed this rewrite
+    # (`fork-opener`): `fs.readFileSync(path, "utf8")` decodes leniently — an
+    # invalid UTF-8 byte sequence is silently replaced with U+FFFD rather
+    # than rejected, and U+FFFD sits outside `[\x00-\x1f\x7f-\x9f]`, so a
+    # `model` file with malformed bytes passed through as a garbled-but-
+    # accepted id instead of being refused. Not the same hazard the NUL/LF
+    # findings were (nothing is silently DROPPED or concatenated — the
+    # replacement character is visible in what results), but it is still
+    # content the guard was supposed to catch and didn't. A `TextDecoder`
+    # with `fatal: true` throws on the first invalid byte instead of
+    # substituting, so malformed input is refused rather than laundered.
+    #
+    # Two more findings, same review pass, both against THIS validator (not a
+    # new byte class in the file's content, but two ways the SCRIPT AROUND
+    # the read could itself launder or hide a refusal — `codex-adversarial`
+    # and `codex-plain`, independently):
+    #
+    # 1. A leading UTF-8 byte-order mark (`EF BB BF`) is invisible to every
+    #    check above: `TextDecoder`'s default `ignoreBOM: false` strips it
+    #    during decode, before the control-character regex or the empty
+    #    check ever see it, so a BOM-prefixed id like `<BOM>qwen` decoded to
+    #    plain `qwen`, and a BOM-only file decoded to `""`, mislabeled as
+    #    empty rather than reported as a BOM. Checked here on the RAW bytes,
+    #    before decoding, so nothing downstream ever gets to normalize it
+    #    away first.
+    # 2. The exit-code dispatch below was not exhaustive: an exit code
+    #    outside {0,2,3,4} (a `node` crash, `node` missing entirely — 127,
+    #    killed — 143, or any other cause) fell into the wildcard arm and
+    #    was reported as "contains a control character" — true for none of
+    #    those causes. Every code node can actually emit now has its own
+    #    arm, and an exit 1 (a real refusal) has an explicit arm instead of
+    #    a `*)` that also caught the causes that were never that. The
+    #    assignment itself is also now the CONDITION of an `if`, not a bare
+    #    statement followed by a separate `case "$?"` — bare, a caller
+    #    running this recipe under `set -e` sees the shell exit at the
+    #    failed assignment itself, silently, before the `case` and its
+    #    message are ever reached (verified directly: `model=$(node -e
+    #    "process.exit(4)")` under `-e` in zsh/bash/sh/dash all terminate
+    #    with no output at all). `if cmd; then … else …; fi` is the standard
+    #    exemption from `-e` for exactly this shape, verified the same way.
+    #
+    # One more finding, same review pass, against the SAME BOM check above
+    # (`agent-closer`): that check only catches a BOM at byte offset 0.
+    # `TextDecoder`'s BOM-stripping is positional — a BOM anywhere else in the
+    # byte stream decodes to a literal U+FEFF character that survives into the
+    # string untouched, sits outside the control-character range, and was
+    # forwarded verbatim as part of `--model` (verified directly:
+    # `Buffer.from([...'qwen'.split('').map(c=>c.charCodeAt(0)), 0xef, 0xbb,
+    # 0xbf, ...'rest'.split('').map(c=>c.charCodeAt(0))])` decoded to
+    # `"qwen" + U+FEFF + "rest"`, which the old regex accepted). Checked on the
+    # decoded string, after the trailing-newline strip and the empty check,
+    # so a lone embedded BOM is reported distinctly from either of those.
+    #
+    # Two more findings, this pass's own verdict point, ROUND 1 then ROUND 2
+    # of the same check (`codex-adversarial` both times):
+    #
+    # Round 1: exit code 1 was both OUR deliberate signal for "contains a
+    # control character" and NODE'S OWN default exit code on an uncaught
+    # exception — a real Node startup failure (a broken NODE_OPTIONS preload,
+    # an internal V8 fault) exits 1 before this script's own `process.exit`
+    # calls are ever reached, and the dispatch below could not tell that
+    # apart from a genuine refusal (verified directly: `NODE_OPTIONS=
+    # '--require=/no-such-module.js' node -e '1'` exits 1 with no control
+    # character anywhere in sight). First fixed by moving the signal onto
+    # exit 7 alone — which round 2 found was not far enough.
+    #
+    # Round 2: Node's exit-code documentation reserves the WHOLE low range
+    # this validator was drawing custom codes from, not just 1 — codes 2-14
+    # each name a specific internal Node failure (3: internal parse error,
+    # 4: internal evaluation failure, 5: V8 fatal error, 6: non-function
+    # exception handler, 7: an exception handler that itself throws, 9:
+    # invalid CLI argument, and more). Verified directly: a throwing
+    # `process.on("uncaughtException", …)` handler reproduces exit 7 with the
+    # real node binary, colliding with round 1's fix exactly the way exit 1
+    # collided originally, and `node --max-old-space-size=notanumber`
+    # reproduces exit 9 independently. Picking codes one at a time out of
+    # this range only relocates the same class of collision; every custom
+    # code below now lives at 20+, a range Node has no documented meaning
+    # for and never produces on its own, closing the whole class rather than
+    # one more instance of it. Exit 1 (and every other low, Node-reserved
+    # code a genuine crash might produce) falls into the wildcard "failed
+    # unexpectedly" arm — the same bucket findings 8/9 already built for
+    # exactly this class.
+    #
+    # Finding 13, a THIRD round of the same verdict point (`codex-adversarial`
+    # again): 20+ is only safe from what NODE ITSELF can produce — an ambient
+    # `NODE_OPTIONS` (set by the operator's own shell, for reasons having
+    # nothing to do with this recipe) can still forge a result in that range,
+    # or worse. Verified directly, with the real node binary:
+    # `NODE_OPTIONS='--import=data:text/javascript,process.exitCode%3D25'
+    # node -e '...'` exits 25 — findings 11/12's whole fix bypassed by one
+    # inherited flag — falsely refusing a perfectly clean id as "contains a
+    # control character". Worse: a preload that WRITES to stdout (e.g.
+    # `process.stdout.write("prefix\n")`) before this script's own code runs
+    # is silently prepended to the captured value with exit 0 — `model`
+    # becomes `prefix\nqwen`, an embedded newline that bypasses every check
+    # in this validator entirely, since nothing here ever inspects what a
+    # PRELOAD writes, only what this script's own logic decides to. `--` (see
+    # `canon` above) cannot help: NODE_OPTIONS is not an argv flag. Fixed by
+    # clearing it for this one invocation, `NODE_OPTIONS= node -e …` — the
+    # same fix applied to the identical hazard in `canon` above, verified
+    # directly to defeat both reproductions in all four shells.
+    #
+    # Finding 14, a FOURTH round of the same verdict point (`codex-adversarial`
+    # a fourth time): `NODE_OPTIONS` was not the only startup input Node
+    # consults before `-e` runs — `OPENSSL_CONF` is a second, independent one.
+    # An OpenSSL 3.x config can load a PROVIDER (arbitrary native code) during
+    # startup, before this script's own logic ever executes — the same shape
+    # of hazard as finding 13, through a different variable. Verified
+    # directly: an inherited syntactically-broken `OPENSSL_CONF`, even with
+    # `NODE_OPTIONS` already cleared by finding 13, still crashed node (exit
+    # 101) before this script's own code ran.
+    #
+    # Finding 15, a FIFTH round of the same verdict point (`codex-adversarial`
+    # a fifth time): a THIRD independent startup input, Node's own IPC/cluster
+    # bootstrap (`NODE_CHANNEL_FD`/`NODE_CHANNEL_SERIALIZATION_MODE`/
+    # `NODE_UNIQUE_ID`), found even with findings 13 and 14 both already
+    # fixed. Three rounds finding a new inherited variable each time is this
+    # repo's own named pattern for "stop enumerating, redesign" — see `canon`
+    # above for the full history and the fix this recipe settled on:
+    # `env -i PATH="$PATH"` runs this invocation under an EMPTY environment
+    # rather than clearing named variables one discovery at a time, verified
+    # directly to defeat all three hostile variables at once, in all four
+    # shells, inside a `$(...)` command substitution — the exact context used
+    # here.
+    if buf_bom=$(env -i PATH="$PATH" node -e '
+      const fs = require("fs");
+      let buf;
+      try { buf = fs.readFileSync(process.argv[1]); } catch (e) { process.exit(20); }
+      if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) process.exit(23);
+      let s;
+      try { s = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (e) { process.exit(22); }
+      if (s.endsWith("\n")) s = s.slice(0, -1);
+      if (!s) process.exit(21);
+      if (s.includes("\uFEFF")) process.exit(24);
+      if (/[\x00-\x1f\x7f-\x9f]/.test(s)) process.exit(25);
+      process.stdout.write(s);
+    ' -- "$dir/model"); then
+      model="$buf_bom"
+    else
+      node_status=$?
+      case "$node_status" in
+        20) echo "refusing: cannot read $dir/model"; exit 1 ;;
+        21) echo "refusing: model file is empty — omit it entirely when no model was named"; exit 1 ;;
+        22) echo "refusing: model id is not valid UTF-8"; exit 1 ;;
+        23) echo "refusing: model file starts with a byte-order mark"; exit 1 ;;
+        24) echo "refusing: model id contains an embedded byte-order-mark character"; exit 1 ;;
+        25) echo "refusing: model id contains a control character"; exit 1 ;;
+        *) echo "refusing: model id validator failed unexpectedly (exit $node_status)"; exit 1 ;;
+      esac
+    fi
+  fi
+  if [ -n "$model" ]; then set -- "$@" --model "$model"; fi
+  # How many arguments the template and model contributed, so the attachment
+  # check below still counts FILES. Comparing against a bare 0 once they
+  # occupy their own slots would let a job with no attachments through — a
+  # containment guard disarmed as a side effect of a fix somewhere else.
   before_files=$#
   while IFS= read -r f || [ -n "$f" ]; do
     [ -n "$f" ] || continue
@@ -182,11 +412,24 @@ Making the call — four steps, in this order:
   momentarily locked; exiting says so, where looping would report "still running" about a job that
   finished or failed.
 - If the deadline passes while the job is still running, that is **not** a failure — the script exits
-  0 and prints the id, and you report it as still running. **Expect this on a slow model.** You do not
-  choose the model: it is the provider profile's, and on a dense local model prefill alone has been
-  measured here at 191–335s before a single token is generated. So a large attachment set makes the
-  540s bound expire and the id-only path the *normal* outcome, which is one more reason to keep the
-  set small. Never pass `--model` to work around it.
+  0 and prints the id, and you report it as still running. **Expect this on a slow model.**
+  **You do not choose the model on your own** — it is the provider profile's, and on a dense local
+  model prefill alone has been measured here at 191–335s before a single token is generated. So a
+  large attachment set makes the 540s bound expire and the id-only path the *normal* outcome, which
+  is one more reason to keep the set small. **Never pick a different model yourself to route around
+  that** — a slow response or an expiring deadline is never a reason to swap models on your own
+  initiative, and naming one does not change what "still running past the deadline" means: it is
+  already a normal, non-failure outcome you report the same way regardless of which model answered.
+  If the person who invoked you named a specific model as part of their own request, write it to the
+  `model` file above and it is passed through as `--model <id>`. The companion validates it only
+  when the server's own dialect is well-understood enough to trust an absence as meaningful — where
+  it can, an unserved id is refused cleanly before anything is sent; where it can't, an unrecognised
+  id is sent as given, and a server that does not have it may silently answer with whatever else is
+  loaded instead (the same substitution `/oai:result`'s footer already reports when it happens — the
+  recipe above already runs `result "$id"` on a completed job, so you see this if it happens; the
+  existing "Never paste the model's full reply" rule is what keeps it out of what you relay, not
+  whether you saw it). You do not need to check availability yourself either way — only pass through
+  what you were actually told.
 
 Templates — what the model is asked to *do*, as opposed to which files it is given:
 
@@ -237,5 +480,5 @@ Response style:
   (OAI-100), and a rejected URL prints its own userinfo (OAI-102) — and even once those are fixed, a
   note quoted verbatim carries whatever a future one puts in it, into a session this agent exists to
   keep clean.
-- Never edit, create or delete anything inside the working tree. Your only writes are the two files in
-  the temporary directory above.
+- Never edit, create or delete anything inside the working tree. Your only writes are the files
+  described above, in the temporary directory.
