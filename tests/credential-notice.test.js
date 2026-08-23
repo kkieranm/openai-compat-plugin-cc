@@ -248,15 +248,21 @@ test('an ad hoc --base-url carrying a non-credential query string still reaches 
 });
 
 test('the notice survives a preamble larger than the pipe buffer', { skip: NEEDS_SQLITE }, async () => {
-  // The defect both approvers rejected this feature over, and the reason the
-  // call sits ABOVE `prepareTask` rather than below it: `process.exit(2)`
-  // discards undrained stderr, and the unbounded provider name in the preamble
-  // pushed the notice past the pipe buffer, losing it on a run that had already
-  // written the row. Measured: 131245 bytes, notice absent, one row on disk.
-  // The `writeSync` remedy did not work, and the endpoint here must come from
-  // the CONFIG — `--base-url` replaces the provider name in the preamble, so with
-  // that flag only ~1 KB is written, nothing truncates, and this test passes
-  // against the reverted fix.
+  // The notice, the orphaned row, and credential redaction all still hold
+  // together even with this enormous preamble and a slow stderr consumer —
+  // real, still-live coverage. This no longer depends on `noteEndpointPersistence()`
+  // running before `prepareTask()` for correctness: `oai-companion.mjs` now sets
+  // `process.exitCode` and lets Node drain stdio naturally regardless of write
+  // order or size, so nothing forces an early exit that could discard queued
+  // output. The call order in `task-submit.mjs` is unchanged and still correct —
+  // defensive belt-and-braces, independently justified by CLAUDE.md's own
+  // "gating on nothing... no preamble can crowd it out" design note, not by
+  // anything this test can still detect. This test can no longer catch a
+  // regression to `oai-companion.mjs`'s `process.exitCode` behavior specifically
+  // (the notice is already flushed well before this preamble reaches the pipe
+  // in the current ordering) — that defect class is tracked separately, OAI-199.
+  // The endpoint here must still come from the CONFIG — `--base-url` replaces the
+  // provider name in the preamble, so with that flag only ~1 KB is written.
   const server = await startFakeServer(modelsAndChat());
   const state = stateDir();
   mkdirSync(join(state, 'logs', '1.log'), { recursive: true });
