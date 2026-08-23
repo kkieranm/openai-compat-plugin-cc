@@ -679,16 +679,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   deliberately left unfixed during the review ladder that fixed the sweep-crash pipe-buffer bug
   (2026-08-22), Codex-steered to file rather than widen that ladder's batch.
 
-- **OAI-197** — **Two more comments state the removed `process.exit(2)` behavior as current fact**,
-  the same falsehood class OAI-196's sibling fix corrected in `CLAUDE.md`: `job-launch-outcome.mjs:93-102`'s
-  `writeSync` rationale ("the error rethrown below reaches `oai-companion.mjs`, which writes and then
-  calls `process.exit(2)`") and `tests/job-helpers.mjs:264`'s `submitWithSlowStderr` docstring ("leaves
-  nothing pending for `process.exit(2)` to discard"). Both are now false — `oai-companion.mjs` sets
-  `process.exitCode` and lets Node drain naturally — though the code beside each comment stays correct
-  either way (`writeSync` is still defensible belt-and-braces; the slow-stderr fixture still exercises
-  a real drain path). Found during the same review ladder as OAI-196, Codex-steered to file rather than
-  widen that ladder's batch.
-
 - **OAI-198** — **`bench/review-sweep.mjs`'s own `main()` has the same defect class the sweep-crash fix
   closed in `oai-companion.mjs`**: it calls `process.exit(1)` synchronously right after two
   `process.stderr.write` calls, so a large enough stderr payload could still be truncated at the OS

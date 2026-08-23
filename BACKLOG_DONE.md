@@ -1,3 +1,28 @@
+## 2026-08-23 — OAI-197 shipped: fix two comments stating removed process.exit(2) behavior as fact (`773586b`)
+
+- **OAI-197** — `scripts/lib/job-launch-outcome.mjs`'s `writeSync` rationale comment and
+  `tests/job-helpers.mjs`'s `submitWithSlowStderr` docstring both stated `oai-companion.mjs`'s old
+  `process.exit(2)`-discards-stderr behavior as current fact; commit `31c98d7` had already replaced
+  that with `process.exitCode` plus natural drain. Rewritten to describe the current behavior
+  accurately — comment/docstring text only, zero executable code changed.
+
+  **The `job-helpers.mjs` docstring went through two drafts inside the same review pass.** The first
+  rewrite ("keeps a write genuinely pending at exit time") was itself wrong under `process.exitCode`
+  semantics — Node's event loop won't let the process exit while an async write is pending, so a
+  write can never actually be pending at exit time. `codex-adversarial` caught this
+  (medium/0.98-confidence), `agent-closer` independently re-derived the same conclusion, and the
+  docstring was rewritten a second time to describe sustained backpressure delaying natural exit
+  instead — a real, if subtle, defect this specific ladder pass introduced and then caught in the
+  same pass.
+
+  `tests/credential-notice.test.js` still carries a related, larger stale-premise claim about the
+  same removed behavior; deliberately out of scope here, already tracked as OAI-196.
+
+  `fork-opener` failed via a self-referential `ListAgents`/`TaskOutput` tool-loop that persisted
+  even with an explicit prohibition in its prompt — an 8th recorded instance of this failure class,
+  recorded as a coverage gap without a second retry rather than repeating a mitigation already known
+  to fail on it.
+
 ## 2026-08-22 — OAI-195 shipped: normalizeFinding no longer throws on a hostile-coercion severity/line (`b96ae2c`)
 
 - **OAI-195** — `normalizeFinding`'s `String(raw.severity ?? '')` and `Number(raw.line)` threw a
