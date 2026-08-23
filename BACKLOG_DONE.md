@@ -1,3 +1,29 @@
+## 2026-08-23 — OAI-200 shipped: runEpisode's spawned child gets an 'error' listener (`995bcfd`)
+
+- **OAI-200** — `bench/lib/ttl-episode.mjs`'s `runEpisode()` spawned a child with no `'error'`
+  listener, so a spawn-level failure was an uncaught exception under Node's default `EventEmitter`
+  behavior, crashing the whole ~45-minute unattended `ttl-challenge` sweep with no diagnostic. Added
+  the listener, resolving the episode as "never dispatched" via the same null-safe helpers every
+  downstream reader (`obtainedAnyResponse`, `episodeVerdict`, etc.) already handles for
+  `attempts: null`. Restructured both `'error'` and `'close'` through a shared `settled`-guarded
+  `finish(builder)` closure so whichever fires first still measures `durationMs` at the same point
+  production always has, and survives Node's documented double-firing (`'error'` then `'close'`, code
+  `-2`) for the same underlying failure without corrupting an already-resolved episode's `samples`
+  array. Also covers a synchronous throw from `spawn()` itself (narrow, e.g. under Node's permission
+  model) through the same path, and defers marking the sampler in-flight until Node's own `'spawn'`
+  event confirms the child actually started, added a `spawnImpl` injection seam (the only way to make
+  a spawn fail, since `materialize()` always returns a real directory) and 3 new tests.
+  Plan gate: 2 rounds (a fall-through control-flow gap, a test-injection seam that didn't exist).
+  Review-ladder: 3 discovery passes found and fixed 6 real issues total — listener registration
+  ordering, optional chaining on stdout/stderr, the synchronous-throw path having no test coverage or
+  cleanup, `sampler.dispatched()` firing before Node confirmed the child started, and the `settled`
+  guard itself being untested (confirmed real by mutation: removing it corrupted `samples` after
+  resolution). The terminal verdict point then went 2 rounds on its own — round 1 found a flaky
+  200ms-sleep test and no per-test timeouts; round 2 replaced the sleep with a deterministic
+  synchronously-registered `'close'`-event wait and added timeouts, both re-verified by tracing
+  Node's actual `EventEmitter` dispatch semantics rather than trusting the description.
+  Residue: none — this was itself OAI-199's deferred residue, closing that chain.
+
 ## 2026-08-23 — OAI-199 shipped: structural test + REPO_TRAPS entry + four sibling process.exit() sites fixed (`e18ec11`)
 
 - **OAI-199** — The `process.exit()`-after-stdio-write defect class was confirmed twice

@@ -665,12 +665,3 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   foreground-only exposure (this message on an operator's own terminal) is judged to need the same
   structured-field treatment OAI-185 gave the transport layer.
 
-- **OAI-200** — `bench/lib/ttl-episode.mjs`'s `runEpisode()` spawns a child with a real async
-  `spawn()` and no `'error'` listener registered on it, relying only on `'close'`. An unhandled
-  `'error'` event on a child process crashes the whole process via Node's default `EventEmitter`
-  behavior. Found during OAI-199's plan-gate review while verifying that removing `process.exit()`
-  from `bench/ttl-challenge.mjs` (OAI-199's own change) was safe — confirmed unrelated to that fix
-  (a hang inside `runEpisode()` never reaches `ttl-challenge.mjs`'s `process.exit()` calls either way,
-  since neither `.then()` nor `.catch()` fires on a hung promise), but the missing listener is a real,
-  separate hardening gap, deferred out of scope for that item.
-
