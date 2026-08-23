@@ -525,21 +525,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   bench reliability prose applies to it exactly. Do it when something actually consumes it (the
   `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
 
-- **OAI-86** — **The delegate recipe's containment machinery has no test anywhere, proved by
-  mutation.** Filed 2026-08-05 by OAI-83's wide review. `agents/oai-delegate.md` is the file whose every
-  guard exists because something concretely went wrong — `canon`'s `--` stopping a file named
-  `--require=/tmp/evil.js` from being EXECUTED, its control-character refusal stopping a truncated path
-  passing containment, and the `case "$real" in "$root"/*` boundary. **None is executed by any test**:
-  deleting the boundary check leaves the whole suite green, demonstrated with a positive control in the
-  same run. `tests/plugin.test.js` pins only the terminal-state prose and the `awk` expression;
-  `tests/delegate-template.test.js` stubs `canon` to identity and `root=/tmp` deliberately, and now says
-  so plainly rather than claiming coverage elsewhere — the false claim it used to make was itself a
-  finding.
-  **Shape of the fix**: a suite that runs the recipe's containment block against real symlinks and
-  hostile filenames in a scratch tree. Note this is the one part of the recipe where the stakes are
-  disclosure rather than correctness, which is why it is filed rather than folded into an
-  argument-construction suite.
-
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
   SQLite", and deliberately not built there.

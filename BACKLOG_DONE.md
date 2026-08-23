@@ -1,3 +1,44 @@
+## 2026-08-23 — OAI-86 shipped: the delegate recipe's containment machinery is now tested for real (`2956074`)
+
+- **OAI-86** — `agents/oai-delegate.md`'s shell recipe is the one place this repo enforces that a
+  delegated attachment stays inside the working tree — a Node-based `canon()` resolving every
+  `--file` path, guarding against `--`-prefixed argument injection and a resolved path carrying a
+  control character, and a boundary check refusing anything outside the git tree (or cwd, outside a
+  repo). Filed 2026-08-05 by OAI-83's wide review: none of it was tested. `tests/delegate-template.test.js`
+  deliberately stubbed `canon` and `root` to identity for its own (legitimate, distinct) purpose of
+  testing argument construction, leaving containment itself entirely unexercised. Confirmed with a
+  positive control at probe time: disabling the boundary check left the full 1158-test suite green.
+  New `tests/delegate-containment.test.js` drives the real, unstubbed recipe text (extracted from the
+  markdown via the same `indexOf`-window pattern the existing harness already used) against real
+  filesystem entries, a real scratch git repo, and real symlinks — no production code changes,
+  `agents/oai-delegate.md` itself is untouched. Every one of the 5 guards (the boundary check, the
+  `--` separator, the control-character check, `[ -L "$dir" ]`, the `/tmp/oai-delegate.*` dir-prefix
+  check) is individually mutation-proven: each temporarily disabled in the real recipe, confirmed the
+  predicted test(s) fail with the predicted symptom, restored, confirmed green.
+  Plan gate: 3 rounds, two real corrections. Round 1: the originally-proposed control-character test
+  placed the hostile path outside the tree, where the (separate) boundary check would refuse it
+  regardless of whether the control-character guard worked — both "guard present" and "guard absent"
+  produced the same observable outcome, so the design could never distinguish a working check from a
+  broken one. Replaced with an isolated `canon()`-only extraction, tested directly with no boundary
+  check present to mask a result. Also round 1: the proposed Node `--require` option-injection test
+  used a filename containing `/` inside one path component, which no filesystem can represent.
+  Round 2: the round-1 replacement (`--require/evil.js`) turned out to still be wrong — confirmed
+  directly against real Node that it triggers only a generic "bad option" rejection, never actually
+  invoking `--require`'s module-loading behavior; landed on the verified construction
+  (`--require=./evil.js`, backed by a real directory literally named `--require=.`) after this session
+  independently re-verified the disagreement between Codex and a parallel Claude verdict subagent (the
+  latter had approved the wrong construction) directly against real Node rather than trusting either
+  verdict blind. Round 3 approved the final design.
+  Review-ladder: 1 full pass, verdict point needed 2 rounds. Pass findings: one weaker-than-promised
+  assertion (acceptance-audit, fixed), one real gap where two refusal tests checked only for a
+  diagnostic message without proving the guard actually halted execution — a guard that warns but
+  drops `exit 1` would still have passed them (codex-adversarial, fixed with a shared
+  `assertDirRefused` helper, mutation-proven). Verdict-point round 1 was split (Claude approved,
+  Codex found one more real gap: the plan explicitly called for an isolated `canon()`-level proof of
+  the `--` separator, distinct from the two integration-level tests already present, which was
+  missing) — fixed and mutation-proven, round 2 unanimous.
+  Filed 2026-08-05; shipped 2026-08-23.
+
 ## 2026-08-23 — OAI-59 shipped: /oai:result defended against a foreign outcome/request/transport shape (`c8ad8a9`)
 
 - **OAI-59** — `/oai:result`'s `writeAnswer` rendered a background job's persisted `outcome` (and,
