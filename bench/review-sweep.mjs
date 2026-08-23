@@ -9,10 +9,9 @@
 // shared token budget reasoning and emits nothing, which looks
 // identical to a clean review unless something insists on the difference.
 //
-// Structured after `bench/task-run.mjs`, NOT `bench/run.mjs`: that one calls
-// `main()` at module scope, cannot be imported, and consequently has no test at
-// all. Here the executor, the git reader and the clock are all parameters, so
-// the whole loop runs in tests with no model, no child process and no waiting.
+// Structured after `bench/task-run.mjs`: the executor, the git reader and the
+// clock are all parameters, so the whole loop runs in tests with no model, no
+// child process and no waiting.
 //
 // What a reply MEANS lives in `lib/sweep-outcome.mjs`; this file decides what to
 // do next.

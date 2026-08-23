@@ -116,6 +116,35 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
   assert.deepEqual(offenders, [], 'use send() from scripts/lib/http.mjs, which requires an explicit budget');
 });
 
+// Confirmed twice — scripts/oai-companion.mjs (commit 31c98d7) and
+// bench/review-sweep.mjs (OAI-198) — so promoted to a guard: process.exit() tears
+// the process down before queued stdio writes drain, truncating a large stdout
+// or stderr payload at the pipe buffer. process.exitCode plus a natural return
+// lets Node drain first. Scoped to this repo's actual CLI entrypoints rather than banned
+// repo-wide: scripts/lib/job-heartbeat.mjs has a deliberate process.exit(0) whose
+// side effect (closing the model socket to stop generation server-side) is the
+// point, and bench/task-cases/prototype-lookup/witness.mjs is corpus data, not
+// production CLI surface.
+const CLI_ENTRYPOINTS = [
+  'scripts/oai-companion.mjs', // the one file always run directly; no self-invocation guard needed
+  'bench/run.mjs', // process.argv[1] self-invocation guard
+  'bench/review-sweep.mjs', // process.argv[1] self-invocation guard
+  'bench/recover-sweep.mjs', // process.argv[1] self-invocation guard
+  'bench/task-run.mjs', // process.argv[1] self-invocation guard
+  'bench/ttl-challenge.mjs', // process.argv[1] self-invocation guard
+];
+test('CLI entrypoints use process.exitCode, never process.exit()', () => {
+  // Comments are stripped first: this defect class's own explanatory comments
+  // (including the one above this test, and scripts/oai-companion.mjs's own)
+  // inherently mention the banned call by name.
+  const offenders = [];
+  for (const rel of CLI_ENTRYPOINTS) {
+    const file = join(ROOT, rel);
+    if (/\bprocess\.exit\s*\(/.test(withoutComments(readFileSync(file, 'utf8')))) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, [], 'use process.exitCode instead — see .claude/REPO_TRAPS.md');
+});
+
 // Confirmed defect class, promoted from "I noticed it" to a guard: `node --test`
 // with no path walks the whole repo, so the benchmark corpus — historical source
 // kept deliberately as data — was discovered and its 2026-vintage tests were run

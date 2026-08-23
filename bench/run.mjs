@@ -283,13 +283,14 @@ async function main() {
 // this file to exercise a
 // pure function, `node --test` launched a full six-case benchmark against whatever
 // server was or was not up and wrote a report and a record into `bench/results/` —
-// artifacts indistinguishable from a real arm. `review-sweep.mjs:291` already had
+// artifacts indistinguishable from a real arm. `review-sweep.mjs:357` already had
 // this guard; this file is the one its header says it was written not to imitate.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     if (error instanceof UserError) {
       process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     throw error;
   });

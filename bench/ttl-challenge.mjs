@@ -229,9 +229,11 @@ async function main(argv) {
 // doing that work.
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   main(process.argv.slice(2))
-    .then((code) => process.exit(code))
+    .then((code) => {
+      process.exitCode = code;
+    })
     .catch((error) => {
       process.stderr.write(`${error.stack ?? error.message}\n`);
-      process.exit(1);
+      process.exitCode = 1;
     });
 }

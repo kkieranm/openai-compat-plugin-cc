@@ -1211,3 +1211,36 @@ TEXT IS ABSENT, not merely that a flag is false; and `tests/sweep-report.test.js
 "an unsized-window review says WHY, and never re-asserts a measurement", which asserts a FORBIDDEN
 phrase rather than only required ones. A test that checks only what should be present cannot catch a
 sentence that grew.
+
+## `process.exit()` after a queued stdio write truncates the write
+
+Confirmed twice: `scripts/oai-companion.mjs` (commit `31c98d7`) and `bench/review-sweep.mjs`
+(OAI-198). `process.exit()` tears the process down immediately, before Node has finished draining
+queued stdio writes — so a large payload written to stdout or stderr just before the call can be
+truncated at the pipe buffer, with the reader seeing a partial, unparseable tail instead of the
+intended output. This is not specific to stderr or to a non-zero exit: `scripts/oai-companion.mjs`'s
+originally-confirmed instance truncated a large **stdout** JSON envelope, and `bench/ttl-challenge.mjs`
+writes to stdout before returning either `0` or `1`. Setting `process.exitCode` and letting the
+function return naturally lets Node drain every queued write before the process actually exits, with
+the same eventual exit code.
+
+The rule: a CLI entrypoint with a queued stdio write ahead of its exit sets `process.exitCode`, never
+calls `process.exit()`, regardless of which stream or which exit code. Where the write sits inside a
+`.catch()` or `catch` block that is not the last statement — `bench/run.mjs`'s `UserError` branch fell
+through to an unconditional `throw error;` below it — a bare substitution changes behavior; add a
+`return;` (or otherwise restructure) so the branch still terminates that call the way `process.exit()`
+used to, without terminating the whole process.
+
+OAI-199 applied the same fix to four sibling sites found by call-graph review of every
+`process.exit(` call in the repo's CLI surface (`bench/run.mjs`, `bench/recover-sweep.mjs`,
+`bench/task-run.mjs`, `bench/ttl-challenge.mjs` — the last of these has two call sites, one on its
+success path). Two files were deliberately left alone: `scripts/lib/job-heartbeat.mjs`'s
+`process.exit(0)` is not this defect — the exit's side effect (closing the model socket to stop
+generation server-side) is the point, not an accident — and `bench/task-cases/prototype-lookup/witness.mjs`
+is corpus data, not production CLI surface.
+
+**Guarded by** `tests/structure.test.js` — "CLI entrypoints use process.exitCode, never
+process.exit()", scanning an explicit `CLI_ENTRYPOINTS` list (rather than a repo-wide ban, which
+would have to grow the same allowlist by hand) with comments stripped first — this defect class's own
+explanatory prose, including this entry's own reference implementation
+(`scripts/oai-companion.mjs`), inherently mentions the banned call by name.

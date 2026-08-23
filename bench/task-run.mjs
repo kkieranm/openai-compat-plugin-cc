@@ -7,9 +7,9 @@
 // the review bench does: a harness that reimplemented the request would measure
 // a reimplementation and report the number as the command's.
 //
-// **Guarded main, unlike `bench/run.mjs`.** That file runs `main()` at import,
-// which is why it has no test and why `warm-up.mjs` had to take its loop as an
-// injected parameter. Everything here is importable, and `runSweep` takes its
+// **Guarded main, same shape as `bench/run.mjs`'s own `process.argv[1]` guard.**
+// `warm-up.mjs` still had to take its loop as an injected parameter to test it
+// without a model. Everything here is importable, and `runSweep` takes its
 // executor so a test can drive the whole loop without a model.
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -194,6 +194,6 @@ export async function main(argv) {
 if (process.argv[1] && process.argv[1].endsWith('task-run.mjs')) {
   main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`${error?.stack ?? error}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   });
 }
