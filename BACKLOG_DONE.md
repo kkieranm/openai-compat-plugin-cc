@@ -1,3 +1,39 @@
+## 2026-08-23 — OAI-181 shipped: per-call model selection for the delegate agent (`dd9de67`)
+
+- **OAI-181** — Filed 2026-08-17 from a direct user request ("we should be able to specify per call
+  what model to use"). `--model` was already a per-call flag on `/oai:task` and `/oai:review`; the gap
+  was `agents/oai-delegate.md`, whose own text said "You do not choose the model... Never pass
+  `--model` to work around it." Fixed: a caller-named model now writes to a `model` file the recipe
+  reads and forwards as `--model <id>`, validated by a small inline Node script before being passed
+  through as a CLI argument.
+
+  Shipped after an unusually long review history. The plan-gate cycle (before code existed) ran
+  several rounds correcting cross-reference/rule-text drift. The pass verdict point that closed the
+  review-ladder pass — the review after code landed — then ran **7 rounds**, each finding one new,
+  real, independently-verified issue in the same region: the model-id validator and the pre-existing
+  `canon()` path resolver both invoke `node -e` inline, and that turned out to be reachable by
+  collisions with Node's own exit-code space (rounds 1-2, fixed by moving custom codes to 20-25), an
+  inherited `NODE_OPTIONS` (round 3), an inherited `OPENSSL_CONF` (round 4), and Node's own IPC/cluster
+  startup bootstrap (round 5) — three rounds finding a new inherited-environment-variable hazard each
+  time is this repo's own named "stop enumerating, redesign" signal, so round 5 replaced the enumerated
+  blocklist with a safelist: both invocations now run under `env -i PATH="$PATH" node -e …`, an empty
+  environment with only `PATH` restored. Round 5's own mutation testing separately surfaced a genuine
+  production hazard distinct from the fix under test: an unfixed invocation under a specific inherited
+  IPC variable could hang indefinitely rather than fail, when run through a pipe-capturing harness —
+  fixed with an explicit `timeout: 10000` on the two regression tests that exercise it, so a future
+  regression fails fast instead of hanging the suite. Round 6 raised two points against the safelist
+  itself (a caller-controlled `PATH` substituting `env`/`node`; a legitimate Node version-manager shim
+  breaking under `env -i`) and a non-blocking undercount in a mutation-check claim; round 7 confirmed
+  both points out of scope (the former matches round 5's own `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES`
+  dismissal — an already-compromised toolchain, not this recipe's threat model; the latter fails this
+  repo's own filing bar for a new finding — a plausible future, not a dated instance) and confirmed the
+  corrected mutation count (9 tests break on reverting `env -i`, not the originally-claimed 4, since it
+  now also carries findings 3-4's clearing). Every finding across all 7 rounds was independently
+  verified by direct reproduction against the real `node` binary before being accepted; every fix was
+  mutation-tested (revert, confirm the exact predicted failure, restore, confirm full-suite green).
+  Full suite green at 1200/1200. Two out-of-scope findings from the same review pass filed separately
+  as OAI-201 and OAI-202 rather than absorbed into this diff.
+
 ## 2026-08-23 — OAI-86 shipped: the delegate recipe's containment machinery is now tested for real (`2956074`)
 
 - **OAI-86** — `agents/oai-delegate.md`'s shell recipe is the one place this repo enforces that a

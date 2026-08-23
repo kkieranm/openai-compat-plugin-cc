@@ -570,19 +570,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
   (OAI-59 dropped 2026-08-23 when it shipped and its body left this file.)
 
-- **OAI-181** — **Let a caller pick which model a delegated call uses, per call.** Filed 2026-08-17
-  from a direct user request ("we should be able to specify per call what model to use"). `--model` is
-  already a per-call flag on `/oai:task` and `/oai:review` (`commands/task.md:3,18`,
-  `commands/review.md:21`) and reaches `planSelection` in `scripts/lib/model-selection.mjs`. **The gap
-  is `agents/oai-delegate.md`**, the context-broker agent this repo's advisor-delegation path runs
-  through (session focus area 1: local models as an advisor): its own text says "You do not choose the
-  model: it is the provider profile's... Never pass `--model` to work around it"
-  (`agents/oai-delegate.md:185-189`) — a deliberate constraint at filing, whose reason (a slow model's
-  prefill making the choice moot, or a footgun being worked around) is not restated here and should be
-  re-read before deciding whether it still holds. Needs a probe before a plan: whether this is a
-  one-line relaxation of that agent's own rule, or whether the rule exists for a reason that a per-call
-  override would defeat.
-
 - **OAI-192** — **`job-launch-outcome.mjs:79`'s `terminalizeSpawnFailure` interpolates a raw spawn
   error's `.message` directly into the object it hands to `errorReport()`, bypassing that function's
   explicit-field-list redaction entirely** since the content is already baked into `.message` before
@@ -604,4 +591,22 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   or a worker's job log. Reopen if model selection is ever moved to run inside the worker, or if a
   foreground-only exposure (this message on an operator's own terminal) is judged to need the same
   structured-field treatment OAI-185 gave the transport layer.
+
+- **OAI-201** — `agents/oai-delegate.md`'s pre-existing `canon()` (path containment for `files`,
+  unrelated to model selection) checks only `/[\x00-\x1f]/` — C0 controls — not the fuller
+  `[\x00-\x1f\x7f-\x9f]` range OAI-181's model-id validator uses in the same file. A real in-tree
+  filename containing DEL or a C1 control character would be resolved and accepted despite the
+  attachment rule's stated "refuse a control character." Found by `codex-adversarial` during OAI-181's
+  review ladder (pass verdict point, round 5), 2026-08-23 — concrete and verifiable, but a
+  `files`/containment concern predating OAI-181, not a per-call-model one, so left out of that item's
+  diff rather than absorbing a second subsystem's fix into it.
+
+- **OAI-202** — `tests/delegate-template.test.js`'s file-level header comment ("runs the block under
+  EVERY shell on the machine") and several test names/comments repeating that claim overstate the
+  fixed `SHELLS` allowlist, which excludes any other shell installed on the machine — confirmed
+  present on this machine at `/bin/ksh` and `/bin/tcsh`, neither tested (the latter a C-shell
+  derivative, not even POSIX-family, so "every shell" was never literally true regardless of which
+  allowlist shipped). Found by `codex-plain` during OAI-181's review ladder (pass verdict point, round
+  5), 2026-08-23 — real, but a pre-existing documentation claim about the test file's own methodology,
+  predating OAI-181 and not something its diff introduced or needed to correct.
 
