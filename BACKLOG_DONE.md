@@ -1,3 +1,42 @@
+## 2026-08-23 — OAI-199 shipped: structural test + REPO_TRAPS entry + four sibling process.exit() sites fixed (`e18ec11`)
+
+- **OAI-199** — The `process.exit()`-after-stdio-write defect class was confirmed twice
+  (`scripts/oai-companion.mjs`, commit `31c98d7`; `bench/review-sweep.mjs`, OAI-198), crossing
+  CLAUDE.md's "confirmed twice → add a permanent structural test" bar. Fixed the four remaining live
+  instances of the identical shape — `bench/run.mjs:292`, `bench/recover-sweep.mjs:251`,
+  `bench/task-run.mjs:197`, `bench/ttl-challenge.mjs:232,235` — each `process.exit()` replaced with
+  `process.exitCode` plus a natural return; `bench/run.mjs`'s catch branch needed an added `return;`
+  since its `UserError` branch previously fell through to an unconditional `throw error;` below it,
+  which a bare substitution would have doubled up on. Added a permanent structural test in
+  `tests/structure.test.js` scoped to an explicit `CLI_ENTRYPOINTS` list of six files (a repo-wide ban
+  would need a growing allowlist for `job-heartbeat.mjs`'s deliberate `process.exit(0)` and a corpus
+  witness script), scanning with comments stripped since this defect class's own explanatory prose —
+  including this fix's own reference file — inherently mentions the banned call. Added a
+  `.claude/REPO_TRAPS.md` entry generalized during review from "stderr + non-zero exit" to "any queued
+  stdio stream + any exit code", since `scripts/oai-companion.mjs`'s original instance actually
+  truncated stdout and `bench/ttl-challenge.mjs` writes stdout before exiting with either 0 or 1 — a
+  narrower rule as first drafted would have permitted the same defect to reappear on a success path.
+  Plan went through 5 rounds of dual-approval review (two false claims in the plan's own justification
+  text corrected, a guard-design blocker fixed — the new test had to scan comment-stripped source,
+  not raw source, or it would permanently flag `scripts/oai-companion.mjs` for its own explanatory
+  prose), then one review-ladder pass found and fixed an off-by-one stale line citation and the
+  stdout/exit-code narrowness above, both landed as exempt (comment-only) mid-pass fixes.
+  Residue: `bench/lib/ttl-episode.mjs`'s `runEpisode()` spawns a child with no `'error'` listener —
+  filed separately below.
+
+## 2026-08-23 — OAI-198 shipped: stop process.exit() truncating stderr in bench/review-sweep.mjs (`785dfcc`)
+
+- **OAI-198** — `bench/review-sweep.mjs`'s own `main()` had the same defect class the sweep-crash fix
+  closed in `oai-companion.mjs`: it called `process.exit(1)` synchronously right after two
+  `process.stderr.write` calls, so a large enough stderr payload could still be truncated at the OS
+  pipe buffer before it drains. Fixed with the same `process.exitCode` substitution. Found during
+  OAI-196/197's review ladder; landed separately since it was a different CLI entrypoint from the
+  files that ladder touched. A draft `.claude/REPO_TRAPS.md` entry written during this item's own
+  ladder was deliberately not committed here — Codex's plan-gate dissent judged it non-exempt surface
+  (it prescribes a fix pattern for future sessions, not merely descriptive prose), so it landed later
+  as its own reviewed item, OAI-199, which also fixed four more live instances of the same shape this
+  item's `agent-closer` stage found but left out of scope.
+
 ## 2026-08-23 — OAI-196 shipped: rewrite the stale premise of credential-notice.test.js's pipe-buffer test (`b3938f8`)
 
 - **OAI-196** — `tests/credential-notice.test.js`'s "the notice survives a preamble larger than the

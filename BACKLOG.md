@@ -665,25 +665,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   foreground-only exposure (this message on an operator's own terminal) is judged to need the same
   structured-field treatment OAI-185 gave the transport layer.
 
-- **OAI-198** — **`bench/review-sweep.mjs`'s own `main()` has the same defect class the sweep-crash fix
-  closed in `oai-companion.mjs`**: it calls `process.exit(1)` synchronously right after two
-  `process.stderr.write` calls, so a large enough stderr payload could still be truncated at the OS
-  pipe buffer before it drains. Lower risk than the fixed case — this path only ever writes one error
-  message plus a hint line, nowhere near the 64KB boundary in practice — but it is the identical shape.
-  Found during OAI-196/197's review ladder; out of scope for that ladder (a different CLI entrypoint,
-  not one of the files it touched).
-
-- **OAI-199** — **The `process.exit()`-after-stderr-write defect class is now confirmed twice**
-  (`scripts/oai-companion.mjs`, commit `31c98d7`; `bench/review-sweep.mjs`, OAI-198), which crosses
-  CLAUDE.md's "confirmed twice → add a permanent structural test" bar — no structural test exists for
-  it yet, and no `.claude/REPO_TRAPS.md` entry exists either. A draft trap entry was written during
-  OAI-198's review ladder but deliberately not committed there: Codex's plan-gate dissent judged a
-  `REPO_TRAPS.md` entry non-exempt surface under the review-ladder skill's effect test (it prescribes a
-  fix pattern and a safety condition for future sessions to apply, not merely descriptive prose), so
-  landing it required its own reviewed pass rather than riding as an exempt fix on OAI-198's one-line
-  change — deferred here instead of expanding that ladder. **Four more live, unfixed instances of the
-  identical shape exist**, found by that same ladder's `agent-closer` stage but out of scope for the
-  one-line fix that raised it: `bench/run.mjs:292`, `bench/recover-sweep.mjs:251`,
-  `bench/task-run.mjs:197`, `bench/ttl-challenge.mjs:235` — each a top-level `catch` writing to stderr
-  then calling `process.exit(1)` synchronously.
+- **OAI-200** — `bench/lib/ttl-episode.mjs`'s `runEpisode()` spawns a child with a real async
+  `spawn()` and no `'error'` listener registered on it, relying only on `'close'`. An unhandled
+  `'error'` event on a child process crashes the whole process via Node's default `EventEmitter`
+  behavior. Found during OAI-199's plan-gate review while verifying that removing `process.exit()`
+  from `bench/ttl-challenge.mjs` (OAI-199's own change) was safe — confirmed unrelated to that fix
+  (a hang inside `runEpisode()` never reaches `ttl-challenge.mjs`'s `process.exit()` calls either way,
+  since neither `.then()` nor `.catch()` fires on a hung promise), but the missing listener is a real,
+  separate hardening gap, deferred out of scope for that item.
 
