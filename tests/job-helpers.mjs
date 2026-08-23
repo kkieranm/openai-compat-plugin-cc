@@ -261,8 +261,9 @@ export async function waitForState(state, id, states, { timeoutMs = 15_000 } = {
 /**
  * Run the companion with a deliberately SLOW stderr consumer — the one thing
  * `runCompanion` cannot do, since it drains as fast as the child writes and so
- * leaves nothing pending for `process.exit(2)` to discard. Discarding it is the
- * defect under test, so the slow reader is part of the fixture.
+ * creates no meaningful backpressure. A slow reader does: it delays the
+ * companion process's natural exit until the write drains, which is what lets
+ * a test observe whether that output survives the drain intact.
  * Resolves on `'close'`, so no descriptor outlives the test.
  */
 export function submitWithSlowStderr(args, { configPath, state }) {

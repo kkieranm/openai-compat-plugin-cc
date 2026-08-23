@@ -90,16 +90,13 @@ export function terminalizeSpawnFailure(db, seq, job, error, { report = reportTo
     // rethrew everything else, which left a disk error, a corrupt file or a
     // schema fault reproducing the identical loss through the identical line.
     //
-    // `writeSync` rather than `process.stderr.write`, and that is a drainage
-    // requirement rather than a style choice: the error rethrown below reaches
-    // `oai-companion.mjs`, which writes and then calls `process.exit(2)` — and
-    // `process.exit(2)` DISCARDS UNDRAINED STDERR. On darwin, stderr to a pipe
-    // is asynchronous, and a pipe is what every capturing caller supplies. An
-    // async write here MAY therefore be queued and lost to the exit — not on
-    // every execution, since whether an undrained write survives depends on
-    // timing this code does not control. That is the reason not to leave it to
-    // chance, and it is stated as a risk rather than a certainty because only
-    // the risk is established.
+    // `writeSync` rather than `process.stderr.write`: `oai-companion.mjs` now sets
+    // `process.exitCode` and returns on the error rethrown below, letting Node
+    // drain stdio naturally before it exits on its own — so an async write here
+    // is no longer at risk of being discarded by a forced exit. `writeSync` stays
+    // as defensive belt-and-braces rather than a strict correctness requirement:
+    // it costs nothing here and removes any dependence on that drain behaviour
+    // holding, including in a caller that still forcibly exits.
     //
     // Wrapped, because a throw raised inside a `catch` REPLACES the pending
     // rethrow. A failing report is the one thing here that is silently dropped:
