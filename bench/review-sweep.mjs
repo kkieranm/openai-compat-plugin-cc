@@ -361,6 +361,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } catch (error) {
     process.stderr.write(`${error instanceof UserError ? error.message : String(error?.stack ?? error)}\n`);
     if (error instanceof UserError && error.hint) process.stderr.write(`${error.hint}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   }
 }

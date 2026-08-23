@@ -697,3 +697,17 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Found during OAI-196/197's review ladder; out of scope for that ladder (a different CLI entrypoint,
   not one of the files it touched).
 
+- **OAI-199** — **The `process.exit()`-after-stderr-write defect class is now confirmed twice**
+  (`scripts/oai-companion.mjs`, commit `31c98d7`; `bench/review-sweep.mjs`, OAI-198), which crosses
+  CLAUDE.md's "confirmed twice → add a permanent structural test" bar — no structural test exists for
+  it yet, and no `.claude/REPO_TRAPS.md` entry exists either. A draft trap entry was written during
+  OAI-198's review ladder but deliberately not committed there: Codex's plan-gate dissent judged a
+  `REPO_TRAPS.md` entry non-exempt surface under the review-ladder skill's effect test (it prescribes a
+  fix pattern and a safety condition for future sessions to apply, not merely descriptive prose), so
+  landing it required its own reviewed pass rather than riding as an exempt fix on OAI-198's one-line
+  change — deferred here instead of expanding that ladder. **Four more live, unfixed instances of the
+  identical shape exist**, found by that same ladder's `agent-closer` stage but out of scope for the
+  one-line fix that raised it: `bench/run.mjs:292`, `bench/recover-sweep.mjs:251`,
+  `bench/task-run.mjs:197`, `bench/ttl-challenge.mjs:235` — each a top-level `catch` writing to stderr
+  then calling `process.exit(1)` synchronously.
+
