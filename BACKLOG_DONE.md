@@ -1,3 +1,32 @@
+## 2026-08-23 — OAI-196 shipped: rewrite the stale premise of credential-notice.test.js's pipe-buffer test (`b3938f8`)
+
+- **OAI-196** — `tests/credential-notice.test.js`'s "the notice survives a preamble larger than the
+  pipe buffer" test's header comment claimed `noteEndpointPersistence()` had to sit above
+  `prepareTask()` because `process.exit(2)` discarded undrained stderr. Commit `31c98d7` already fixed
+  `oai-companion.mjs` to set `process.exitCode` instead, so Node drains stdio naturally regardless of
+  write order or size now — confirmed by mutation (both in the original backlog item and re-proven
+  during this fix) that reordering the two calls no longer makes the test fail. Rewritten to describe
+  the current state accurately: the notice/row/redaction assertions are still real, live coverage; the
+  call order in `task-submit.mjs` stays unchanged, independently justified by `CLAUDE.md`'s own design
+  note ("gating on nothing... no preamble can crowd it out"), not by anything this test can still
+  detect; and the test can no longer catch a regression to `oai-companion.mjs`'s exit behavior
+  specifically — deferred to OAI-199.
+
+  **A design fork was resolved via two rounds of Codex steer, reversing its own first recommendation.**
+  Reordering `task-submit.mjs` (notice after `prepareTask()`) would have turned this test into a
+  mutation-provable regression guard for the broader `process.exitCode`-vs-`process.exit()` defect
+  class — Codex's first pass recommended exactly that. Shown the CLAUDE.md passage documenting the
+  current order as an independent, deliberate invariant (not a `process.exit(2)`-era workaround),
+  Codex's second pass reversed itself: reordering would make the notice's emission conditional on
+  `prepareTask()` succeeding and falsify that documented invariant. `task-submit.mjs` was left
+  unchanged; only the test's comment was rewritten.
+
+  Comment/docstring text only — zero test logic or production code changed. `fork-opener` failed twice
+  within the review pass (a genuine launch, then a genuine pass-local retry with an explicit
+  prohibition), both times via the same self-referential `ListAgents`/`TaskOutput` tool-loop — the
+  10th recorded instance of this failure shape this session, now confirmed immune to even a proactive,
+  explicit prohibition. Recorded as a permitted coverage gap.
+
 ## 2026-08-23 — OAI-197 shipped: fix two comments stating removed process.exit(2) behavior as fact (`773586b`)
 
 - **OAI-197** — `scripts/lib/job-launch-outcome.mjs`'s `writeSync` rationale comment and

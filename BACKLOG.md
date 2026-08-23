@@ -665,20 +665,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   foreground-only exposure (this message on an operator's own terminal) is judged to need the same
   structured-field treatment OAI-185 gave the transport layer.
 
-- **OAI-196** — **`tests/credential-notice.test.js`'s "the notice survives a preamble larger than the
-  pipe buffer" test can no longer fail for the regression it documents.** Its whole premise was that
-  `process.exit(2)` discarded undrained stderr, so the endpoint-persistence notice had to be emitted
-  *before* `prepareTask`'s own preamble to survive; the fix that closed the sweep-crash pipe-buffer
-  bug (`oai-companion.mjs`'s catch now sets `process.exitCode` instead of calling `process.exit()`)
-  drains stdio regardless of ordering or size, as a side effect. Confirmed by mutation: reintroducing
-  the exact regression the test exists to catch (moving the `noteEndpointPersistence()` call below
-  `prepareTask()` in `task-submit.mjs`) still leaves the test green. The notice/no-secret/orphaned-row
-  assertions in the same test still hold real coverage; only the pipe-buffer-specific framing and its
-  ordering-dependent mutation-catching are dead. Needs a rewrite of the test's premise (what ordering
-  guarantee, if any, still matters now that draining is unconditional) rather than a fix — found and
-  deliberately left unfixed during the review ladder that fixed the sweep-crash pipe-buffer bug
-  (2026-08-22), Codex-steered to file rather than widen that ladder's batch.
-
 - **OAI-198** — **`bench/review-sweep.mjs`'s own `main()` has the same defect class the sweep-crash fix
   closed in `oai-companion.mjs`**: it calls `process.exit(1)` synchronously right after two
   `process.stderr.write` calls, so a large enough stderr payload could still be truncated at the OS
