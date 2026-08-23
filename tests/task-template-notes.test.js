@@ -91,6 +91,7 @@ test('an untemplated job persists NEITHER template nor estimatedTokens', async (
     numeric: {},
     messages: [{ role: 'user', content: 'hi' }],
     estimatedTokens: 4242,
+    budget: { checked: true, note: null },
   });
   assert.ok(!('template' in dto), 'no template was selected, so none is stored');
   assert.ok(!('estimatedTokens' in dto), 'the estimate is stored only to render a template caveat');
@@ -103,8 +104,29 @@ test('a templated job persists the NAME and the estimate it was measured at', as
     messages: [{ role: 'user', content: 'hi' }],
     template: 'advisor',
     estimatedTokens: 4242,
+    budget: { checked: true, note: null },
   });
   assert.equal(dto.template, 'advisor', 'the stable name, never the resolved registry object');
   assert.equal(typeof dto.template, 'string');
   assert.equal(dto.estimatedTokens, 4242);
+});
+
+test('persistRequest carries the budget check onto the DTO, unconditionally', async () => {
+  const unchecked = persistRequest({
+    profile: { name: 'local' },
+    numeric: {},
+    messages: [{ role: 'user', content: 'hi' }],
+    budget: { checked: false, note: 'Context window unknown for x — set "contextLength" for provider "local".' },
+  });
+  assert.equal(unchecked.contextChecked, false);
+  assert.equal(unchecked.contextNote, 'Context window unknown for x — set "contextLength" for provider "local".');
+
+  const checked = persistRequest({
+    profile: { name: 'local' },
+    numeric: {},
+    messages: [{ role: 'user', content: 'hi' }],
+    budget: { checked: true, note: '~1.0k of 44.4k usable tokens.' },
+  });
+  assert.equal(checked.contextChecked, true);
+  assert.equal(checked.contextNote, null, 'a checked run has nothing to warn about, regardless of what budget.note holds');
 });

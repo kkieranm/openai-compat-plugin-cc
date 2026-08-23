@@ -143,9 +143,14 @@ export function renderSetupReport({ configPath, created, results, defaultProvide
  * first-token boundary to have measured.
  */
 function timingParts(durationMs, prefillMs) {
-  const total = `${(durationMs / 1000).toFixed(1)}s`;
-  if (!Number.isFinite(prefillMs)) return [total];
-  return [total, `prefill: ${(prefillMs / 1000).toFixed(1)}s`];
+  const parts = [];
+  // `durationMs` is a real number on every foreground and worker-written call
+  // site; the guard only fires when a caller is rendering an `outcome` this
+  // build itself never wrote (`/oai:result` reading a foreign payload), where
+  // fabricating "NaNs" would be worse than omitting the figure.
+  if (Number.isFinite(durationMs)) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+  if (Number.isFinite(prefillMs)) parts.push(`prefill: ${(prefillMs / 1000).toFixed(1)}s`);
+  return parts;
 }
 
 /**
@@ -162,16 +167,39 @@ function timingParts(durationMs, prefillMs) {
  * model-identity.mjs.
  */
 function modelPart(model, requestedModel) {
+  // `undefined` means the field is missing from the payload entirely — a
+  // foreign `outcome` shape, never this build's own success path, which
+  // always writes at least `null`. Left distinct from that legitimate `null`
+  // case (a server that answered without naming a model), which this
+  // function already renders as `model: null` today.
+  if (model === undefined) return 'model: unknown';
   const swap = substitution(requestedModel, model);
   return swap ? `model: ${swap.served} (requested ${swap.requested})` : `model: ${model}`;
+}
+
+/**
+ * Unlike `model`, there is no legitimate case where `providerName` is meaningfully `null` — every
+ * real submission sets `transport.name` to a real profile-name string — so `undefined` and `null`
+ * both collapse to "unknown" here rather than `null` falling through to a literal `provider: null`.
+ * The caller (`cmd-result.mjs`'s `validateOutcomeShape`) only rules out a hostile non-string value;
+ * this is what keeps a legitimately-absent name from printing the literal string "undefined".
+ */
+function providerPart(providerName) {
+  return providerName === undefined || providerName === null ? 'provider: unknown' : `provider: ${providerName}`;
 }
 
 export function renderTaskFooter({
   providerName, model, requestedModel, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
 }) {
-  const parts = [`provider: ${providerName}`, modelPart(model, requestedModel), ...timingParts(durationMs, prefillMs)];
-  if (usage?.prompt_tokens !== undefined) {
-    parts.push(`tokens: ${usage.prompt_tokens} in / ${usage.completion_tokens ?? '?'} out`);
+  const parts = [providerPart(providerName), modelPart(model, requestedModel), ...timingParts(durationMs, prefillMs)];
+  // `Number.isFinite`, not `!== undefined`: a real API's `usage` object always
+  // carries numbers here, so this rejects nothing legitimate — but `usage` is
+  // an unvalidated field of a background job's persisted `outcome`, and an
+  // unguarded interpolation of a non-numeric value below would throw on the
+  // same class of object `modelPart` above is guarded against.
+  if (Number.isFinite(usage?.prompt_tokens)) {
+    const completion = Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : '?';
+    parts.push(`tokens: ${usage.prompt_tokens} in / ${completion} out`);
   }
   // On the human path for the same reason prefill is, and it fails the same test
   // if left off: "is this model too slow to use" is a fact that changes what the

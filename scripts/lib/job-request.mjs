@@ -32,7 +32,7 @@ function withoutUndefined(fields) {
  * — it would be an instant on a clock that no longer exists. `maxMs` is stored
  * and the worker mints its own, exactly as the foreground path does.
  */
-export function persistRequest({ profile, numeric, messages, template, estimatedTokens }) {
+export function persistRequest({ profile, numeric, messages, template, estimatedTokens, budget }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   return {
     messages,
@@ -48,6 +48,14 @@ export function persistRequest({ profile, numeric, messages, template, estimated
     // caller, not of this line, and saying otherwise here would be a comment
     // whose stated precondition differs from what is tested.
     ...(template ? { template, estimatedTokens } : {}),
+    // The same pair `task-report.mjs` and `review-report.mjs` already compute
+    // for the foreground rendering — persisted here so `/oai:result` can show
+    // the identical caveat for the same run instead of hardcoding it away.
+    // Unconditional, not `withoutUndefined`: `checked` is always a real
+    // boolean and `note` is only ever meaningful opposite it, so `null` is the
+    // right spelling of "nothing to say" rather than absence.
+    contextChecked: budget.checked,
+    contextNote: budget.checked ? null : budget.note,
     ...withoutUndefined({
       timeoutMs: resolveTimeout(profile, timeoutSeconds),
       idleMs: resolveIdle(profile),

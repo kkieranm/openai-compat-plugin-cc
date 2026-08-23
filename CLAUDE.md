@@ -282,6 +282,32 @@ an exhausted completed write hands its outcome to `scripts/lib/cmd-task-worker.m
 (the one step in this paragraph that is not `job-busy.mjs`'s) — one `SALVAGED_OUTCOME` line on the log
 the worker already owns, so the answer outlives the row that would not take it.
 
+`scripts/lib/cmd-result.mjs`'s `writeAnswer` defends `job.outcome`/`job.request`/`job.transport`
+against a shape this build does not recognise — three JSON blob columns a newer or different build
+may have reshaped — before ever asking whether it has an answer. Three consecutive review-ladder
+passes on the original field-by-field guards each found another unvalidated field reaching the same
+interpolation-throws-`TypeError` hazard through a different call path, which is what the fix
+consolidated into `validateOutcomeShape`: a table (`RENDER_CONSUMED_FIELDS`) of every render-consumed
+field outside the graceful-omit paths below, each an exported `{ path, get, valid }` entry, so the
+coverage a reader can audit and the coverage `tests/result.test.js`'s structural test empirically
+proves are the same list rather than two hand-maintained ones that could drift together.
+`isOptionalArtifact` requires `outcome.artifact`'s `.state` to be one of the four values
+`task-artifact.mjs`'s `artifactNote` actually branches on, and requires `.detail` to be a real string
+for every state but `applies` — the one branch that never reads it — since `artifactNote`
+unconditionally interpolates `detail` in the other three. `job.request.estimatedTokens` gets its own
+`isOptionalNumber` rather than `isOptionalString`, since a legitimate value there is always a number.
+`render.mjs`'s `providerPart` gives `transport?.name` an `undefined`/`null` → friendly-label
+treatment, the same shape of fix `modelPart` already applies for `model` — though not identical:
+`modelPart` special-cases only `undefined` (a legitimate `null` model, a server that answered
+without naming one, still renders as `model: null`), while `providerPart` collapses both, since
+there is no equivalent legitimate-`null` case for `transport.name`. Replaces an unguarded
+`` `provider: ${providerName}` `` interpolation. `writeAnswer` composes every fragment — content, footer, artifact note, template
+notes — into one array and issues exactly one `stdout.write`, so a field this table still somehow
+missed fails before any byte reaches stdout rather than after part of the answer is already visible.
+Deliberately excluded from the table: `usage.prompt_tokens`/`completion_tokens` and
+`durationMs`/`prefillMs`/`generationMs`, already covered by an established, unrelated
+`Number.isFinite`-based graceful-omit design (below) that this fix has no mandate to change.
+
 `scripts/lib/job-launch-outcome.mjs` `terminalizeSpawnFailure` is what a submitter may write about a
 launch it could not confirm, and it **holds strictly less knowledge than its call site suggests**: a
 rejection from `spawnWorker` does not prove no child exists, because that helper closes its copy of the
