@@ -1,3 +1,53 @@
+## 2026-08-23 — OAI-59 shipped: /oai:result defended against a foreign outcome/request/transport shape (`c8ad8a9`)
+
+- **OAI-59** — `/oai:result`'s `writeAnswer` rendered a background job's persisted `outcome` (and,
+  after this fix, `request`/`transport`) with no defense against a shape this build does not
+  recognize — a newer or different plugin build's JSON blob, outside the `schema_version` gate. A
+  renamed `content` field was reported as "recorded no answer" (false — the job produced one, the
+  `findings: null` vs `[]` class of defect this repo has hit before); absent fields rendered
+  literally (`NaNs`, `model: undefined`).
+  Original fix (plan sections 1-3): split "no answer" from "shape I don't understand" in
+  `writeAnswer`; `render.mjs`'s `timingParts`/`modelPart` omit an absent field rather than
+  fabricating a number or printing it literally; persisted the context-window-unknown note through
+  to the request DTO (closing OAI-71/OAI-85, below).
+  **Review-ladder found the same architectural gap recur three passes in a row**, each on a
+  different field of the same `job.outcome`/`job.request`/`job.transport` blobs, at a shrinking
+  radius: pass 1 found `model`/`requestedModel`/`finishReason` plus `usage.*` in `render.mjs`; pass
+  2 (two independent Codex reviewers) found `outcome.artifact` and the newly-persisted
+  `contextNote` itself; pass 3 found `transport.name`, an array bypassing the artifact guard,
+  `request.template`, and `request.estimatedTokens`. Codex, consulted directly on whether this
+  recurrence was plan-amending, confirmed yes and named the fix codex-adversarial had already
+  proposed in pass 2 and which had not yet been acted on: one boundary validator over every
+  render-consumed field, composing the whole answer before a single stdout write so an unforeseen
+  future gap fails before any output leaks rather than after. The amendment went through two rounds
+  of plan-gate dual approval (Codex + independent Claude verdict subagent) — round 1 found two more
+  real gaps (`transport.name` needing render-side graceful-degrade rather than validator-side
+  tightening; `outcome.artifact`'s `.detail` validation needing to be state-dependent since
+  `artifactNote` only skips reading it for the `applies` state) — before landing as
+  `RENDER_CONSUMED_FIELDS`, a single exported table of `{path, get, valid}` entries consumed by both
+  `validateOutcomeShape` and a structural test that proves each entry is actually enforced against a
+  synthetic hostile-value row, rather than two independently hand-maintained lists that could drift
+  together (the design a plan-gate round explicitly rejected).
+  Every one of the 8 table entries, the required `outcome.content` check, `isOptionalArtifact`'s two
+  independent sub-checks (state-enum, state-dependent detail), and `render.mjs`'s new `providerPart`
+  helper were individually mutation-proven (backed out, confirmed the predicted test fails with the
+  predicted symptom, restored, confirmed green) — 12 separate cycles in total. Verified live against
+  the real production `jobs.db` and a running LM Studio server, not just synthetic test fixtures: a
+  real completed job rendered correctly, and a hand-injected hostile `model` value on that same real
+  row was refused cleanly by the actual CLI rather than crashing, then the row was restored.
+  Review-ladder: 4 passes total (1 full, 3 diff), 8 real findings fixed across them plus 3
+  non-blocking descriptive-prose findings in the final resumed pass (CLAUDE.md text left stale by
+  the restructure), all fixed. Plan gate: 3 rounds total (1 original, 2 for the amendment).
+  Filed 2026-08-05; shipped 2026-08-23.
+  **Absorbed: OAI-71** (the context-window-unknown note was computed at submission but never
+  persisted — the smaller half of the same root cause, folded into this item at filing time).
+  **Closes: OAI-85**, filed separately the same day by a different review pass, discovered during
+  this item's probe to describe the identical gap (`cmd-result.mjs` hardcoding `contextNote: null`,
+  same file, same line, same root cause) — an undetected duplicate of OAI-71. Neither needed its
+  own residue; both close by this same commit.
+
+- **OAI-71** — Absorbed into OAI-59; see that item.
+
 ## 2026-08-23 — OAI-200 shipped: runEpisode's spawned child gets an 'error' listener (`995bcfd`)
 
 - **OAI-200** — `bench/lib/ttl-episode.mjs`'s `runEpisode()` spawned a child with no `'error'`

@@ -15,9 +15,11 @@ owner-directed, matching the same removal in `~/Code/backlog` and `~/Code/dotfil
 priority-ranking pass over this file, and a merged item now gets a one-line stub bullet
 (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
 resolved through the exact same `- **OAI-n**` shape as every other item — never a separate table.
-Four such stubs exist in `## Items` below (OAI-30, OAI-38, OAI-41, OAI-71); OAI-6 and OAI-8, which
-the old table resolved to `*shipped*` rather than another ID, are now ordinary `BACKLOG_DONE.md`
-entries instead of stubs, since they already carried full shipped descriptions.
+Three such stubs exist in `## Items` below (OAI-30, OAI-38, OAI-41); OAI-6 and OAI-8, which the old
+table resolved to `*shipped*` rather than another ID, are now ordinary `BACKLOG_DONE.md` entries
+instead of stubs, since they already carried full shipped descriptions. OAI-71's own stub moved to
+`BACKLOG_DONE.md` on 2026-08-23 when its target, OAI-59, shipped — a stub always lives wherever its
+target lives.
 
 ### Standing methodology note, earned the hard way
 
@@ -523,54 +525,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   bench reliability prose applies to it exactly. Do it when something actually consumes it (the
   `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
 
-- **OAI-59** — **`/oai:result` renders a payload it does not understand, and prints `undefined` and
-  `NaNs` when it does.** Filed 2026-08-05, noticed during phase 6 verification against a hand-seeded
-  row and initially written off as a fixture artifact — it is not, and the second look is what this
-  entry records. `renderTaskFooter` does `(durationMs / 1000).toFixed(1)`, so an absent `durationMs`
-  renders `NaNs`, and an absent `model` renders `model: undefined`.
-  **What makes it reachable is new in OAI-3.** Before, the footer only ever rendered an outcome the
-  same process had just produced, so every field was there by construction. Now `cmd-result.mjs`
-  renders an `outcome` **another build persisted**, and `job-view.mjs:33` deliberately keeps reading a
-  database a *newer* plugin wrote — that is the designed behaviour, and [ADR
-  014](adr/014-async-jobs.md) is explicit that the lifecycle envelope is stable across versions while
-  `outcome` is exactly the part that may change shape. So the one row this build is guaranteed not to
-  understand is the row it will happily render.
-  The fix is not to default the numbers, which would print a fabricated `0.0s`. It is for the footer
-  to omit a part it has no value for — the same absence-is-not-a-value rule the request DTO already
-  follows, where `undefined` means absent and `null` is invalid. ~~Low severity (cosmetic, on a path
-  that already tells the user the database is newer)~~, filed for the class rather than the symptom.
-  **Severity raised 2026-08-05 by the OAI-58 ladder: this is not cosmetic.** On the same path
-  (`cmd-result.mjs:29-31`), a newer row whose **content field was renamed** is not rendered oddly — it
-  is reported as **"recorded no answer"**, which is a false statement about a job that produced one.
-  That is the `findings: null` versus `[]` distinction — trap instance 14 in `.claude/REPO_TRAPS.md`,
-  and the defect [ADR 003](adr/003-structured-findings.md) exists to prevent — appearing in a new place.
-  So the fix must report an unsupported payload as unsupported, and render only validated fields;
-  omitting absent parts is necessary but not sufficient.
-
-  **Absorbed 2026-08-05: OAI-71, which is the same decision wearing a smaller hat.** *The
-  unknown-context warning is not persisted, so `/oai:result` omits it for exactly the jobs whose input
-  size was never verified.* `cmd-result.mjs:50` always passes `null`. The foreground footer reports
-  that the size check was disabled; the background path drops it. Persisting it **adds a field to
-  `outcome`** — the same shape-drift surface, decided once: what `outcome` may carry, how a build that
-  does not recognise a field behaves, and what the footer renders when a value is absent. Its own
-  filing said to decide it with this item rather than alone, so the merge takes that at its word.
-  Note the pairing sharpens the fix: the added field is itself the first test of the rule, since a
-  build predating it must render the row without claiming the job "recorded no answer".
-
-- **OAI-71** — Absorbed into OAI-59; see that item.
-
-- **OAI-85** — **`/oai:result` never shows "context window unknown", so an unarmed size guard is
-  invisible on the background path.** Filed 2026-08-05 by OAI-83's wide review, which **confirmed it is
-  PRE-EXISTING** — `cmd-result.mjs` hardcodes `contextNote: null` at HEAD, and reverting OAI-83 leaves
-  the divergence identical. `task-report.mjs` passes `budget.checked ? null : budget.note`, so the same
-  run warns in the foreground and stays silent after `--background`. This is REPO_TRAPS instance 16's
-  family — a second rendering dropping a caveat the first carries — and it reaches a real state:
-  `checkContextBudget` returns `{checked:false}` without throwing whenever a provider has no
-  `contextLength` and probing cannot determine one, which is the **default for LM Studio here**.
-  **The reason it was not fixed with OAI-83**: the background path never persists `budget`, so the fix
-  is a persistence decision, not a render tweak — either store the note in the request DTO beside
-  `template`/`estimatedTokens`, or recompute it in the worker. Decide which before building.
-
 - **OAI-86** — **The delegate recipe's containment machinery has no test anywhere, proved by
   mutation.** Filed 2026-08-05 by OAI-83's wide review. `agents/oai-delegate.md` is the file whose every
   guard exists because something concretely went wrong — `canon`'s `--` stopping a file named
@@ -626,9 +580,10 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   corpus. **(a) plus (b) for the load-bearing few is the cheap combination**, and (b) is the only part
   that needs judgement — it means deciding which citations are evidence rather than provenance.
   The full list of affected items, so the judgement pass has a worklist: OAI-11, OAI-13, OAI-19,
-  OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-59, OAI-63, OAI-64,
+  OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-63, OAI-64,
   OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
+  (OAI-59 dropped 2026-08-23 when it shipped and its body left this file.)
 
 - **OAI-181** — **Let a caller pick which model a delegated call uses, per call.** Filed 2026-08-17
   from a direct user request ("we should be able to specify per call what model to use"). `--model` is
