@@ -1,3 +1,34 @@
+## 2026-08-24 — OAI-203 shipped: every temp dir the delegate-containment suite creates is tracked and removed (`51e3354`)
+
+- **OAI-203** — `tests/delegate-containment.test.js` leaks a temp directory on every one of 13
+  `mkdtempSync` call sites (`withScratchRepo`'s `repo`, and the direct `outside`/`nogit`/preload/
+  openssl-conf/wrong-prefix/symlink fixtures) — none is wrapped in a `finally` or removed by any
+  `rmSync`/cleanup hook anywhere in the file, confirmed by reading the whole file. The 14th site, the
+  recipe's own `$dir` inside `runContainment`, is the only one cleaned, by the real shell `trap
+  'rm -rf "$dir"' EXIT INT TERM HUP` it exercises (`agents/oai-delegate.md:94`) — so this is
+  specifically the 13 sites the recipe's own trap does not reach. `withScratchRepo` is invoked
+  repeatedly across the file's tests, so the actual per-run leak count exceeds 13. Present,
+  deterministic and silent on every test run (not a hypothetical), so it clears the filing worth bar
+  unlike the other two candidates from the same sweep (see `bench/2026-08-23-oai19-run-notes.md`'s
+  Codex-reviewed triage). Found by an overnight `bench/review-sweep.mjs` run, 2026-08-24, confirmed by
+  direct reading and a second look from `codex-rescue`.
+  **Shipped 2026-08-24, `51e3354`.** One `track(path)` registration point (incrementing a
+  `trackedCalls` counter and pushing onto `TRACKED` in one body), `tracked(prefix)` wrapping every
+  `mkdtempSync`, and one file-level `after` hook that removes every tracked path and carries two
+  mutation-witnessed controls: registration equality (a removed `push` goes red) and an
+  `lstatSync`-probed leftover audit (a removed `rmSync` loop goes red; `lstatSync` because
+  `existsSync` follows symlinks and would false-pass a dangling tracked link). The review ladder
+  widened the fix twice mid-build, each amendment dual-approved: `runContainment`'s dir — the one
+  site the recipe's own `EXIT` trap cleans — is now tracked as a pre-shell-failure fallback AND the
+  function asserts `existsSync(dir)` is false after the shell settles on success and refusal paths
+  alike, converting the round-2 accepted limitation ("tracking would mask the trap") into an
+  explicit trap verification (a neutered trap turns 7 tests red). Measured: 25 leaked entries per
+  run before, 0 after, positive control first, with a sentinel dir ruling out an external tmpdir
+  sweeper during the measurement window. Full suite 1210/1210 at the gate. Residue filed as
+  **OAI-208** (the same leak class suite-wide, plus a second hand-rolled copy of this same tracking
+  machinery in `tests/runtime-capability.test.js`). Plan and three approval archives:
+  `plans/oai-203-clean-leaked-temp-dirs.md`.
+
 ## 2026-08-24 — OAI-19 concluded: baseline re-measurement, both arms published as failures, no scalar recall obtained
 
 - **OAI-19** — Re-measure `/oai:review`'s recall baseline, dense 27B against the MoE, under a

@@ -270,19 +270,6 @@ is in its Session footguns section — not here.
   (OAI-59 dropped 2026-08-23, OAI-19 dropped 2026-08-24, each when it shipped/concluded and its body
   left this file.)
 
-- **OAI-203** — `tests/delegate-containment.test.js` leaks a temp directory on every one of 13
-  `mkdtempSync` call sites (`withScratchRepo`'s `repo`, and the direct `outside`/`nogit`/preload/
-  openssl-conf/wrong-prefix/symlink fixtures) — none is wrapped in a `finally` or removed by any
-  `rmSync`/cleanup hook anywhere in the file, confirmed by reading the whole file. The 14th site, the
-  recipe's own `$dir` inside `runContainment`, is the only one cleaned, by the real shell `trap
-  'rm -rf "$dir"' EXIT INT TERM HUP` it exercises (`agents/oai-delegate.md:94`) — so this is
-  specifically the 13 sites the recipe's own trap does not reach. `withScratchRepo` is invoked
-  repeatedly across the file's tests, so the actual per-run leak count exceeds 13. Present,
-  deterministic and silent on every test run (not a hypothetical), so it clears the filing worth bar
-  unlike the other two candidates from the same sweep (see `bench/2026-08-23-oai19-run-notes.md`'s
-  Codex-reviewed triage). Found by an overnight `bench/review-sweep.mjs` run, 2026-08-24, confirmed by
-  direct reading and a second look from `codex-rescue`.
-
 - **OAI-205** — `bench/lib/reason-notes.mjs`'s `reasonNotes` has two accuracy gaps against the OAI-204
   ledger fix, both display/prose-only (nothing dispatches on them): (1) it has no explanatory
   paragraph for `reasoning-only` now appearing as an ATTEMPT-level reason (`markUnanswered` can now
@@ -315,3 +302,17 @@ is in its Session footguns section — not here.
   drift risk OAI-204 consolidated those two into one shared `Set` specifically to prevent, one file
   over. Found by acceptance-audit's whole-artifact scout during the OAI-204 review-ladder, 2026-08-24.
 
+- **OAI-208** — The temp-dir leak OAI-203 fixed in one file is the suite's normal state: `mkdtempSync`
+  appears in 27 files under `tests/`, and cleanup exists in only 3 (`tests/job-busy.test.js`,
+  `tests/job-busy-open.test.js`, `tests/bench-warm-up.test.js`) — counted by repo-wide grep,
+  2026-08-24, during OAI-203's probe; every other file leaks its scratch dirs on every `npm test`.
+  Present, deterministic and silent, the same worth-bar shape OAI-203 itself cleared. Two related
+  facts for whoever takes it: (1) `tests/runtime-capability.test.js:74-87` already carries its own
+  hand-rolled copy of the same tracked-array-plus-`after`-hook machinery OAI-203 shipped
+  (`TEMP_STATE`/`stateDir`), so the suite now holds two independently-maintained copies that can
+  drift — the OAI-203 `/simplify` reuse reviewer proposed extracting a shared helper into
+  `tests/helpers.mjs` with both entry points (`tracked(prefix)` and a bare `track(path)` for
+  non-mkdtemp paths), rejected there only as out of that item's approved scope; (2) OAI-203's plan
+  deliberately declined a structural test ratcheting "every `mkdtempSync` is tracked" while the
+  class had one dated instance — a suite-wide fix is the recurrence that decision named, so
+  graduation to `tests/structure.test.js` should be re-judged here, not assumed either way.
