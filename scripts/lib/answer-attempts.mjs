@@ -77,6 +77,20 @@ async function attemptAnswer(profile, budgets, negotiation, finish) {
   const timings = { prefillMs: result.prefillMs, generationMs: result.generationMs };
   try {
     const answer = finish(result);
+    // Exposed BEFORE `settle()`, closing over this exact physical attempt's
+    // handle, so a caller that later judges the content unusable (reasoning
+    // arrived, the answer channel did not) can reclassify the ledger entry
+    // `settle()` is about to close as `answered` — without this, that entry
+    // stays `answered` forever even once the caller rejects it and tries
+    // again, leaving two `answered` entries in one run's `attempts[]`.
+    // Non-enumerable so it never reaches a caller that only reads the answer
+    // as data (a report, a JSON envelope) and never needs to know a ledger
+    // exists.
+    if (result.handle) {
+      Object.defineProperty(answer, 'markUnanswered', {
+        value: (error) => result.handle.markUnanswered(error),
+      });
+    }
     result.handle?.settle(timings);
     return answer;
   } catch (error) {

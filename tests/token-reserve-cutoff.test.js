@@ -257,6 +257,11 @@ test('--structured-output never arms the watchdog — the answer legitimately li
 });
 
 test('a salvage attempt that itself fails falls back to reporting token-reserve-cutoff plainly', async () => {
+  // Both the trimmed follow-up AND the untrimmed fallback fail identically
+  // here (OAI-204 amendment, Finding 1: a trimmed attempt's failure gets one
+  // further, untrimmed attempt before salvage gives up) — this fixture
+  // doesn't distinguish request 2 from request 3, so both get the same
+  // malformed response.
   const handler = reasoningPastThresholdThenFollowUp((record, response) => {
     response.writeHead(500, { 'content-type': 'application/json' });
     response.end('not json');
@@ -270,7 +275,8 @@ test('a salvage attempt that itself fails falls back to reporting token-reserve-
     assert.equal(envelope.salvaged, undefined);
     // Tier 1's guarantee: the partial reasoning survives even when salvage fails.
     assert.ok(envelope.partial?.reasoning?.length >= 6144);
-    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 2);
+    // Original + the failed trimmed attempt + the failed untrimmed fallback attempt.
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 3);
   } finally {
     await server.close();
   }

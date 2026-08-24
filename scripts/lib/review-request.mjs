@@ -81,6 +81,63 @@ function armedReserve(reserve) {
 }
 
 /**
+ * Head+tail retention trim for the reasoning fed back into a salvage
+ * follow-up. Deterministic and dumb on purpose — no second model call to
+ * summarize, which risks the exact starvation this exists to avoid.
+ *
+ * `applied: false` when `apply` is false (deadline-timeout), the reasoning
+ * already fits inside the combined budget, or the trimmed candidate would not
+ * actually come out shorter (see the length check below) —
+ * tests/salvage.test.js's existing short-fixture tests pass through
+ * unmodified either way.
+ *
+ * Only ever reads `reasoning`; never mutates it and never touches
+ * `fallbackError.answer` — tier 1's partial stays exactly what it was,
+ * whether or not tier 2 trims its own copy of it.
+ */
+function trimReasoning(reasoning, { apply, headChars = SALVAGE_TRIM_HEAD_CHARS, tailChars = SALVAGE_TRIM_TAIL_CHARS } = {}) {
+  const originalChars = reasoning.length;
+  if (!apply || originalChars <= headChars + tailChars) {
+    return { text: reasoning, applied: false, originalChars, retainedChars: originalChars };
+  }
+
+  // Finding 5 (OAI-204 amendment, `codex-plain`): slice() can split a UTF-16
+  // surrogate pair, leaving an unpaired surrogate in the wire payload. Shift
+  // each cut inward by one char when it falls between a high surrogate and
+  // its low surrogate. Every downstream figure — retainedChars, the marker's
+  // own omitted count — is derived from these ADJUSTED boundaries, never the
+  // nominal headChars/tailChars constants: a shifted cut changes both the
+  // true retained length and the true omitted count, and reporting the
+  // un-adjusted 6,000 here would itself misstate what was actually sent.
+  let headEnd = headChars;
+  const headHigh = reasoning.charCodeAt(headEnd - 1);
+  const headLow = reasoning.charCodeAt(headEnd);
+  if (headHigh >= 0xd800 && headHigh <= 0xdbff && headLow >= 0xdc00 && headLow <= 0xdfff) headEnd -= 1;
+
+  let tailStart = originalChars - tailChars;
+  const tailHigh = reasoning.charCodeAt(tailStart - 1);
+  const tailLow = reasoning.charCodeAt(tailStart);
+  if (tailHigh >= 0xd800 && tailHigh <= 0xdbff && tailLow >= 0xdc00 && tailLow <= 0xdfff) tailStart -= 1;
+
+  const retainedChars = headEnd + (originalChars - tailStart);
+  const omitted = originalChars - retainedChars;
+  const marker = `\n\n[...${omitted} characters of reasoning omitted...]\n\n`;
+  const text = `${reasoning.slice(0, headEnd)}${marker}${reasoning.slice(tailStart)}`;
+
+  // Finding 4 (OAI-204 amendment, `codex-plain`): for reasoning just past the
+  // threshold, the omitted-count marker text can be longer than what the trim
+  // actually removed, so `text` comes out LONGER than `reasoning` despite
+  // `applied: true` — the opposite of the goal. Checked against the real
+  // built length, not the theoretical `headChars + tailChars` sum the branch
+  // above already guards — same "nothing to gain, don't pretend to" contract.
+  if (text.length >= originalChars) {
+    return { text: reasoning, applied: false, originalChars, retainedChars: originalChars };
+  }
+
+  return { text, applied: true, originalChars, retainedChars };
+}
+
+/**
  * Never reserve more than half the window: on a small-window model a fixed 16k
  * reserve would refuse every review outright, blaming an input that would
  * comfortably have fit.
@@ -156,6 +213,20 @@ function sharedRequest(profile, plan) {
 }
 
 /**
+ * The tagged error for a clean stream that never left its reasoning channel —
+ * shared by both places that reject that shape (`unconstrained()`'s own
+ * request and `attemptSalvage`'s follow-up) so the two never drift into two
+ * wordings for the same failure, and so both can hand the same object to
+ * `result.markUnanswered()` before using it.
+ */
+function reasoningOnlyFailure(profile, result) {
+  const { message, hint } = reasoningOnlyRefusal(profile);
+  const failure = new UserError(message, { reason: 'reasoning-only', hint });
+  failure.answer = { reasoning: result.reasoning, content: result.content };
+  return failure;
+}
+
+/**
  * The request with no grammar behind it — the shape asked for in prose.
  *
  * **The default, and still the fallback after
@@ -209,16 +280,25 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // reasoning channel legitimately carries the answer (see `client.mjs`'s
     // `requireAnswer` docstring), so that branch has no counterpart check.
     if (isReasoningOnly(result)) {
-      const { message, hint } = reasoningOnlyRefusal(profile);
-      const failure = new UserError(message, { reason: 'reasoning-only', hint });
-      failure.answer = { reasoning: result.reasoning, content: result.content };
+      const failure = reasoningOnlyFailure(profile, result);
+      // The ledger already closed this physical attempt `answered` (`settle()`
+      // ran inside `chatCompletion` before this check ever saw the result) —
+      // reclassify it now, before the failure propagates, or a run that
+      // later succeeds on a later attempt ends up with two `answered`
+      // entries in one `attempts[]` array. A pre-existing instance of the
+      // same bug `attemptSalvage` below is fixed for (OAI-204 review-ladder,
+      // `codex-adversarial`): this was never reclassified either, even
+      // before salvage existed.
+      result.markUnanswered(failure);
       throw failure;
     }
     return { result, structured: false, ...built };
   } catch (fallbackError) {
-    // Salvage tier 2: one bounded attempt to conclude from whatever
-    // reasoning the deadline cut short, before giving up. `built` is undefined
-    // when the ladder itself refused (nothing streamed, nothing to salvage).
+    // Salvage tier 2: at most two bounded attempts (trimmed, then untrimmed
+    // once — see `trySalvage`'s own docstring for why) to conclude from
+    // whatever reasoning the deadline cut short, before giving up. `built` is
+    // undefined when the ladder itself refused (nothing streamed, nothing to
+    // salvage).
     const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
     if (salvaged) return salvaged;
     throw withLedger(fallbackError, ledger);
@@ -242,6 +322,60 @@ const SALVAGE_MAX_MS = 300_000;
 const SALVAGE_MIN_REASONING_CHARS = 500;
 
 /**
+ * How much of the model's own reasoning gets fed back into a salvage
+ * follow-up, in characters, when trimming is scoped in (see
+ * SALVAGE_SMALL_RESERVE_REASONS below).
+ *
+ * ~6,000 chars total (1,500 head + 4,500 tail) — derived, not picked blind:
+ * TOKEN_RESERVE_TOKENS (2,048), the budget already shown by its own 17-run
+ * sample to be enough room for a real answer, converted through
+ * REASONING_CHARS_PER_TOKEN (3.0, stream-collect.mjs's own reasoning-text
+ * ratio) gives 6,144 chars; rounds down to a clean 6,000. The follow-up's
+ * prior context is sized to the same order of magnitude as the budget
+ * already proven to work, not to the 45,000-47,000+ chars measured failing
+ * overnight (2026-08-23/24, bench/2026-08-23-oai19-run-notes.md) — that size
+ * is the thing this trial exists to test as the actual lever.
+ *
+ * Split 25/75, tail the larger share: the head keeps the model's initial
+ * framing, the tail keeps what it was about to conclude when the reserve cut
+ * it off — closer to the actual defect than the framing is. At 12x
+ * SALVAGE_MIN_REASONING_CHARS (500), well above the floor for even
+ * attempting salvage at all.
+ *
+ * Named risk, unresolved: a fixed trim can discard the one span — likely
+ * mid-transcript — that anchors the eventual finding. Not measured against a
+ * head+tail shape yet, only against feeding back everything; this is the
+ * first trial, and TOKEN_RESERVE_TOKENS/SALVAGE_MAX_MS stay unchanged so
+ * transcript size is the only variable it isolates.
+ *
+ * Finding 2 (OAI-204 amendment, `codex-adversarial`): that isolation claim was
+ * already weaker than stated, and the untrimmed fallback (see `trySalvage`)
+ * makes it weaker still. Head+tail trimming changes both how much AND which
+ * content survives, so a trim failure alone can't distinguish "size was the
+ * lever" from "the discarded middle held the answer" — and now that a
+ * fallback exists, a trim SUCCESS is ambiguous too, between "the trim rescued
+ * it" and "the untrimmed fallback rescued it after the trim failed". Reading
+ * a run's own `salvageTrim.applied` is the only way to tell which happened;
+ * the 25/75 head/tail split itself remains a stated, unmeasured choice, not a
+ * derived one beyond the total budget. No clean size-only isolation exists in
+ * this design.
+ */
+const SALVAGE_TRIM_HEAD_CHARS = 1_500;
+const SALVAGE_TRIM_TAIL_CHARS = 4_500;
+
+/**
+ * The two failure reasons whose salvage reserve is already the smaller flat
+ * TOKEN_RESERVE_TOKENS (see salvageReserve below) — and, per OAI-204, the
+ * only two whose fed-back reasoning gets trimmed. `deadline-timeout` keeps
+ * both its full built.reserve and its full untouched reasoning: that
+ * combination was never observed failing to rescue in the measured data, so
+ * it is deliberately left alone rather than changed on the same trial as the
+ * other two. One Set, reused by both branches, so the two decisions cannot
+ * silently drift apart.
+ */
+const SALVAGE_SMALL_RESERVE_REASONS = new Set(['token-reserve-cutoff', 'reasoning-only']);
+
+/**
  * The reasons `trySalvage` will attempt to recover from
  * (`deadline-timeout`, `token-reserve-cutoff`, `reasoning-only`). The first
  * two leave the model actively working when the cut happens; `reasoning-only`
@@ -254,63 +388,33 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
 const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 'reasoning-only']);
 
 /**
- * Ask the model to conclude from reasoning a cut short, instead of
- * discarding it (salvage tier 2).
+ * One physical salvage follow-up: build the messages carrying `reasoningText`
+ * back as the model's own prior assistant turn, check the grown prompt
+ * against the window, and send it. Extracted out of `trySalvage` (OAI-204
+ * amendment, Finding 1) so it can be called twice — trimmed, then untrimmed
+ * on the trimmed attempt's failure — with each call computing its own
+ * `budget`/`estimatedTokens` via its own `checkContextBudget`/`estimateTokens`
+ * call, never reusing another attempt's (already true for the single attempt
+ * before this change; this just keeps it per-attempt, not shared, now that
+ * there can be two).
  *
- * **Only a reason in `SALVAGE_REASONS`.**
- * **Only substantial reasoning with STRICTLY empty content** — the gate below
- * trims content first and disqualifies anything left over, however short —
- * matching the documented
- * majority shape (findings JSON is emitted only after reasoning completes, per
- * measurement: 87-98% of every completion is reasoning). A cut mid-CONTENT is
- * a different, rarer shape — resuming a
- * truncated JSON array reliably is a harder prompting problem than
- * "conclude from pure reasoning", and is deliberately not attempted here;
- * tier 1 still preserves that answer on the ordinary failure path.
- *
- * **Exactly one attempt, never recursed.** A failure here (including its own
- * deadline) is swallowed — `null` — and the caller falls back to reporting
- * the ORIGINAL `fallbackError`, whose `.answer` (tier 1) is untouched by this
- * having been tried and failed.
- *
- * Returns a result shaped like `unconstrained`'s own success return, tagged
- * `salvaged: true` so nothing downstream can mistake this for an ordinary
- * complete review — `jsonReport` reads that flag explicitly. `budget` and
- * `estimatedTokens` on that return describe the GROWN prompt this function
- * actually sends, never `built`'s stale numbers for the smaller original one —
- * see the re-check below.
- *
- * **`schema` is the follow-up turn's OWN source of truth for the shape, never
- * an assumption that `built.messages` already stated it.** The
- * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
- * appends the same instruction to every rung, schema or no). The
- * `--structured-output` call site does not: its first request relies purely
- * on the `response_format` grammar, which is not text the model can see or
- * recall on a later turn — and reusing that rung's own `schema` here, rather
- * than growing that rung's messages to state it up front, is what avoids
- * resizing a request every other window-budget test is tuned against.
- *
- * **Always findings-first, and said explicitly enough to override whatever the
- * inherited system turn said.** `built.messages`/`first.messages`'
- * unchanged system turn may be `ANALYSIS_FIRST` (`review.mjs`) — the ordering a
- * grammar-constrained rung needs, because that model has no scratchpad of its
- * own. This follow-up sends no grammar at all, so that reasoning does not
- * apply here, but the instruction that assumed it is still sitting in the
- * conversation. Silently embedding a findings-first schema without addressing
- * that would leave two contradictory orderings in one prompt, and a real model
- * is not guaranteed to prefer the later one — it could re-run the very
- * open-ended analysis this follow-up exists to cut short. So the ordering is
- * named and reversed out loud, not left for the model to reconcile.
+ * Returns `{ result, budget, estimatedTokens }` on a genuine answer
+ * (non-empty content) and `null` on anything that does not count as one — an
+ * oversized follow-up refused before it is sent, a follow-up that itself
+ * lands empty-handed (`chatCompletion` succeeding only means the transport
+ * worked, not that the model answered — left unchecked this would return as
+ * a success and fail much later at `requireAnswer`, which tags nothing, so
+ * `isOutage`'s reasonless-failure arm would then read a model repeating its
+ * own quirk on retry as a server outage), or the request itself throwing.
+ * `content`, not `isReasoningOnly`, because a wholly blank follow-up is the
+ * same failure and the follow-up never carries a grammar, so `content` is the
+ * only legitimate answer channel here regardless of whether the original
+ * request was `--structured-output`.
  */
-async function trySalvage(profile, built, schema, shared, send, fallbackError) {
-  if (!SALVAGE_REASONS.has(fallbackError?.reason)) return null;
-  const reasoning = fallbackError.answer?.reasoning?.trim() ?? '';
-  const content = fallbackError.answer?.content?.trim() ?? '';
-  if (reasoning.length < SALVAGE_MIN_REASONING_CHARS || content.length > 0) return null;
-
+async function attemptSalvage(profile, built, schema, shared, send, salvageReserve, reasoningText) {
   const messages = [
     ...built.messages,
-    { role: 'assistant', content: reasoning },
+    { role: 'assistant', content: reasoningText },
     {
       role: 'user',
       content: 'Your previous response was cut off before it finished. Based only on your analysis '
@@ -321,20 +425,6 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
         + schemaInstruction(findingsFirst(schema)),
     },
   ];
-
-  // A `token-reserve-cutoff` already consumed `built.reserve - TOKEN_RESERVE_TOKENS`
-  // tokens of reasoning on the ORIGINAL request — appending that reasoning back
-  // into this follow-up and then re-reserving the full `built.reserve` again
-  // would very likely overrun the window this exact check exists to enforce,
-  // reproducing the original starvation one request later. `reasoning-only` is
-  // the same shape by a different route: the model spent most or all of
-  // `built.reserve` producing that reasoning before the stream ended cleanly,
-  // so it gets the same small reserve. `deadline-timeout` carries no such
-  // consumption and keeps its existing, previously re-verified `built.reserve`
-  // ceiling unchanged.
-  const salvageReserve = ['token-reserve-cutoff', 'reasoning-only'].includes(fallbackError.reason)
-    ? TOKEN_RESERVE_TOKENS
-    : built.reserve;
 
   // The grown prompt must clear the SAME window check every other request
   // path clears before going out — appending the partial reasoning back in as
@@ -372,22 +462,141 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
       expiresAt: performance.now() + SALVAGE_MAX_MS,
       maxAttempts: 1,
     });
-    // A follow-up that itself lands empty-handed is a salvage FAILURE, not a
-    // success — `chatCompletion` succeeding only means the transport worked.
-    // Left unchecked, this returns as `salvaged: true` and fails much later at
-    // `requireAnswer`, which tags nothing (only `unconstrained()`'s own throw
-    // site does), so `isOutage`'s reasonless-failure arm then reads a model
-    // repeating its own quirk on retry as a server outage — the one thing
-    // `SALVAGE_REASONS` naming this reason exists to prevent. `content`, not
-    // `isReasoningOnly`, because a wholly blank follow-up is the same failure
-    // and the follow-up never carries a grammar (see this function's docstring),
-    // so `content` is the only legitimate answer channel here regardless of
-    // whether the original request was `--structured-output`.
-    if (!result.content.trim()) return null;
-    return { result, structured: false, ...built, budget, estimatedTokens, salvaged: true };
+    if (!result.content.trim()) {
+      // Same reclassification as `unconstrained()`'s own reasoning-only
+      // check above: `settle()` already closed this physical attempt
+      // `answered` inside `chatCompletion`, and it is about to be discarded
+      // as unusable — reclassify it here, before returning, or the losing
+      // salvage attempt keeps `answered` in the ledger beside whichever
+      // attempt actually wins.
+      result.markUnanswered(reasoningOnlyFailure(profile, result));
+      return null;
+    }
+    return { result, budget, estimatedTokens };
   } catch {
     return null;
   }
+}
+
+/**
+ * Ask the model to conclude from reasoning a cut short, instead of
+ * discarding it (salvage tier 2).
+ *
+ * **Only a reason in `SALVAGE_REASONS`.**
+ * **Only substantial reasoning with STRICTLY empty content** — the gate below
+ * trims content first and disqualifies anything left over, however short —
+ * matching the documented
+ * majority shape (findings JSON is emitted only after reasoning completes, per
+ * measurement: 87-98% of every completion is reasoning). A cut mid-CONTENT is
+ * a different, rarer shape — resuming a
+ * truncated JSON array reliably is a harder prompting problem than
+ * "conclude from pure reasoning", and is deliberately not attempted here;
+ * tier 1 still preserves that answer on the ordinary failure path.
+ *
+ * **At most two attempts, never recursed further: trimmed, then untrimmed
+ * once.** The trimmed follow-up regressed the one known-working case
+ * (OAI-204 amendment, review-ladder pass 1, `codex-adversarial`) — confirmed
+ * by direct replay, see the amendment section of
+ * plans/oai-204-salvage-reasoning-trim.md — so a trimmed attempt's failure
+ * gets exactly one further attempt with the reasoning fed back untouched
+ * (the exact pre-OAI-204 behavior), but only when trimming actually removed
+ * something (`trim.applied` — nothing to fall back from otherwise, and
+ * `deadline-timeout`'s own attempt is already untrimmed, so this never fires
+ * for it). A failure of both attempts (or of the single attempt when
+ * trimming never applied) is swallowed — `null` — and the caller falls back
+ * to reporting the ORIGINAL `fallbackError`, whose `.answer` (tier 1) is
+ * untouched by any of this having been tried and failed.
+ *
+ * **Worst-case cost, stated plainly:** a case that fails both attempts now
+ * spends up to 2×`SALVAGE_MAX_MS` (600s) rather than 300s on the salvage
+ * phase alone, on top of the original request. Accepted — the alternative
+ * (no fallback) is the regression this amendment measured directly.
+ *
+ * Returns a result shaped like `unconstrained`'s own success return, tagged
+ * `salvaged: true` so nothing downstream can mistake this for an ordinary
+ * complete review — `jsonReport` reads that flag explicitly. `result`,
+ * `budget` and `estimatedTokens` on that return are ALL sourced from the
+ * SAME `attemptSalvage` bundle — whichever attempt's `result.content` was
+ * actually non-empty and so became the answer — never a mix between the
+ * trimmed attempt's numbers and the fallback's: `checkContextBudget` can pass
+ * for both attempts (the trimmed one included, even though it goes on to
+ * return empty content), so "whichever check succeeded" does not by itself
+ * pin one attempt once there are two. `salvageTrim.applied` and
+ * `salvageTrim.retainedChars` are set from the WINNING bundle's own
+ * situation too: `retainedChars` is `trim.retainedChars` when the trimmed
+ * attempt won, and `originalChars` — the model received the full untrimmed
+ * text — when the fallback did.
+ *
+ * **`schema` is the follow-up turn's OWN source of truth for the shape, never
+ * an assumption that `built.messages` already stated it.** The
+ * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
+ * appends the same instruction to every rung, schema or no). The
+ * `--structured-output` call site does not: its first request relies purely
+ * on the `response_format` grammar, which is not text the model can see or
+ * recall on a later turn — and reusing that rung's own `schema` here, rather
+ * than growing that rung's messages to state it up front, is what avoids
+ * resizing a request every other window-budget test is tuned against.
+ *
+ * **Always findings-first, and said explicitly enough to override whatever the
+ * inherited system turn said.** `built.messages`/`first.messages`'
+ * unchanged system turn may be `ANALYSIS_FIRST` (`review.mjs`) — the ordering a
+ * grammar-constrained rung needs, because that model has no scratchpad of its
+ * own. This follow-up sends no grammar at all, so that reasoning does not
+ * apply here, but the instruction that assumed it is still sitting in the
+ * conversation. Silently embedding a findings-first schema without addressing
+ * that would leave two contradictory orderings in one prompt, and a real model
+ * is not guaranteed to prefer the later one — it could re-run the very
+ * open-ended analysis this follow-up exists to cut short. So the ordering is
+ * named and reversed out loud, not left for the model to reconcile.
+ */
+async function trySalvage(profile, built, schema, shared, send, fallbackError) {
+  if (!SALVAGE_REASONS.has(fallbackError?.reason)) return null;
+  const reasoning = fallbackError.answer?.reasoning?.trim() ?? '';
+  const content = fallbackError.answer?.content?.trim() ?? '';
+  if (reasoning.length < SALVAGE_MIN_REASONING_CHARS || content.length > 0) return null;
+
+  const trim = trimReasoning(reasoning, { apply: SALVAGE_SMALL_RESERVE_REASONS.has(fallbackError.reason) });
+
+  // A `token-reserve-cutoff` already consumed `built.reserve - TOKEN_RESERVE_TOKENS`
+  // tokens of reasoning on the ORIGINAL request — appending that reasoning back
+  // into this follow-up and then re-reserving the full `built.reserve` again
+  // would very likely overrun the window this exact check exists to enforce,
+  // reproducing the original starvation one request later. `reasoning-only` is
+  // the same shape by a different route: the model spent most or all of
+  // `built.reserve` producing that reasoning before the stream ended cleanly,
+  // so it gets the same small reserve. `deadline-timeout` carries no such
+  // consumption and keeps its existing, previously re-verified `built.reserve`
+  // ceiling unchanged. Both attempts (trimmed and, on fallback, untrimmed)
+  // share this same reserve — only the fed-back reasoning text differs
+  // between them.
+  const salvageReserve = SALVAGE_SMALL_RESERVE_REASONS.has(fallbackError.reason)
+    ? TOKEN_RESERVE_TOKENS
+    : built.reserve;
+
+  const trimmed = await attemptSalvage(profile, built, schema, shared, send, salvageReserve, trim.text);
+  if (trimmed) {
+    return {
+      result: trimmed.result, structured: false, ...built, budget: trimmed.budget, estimatedTokens: trimmed.estimatedTokens,
+      salvaged: true,
+      salvageTrim: { applied: trim.applied, originalChars: trim.originalChars, retainedChars: trim.retainedChars },
+    };
+  }
+
+  // Finding 1: nothing to fall back from if the reasoning was never trimmed
+  // in the first place — resending the identical text a second time would
+  // just repeat the same failure for no gain.
+  if (!trim.applied) return null;
+
+  const fallback = await attemptSalvage(profile, built, schema, shared, send, salvageReserve, reasoning);
+  if (!fallback) return null;
+  return {
+    result: fallback.result, structured: false, ...built, budget: fallback.budget, estimatedTokens: fallback.estimatedTokens,
+    salvaged: true,
+    // The model received the FULL untrimmed text on this attempt, so the
+    // envelope must say so — never the stale `trim.retainedChars` (6,000)
+    // computed before either attempt ran.
+    salvageTrim: { applied: false, originalChars: trim.originalChars, retainedChars: trim.originalChars },
+  };
 }
 
 /**

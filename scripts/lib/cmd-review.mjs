@@ -142,7 +142,7 @@ async function reviewFlow(options, instructions, terminated) {
 
   // A review is the long silent run this exists for: whole-file passes measured
   // 38–245s before, and a cold prefill alone is minutes.
-  const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged } = await withProgress((onProgress) =>
+  const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress((onProgress) =>
     requestFindings(profile, { ...plan, onProgress }).catch((error) => {
       throw named(error);
     }),
@@ -162,6 +162,7 @@ async function reviewFlow(options, instructions, terminated) {
     hunksOnly,
     skipped,
     salvaged: Boolean(salvaged),
+    salvageTrim: salvageTrim ?? null,
     // What was ASKED for, beside `structured` which is what was obtained. Only
     // the pair distinguishes "fell back after a refusal" from "never wanted a
     // schema" — since 2026-08-04 the second is the ordinary case, and the two

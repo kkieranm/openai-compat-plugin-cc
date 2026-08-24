@@ -95,9 +95,17 @@ test('a reasoning-only reply intercepted before requireAnswer still carries the 
     const report = JSON.parse(result.stdout);
     assert.equal(report.error, true);
     assert.equal(report.reason, 'reasoning-only');
+    // `outcome: 'failed'` / `reason: 'reasoning-only'`, not `'answered'` /
+    // `null`: the ledger closes every physical attempt `answered` on
+    // transport success (`settle()` runs before this rejection is ever
+    // judged), and `unconstrained()`'s own reasoning-only check reclassifies
+    // it via `result.markUnanswered()` before the failure propagates — the
+    // fix this test now pins rather than the pre-fix bug it used to pin
+    // (an `answered` entry for a request whose content this same envelope's
+    // `reason` field says was never usable).
     assert.deepEqual(
       report.attempts.map(({ index, outcome, reason, serverResponded }) => ({ index, outcome, reason, serverResponded })),
-      [{ index: 1, outcome: 'answered', reason: null, serverResponded: true }],
+      [{ index: 1, outcome: 'failed', reason: 'reasoning-only', serverResponded: true }],
     );
   } finally {
     await server.close();

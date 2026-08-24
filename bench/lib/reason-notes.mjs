@@ -161,8 +161,9 @@ export function reasonNotes(sawReason) {
       + ' was actively generating reasoning and spending the request\'s own `max_tokens` pool on it, so the'
       + ' watchdog disposed the stream before the pool ran out entirely, leaving no room to write an'
       + ' answer. It is unrelated to `*-timeout` reasons and is never retried — the follow-up "conclude'
-      + ' from what you have" attempt (`trySalvage`) already ran and failed; a row carrying this reason'
-      + ' here is one that attempt could not recover.',
+      + ' from what you have" attempt (`trySalvage`, up to two tries since OAI-204: trimmed, then'
+      + ' untrimmed once) already ran and failed; a row carrying this reason here is one neither attempt'
+      + ' could recover.',
       '',
     );
   }

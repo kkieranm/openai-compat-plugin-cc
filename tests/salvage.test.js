@@ -12,6 +12,7 @@ import { createRepo, reviewScenario, runCompanion, startFakeServer, writeConfig 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findingsFirst, schemaInstruction } from '../scripts/lib/structured.mjs';
+import { estimateTokens } from '../scripts/lib/context-guard.mjs';
 
 const DRIP_MS = 40;
 /** Comfortably over SALVAGE_MIN_REASONING_CHARS (500) before the cap fires. */
@@ -33,6 +34,31 @@ function finishFrame(content) {
       object: 'chat.completion.chunk',
       model: 'test-model',
       choices: [{ index: 0, delta: { content }, finish_reason: null }],
+    })}\n\n`,
+    `data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    })}\n\n`,
+    'data: [DONE]\n\n',
+  ].join('');
+}
+
+/**
+ * A clean stream that carries real `reasoning_content` and genuinely empty
+ * `content` — the actual reasoning-only shape, distinct from `finishFrame('')`
+ * (no reasoning at all), which never reaches this bug: with BOTH channels
+ * empty, `finishAnswer` refuses it as `BLANK_COMPLETION` before
+ * `attemptSalvage` ever sees a result to judge.
+ */
+function reasoningOnlyEmptyContentFrames(reasoningText) {
+  return [
+    `data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: { reasoning_content: reasoningText }, finish_reason: null }],
     })}\n\n`,
     `data: ${JSON.stringify({
       id: 'chatcmpl-test',
@@ -443,6 +469,614 @@ test('a salvage follow-up grown past the context window is refused, not sent unc
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
   } finally {
     stop();
+    await server.close();
+  }
+});
+
+// --- OAI-204: the salvage reasoning trim ---------------------------------
+//
+// `token-reserve-cutoff` and `reasoning-only` get the smaller flat
+// TOKEN_RESERVE_TOKENS reserve AND (as of OAI-204) a head+tail trim of the
+// reasoning fed back into the follow-up; `deadline-timeout` keeps both its
+// full reserve and its full untouched reasoning, unchanged by this trial.
+//
+// A WIDE context window (matching tests/token-reserve-cutoff.test.js's own
+// WIDE_CONTEXT_LENGTH/cutoffChars derivation) is needed for all three
+// fixtures below, not just the token-reserve-cutoff one: without it, any
+// reasoning stream over ~6,144 chars on the DEFAULT 8192-token window would
+// get cut and reclassified as token-reserve-cutoff before it could exhibit
+// the OTHER two reasons this trial cares about. The fixture generator is
+// copied locally rather than imported from tests/token-reserve-cutoff.test.js
+// — importing that file as a module would re-register its own tests a
+// second time under node's test runner.
+const WIDE_CONTEXT_LENGTH = 51_200; // reserve 25600, cutoffChars (25600-2048)*3.0 = 70,656
+const WIDE_CHUNKS_PAST_THRESHOLD = 1_450; // 1,450 * 51 = 73,950 chars, clears 70,656 with margin —
+  // a safety margin on what's SENT, not what's actually captured: the watchdog stops the stream
+  // as soon as it crosses the threshold, not at a round chunk boundary.
+
+const INDEXED_CHUNK_WIDTH = 51; // same width as REASONING_CHUNK, so the chunk-count arithmetic
+  // below (WIDE_CHUNKS_PAST_THRESHOLD, REASONING_ONLY_CHUNKS, cutoffChars) needs no change.
+
+/**
+ * A non-repeating stand-in for REASONING_CHUNK (Finding 3, OAI-204 amendment,
+ * `codex-adversarial`): every chunk embeds its own index, so no two windows
+ * of the streamed reasoning are ever identical the way REASONING_CHUNK's
+ * fixed 51-char period is — a periodic fixture can't tell a correctly-sliced
+ * head/tail from one shifted by exactly the period (or any multiple of it),
+ * which the old head/tail slice-plus-substring assertions could not catch.
+ * No whitespace at either end, so accumulating many of these and calling
+ * `.trim()` on the result (as `trySalvage` itself does) is a no-op — the
+ * reconstruction below can rely on exact multiples of this width. Used only
+ * by the two trim tests below, which assert the ENTIRE captured message
+ * against an exact reconstruction rather than slice-plus-substring checks
+ * (also Finding 3).
+ */
+function indexedChunk(i) {
+  return `chunk${String(i).padStart(6, '0')}`.padEnd(INDEXED_CHUNK_WIDTH, '_');
+}
+
+function indexedReasoningFrame(i) {
+  return `data: ${JSON.stringify({
+    id: 'chatcmpl-test',
+    object: 'chat.completion.chunk',
+    model: 'test-model',
+    choices: [{ index: 0, delta: { reasoning_content: indexedChunk(i) }, finish_reason: null }],
+  })}\n\n`;
+}
+
+/**
+ * Reconstructs the exact reasoning text a fixture built from
+ * `indexedReasoningFrame` produced, given the exact captured length reported
+ * back as `salvageTrim.originalChars` — every complete chunk is exactly
+ * INDEXED_CHUNK_WIDTH chars and SSE frames are parsed whole, never split
+ * mid-delta, so `originalChars` is always an exact multiple of that width.
+ */
+function reconstructIndexedReasoning(originalChars) {
+  const chunkCount = originalChars / INDEXED_CHUNK_WIDTH;
+  assert.equal(Number.isInteger(chunkCount), true, 'captured reasoning must be a whole number of indexed chunks');
+  return Array.from({ length: chunkCount }, (_, i) => indexedChunk(i)).join('');
+}
+
+/** A server whose FIRST request streams reasoning synchronously past the
+ * token-reserve-cutoff threshold on a WIDE_CONTEXT_LENGTH window; every later
+ * request gets `onFollowUp` instead — the salvage attempt. */
+function wideReasoningPastThresholdThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    for (let i = 0; i < WIDE_CHUNKS_PAST_THRESHOLD; i += 1) response.write(indexedReasoningFrame(i));
+    // No end() — the reserve watchdog is what stops this stream, not the server.
+  };
+}
+
+test('a long token-reserve-cutoff reasoning is trimmed to head+tail before the salvage follow-up', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from trimmed reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, true);
+    assert.equal(envelope.salvageTrim.retainedChars, 6_000);
+    // Bound check, not exact — the watchdog cuts at threshold-crossing, not a
+    // round chunk boundary.
+    assert.ok(envelope.salvageTrim.originalChars >= 70_656);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    const sent = chatRequests[1].body.messages[2].content;
+    const full = reconstructIndexedReasoning(envelope.salvageTrim.originalChars);
+    const marker = `\n\n[...${envelope.salvageTrim.originalChars - 6_000} characters of reasoning omitted...]\n\n`;
+    assert.equal(sent, `${full.slice(0, 1_500)}${marker}${full.slice(-4_500)}`);
+  } finally {
+    await server.close();
+  }
+});
+
+const REASONING_ONLY_CHUNKS = 400; // 400 * 51 = 20,400 chars: well over the 6,000-char trim budget,
+  // and well under WIDE_CONTEXT_LENGTH's 70,656 reserve-cutoff threshold, so the stream finishes
+  // cleanly — reclassified as token-reserve-cutoff is exactly what this fixture must avoid.
+
+/** A server whose FIRST request streams reasoning past the trim budget, then
+ * ends the stream CLEANLY (finish_reason: 'stop') with empty content — a
+ * reasoning-only failure, never a cutoff. Every later request gets
+ * `onFollowUp` instead — the salvage attempt. */
+function reasoningOnlyThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    for (let i = 0; i < REASONING_ONLY_CHUNKS; i += 1) response.write(indexedReasoningFrame(i));
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    })}\n\n`);
+    response.write('data: [DONE]\n\n');
+    response.end();
+  };
+}
+
+test('a long reasoning-only reasoning is trimmed to head+tail before the salvage follow-up', async () => {
+  const handler = reasoningOnlyThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from trimmed reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, true);
+    assert.equal(envelope.salvageTrim.retainedChars, 6_000);
+    assert.ok(envelope.salvageTrim.originalChars >= 6_000);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    const sent = chatRequests[1].body.messages[2].content;
+    const full = reconstructIndexedReasoning(envelope.salvageTrim.originalChars);
+    const marker = `\n\n[...${envelope.salvageTrim.originalChars - 6_000} characters of reasoning omitted...]\n\n`;
+    assert.equal(sent, `${full.slice(0, 1_500)}${marker}${full.slice(-4_500)}`);
+  } finally {
+    await server.close();
+  }
+});
+
+const DEADLINE_BURST_CHUNKS = 200; // 200 * 51 = 10,200 chars, written SYNCHRONOUSLY (no interval, no
+  // await) so it all accumulates well before a 1-second --max-seconds deadline fires. Comfortably
+  // over the 6,000-char trim budget, and comfortably under WIDE_CONTEXT_LENGTH's 70,656
+  // reserve-cutoff threshold, so this reliably classifies as deadline-timeout, never
+  // token-reserve-cutoff — the DRIP_MS-interval fixture above only manages ~1,300 chars in 1s,
+  // nowhere near enough to exercise "not trimmed" on a real >6,000-char transcript.
+function deadlineBurstThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    for (let i = 0; i < DEADLINE_BURST_CHUNKS; i += 1) response.write(reasoningFrame());
+    // No end() — the --max-seconds deadline is what stops this stream.
+  };
+}
+
+test('a long deadline-timeout reasoning is fed back to the salvage follow-up untouched', async () => {
+  const handler = deadlineBurstThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from untrimmed reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, false);
+    assert.equal(envelope.salvageTrim.originalChars, envelope.salvageTrim.retainedChars);
+    assert.ok(envelope.salvageTrim.originalChars > 6_000, 'must actually exceed the trim budget to be a real test of "not trimmed"');
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    const sent = chatRequests[1].body.messages[2].content;
+    assert.equal(sent.length, envelope.salvageTrim.originalChars);
+    assert.ok(!sent.includes('characters of reasoning omitted'));
+  } finally {
+    await server.close();
+  }
+});
+
+test('salvageTrim is null on an ordinary non-salvaged run', async () => {
+  const { dir, server, configPath } = await reviewScenario((record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({ findings: [], summary: 'nothing found' })));
+    response.end();
+  });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, false);
+    assert.equal(envelope.salvageTrim, null);
+  } finally {
+    await server.close();
+  }
+});
+
+// --- OAI-204 amendment (review-ladder pass 1, `codex-adversarial` and
+// `codex-plain`): the untrimmed fallback (Finding 1), the trim's expansion
+// guard (Finding 4), and its surrogate-pair safety (Finding 5). -----------
+
+test('a trimmed salvage attempt that succeeds directly never fires the untrimmed fallback', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from trimmed reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, true);
+    assert.equal(envelope.salvageTrim.retainedChars, 6_000, 'unchanged from the pre-amendment behavior');
+    assert.equal(
+      server.requests.filter((r) => r.url.includes('/chat/completions')).length,
+      2,
+      'the trimmed attempt answered — no untrimmed fallback attempt should ever fire',
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test('a trimmed salvage attempt that lands empty falls back to one untrimmed attempt, and the envelope says so', async () => {
+  // Request 2 (the trimmed follow-up) lands empty-handed — a salvage FAILURE
+  // per `attemptSalvage`'s own contract (`chatCompletion` succeeding only
+  // means the transport worked, not that the model answered). Request 3 (the
+  // untrimmed fallback) answers for real.
+  let followUpCount = 0;
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    followUpCount += 1;
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    if (followUpCount === 1) {
+      // The actual bug shape (Codex, OAI-204 review-ladder pass, mid-fix
+      // review): a clean stream that answers with real reasoning_content and
+      // genuinely empty content — never `finishFrame('')`, which carries no
+      // reasoning either and so never reaches `attemptSalvage`'s content
+      // check at all (`finishAnswer` refuses a reply with BOTH channels
+      // empty as BLANK_COMPLETION before chatCompletion even returns).
+      response.write(reasoningOnlyEmptyContentFrames('reasoning but no answer on this attempt'));
+      response.end();
+      return;
+    }
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from the untrimmed fallback' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.findings[0].summary, 'concluded from the untrimmed fallback');
+
+    // The full ledger sequence — the bug this fixture was rewritten to
+    // reproduce (Codex, OAI-204 review-ladder): the losing trimmed attempt
+    // must NOT keep the `answered` outcome `settle()` gave it before its
+    // empty content was judged unusable, or `bench/lib/attempt-rows.mjs`'s
+    // `answeringAttempt()` (first `outcome === 'answered'` match) would pick
+    // the loser instead of the untrimmed fallback that actually answered.
+    assert.equal(envelope.attempts.length, 3, 'original + the failed trimmed attempt + the untrimmed fallback attempt');
+    assert.equal(
+      envelope.attempts.filter((a) => a.outcome === 'answered').length,
+      1,
+      'exactly one attempt answers — the invariant answeringAttempt() depends on',
+    );
+    assert.equal(envelope.attempts[0].outcome, 'failed');
+    assert.equal(envelope.attempts[0].reason, 'token-reserve-cutoff');
+    assert.equal(envelope.attempts[1].outcome, 'failed', 'the losing trimmed salvage attempt');
+    assert.equal(envelope.attempts[1].reason, 'reasoning-only');
+    assert.equal(envelope.attempts[2].outcome, 'answered', 'the winning untrimmed fallback attempt');
+    assert.equal(envelope.attempts[2].reason, null);
+
+    // The field-attribution fix the amendment's round-2 review required: the
+    // FALLBACK, not the trim, is what actually answered — the envelope must
+    // say so, never the stale trimmed-attempt numbers. This is the mutation
+    // target for that fix: mutate `salvageTrim` back to always reading
+    // `trim.retainedChars` regardless of which attempt succeeded, and this
+    // assertion catches it (`retainedChars` would read 6,000 instead of the
+    // full length).
+    assert.equal(envelope.salvageTrim.applied, false);
+    assert.equal(envelope.salvageTrim.retainedChars, envelope.salvageTrim.originalChars);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    assert.equal(chatRequests.length, 3, 'original + the failed trimmed attempt + the untrimmed fallback attempt');
+    const full = reconstructIndexedReasoning(envelope.salvageTrim.originalChars);
+    assert.equal(
+      chatRequests[2].body.messages[2].content,
+      full,
+      'the fallback attempt must carry the reasoning back FULL and untrimmed',
+    );
+
+    // `estimatedTokens` must be the THIRD request's own — a stale
+    // trimmed-attempt figure would otherwise pass every other assertion here
+    // undetected.
+    const thirdMessages = chatRequests[2].body.messages;
+    const expectedEstimatedTokens = estimateTokens(thirdMessages.map((m) => m.content).join('\n'));
+    assert.equal(envelope.estimatedTokens, expectedEstimatedTokens);
+  } finally {
+    await server.close();
+  }
+});
+
+test('a salvage that fails on both the trimmed AND the untrimmed fallback attempts falls back to the ordinary failure report', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    // Both follow-up attempts fail fast (a malformed body) rather than a real
+    // timeout, which would cost the full salvage budget twice for no test
+    // value — this exercises the identical fallback-exhausted branch either way.
+    response.writeHead(500, { 'content-type': 'application/json' });
+    response.end('not json');
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'token-reserve-cutoff');
+    assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
+    assert.equal(
+      server.requests.filter((r) => r.url.includes('/chat/completions')).length,
+      3,
+      'original + the failed trimmed attempt + the failed untrimmed fallback attempt, never a fourth',
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test('a salvage that fails on both the trimmed AND the untrimmed fallback attempts with empty content marks BOTH ledger entries failed, never answered', async () => {
+  // Distinct from the malformed-body test above: both follow-ups here fail
+  // the same way the fallback test's trimmed attempt does — a clean stream,
+  // real reasoning_content, genuinely empty content — so this exercises
+  // `markUnanswered` firing twice in one run, on top of the original
+  // failure, rather than once.
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(reasoningOnlyEmptyContentFrames('still no answer on this attempt either'));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    // The ORIGINAL failure is what propagates once both salvage attempts
+    // fail — never the reasoning-only reason either salvage attempt itself
+    // carried.
+    assert.equal(envelope.reason, 'token-reserve-cutoff');
+    assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    assert.equal(chatRequests.length, 3, 'original + the failed trimmed attempt + the failed untrimmed fallback attempt');
+
+    assert.equal(envelope.attempts.length, 3);
+    assert.equal(
+      envelope.attempts.filter((a) => a.outcome === 'answered').length,
+      0,
+      'no attempt answers — every physical request in this run failed',
+    );
+    assert.equal(envelope.attempts[0].outcome, 'failed');
+    assert.equal(envelope.attempts[0].reason, 'token-reserve-cutoff');
+    assert.equal(envelope.attempts[1].outcome, 'failed', 'the trimmed salvage attempt');
+    assert.equal(envelope.attempts[1].reason, 'reasoning-only');
+    assert.equal(envelope.attempts[2].outcome, 'failed', 'the untrimmed fallback attempt');
+    assert.equal(envelope.attempts[2].reason, 'reasoning-only');
+  } finally {
+    await server.close();
+  }
+});
+
+const NEAR_THRESHOLD_REASONING = 'x'.repeat(6_020); // Finding 4: inside the expansion-prone range
+  // (6,001-6,045 chars) where the omitted-count marker text is longer than what a trim in that
+  // range actually removes — trimReasoning must refuse to "trim" into something longer than the
+  // original rather than pretend a net-negative trim helped.
+
+/** A server whose FIRST request streams a single burst of reasoning, then
+ * finishes CLEANLY with empty content (reasoning-only) — no watchdog, no
+ * deadline, just a reasoning length chosen to land inside Finding 4's
+ * expansion-prone range. Every later request gets `onFollowUp` instead. */
+function nearThresholdReasoningThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: { reasoning_content: NEAR_THRESHOLD_REASONING }, finish_reason: null }],
+    })}\n\n`);
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    })}\n\n`);
+    response.write('data: [DONE]\n\n');
+    response.end();
+  };
+}
+
+test('reasoning just past the trim threshold is left untouched when trimming would expand it (Finding 4)', async () => {
+  const handler = nearThresholdReasoningThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from near-threshold reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.originalChars, 6_020);
+    assert.equal(envelope.salvageTrim.applied, false);
+    assert.equal(envelope.salvageTrim.retainedChars, envelope.salvageTrim.originalChars);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    const sent = chatRequests[1].body.messages[2].content;
+    assert.equal(sent, NEAR_THRESHOLD_REASONING, 'the untouched reasoning, not an "expanded" trim');
+  } finally {
+    await server.close();
+  }
+});
+
+/**
+ * A 10,000-char reasoning transcript with a real (correctly paired) UTF-16
+ * surrogate pair — an emoji — placed to straddle each trim boundary exactly:
+ * one across the head cut (index 1499/1500) and one across the tail cut
+ * (index `length - 4500 - 1` / `length - 4500`). Finding 5 (`codex-plain`):
+ * slice() at either boundary would otherwise split one of these pairs,
+ * leaving an unpaired surrogate in the wire payload.
+ */
+function surrogateReasoning(length) {
+  const units = new Array(length).fill('x');
+  const emoji = '\u{1F600}'; // a real supplementary-plane character = one high + one low surrogate
+  units[1_499] = emoji[0];
+  units[1_500] = emoji[1];
+  const tailBoundary = length - 4_500;
+  units[tailBoundary - 1] = emoji[0];
+  units[tailBoundary] = emoji[1];
+  return units.join('');
+}
+
+const SURROGATE_REASONING = surrogateReasoning(10_000);
+
+function surrogateReasoningThenFollowUp(onFollowUp) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    if (requestCount > 1) {
+      onFollowUp(record, response);
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: { reasoning_content: SURROGATE_REASONING }, finish_reason: null }],
+    })}\n\n`);
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    })}\n\n`);
+    response.write('data: [DONE]\n\n');
+    response.end();
+  };
+}
+
+test('a surrogate pair straddling either trim boundary is never split in the sent follow-up (Finding 5)', async () => {
+  const handler = surrogateReasoningThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from trimmed reasoning' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, true);
+    assert.equal(envelope.salvageTrim.originalChars, 10_000);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    const sent = chatRequests[1].body.messages[2].content;
+
+    // (a) Finding 5's real hazard: a strict OpenAI-compatible server's own
+    // JSON parser rejecting an unpaired surrogate in the wire payload.
+    // Checked by a direct scan, never a JSON.stringify/parse round-trip —
+    // that round-trips a lone surrogate successfully in JavaScript and would
+    // pass even on the unfixed code.
+    const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    assert.equal(UNPAIRED_SURROGATE.test(sent), false);
+
+    // (b)/(c): the reported metadata must describe what was ACTUALLY sent,
+    // never the nominal, unadjusted 1,500/4,500/6,000 constants — measured
+    // directly off the real message (which boundary a fix shifts, and in
+    // which direction, is an implementation choice this test must not
+    // assume) rather than hand-derived from the constants.
+    const markerMatch = sent.match(/\n\n\[\.\.\.(\d+) characters of reasoning omitted\.\.\.\]\n\n/);
+    assert.ok(markerMatch, 'sent message must contain the omitted-count marker');
+    const head = sent.slice(0, markerMatch.index);
+    const tail = sent.slice(markerMatch.index + markerMatch[0].length);
+    assert.equal(
+      envelope.salvageTrim.retainedChars,
+      head.length + tail.length,
+      'retainedChars must reflect the ACTUAL adjusted head+tail length actually sent, not the unadjusted 6,000',
+    );
+    assert.equal(
+      Number(markerMatch[1]),
+      envelope.salvageTrim.originalChars - envelope.salvageTrim.retainedChars,
+      "the marker's own printed count must be exact and independently correct, not merely consistent with retainedChars",
+    );
+  } finally {
     await server.close();
   }
 });

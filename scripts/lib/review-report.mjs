@@ -144,7 +144,7 @@ function parseFields(parsed, result, context) {
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger, salvaged } = context;
+  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger, salvaged, salvageTrim } = context;
   return {
     label: target.label,
     provider: profile.name,
@@ -154,6 +154,15 @@ export function jsonReport(parsed, context) {
     // read as an ordinary complete one, so this rides beside `findings` on
     // every path that can set it, never inferred from anything else here.
     salvaged: Boolean(salvaged),
+    // The trim decision trySalvage made about the OUTGOING follow-up request —
+    // same diagnostic class as budget/estimatedTokens/hunksOnly (a fact about
+    // what WE sent), never the analysisCap class (a fact read off the model's
+    // reply). Deliberately JSON-only, same posture as analysisLength/analysisCap
+    // above. `null` when no salvage happened. `{ applied: false, ... }` when
+    // salvage happened but trimming didn't apply — either the reason
+    // (deadline-timeout) was scoped out, or the reasoning already fit under the
+    // retention budget; this field alone doesn't distinguish the two.
+    salvageTrim: salvageTrim ?? null,
     // What answered, not what was asked for: a server may serve a different
     // build than the id requested, and the run belongs to the one that ran.
     model: result.model || model,

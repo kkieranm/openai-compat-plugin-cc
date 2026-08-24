@@ -133,6 +133,20 @@ forked, with the follow-up's own budget branching on the reason: `token-reserve-
 headroom by construction for the former (the watchdog fires exactly there), and by the same logic
 applied more conservatively for the latter, where only `SALVAGE_MIN_REASONING_CHARS` of consumption is
 actually guaranteed; `deadline-timeout` keeps its original `built.reserve` ceiling unchanged.
+`trimReasoning` (OAI-204) head+tail-trims the reasoning fed back into the follow-up's assistant turn —
+1,500 head chars, 4,500 tail chars, derived from `TOKEN_RESERVE_TOKENS` — scoped by the same
+`SALVAGE_SMALL_RESERVE_REASONS` set the reserve branch above uses, so `deadline-timeout`'s follow-up
+stays untrimmed; measured overnight (OAI-19) that feeding back the full, untrimmed transcript rescues
+almost nothing (1 of 14), which this is a first isolated trial against, not yet a confirmed fix. A
+direct replay (OAI-204 amendment, review-ladder pass 1, `codex-adversarial`) confirmed the trim itself
+regressed the one known-working case, so `trySalvage` now falls back to one further, untrimmed attempt
+when the trimmed one fails and trimming actually applied — `scripts/lib/review-request.mjs`'s
+`attemptSalvage` is the one physical-attempt helper both calls share, and the success envelope's
+`result`/`budget`/`estimatedTokens`/`salvageTrim` are always read from whichever attempt's bundle
+actually answered, never mixed across the two. This also means a trim SUCCESS is now ambiguous between
+"the trim rescued it" and "the untrimmed fallback rescued it" without reading a run's own
+`salvageTrim.applied` — no clean size-only isolation exists in this design, and the 25/75 head/tail
+split remains a stated, unmeasured choice rather than a derived one.
 `client.mjs`'s `isReasoningOnly` is the shared predicate for a clean stream that left content empty
 after real reasoning; `unconstrained()` checks it right after its own `chatCompletion` call succeeds so
 the resulting throw lands in its own catch with `built` already in scope, since `requireAnswer`'s own

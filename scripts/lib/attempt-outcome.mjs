@@ -255,5 +255,28 @@ export function closeHandle(entry, key, dispatched, pend) {
       entry.generationMs = generationMs;
       if (reachedTheModel(error, { prefillMs })) dispatched.add(key);
     },
+    /**
+     * `settle()` already ran and already closed this entry `answered` — a
+     * caller one layer up (review-request.mjs) then judged the content
+     * unusable (reasoning arrived, the answer channel did not) and is about to
+     * try again. This is the correction: the entry becomes the failure it
+     * actually was.
+     *
+     * Deliberately not `fail()`. `fail()` derives `serverResponded` from
+     * `obtainedResponse(error, …)` and decides `dispatched` from
+     * `reachedTheModel(error, …)` — both computed from a transport-boundary
+     * error this case never has, because the request did not fail at the
+     * transport. It answered; the answer was just empty. Recomputing those
+     * from nothing would either invent evidence or silently zero out the real
+     * `serverResponded: true` and the real `prefillMs`/`generationMs` a
+     * genuine response already earned — deleting a real warm-eligibility
+     * signal and a real timing measurement for a request that plainly reached
+     * the model. So this touches only the two fields the correction is
+     * actually about, and leaves everything `settle()` already proved alone.
+     */
+    markUnanswered(error) {
+      entry.outcome = 'failed';
+      entry.reason = error?.reason ?? null;
+    },
   };
 }

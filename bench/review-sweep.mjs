@@ -136,7 +136,11 @@ function invoke(args, cwd = ROOT) {
  * the same discipline `awaitTurn` keeps in `job-queue.mjs`: the cap governs
  * whether to begin, so it is read at the last moment before the thing it
  * authorises. A review already in flight is never truncated — overshoot is
- * bounded by the per-commit `--max-seconds` instead.
+ * bounded by the per-commit `--max-seconds`, with one stated exception:
+ * a salvage follow-up (`trySalvage`) runs on its own `SALVAGE_MAX_MS` budget
+ * outside `--max-seconds` entirely, and since OAI-204 that can be up to two
+ * such attempts (trimmed, then untrimmed) on one commit — up to +600s beyond
+ * `--max-seconds`, not the +300s a reader of this comment alone would expect.
  *
  * **Aborting never shortens the record.** Every commit that was enumerated
  * appears in `entries` whatever happens, because the coverage section's whole
