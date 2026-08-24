@@ -270,20 +270,6 @@ is in its Session footguns section — not here.
   (OAI-59 dropped 2026-08-23, OAI-19 dropped 2026-08-24, each when it shipped/concluded and its body
   left this file.)
 
-- **OAI-205** — `bench/lib/reason-notes.mjs`'s `reasonNotes` has two accuracy gaps against the OAI-204
-  ledger fix, both display/prose-only (nothing dispatches on them): (1) it has no explanatory
-  paragraph for `reasoning-only` now appearing as an ATTEMPT-level reason (`markUnanswered` can now
-  reclassify a losing salvage sub-attempt to `failed`/`reasoning-only`) — it previously only ever
-  covered `reasoning-only` as a run-level/top-level reason; **widened 2026-08-24 by OAI-206's ship:
-  attempt-level reclassification reasons are now THREE codes — `reasoning-only`, `token-exhaustion`
-  (a salvage follow-up's own `length` finish, distinct from the run-level code of the same name),
-  and `empty-answer` (whitespace-only follow-up answer) — none with a `reasonNotes` paragraph;** (2) its `token-reserve-cutoff` paragraph
-  (line 158) asserts "the follow-up... attempt already ran and failed" unconditionally whenever that
-  reason appears anywhere in a run's `attempts[]`, which is now false whenever that attempt's own
-  ledger entry survives alongside a LATER successful salvage or an ineligible-for-salvage run — the
-  attempt remaining in the record no longer implies salvage failed. Found by `codex-plain` at the
-  OAI-204 review-ladder's verdict point, 2026-08-24.
-
 - **OAI-207** — `bench/lib/sweep-outcome.mjs` has two pre-existing gaps, neither introduced by OAI-204
   but both found while auditing its diff: (1) `reported()` reads `report?.salvaged` explicitly but
   never reads the new `salvageTrim` field, so a sweep's outcome classification is blind to whether a
@@ -311,3 +297,18 @@ is in its Session footguns section — not here.
   deliberately declined a structural test ratcheting "every `mkdtempSync` is tracked" while the
   class had one dated instance — a suite-wide fix is the recurrence that decision named, so
   graduation to `tests/structure.test.js` should be re-judged here, not assumed either way.
+
+- **OAI-209** — `scripts/lib/stream-collect.mjs`'s token-reserve-cutoff `UserError` message says the
+  model "spent its whole reply budget reasoning before writing an answer" — false by the mechanism's
+  own design: the watchdog fires at a character threshold chosen to trip BEFORE the pool is spent,
+  preserving the answer reserve, and the report paragraph `bench/lib/reason-notes.mjs` now renders
+  for the same event states that correctly, so the two user-facing accounts of one event contradict.
+  Display-only (`reason: 'token-reserve-cutoff'` is the machine-read discriminator; no test pins the
+  message). The same false claim renders a second way: `bench/lib/sweep-report.mjs`'s `STARVED_WHY`
+  special-cases only `reasoning-only`, so a `starved` `token-reserve-cutoff` entry falls to the
+  generic "the budget was gone" explanation — the report layer repeating the runtime message's
+  overclaim — and the renderer tests cover `reasoning-only`/`token-exhaustion` but not
+  `token-reserve-cutoff`. Dated instances: the `bench/results/review-sweep-2026-08-24*` reports
+  carry both renderings verbatim. Found by `codex-adversarial` at the OAI-205 review-ladder's
+  terminal pass, 2026-08-24; the report-layer sibling by the tracker-entry Codex check that
+  followed it.

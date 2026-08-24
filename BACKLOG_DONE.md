@@ -1,3 +1,33 @@
+## 2026-08-24 — OAI-205 shipped: reasonNotes' paragraphs made true and complete (`314ab82`)
+
+- **OAI-205** — `bench/lib/reason-notes.mjs`'s `reasonNotes` has two accuracy gaps against the OAI-204
+  ledger fix, both display/prose-only (nothing dispatches on them): (1) it has no explanatory
+  paragraph for `reasoning-only` now appearing as an ATTEMPT-level reason (`markUnanswered` can now
+  reclassify a losing salvage sub-attempt to `failed`/`reasoning-only`) — it previously only ever
+  covered `reasoning-only` as a run-level/top-level reason; **widened 2026-08-24 by OAI-206's ship:
+  attempt-level reclassification reasons are now THREE codes — `reasoning-only`, `token-exhaustion`
+  (a salvage follow-up's own `length` finish, distinct from the run-level code of the same name),
+  and `empty-answer` (whitespace-only follow-up answer) — none with a `reasonNotes` paragraph;** (2) its `token-reserve-cutoff` paragraph
+  (line 158) asserts "the follow-up... attempt already ran and failed" unconditionally whenever that
+  reason appears anywhere in a run's `attempts[]`, which is now false whenever that attempt's own
+  ledger entry survives alongside a LATER successful salvage or an ineligible-for-salvage run — the
+  attempt remaining in the record no longer implies salvage failed. Found by `codex-plain` at the
+  OAI-204 review-ladder's verdict point, 2026-08-24.
+  **Shipped 2026-08-24, `314ab82`.** The false cutoff clause is replaced by the three-way outcome
+  hedge (answered-by-follow-up / follow-up-failed / none-sent), the three attempt-level codes each
+  get a gated paragraph, and the per-code `if` blocks fold into one exported `REASON_PARAGRAPHS`
+  table with `reasonNotes` as one loop — glossary-test coverage derived from each entry's resolved
+  prose bytes, plus pairing/uniqueness, all-seven multi-code, and per-label enumeration tests, every
+  new assertion mutation-proved. Along the way the ladder also corrected the
+  `non-retryable-transport` paragraph's ECONNREFUSED host attribution (the errno's origin — host,
+  middlebox, or the local stack itself — is what the code alone does not identify; full-span
+  regression pins), build-scoped its record enumeration, and fixed the same over-attributions in
+  `failure-shape.mjs`/`attempt-rows.mjs` comments and two CLAUDE.md sentences (starved
+  classification is `sweep-outcome.mjs` alone; `serverUnwell`'s drop routes include transport).
+  Ten review-ladder passes, dual-approved at the cap with a declared exempt post-approval batch
+  (the CLAUDE.md `serverUnwell` sentence, the `attempt-rows.mjs` comment); residue filed as
+  OAI-209 (the `stream-collect.mjs` cutoff message contradicts the corrected account).
+
 ## 2026-08-24 — OAI-206 shipped: a losing salvage follow-up is labelled by its reply's shape (`f5addcb`)
 
 - **OAI-206** — `attemptSalvage` (`scripts/lib/review-request.mjs`) labels ANY salvage follow-up that
