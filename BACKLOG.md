@@ -1,24 +1,8 @@
 # Backlog
 
 IDs are stable and global (`OAI-n`, never reused). Item bodies sit in ascending ID order.
-**`tests/backlog-structure.test.js` asserts this on every `npm test`.**
-
-The direction is **"use local LLMs like I use Codex"** —
-[`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Retired header
-narrative (two prior sweep rewrites, and the pre-2026-08-04 "prove the reviewer trustworthy first"
-theme) is archived verbatim at
-[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md).
-
-### Standing methodology note, earned the hard way
-
-Two claims in this file were promoted from a single run per arm, and both were wrong: "context
-dilution is measured" (retracted 2026-07-28 — full account in
-[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md)) and, one paragraph after
-diagnosing that error, "two passes found different defects, so a union would score 2/2" — which
-compared runs from two *different modes* and never reached this file only because it was caught
-first. **N=1 per arm is a lottery ticket, not a comparison, and a pair of cases that differ in more
-than the variable under test measures nothing.** Both are cheap to avoid: `--runs N` exists, and
-`--diff-only` gives a within-case arm.
+**`tests/backlog-structure.test.js` asserts this on every `npm test`.** Project direction, prior
+header narrative and standing methodology notes are in `CLAUDE.md`'s Work tracker section, not here.
 
 ## Items
 

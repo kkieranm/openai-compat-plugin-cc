@@ -461,8 +461,18 @@ string a query-embedded credential could still be sitting inside.
   and the role of sustained load are unresolved): empty completion (`finish_reason: unknown`) or a
   stream drop ~50k chars into reasoning. It can also wedge with a model stuck `GENERATING`
   (fix: `~/.lmstudio/bin/lms unload`). **OAI-20 landed the client-side answer** — those shapes are
-  classified and retried, and every physical attempt is recorded — but whether retry *recovers* the
-  37.5% is a measurement OAI-19 reads off that record, not a settled fact.
+  classified and retried, and every physical attempt is recorded. **OAI-19, the item that would have
+  read whether retry *recovers* the 37.5%, concluded 2026-08-24 without settling it** — both arms
+  exhausted their gate invocations as failures before producing a scalar recall number; see
+  `BACKLOG_DONE.md`.
+- **Two claims about a bench arm were promoted from a single run per arm, and both were wrong**:
+  "context dilution is measured" and, one paragraph after diagnosing that error, "two passes found
+  different defects, so a union would score 2/2" — which compared runs from two *different modes* and
+  never reached print only because it was caught first (full account:
+  `evidence/backlog-header-history.md`). **N=1 per arm is a lottery ticket, not a comparison, and a
+  pair of cases that differ in more than the variable under test measures nothing.** Both are cheap to
+  avoid when running or reading a bench arm: `--runs N` exists, and `--diff-only` gives a within-case
+  arm.
 - A model's usable window is `loaded_context_length`, **not** `max_context_length` — 58112 vs 262144
   for the same model here. `model-info.mjs` encodes this; never "simplify" it to the larger field.
 - Plugin command markdown needs `allowed-tools: Bash(node:*)` or the companion call fails at runtime.
@@ -508,6 +518,12 @@ Domain:
   over this file. A merged item now gets a one-line stub bullet
   (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
   resolved through the ordinary `- **OAI-n**` shape every item uses, never a separate table.
+- The current direction is **"use local LLMs like I use Codex"** —
+  [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Stated here
+  rather than at the top of `BACKLOG.md`, which is data (items), not project context. Retired
+  `BACKLOG.md` header narrative (prior sweep rewrites, the pre-2026-08-04 "prove the reviewer
+  trustworthy first" theme, the N=1-per-arm methodology lesson) is archived verbatim at
+  [`evidence/backlog-header-history.md`](evidence/backlog-header-history.md).
 - `BACKLOG_DONE.md` — completed items, newest first.
 - `BACKLOG_PARKED.md` — items whose **framing** was disproved, not merely deprioritised. Each carries a
   **reopening bar**: what would have to be observed for it to become live again. An item still wanted
