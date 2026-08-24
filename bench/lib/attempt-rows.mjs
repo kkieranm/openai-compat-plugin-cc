@@ -145,8 +145,9 @@ export function attemptRows(results) {
     )),
     // The narrower question, and the only one this record settles about the other
     // end: did headers arrive. NOT whether a peer was reached — `ECONNREFUSED`
-    // reaches a host and lands in the second bucket, a TLS rejection reaches a
-    // peer and lands there too.
+    // draws an active refusal whose origin the code alone does not identify and
+    // lands in the second bucket, a TLS rejection reaches a peer and lands
+    // there too.
     //
     // Seeded, so all three categories print even at zero — see `responseBucket`.
     byServerResponded: tally(failed, ({ attempt }) => responseBucket(attempt), RESPONSE_BUCKETS),

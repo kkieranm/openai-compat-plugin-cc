@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { attemptRows } from '../bench/lib/attempt-rows.mjs';
 import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
-import { RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
+import { REASON_PARAGRAPHS, RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 
-// `Failures by reason` is a bare count table, and three of its codes are ones
+// `Failures by reason` is a bare count table, and several of its codes are ones
 // a reader will misread in exactly the direction the attempt record exists to
 // prevent: `shape-rejected` sits among the delivery failures and is a client
 // stop; `transport` is a retryability verdict rather than a count of server
@@ -15,8 +15,9 @@ import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
 // and reaches nothing.
 //
 // `ECONNREFUSED` must not be paired with `ENOTFOUND` as a code that "reached
-// nothing": a refused connection is a TCP reset FROM the host, so the machine
-// was reached and only no process was listening. Reachability varies across
+// nothing": `ENOTFOUND` provably contacted nothing, while a refused connection
+// is an active refusal whose origin — the host, a middlebox, or the local
+// stack itself — the code alone does not identify. Reachability varies across
 // these codes and the table does not settle it, while a separate and narrower
 // question — was an HTTP RESPONSE obtained — is settled, by `serverResponded`.
 //
@@ -48,9 +49,10 @@ test('shape-rejected is explained as the terminal twin of refused, not as a drop
   // COUNT-TABLE row `| \`shape-rejected\` | 1 |` — proved by gutting the whole
   // paragraph and watching it stay green — so it asserted the failure was
   // counted, never that it was explained.
-  assert.match(paragraphAbout(markdown, 'shape-rejected'), /terminal twin of the `refused` outcome/);
-  assert.match(markdown, /nothing replaced it/, 'the whole point: no replacement was ever dispatched');
-  assert.match(markdown, /not a server dropping requests/);
+  const para = paragraphAbout(markdown, 'shape-rejected');
+  assert.match(para, /terminal twin of the `refused` outcome/);
+  assert.match(para, /nothing replaced it/, 'the whole point: no replacement was ever dispatched');
+  assert.match(para, /not a server dropping requests/);
 });
 
 test('non-retryable-transport claims a retry decision, never that a peer was or was not reached', () => {
@@ -75,13 +77,32 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // "not a reachability finding" of the whole code asserted a fact that is false
   // of part of it.
   assert.doesNotMatch(para, /not a reachability finding/);
-  // Both still NAMED, on opposite sides of
-  // the sentence — `ENOTFOUND` contacted nothing, `ECONNREFUSED` reached a host
-  // that answered with a reset. A regex asserting only presence cannot see which
-  // side each sits on, so it is the axis clause below that carries that, and this
-  // pair only stops the exceptions being generalised away entirely.
+  // Both still NAMED — `ENOTFOUND` as the contacted-nothing case,
+  // `ECONNREFUSED` as the origin-unknown one. A regex asserting only presence
+  // cannot see which role each plays, so it is the paragraph's own clauses that
+  // carry that, and this pair only stops the exceptions being generalised away
+  // entirely.
   assert.match(para, /ENOTFOUND/, 'the exceptions must be named, not generalised away');
   assert.match(para, /ECONNREFUSED/);
+  // The withdrawn draft attributed the refusal's reset to the destination host,
+  // which neither POSIX nor the wire licenses — a local REJECT rule synthesizes
+  // the same errno with nothing ever sent.
+  assert.doesNotMatch(para, /host itself answering/);
+  // Full-span on purpose: a pin ending at "middlebox" let the local-stack
+  // clause — the half that licenses the whole hedge — be deleted unnoticed.
+  assert.match(para, /whose origin — the host, a middlebox in front of it, or the local stack itself — the code alone does not identify/);
+  // The scope qualifier, bound for the same reason: without it the enumeration
+  // reads as a claim about every record the report can render, and a legacy
+  // record from an older build can lack a field.
+  assert.match(para, /An attempt record this build writes carries/);
+  // The enumeration itself, pinned label by label from the export — membership
+  // in the prose, not the join's formatting, which gets ordinary review. One
+  // label is vacuous here: `serverResponded`'s reappears in the closing
+  // sentence, so its containment alone cannot prove the enumeration prints —
+  // the other nine carry that.
+  for (const [, label] of RECORD_FIELDS) {
+    assert.ok(para.includes(label), `the record enumeration lost "${label}"`);
+  }
   // The two axes, kept apart. Removing the response clause would leave the report
   // rendering a `serverResponded` column the prose never accounts for; removing
   // the hedge would claim a reachability finding this record still cannot make.
@@ -276,11 +297,96 @@ test('token-reserve-cutoff is explained as a client-side cutoff, never a server 
   const para = paragraphAbout(markdown, 'token-reserve-cutoff');
   assert.match(para, /\*\*client-side\*\* cutoff, not a server symptom/);
   assert.match(para, /never retried/);
+  // The withdrawn claim: a displayed cutoff row can belong to a salvage-RESCUED
+  // run (the failed original's row survives beside the winning follow-up), so
+  // the paragraph may not assert every row is one nothing recovered.
+  assert.doesNotMatch(para, /neither attempt could recover/);
+  assert.match(para, /may have been answered by a follow-up/);
+  // Conditional on purpose: a follow-up grown past the context window is
+  // refused before any request is sent, so no row exists for it.
+  assert.match(para, /actually sent appears as its own row/);
+  // The watchdog preserves the answer reserve by a conservative character
+  // estimate — it does not run the pool dry, and the paragraph may not say so.
+  assert.match(para, /conservative character threshold intended to preserve the answer reserve/);
+});
+
+test('reasoning-only is explained as a client classification, never a transport failure', () => {
+  const para = paragraphAbout(renderWith('reasoning-only'), 'reasoning-only');
+  assert.match(para, /never a transport failure and never a server drop/);
+  assert.match(para, /no non-whitespace answer content but non-whitespace reasoning/);
+  assert.match(para, /original request.*or a losing salvage follow-up/);
+});
+
+test('token-exhaustion rows are salvage follow-ups, split from the run-level code of the same name', () => {
+  const para = paragraphAbout(renderWith('token-exhaustion'), 'token-exhaustion');
+  assert.match(para, /salvage follow-up that spent its whole budget/);
+  // The split that stops a reader conflating the two: the run-level code's
+  // answering attempt keeps `answered`, so it never lands in this table.
+  assert.match(para, /row stays `answered`/);
+  // The withdrawn attribution: a salvage follow-up accepted on partial
+  // truncated content can itself be the answered attempt a run-level
+  // token-exhaustion describes, so the paragraph may not pin the run-level
+  // code on the original request.
+  assert.doesNotMatch(para, /original request's own exhaustion/);
+});
+
+test('empty-answer is explained as positively identified, never unclassified', () => {
+  const para = paragraphAbout(renderWith('empty-answer'), 'empty-answer');
+  assert.match(para, /positively identified empty answer/);
+  assert.match(para, /no non-whitespace answer content/);
+  assert.match(para, /never an unclassified failure and never a server drop/);
 });
 
 test('a sweep explains only the codes it actually saw — a results section, not a glossary', () => {
-  const markdown = renderWith('transport');
-  assert.match(markdown, /\| `transport` \| 1 \|/, 'the failure itself is still counted');
-  assert.doesNotMatch(markdown, /shape-rejected/);
-  assert.doesNotMatch(markdown, /`non-retryable-transport` below/);
+  assert.match(renderWith('transport'), /\| `transport` \| 1 \|/, 'the failure itself is still counted');
+  // Derived from the export, never hand-enumerated: a code added to
+  // REASON_PARAGRAPHS is auto-covered here, the same mechanised-membership
+  // coupling RECORD_FIELDS carries. The absence check matches a prefix of the
+  // entry's own resolved prose — not the `` `code` below `` opener convention,
+  // which a differently-phrased future paragraph would silently escape — by
+  // string containment, never a RegExp built from prose bytes, which carry
+  // `**` and other metacharacters. Exact equality on the rendered code, since
+  // `transport` is a substring of `non-retryable-transport`. Every code takes
+  // a turn as the sole one observed — a gate that leaks only under some other
+  // seed would escape a single-seed check — and the observed code's own
+  // paragraph is asserted present first, so the absences cannot pass vacuously
+  // on a report that dropped the whole section.
+  for (const [observed] of REASON_PARAGRAPHS) {
+    const markdown = renderWith(observed);
+    paragraphAbout(markdown, observed);
+    for (const [code, prose] of REASON_PARAGRAPHS) {
+      if (code === observed) continue;
+      const prefix = (typeof prose === 'function' ? prose() : prose).slice(0, 60);
+      assert.ok(
+        !markdown.includes(prefix),
+        `\`${code}\` paragraph must not print when only \`${observed}\` was seen`,
+      );
+    }
+  }
+});
+
+test('the paragraph table pairs each prose with its own code, exactly once', () => {
+  const codes = REASON_PARAGRAPHS.map(([code]) => code);
+  assert.strictEqual(new Set(codes).size, codes.length, 'a duplicated code would double-print its paragraph');
+  // The table makes the gate the entry's own code by construction, but nothing
+  // structural stops prose being paired with the wrong code — this asserts the
+  // one pairing property that is mechanisable (each paragraph names its own
+  // code); which prose sits under which code beyond that is what the per-code
+  // content tests above pin.
+  for (const [code, prose] of REASON_PARAGRAPHS) {
+    const text = typeof prose === 'function' ? prose() : prose;
+    assert.ok(text.includes(`\`${code}\``), `the \`${code}\` entry's prose never names its own code`);
+  }
+});
+
+test('a sweep with several reason codes renders every matching paragraph, not just the first', () => {
+  // The single-reason fixtures above cannot see a loop that stops early — a
+  // `break` after the first match keeps all of them green — and a first-and-last
+  // pair cannot see one that suppresses an intervening match once output
+  // exists. Every code at once, every paragraph asserted, closes both.
+  const markdown = renderReport(
+    [{ caseDef: CASE, runs: REASON_PARAGRAPHS.map(([code]) => deadRunWith(code)) }],
+    { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false },
+  );
+  for (const [code] of REASON_PARAGRAPHS) paragraphAbout(markdown, code);
 });

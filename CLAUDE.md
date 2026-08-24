@@ -156,10 +156,12 @@ after real reasoning; `unconstrained()` checks it right after its own `chatCompl
 the resulting throw lands in its own catch with `built` already in scope, since `requireAnswer`'s own
 throw for the identical shape happens too late — after a separate, later call chain
 (`unparsedReply`) — for `trySalvage` ever to see it. `bench/lib/sweep-outcome.mjs`'s `serverUnwell`
-deliberately excludes `reasoning-only`: it fires only after a clean, server-terminated stream, which a
-genuine server-side drop already reaches through `COMPLETION_SHAPES` instead. `bench/lib/reason-notes.mjs`
-and `bench/lib/sweep-outcome.mjs` classify an unsalvaged `token-reserve-cutoff` alongside
-`token-exhaustion` as `starved`, never as a generic failure or a server-health symptom.
+deliberately excludes `reasoning-only`: it fires only after a clean, server-terminated stream, while a
+genuine server-side drop already reaches `serverUnwell` by other routes — the transport reasons it
+accepts directly, or `COMPLETION_SHAPES`. `bench/lib/sweep-outcome.mjs`
+classifies an unsalvaged `token-reserve-cutoff` alongside `token-exhaustion` as `starved`, never as
+a generic failure or a server-health symptom; `bench/lib/reason-notes.mjs` explains both codes to a
+reader in prose.
 
 `scripts/lib/review-unparsed.mjs`'s `unparsedReply` is a post-hoc classifier, not a request-failure
 path: `token-exhaustion` (`finish_reason: 'length'`) and the reasoning-only fallthrough to
@@ -213,11 +215,13 @@ reached* — which `settle` and `pendUntilReplaced` take from the outcome while 
 `obtainedResponse`'s independent witnesses — the transport's flag, an HTTP status code, a completion
 shape, or a measured prefill.
 
-`bench/lib/reason-notes.mjs` `reasonNotes` explains each reason code a reader could misread —
-`shape-rejected`, `non-retryable-transport`, `transport` — gated on that code appearing in the
-sweep, and enumerates what the attempt record holds rather than asserting what it lacks, rendering
-that list from `RECORD_FIELDS`, whose membership `tests/bench-reason-notes.test.js` pins against a
-closed ledger entry.
+`bench/lib/reason-notes.mjs` `reasonNotes` renders a gated explanatory paragraph for each reason
+code a reader could misread, looping over one exported `REASON_PARAGRAPHS` table — an entry's code
+is its gate, so gating cannot drift from membership, while right-prose-under-right-code is
+test-asserted (each paragraph names its own code) rather than structural, and the glossary test
+derives its absence checks from each entry's own prose bytes — and enumerates what the attempt
+record holds rather than asserting what it lacks, rendering that list from `RECORD_FIELDS`, whose
+membership `tests/bench-reason-notes.test.js` pins against a closed ledger entry.
 
 `/oai:task --background` returns a job id instead of waiting: `scripts/lib/job-store.mjs` is the only
 place this repo opens a database, and the whole concurrency design is a SQLite transaction rather than

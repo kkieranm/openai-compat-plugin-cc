@@ -57,11 +57,12 @@ export const TRANSPORT = 'transport';
  *
  * Named for the decision it records, after a first draft called it `unreachable`
  * and was refuted: `request.on('error')` before headers carries TLS certificate
- * rejections, protocol and parser errors, and failures with no `code` at all —
- * every one of them a case where a peer *was* reached. "Unreachable" would have
- * asserted a fact the classification never established, which is the exact
- * defect class the module note above exists to keep out. So the name says what
- * was decided and the reader takes `.code` for the rest.
+ * rejections and protocol and parser errors — each fired by bytes a peer sent —
+ * beside failures with no `code` at all, which establish nothing either way.
+ * "Unreachable" would have asserted a fact the classification never
+ * established, which is the exact defect class the module note above exists to
+ * keep out. So the name says what was decided and the reader takes `.code` for
+ * the rest.
  */
 export const NON_RETRYABLE_TRANSPORT = 'non-retryable-transport';
 
