@@ -2353,6 +2353,30 @@ Newest first.
   auth module is a finding the fan-out would certainly raise and paying five verifiers to repeat what
   is written down here is waste. `tests/job-auth.test.js` is therefore **inside this scope**, which
   stays `e74eb2c^..HEAD` and so extends to it automatically.
+  **Full evidence, migrated 2026-08-24 from the live OAI-52 entry in `BACKLOG.md` to keep that item's
+  still-open sub-items readable** (verbatim, byte-for-byte, no wording changed):
+  > `tests/job-auth.test.js`, 8 tests. Both sides: `authPolicyFor` records an origin and provably not
+  > the key, and `resolveCredential` is exercised on each of its four refusal legs plus the happy path.
+  > The wire assertion the plan asked for is there as a real submission and a real detached worker, with
+  > the queue held open by a synthetic `running` row so `providers.json` can be repointed in the window
+  > between them — the worker then fails `credential-unavailable` and **contacts the endpoint not at
+  > all** after the edit, which is asserted against a request-count taken at that moment rather than
+  > over the whole recording (submission's own probes legitimately carried the old key, in the
+  > foreground, while it was still authorised). **It ships with a positive control in the same file** —
+  > the identical fixture with the config left alone completes and carries `Bearer key-a` on the wire —
+  > because without it a worker that died before ever reaching `resolveCredential` satisfies every
+  > assertion in the negative test. Mutation-proved: neutering the third origin comparison to `false`
+  > turns both the unit test and the wire test red and leaves the control green.
+  >
+  > **Why it was the sharpest of the six, kept because it is the reason for the ordering:** `authPolicyFor`
+  > (submission) and `resolveCredential` (the worker) implement the rule that a key is sent only when
+  > the current profile's origin, the persisted `authorizedOrigin` and the persisted transport's origin
+  > **all three** agree — a rule adopted *because* the two-term version was found to be tautological in
+  > the plan gate. The plan asked for "a profile that moved origin between submission and worker start
+  > yields `credential-unavailable`, asserted on the wire". `tests/config.test.js:59-68` covers the
+  > foreground analogue (`resolveProfile` does not carry a key to another origin), which is adjacent
+  > evidence and not this: it exercises neither module, and the three-term check is exactly the part the
+  > foreground path does not have.
   **Check `unadjudicated` before reading any verdict:** wide mode returns `findings: []` when its
   verifiers die on the cap, and that shape reads exactly like a clean pass.
 

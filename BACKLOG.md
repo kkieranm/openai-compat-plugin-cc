@@ -16,12 +16,9 @@ this header.
 owner-directed, matching the same removal in `~/Code/backlog` and `~/Code/dotfiles`: no more
 priority-ranking pass over this file, and a merged item now gets a one-line stub bullet
 (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
-resolved through the exact same `- **OAI-n**` shape as every other item — never a separate table.
-Three such stubs exist in `## Items` below (OAI-30, OAI-38, OAI-41); OAI-6 and OAI-8, which the old
-table resolved to `*shipped*` rather than another ID, are now ordinary `BACKLOG_DONE.md` entries
-instead of stubs, since they already carried full shipped descriptions. OAI-71's own stub moved to
-`BACKLOG_DONE.md` on 2026-08-23 when its target, OAI-59, shipped — a stub always lives wherever its
-target lives.
+resolved through the exact same `- **OAI-n**` shape as every other item — never a separate table. A
+stub always lives wherever its target lives, so it moves trackers with it (to `BACKLOG_DONE.md` when
+the target ships, to `BACKLOG_PARKED.md` if it's parked) rather than staying pinned to `## Items`.
 
 ### Standing methodology note, earned the hard way
 
@@ -116,16 +113,11 @@ arm.
   or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
   the reason this is one item rather than five.
 
-  **Split 2026-08-05 by the backlog sweep, and the reason is that OAI-51 changed what these are.**
-  Verified against disk: with no schema sent by default (`review-request.mjs:206`), sub-items (1), (2)
-  and (7) are now reachable **only when `--structured-output` is passed** — a genuinely narrower
-  trigger than when they were filed, and one more reason they wait for a second server. But (3) and
-  (5) went the other way. The default prose-parse path runs the *same* `parseFindings`, so they stopped
-  being vendor questions about a degraded path and became defects on the shipped default. They are now
-  **OAI-84**, and they sort five tiers higher. Sub-item (4)'s reach is unchanged.
-  *(Numbering note, since the count above just changed: the seven were (1)–(5), the unnumbered
-  `refusedField` finding added 2026-07-28 in the paragraph at the top of this item, and (7). Five
-  remain here.)*
+  **(1), (2) and (7) are reachable only when `--structured-output` is passed** (no schema sent by
+  default, `review-request.mjs:206`) — narrower than when filed, and one more reason they wait for a
+  second server. (3) and (5) went the other way and moved to **OAI-84** 2026-08-05: the default
+  prose-parse path runs the same `parseFindings`, so they stopped being vendor questions and became
+  defects on the shipped default. Sub-item (4)'s reach is unchanged.
 
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
@@ -197,27 +189,9 @@ arm.
   defect; each is a property the plan said would be proved and that nothing currently proves. Ordered
   by what it would cost to be wrong about.
   **~~(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.~~ DONE 2026-08-05** —
-  `tests/job-auth.test.js`, 8 tests. Both sides: `authPolicyFor` records an origin and provably not
-  the key, and `resolveCredential` is exercised on each of its four refusal legs plus the happy path.
-  The wire assertion the plan asked for is there as a real submission and a real detached worker, with
-  the queue held open by a synthetic `running` row so `providers.json` can be repointed in the window
-  between them — the worker then fails `credential-unavailable` and **contacts the endpoint not at
-  all** after the edit, which is asserted against a request-count taken at that moment rather than
-  over the whole recording (submission's own probes legitimately carried the old key, in the
-  foreground, while it was still authorised). **It ships with a positive control in the same file** —
-  the identical fixture with the config left alone completes and carries `Bearer key-a` on the wire —
-  because without it a worker that died before ever reaching `resolveCredential` satisfies every
-  assertion in the negative test. Mutation-proved: neutering the third origin comparison to `false`
-  turns both the unit test and the wire test red and leaves the control green.
-  **Why it was the sharpest of the six, kept because it is the reason for the ordering:** `authPolicyFor`
-  (submission) and `resolveCredential` (the worker) implement the rule that a key is sent only when
-  the current profile's origin, the persisted `authorizedOrigin` and the persisted transport's origin
-  **all three** agree — a rule adopted *because* the two-term version was found to be tautological in
-  the plan gate. The plan asked for "a profile that moved origin between submission and worker start
-  yields `credential-unavailable`, asserted on the wire". `tests/config.test.js:59-68` covers the
-  foreground analogue (`resolveProfile` does not carry a key to another origin), which is adjacent
-  evidence and not this: it exercises neither module, and the three-term check is exactly the part the
-  foreground path does not have.
+  `tests/job-auth.test.js`, 8 tests, mutation-proved, shipped with a positive control. Full evidence
+  moved to `BACKLOG_DONE.md`'s OAI-58 entry, 2026-08-24, to keep this item's still-open sub-items
+  readable.
   **(2) `state='running'` and `worker_pid` are never observable apart.** The plan called for this as
   an *atomicity* assertion, having previously called for a test of the window between them — which
   the one-transaction design makes unreachable, and a test that cannot fail was itself a gate finding.
@@ -256,26 +230,16 @@ arm.
   `if LM Studio` where the whole repo has providers-as-data. Any fix must be shaped as configuration
   or as a generic post-cancel settle delay, not as a vendor probe.
 
-- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half SHIPPED 2026-08-05**
-  as the prerequisite Stage 2's task benchmark turned out to have: a bench that cannot read a
-  machine-readable envelope must parse prose, which is the retracted class. What landed mirrors
-  `/oai:review` exactly — the reply as an opaque `content` string (nothing parses the answer's shape),
-  the `notes` array so the template's caveats cannot go missing on the machine path, `contextChecked`
-  beside `estimatedTokens`, and `errorReport` on failure with the exit code and stderr unchanged.
-  **What remains is `/oai:status` and `/oai:result`**, and OAI-80(a)'s forgeable `attachments` line is
+- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half shipped
+  2026-08-05** (`TASK_SPEC.booleanFlags` now includes `json`, mirroring `/oai:review`'s envelope) —
+  what remains live is `/oai:status` and `/oai:result`. OAI-80(a)'s forgeable `attachments` line is
   still the reason to want the status half — *OAI-80 was parked 2026-08-18, `not worth doing`, so this
-  is a reason and no longer a dependency.* Left out of OAI-3 phase 4
-  as unrequested surface, and recorded here so the omission is a decision rather than an oversight.
-  **Corrected 2026-08-05, verified against `TASK_SPEC` and by running the command:** this entry used to
-  say "`/oai:task` and `/oai:review` both have it", and that is **false** — only `/oai:review` does
-  (`REVIEW_SPEC.booleanFlags` includes `json`; `TASK_SPEC.booleanFlags` is `['background']`, and
-  `task --json` exits 1 with "Unknown option"). The mistake matters because it makes the item look
-  smaller than it is and because **Stage 2's task benchmark needs exactly this** — a bench that cannot
-  read a machine-readable task envelope must parse the prose footer, which is the class this repo has
-  retracted twice. The row is already a JSON-shaped record, so the cost is still small — but
-  the moment it exists it is a **contract**, and the enumerated-field problem OAI-36 describes for the
-  bench reliability prose applies to it exactly. Do it when something actually consumes it (the
-  `oai-delegate` agent in OAI-5 is the likely first consumer), and version the envelope when you do.
+  is a reason and no longer a dependency.* Left out of OAI-3 phase 4 as unrequested surface, and
+  recorded here so the omission is a decision rather than an oversight. Still small (the rows are
+  already JSON-shaped records) but a **contract** the moment it exists — the enumerated-field problem
+  OAI-36 describes for the bench reliability prose applies to it exactly. Do it when something
+  actually consumes it (the `oai-delegate` agent in OAI-5 is the likely first consumer), and version
+  the envelope when you do.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
