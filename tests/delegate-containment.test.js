@@ -7,8 +7,8 @@
 // with a positive control during this file's own probe: reverting the
 // boundary check to always match left the full 1158-test suite green.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { existsSync, mkdtempSync, mkdirSync, symlinkSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { after, test } from 'node:test';
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -56,8 +56,32 @@ function dirPreambleBlock() {
   return AGENT_SOURCE.slice(start, end);
 }
 
+// Every scratch path a test creates registers here; one file-level hook removes them all. The
+// dir inside `runContainment` is tracked only as a fallback for a failure before the shell starts:
+// on every shell run the recipe's own `trap 'rm -rf "$dir"' EXIT INT TERM HUP` removes it, and
+// `runContainment` asserts that removal happened — the hook's `force: true` then no-ops on it.
+const TRACKED = [];
+let trackedCalls = 0;
+const track = (path) => {
+  trackedCalls++;
+  TRACKED.push(path);
+  return path;
+};
+const tracked = (prefix) => track(mkdtempSync(prefix));
+
+after(() => {
+  assert.equal(TRACKED.length, trackedCalls, 'a track() registration must reach the cleanup list');
+  for (const path of TRACKED) rmSync(path, { recursive: true, force: true });
+  // lstatSync, not existsSync: existsSync follows symlinks and would false-pass a dangling
+  // tracked link whose unlink failed after its target was removed.
+  const leftover = TRACKED.filter((path) => {
+    try { lstatSync(path); return true; } catch { return false; }
+  });
+  assert.deepEqual(leftover, [], 'cleanup must remove every tracked path');
+});
+
 async function withScratchRepo(fn) {
-  const repo = mkdtempSync(join(tmpdir(), 'oai-containment-repo-'));
+  const repo = tracked(join(tmpdir(), 'oai-containment-repo-'));
   await run('git', ['init', '-q'], { cwd: repo });
   return fn(repo);
 }
@@ -72,16 +96,19 @@ async function withScratchRepo(fn) {
  * argument (the exact failure class this pattern exists to catch) is visible.
  */
 async function runContainment(repo, manifestLines) {
-  const dir = mkdtempSync('/tmp/oai-delegate.');
+  const dir = tracked('/tmp/oai-delegate.');
   writeFileSync(join(dir, 'files'), manifestLines.map((f) => `${f}\n`).join(''));
   const block = containmentBlock().replace("dir='<the absolute path mktemp returned>'", `dir='${dir}'`);
   const script = `${block}\nfor a in "$@"; do printf '%s\\0' "$a"; done`;
+  let result;
   try {
     const { stdout } = await run(SHELL, ['-c', script], { cwd: repo });
-    return { status: 0, argv: stdout.split('\0').slice(0, -1), stdout };
+    result = { status: 0, argv: stdout.split('\0').slice(0, -1), stdout };
   } catch (error) {
-    return { status: error.code ?? 1, argv: [], stdout: String(error.stdout ?? '') };
+    result = { status: error.code ?? 1, argv: [], stdout: String(error.stdout ?? '') };
   }
+  assert.ok(!existsSync(dir), 'the recipe trap must have removed $dir once the shell settled');
+  return result;
 }
 
 /** Same real path a shell `cd`/`git`/`canon` would see — normalizes `/tmp` vs `/private/tmp` on macOS. */
@@ -108,7 +135,7 @@ test('an in-tree symlink to another in-tree file is accepted', async () => {
 
 test('an in-tree symlink pointing outside the tree is refused', async () => {
   await withScratchRepo(async (repo) => {
-    const outside = mkdtempSync(join(tmpdir(), 'oai-containment-outside-'));
+    const outside = tracked(join(tmpdir(), 'oai-containment-outside-'));
     writeFileSync(join(outside, 'secret.txt'), 'leak');
     symlinkSync(join(outside, 'secret.txt'), join(repo, 'evil-link.txt'));
     const { status, stdout } = await runContainment(repo, ['evil-link.txt']);
@@ -120,7 +147,7 @@ test('an in-tree symlink pointing outside the tree is refused', async () => {
 
 test('an absolute path outside the tree, not a symlink, is refused the same way', async () => {
   await withScratchRepo(async (repo) => {
-    const outside = mkdtempSync(join(tmpdir(), 'oai-containment-outside-'));
+    const outside = tracked(join(tmpdir(), 'oai-containment-outside-'));
     writeFileSync(join(outside, 'secret.txt'), 'leak');
     const { status, stdout } = await runContainment(repo, [join(outside, 'secret.txt')]);
     assert.equal(status, 1);
@@ -130,7 +157,7 @@ test('an absolute path outside the tree, not a symlink, is refused the same way'
 });
 
 test('the root="$PWD" fallback works outside any git repository', async () => {
-  const scratch = mkdtempSync(join(tmpdir(), 'oai-containment-nogit-'));
+  const scratch = tracked(join(tmpdir(), 'oai-containment-nogit-'));
   // No `git init` — `git rev-parse --show-toplevel` must fail here, exercising
   // the fallback rather than the repo-root path every other case above uses.
   await assert.rejects(run('git', ['rev-parse', '--show-toplevel'], { cwd: scratch }));
@@ -140,7 +167,7 @@ test('the root="$PWD" fallback works outside any git repository', async () => {
   assert.equal(accepted.status, 0, accepted.stdout);
   assert.deepEqual(accepted.argv, ['--file', real(join(scratch, 'plain.txt'))]);
 
-  const outside = mkdtempSync(join(tmpdir(), 'oai-containment-outside-'));
+  const outside = tracked(join(tmpdir(), 'oai-containment-outside-'));
   writeFileSync(join(outside, 'secret.txt'), 'leak');
   symlinkSync(join(outside, 'secret.txt'), join(scratch, 'evil-link.txt'));
   const refused = await runContainment(scratch, ['evil-link.txt']);
@@ -165,7 +192,7 @@ test('a raw manifest entry starting with -- is accepted when genuinely in-tree',
 
 test('the same -- manifest entry is refused when reached via an outside-tree symlink', async () => {
   await withScratchRepo(async (repo) => {
-    const outside = mkdtempSync(join(tmpdir(), 'oai-containment-outside-'));
+    const outside = tracked(join(tmpdir(), 'oai-containment-outside-'));
     mkdirSync(join(outside, '--require=.'));
     writeFileSync(join(outside, '--require=.', 'evil.js'), 'payload');
     symlinkSync(join(outside, '--require=.'), join(repo, '--require=.'));
@@ -189,7 +216,7 @@ test('canon refuses a resolved path carrying a control character, in isolation',
   // A real filesystem entry literally named with an embedded newline — no
   // boundary check anywhere in this harness to mask the result either way,
   // unlike the round-1 design this replaced.
-  const outside = mkdtempSync(join(tmpdir(), 'oai-containment-control-'));
+  const outside = tracked(join(tmpdir(), 'oai-containment-control-'));
   const named = join(outside, 'weird\nname.txt');
   writeFileSync(named, 'x');
   const script = `${canonBlock()}\ncanon "$1"`;
@@ -223,7 +250,7 @@ test('canon defeats an inherited NODE_OPTIONS preload that would forge its resul
   // reaches the resolved path canon() returns.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
-    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-containment-preload-'));
+    const preloadDir = tracked(join(tmpdir(), 'oai-containment-preload-'));
     const preload = join(preloadDir, 'preload.js');
     writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
     const script = `${canonBlock()}\ncanon "$1"`;
@@ -245,7 +272,7 @@ test('canon defeats an inherited OPENSSL_CONF that would crash it before it reso
   // unchanged under the current fix.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
-    const confDir = mkdtempSync(join(tmpdir(), 'oai-containment-openssl-conf-'));
+    const confDir = tracked(join(tmpdir(), 'oai-containment-openssl-conf-'));
     const conf = join(confDir, 'malformed.cnf');
     writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
     const script = `${canonBlock()}\ncanon "$1"`;
@@ -288,10 +315,10 @@ test('canon runs cleanly under an empty environment with every hostile variable 
   // PATH="$PATH" defeats all of them at once.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
-    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-containment-kitchensink-preload-'));
+    const preloadDir = tracked(join(tmpdir(), 'oai-containment-kitchensink-preload-'));
     const preload = join(preloadDir, 'preload.js');
     writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
-    const confDir = mkdtempSync(join(tmpdir(), 'oai-containment-kitchensink-conf-'));
+    const confDir = tracked(join(tmpdir(), 'oai-containment-kitchensink-conf-'));
     const conf = join(confDir, 'malformed.cnf');
     writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
     const script = `${canonBlock()}\ncanon "$1"`;
@@ -326,15 +353,16 @@ async function assertDirRefused(script, messagePattern) {
 }
 
 test('a $dir not matching the /tmp/oai-delegate.* prefix is refused', async () => {
-  const other = mkdtempSync(join(tmpdir(), 'oai-not-the-right-prefix-'));
+  const other = tracked(join(tmpdir(), 'oai-not-the-right-prefix-'));
   const script = `${dirPreambleBlock()}\necho ok`.replace("dir='<the absolute path mktemp returned>'", `dir='${other}'`);
   await assertDirRefused(script, /refusing: unexpected dir/);
 });
 
 test('a $dir that is itself a symlink is refused', async () => {
-  const real1 = mkdtempSync('/tmp/oai-delegate.');
+  const real1 = tracked('/tmp/oai-delegate.');
   const link = `${real1}-link`;
   symlinkSync(real1, link);
+  track(link);
   const script = `${dirPreambleBlock()}\necho ok`.replace("dir='<the absolute path mktemp returned>'", `dir='${link}'`);
   await assertDirRefused(script, /refusing:.*is a symlink/);
 });
