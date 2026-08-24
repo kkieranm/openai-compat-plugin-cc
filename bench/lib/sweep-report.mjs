@@ -35,7 +35,7 @@ const STARVED_WHY = {
 };
 
 const WHY = {
-  starved: 'ran out of tokens before writing findings — the model reasoned until the budget was gone (OAI-115)',
+  starved: 'ran out of tokens before writing findings — the model reasoned until the budget was gone',
   truncated: 'the model\'s analysis was cut off before it finished looking, so whatever it managed to say is not a review of this commit',
   unreadable: 'the model answered, but the reply could not be parsed as findings',
   substituted: 'a DIFFERENT model answered than the one requested, so this is not a review by the model asked for',
