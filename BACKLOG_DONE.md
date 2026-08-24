@@ -1,3 +1,36 @@
+## 2026-08-24 — OAI-19 concluded: baseline re-measurement, both arms published as failures, no scalar recall obtained
+
+- **OAI-19** — Re-measure `/oai:review`'s recall baseline, dense 27B against the MoE, under a
+  predeclared, adversarially-grilled gate (G-A through G-M — full text in the pre-2026-08-24 history
+  of this file's git log, and in `evidence/019.md`). **Concluded 2026-08-24: both arms exhausted their
+  two allowed invocations under G-G and both published as failures — no scalar baseline exists for
+  either model, and none can be obtained under this item without a fresh, newly-predeclared arm.**
+  - **MoE arm** — both invocations (2026-08-07, A and B) failed G-B/G-C/G-E; published as a failure
+    2026-08-08.
+  - **Dense arm** — Invocation C (2026-08-08) failed G-B (`scaffold` 0/3) and G-E, blocked by an
+    instrument defect (token-exhaustion emitted no `attempts[]`, making G-E structurally unpassable)
+    until OAI-115/OAI-116 shipped 2026-08-20. Invocation D (2026-08-23/24, the second and final
+    invocation) still failed G-B (3 of 6 cases below the replication floor) and G-C (17 of 33
+    unresolved, ceiling 3) — worse than Invocation C. G-E passed cleanly this time (0 null ledgers
+    across 18 runs), direct verification that OAI-115/OAI-116 fixed the observability defect that
+    blocked this item; it did not fix recall. Reviewed by `codex-rescue`, which independently
+    re-derived the same gate arithmetic and confirmed the verdict.
+  - **The real deliverable turned out to be the failure mechanism, not a number.** Every no-report run
+    fired `trySalvage`'s rescue; across all 14 salvage-eligible runs observed in the Invocation D
+    session (main arm plus the deferred `--max-attempts 1` control arm), salvage fired 14/14 and
+    rescued exactly 1/14. That finding, reviewed by Codex, produced **OAI-204** (shipped 2026-08-24,
+    same day): a head+tail trim of the reasoning fed back into salvage, plus an untrimmed fallback
+    after a live replay showed the trim alone regressing the one measured rescue.
+  - **What remains genuinely open** — not this item's to carry, since it has no invocations left —
+    is whether a fresh baseline arm is worth attempting now that OAI-204 has shipped, and whether
+    **OAI-49** (matched-budget arm, still live) is the more useful next measurement given neither
+    deployed-system arm ever cleared its gate. OAI-45 and OAI-50, also still live, are unaffected by
+    this closure.
+  - Full gate-by-gate arithmetic, every invocation's raw records, and the Codex reviews: `evidence/019.md`
+    (invocations through 2026-08-08) and `bench/2026-08-23-oai19-run-notes.md` (Invocation D and the
+    control arm, not yet folded into `evidence/019.md` — left to a later sweep per this repo's
+    consolidation convention).
+
 ## 2026-08-24 — OAI-204 shipped: head+tail trim for salvage's fed-back reasoning, with an untrimmed fallback (`e1d3c99`)
 
 - **OAI-204** — Filed 2026-08-24 from OAI-19's overnight measurement: salvage fired on 14 eligible

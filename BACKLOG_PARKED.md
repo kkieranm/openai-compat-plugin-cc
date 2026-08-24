@@ -1,3 +1,79 @@
+## 2026-08-24 — parked by the backlog sweep's worth bar
+
+4 items, all `not worth doing`. Each was verified STILL TRUE against disk by a scout this same sweep — the code they describe is real and unchanged — but each is a structural-hardening gap found by a reviewer reading code, not a dated instance of the defect actually manifesting, and three of the four already state their own reopening condition in the filing text. Applying the worth bar uniformly against the other 15 live items surfaced these four as the ones with no dated instance of actual harm, only of discovery.
+
+### OAI-192 — parked, `not worth doing`
+
+**Why parked:** The item's own text already concludes production spawns `process.execPath` directly, so a genuine spawn-error message here can only name the Node binary or a local path — never a remote endpoint, request, response, or credential. No secret-bearing spawn-error message has ever been observed; this is unexercised hardening against a class of input this call site cannot currently receive.
+
+**Reopening bar (an instance, with a date):** An actual secret-bearing spawn-error message observed reaching `errorReport()` unredacted, with a date — the exact condition the item's own text already names.
+
+*Filing kept verbatim:*
+
+- **OAI-192** — **`job-launch-outcome.mjs:79`'s `terminalizeSpawnFailure` interpolates a raw spawn
+  error's `.message` directly into the object it hands to `errorReport()`, bypassing that function's
+  explicit-field-list redaction entirely** since the content is already baked into `.message` before
+  `errorReport` ever sees it. Found and deferred during OAI-185's review ladder (pass 1, Codex steer:
+  DEFER). Confirmed real but low-severity: production spawns `process.execPath` directly (the
+  companion script is an argument, not the executable), so a genuine spawn rejection here names the
+  Node binary or a local state/log path, never a remote endpoint, request target, response body, or
+  authorization value — the class of naturally secret-bearing input OAI-185 protects against. Reopen
+  if an actual secret-bearing spawn-error message is ever observed; until then this is structural
+  hardening, not a demonstrated leak.
+
+### OAI-194 — parked, `not worth doing`
+
+**Why parked:** The item's own text already concludes the unredacted path is not currently exploitable: model selection runs inside `resolveTarget` at submission time, before the job row exists, so a refusal here fails the foreground call outright and never reaches `errorReport()`/`jobs.db` or a worker's log — the persistence path OAI-185 protects.
+
+**Reopening bar (an instance, with a date):** Model selection moved to run inside the worker (so the message could reach persisted state), or a judged need for the same structured-field treatment on a foreground-only exposure — either with a date.
+
+*Filing kept verbatim:*
+
+- **OAI-194** — **A server-reported model id can reach a `UserError` message unredacted, via
+  `model-selection.mjs`'s `unservedProblem`/`autoSelect` (`listModelIds` over the server's own
+  `/v1/models` response) → `delegate.mjs:111`'s `selectModel`.** Found by Codex during OAI-185's pass-5
+  adversarial review, real but assessed as not currently exploitable through the background
+  persistence path OAI-185 protects: model selection runs inside `prepareTask`'s `resolveTarget`,
+  which completes at submission time — before `task-submit.mjs` ever creates the job row — so a
+  refusal here fails the foreground submission outright rather than reaching `errorReport()`/`jobs.db`
+  or a worker's job log. Reopen if model selection is ever moved to run inside the worker, or if a
+  foreground-only exposure (this message on an operator's own terminal) is judged to need the same
+  structured-field treatment OAI-185 gave the transport layer.
+
+### OAI-201 — parked, `not worth doing`
+
+**Why parked:** A real gap in `canon()`'s control-character range, confirmed against disk. But no in-tree filename actually containing a DEL or C1 control character has ever been observed reaching this check — the finding is a review-time code-reading gap, not an instance of the containment rule actually being bypassed.
+
+**Reopening bar (an instance, with a date):** A real in-tree filename carrying a DEL or C1 control character observed being resolved and accepted by `canon()` despite the attachment rule's stated "refuse a control character," with a date.
+
+*Filing kept verbatim:*
+
+- **OAI-201** — `agents/oai-delegate.md`'s pre-existing `canon()` (path containment for `files`,
+  unrelated to model selection) checks only `/[\x00-\x1f]/` — C0 controls — not the fuller
+  `[\x00-\x1f\x7f-\x9f]` range OAI-181's model-id validator uses in the same file. A real in-tree
+  filename containing DEL or a C1 control character would be resolved and accepted despite the
+  attachment rule's stated "refuse a control character." Found by `codex-adversarial` during OAI-181's
+  review ladder (pass verdict point, round 5), 2026-08-23 — concrete and verifiable, but a
+  `files`/containment concern predating OAI-181, not a per-call-model one, so left out of that item's
+  diff rather than absorbing a second subsystem's fix into it.
+
+### OAI-202 — parked, `not worth doing`
+
+**Why parked:** A real inaccuracy in a test file's header comment and test names, confirmed against disk (`/bin/ksh` and `/bin/tcsh` are both installed and both untested despite the "every shell" claim). But no instance exists of the overstatement actually misleading anyone — no bug shipped because a reader trusted "every shell" and skipped checking ksh/tcsh behavior themselves.
+
+**Reopening bar (an instance, with a date):** A dated instance of the false "every shell" claim actually misleading a reader or reviewer into skipping a real check — e.g., a shell-specific bug that reached main because ksh/tcsh coverage was assumed to already exist.
+
+*Filing kept verbatim:*
+
+- **OAI-202** — `tests/delegate-template.test.js`'s file-level header comment ("runs the block under
+  EVERY shell on the machine") and several test names/comments repeating that claim overstate the
+  fixed `SHELLS` allowlist, which excludes any other shell installed on the machine — confirmed
+  present on this machine at `/bin/ksh` and `/bin/tcsh`, neither tested (the latter a C-shell
+  derivative, not even POSIX-family, so "every shell" was never literally true regardless of which
+  allowlist shipped). Found by `codex-plain` during OAI-181's review ladder (pass verdict point, round
+  5), 2026-08-23 — real, but a pre-existing documentation claim about the test file's own methodology,
+  predating OAI-181 and not something its diff introduced or needed to correct.
+
 ## 2026-08-19 — parked by the user-directed backlog review
 
 41 items. Unlike the 2026-08-18 sweep below, this pass did not re-verify every claim against disk — the user reviewed each item's existing text directly, tier by tier, and decided keep or park from that. All park here for `not worth doing` (no dated instance of the failure actually happening, as opposed to being reproduced under review or reasoned about), never `refuted`. OAI-191 is a new id, not a moved one: split out of OAI-160 the same session so the one live defect OAI-160 names is not hidden behind its own coverage-debt residue.

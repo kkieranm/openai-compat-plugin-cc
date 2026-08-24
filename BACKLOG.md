@@ -34,8 +34,10 @@ arm.
 ### The parked theme — "make `/oai:review` trustworthy before extending the plugin further"
 
 Parked 2026-08-04 by the direction change, and kept here rather than in `BACKLOG_PARKED.md` because it
-is context for the measurement-programme items (OAI-19, OAI-50, OAI-49, OAI-9, OAI-11, OAI-13) rather
-than an item itself. Everything in it was sized to answer "is the reviewer
+is context for the measurement-programme items (OAI-50, OAI-49, OAI-9, OAI-11, OAI-13) rather
+than an item itself. OAI-19, the baseline this section's own prose still refers to below, concluded
+2026-08-24 with both arms published as failures — see `BACKLOG_DONE.md` — so a reference to it here as
+still-pending work is history, not a live pointer. Everything in it was sized to answer "is the reviewer
 trustworthy" before extending the plugin — and OAI-51 then found the reviewer was crashing the model
 backend with its own request, so the thing being measured was broken throughout. Stage 0 changed how
 replies are produced, which invalidates any baseline taken before it.
@@ -68,8 +70,9 @@ conclusion was kept and its evidence thrown away (ADR 004 says "four runs", `890
 same experiment, neither now checkable). Baseline: ~~**1 of 6 scoreable defects at N=1, 10.9
 minutes**~~ — struck 2026-07-30: computed under the pre-OAI-15 rule that excluded cut runs from the
 denominator, so it is not directly comparable with anything measured since. **No comparable
-replacement exists yet**; producing one is OAI-19. 11 defects are catalogued, but 5 belong to the two
-cases whose runs were cut mid-reasoning and are unscored rather than missed.
+replacement was ever obtained**: OAI-19 was the attempt, and it concluded 2026-08-24 with both arms
+exhausting their invocations under gate as failures — see `BACKLOG_DONE.md`. 11 defects are catalogued,
+but 5 belong to the two cases whose runs were cut mid-reasoning and are unscored rather than missed.
 
 - ~~**Context dilution is measured.**~~ **Retracted 2026-07-28, by the instrument itself.** The
   "found at 1,575 tokens, missed at 47,072" pair varied token count, git mode, prompt shape and
@@ -170,7 +173,10 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   call-specific.
   The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
-  wait for one rather than being fixed blind. (1) `isFormatRejection` reads `error.message`, which
+  wait for one rather than being fixed blind. (1) `isFormatRejection` reads
+  ~~`error.message`~~ **`error.responseBody` (field attribution corrected 2026-08-24 against disk —
+  OAI-185, 2026-08-20, moved this read off `.message` entirely; the 400-char truncation itself is
+  unchanged, it just lands on `.responseBody` now, per `scripts/lib/provider.mjs:131`)**, which
   ~~`client.mjs`~~ **`provider.mjs` (file attribution corrected 2026-08-14 against disk; `client.mjs`
   has no truncation logic at all)** truncates to 400 characters — a server whose validation dump names `response_format`
   later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
@@ -192,215 +198,6 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   *(Numbering note, since the count above just changed: the seven were (1)–(5), the unnumbered
   `refusedField` finding added 2026-07-28 in the paragraph at the top of this item, and (7). Five
   remain here.)*
-
-- **OAI-19** — Re-measure the baseline on the full corpus, dense 27B against the MoE, before any
-  arm is read as an improvement. **This is a measurement, not a feature. OAI-20/OAI-21 unblocked it
-  (2026-07-31); the three items above it are its prerequisites, not competitors, and every item
-  below it wants a number to beat.** It is also the one item here that is hours of wall clock on the
-  user's own LM Studio rather than an edit, so it is launched when they say so, never incidentally.
-  Run it with `--warm-up` and `--max-attempts 3`, and take a `--max-attempts 1` control arm on at
-  least one case so the record shows what retry was worth rather than only the retried rate. The recorded baseline — **1 of 6 scoreable defects,
-  10.9 minutes, N=1** — was computed under the pre-OAI-15 rule that *excluded* cut runs from the
-  denominator, and 17 of 41 runs recorded at the time were cut. OAI-15 now counts them and reports
-  the unresolved part as a band, so that figure cannot be differenced against anything measured
-  since: an OAI-9 union scoring "2 of 6" against it would be comparing two denominators, which is
-  the N=1-per-arm error in the methodology note above wearing a different hat.
-  Two things changed at once and must be separated, which is the whole design of the run: the
-  **scoring rule** (OAI-15) and the **model** (the local server moved from the MoE
-  `qwen3.6-35b-a3b-ud-mlx` to the dense `qwen/qwen3.6-27b`). Measuring only the dense arm would
-  leave every prior number unusable and attribute the OAI-15 rule change to the model swap. So:
-  both models, full corpus, `--runs 3` — N=1 is a lottery ticket, established twice in this file at
-  the cost of two retracted claims — and one arm per model with nothing else varying.
-  **The JIT-TTL question moved OUT of this run, 2026-08-03.** OAI-20 deferred it here and OAI-24
-  found it could not be answered by a sweep at all: sampling residency around a run cannot tell
-  "loaded throughout" from "unloaded then silently reloaded". It became **OAI-34**, an intervention
-  run *before* this one, and **that run happened on 2026-08-04 and came back negative**: the
-  deterministic form is refuted — 336s of prefill under a 120s TTL, 3/3, continuously resident, all
-  four validity checks clean. This run may quote only what
-  [ADR 013](adr/013-observing-the-server.md)'s outcome table permits, which after the 2026-08-04
-  amendment has no confirming row at all. **So the branch this item used to reason forward from is
-  closed, and closed in the direction that removes a conclusion rather than supplying one.** The old
-  text said "if the mechanism is confirmed, `--warm-up` and pacing matter more than retry does" —
-  nothing here confirms it, and nothing can, so **the write-up must report the cause of the drops as
-  unresolved**. Refuting one hypothesis is not explaining the observation. Three limits belong
-  beside the refutation whenever it is quoted: dense 27B only where the 27/72 drops were seen on
-  **both** models, one case at one TTL, and N=3 with a ~63% one-sided upper bound on the failure
-  rate. The attempt record still carries what a pacing effect would show (`promptChars`,
-  `waitedMs`, per-attempt timings) and OAI-24's reader still splits failures on whether a prefill
-  was measured — those stay useful for describing the drops, not for naming them.
-  Two corrections that item produced and this one must not repeat: the **"10-minute idle TTL" has no
-  provenance** here (LM Studio documents a resetting timer with a 60-minute JIT default), and every
-  measured dense prefill — `scaffold` 335s, `model-info` 286s, `structured` 191s — sits *below* even
-  the 600s the hypothesis assumed. **Whether OAI-15's wall-clock ceiling still binds** (answered in bounded form by the 2026-07-30 attempt — see below), and OAI-18's
-  `prefillMs`/`generationMs` per case, which OAI-9 needs in order to cost a warm pass honestly.
-  The OAI-11 termination caveat does not apply on one LM Studio, but cross-model `gen tok/s` is
-  still only approximate — token counting need not be identical across models; wall-clock
-  generation time is the directly comparable figure.
-  Expect a JIT model load between arms. **With `--warm-up`, which this item mandates, the first case
-  no longer carries it** — the warm-up absorbs the weights load, and `--cold` handles the separate
-  question of prompt-cache uniformity. (Before OAI-21 that load landed on case 1 as a cold prefill
-  that was not the model's; OAI-9's 421.7s-cold against 11.5s-warm on one 56,805-token request says
-  how large the distortion would be if the flag were omitted.)
-  Done when both arms are recorded with their bands, the pre-OAI-15 figure is struck through in this
-  file, and the comparable one replaces it as the number OAI-9 and OAI-11 are scored against.
-
-  ### Acceptance gate, predeclared 2026-08-04 and committed before the first arm
-
-  The 2026-07-30 attempt is publishable *as a failure* only because its gate was written down before
-  it ran. This one is written down for the same reason, and it is deliberately not the July gate:
-  that one required zero failed runs across 18, which — at the measured ~37.5% per-attempt drop and
-  a 3-attempt retry — an arm clears only about a third of the time **even when retry is working
-  exactly as designed**. A gate that is likely to fail on a healthy instrument is not strictness, it
-  is the July error in a new place. Grilled adversarially with Codex over two rounds; every
-  criterion below that survived is one of us failing to break it.
-
-  **The estimand, named before the number exists.** The published figure is recall of the
-  **retry-enabled CLI** over the fixed 11-defect corpus, with unresolved opportunities reported as a
-  band. It is *not* the model's one-request behaviour: `--max-attempts 3` is part of the instrument,
-  and because a drop may correlate with reply length, a successful retry is not guaranteed to be an
-  unbiased sample of what a single request would have produced. The ledger *describes* retry; it
-  does not prove independence.
-
-  Per arm, each arm judged independently:
-
-  - **G-A — zero substituted runs.** Any substitution voids the arm; a mislabelled number is not an
-    uncertain one, and no amount of sampling fixes a wrong label. **Stated limit, not gated:**
-    substitution is checked at *run* level only. `applyFrame` records a served model id as frames
-    arrive (`completion.mjs:65`), but a stream that dies unterminated throws `stream-unfinished`
-    (`completion.mjs:98`), the ledger entry keeps no served identity (`attempt-ledger.mjs:56`), and
-    `answerWithRetry` retries it — so a superseded attempt that observed a *different* model leaves
-    no record. It is not checkable today. It is also not reachable here for the ordinary cause:
-    substitution happens when the requested id is absent, and both ids are served by this machine.
-    Instrumenting it is **OAI-48** — *parked 2026-08-18, `not worth doing`; this limit therefore stays
-    stated rather than instrumented.*
-  - **G-B — replication floor: every case, all six, contributes ≥2 scored runs of 3.** No case may be
-    dropped from the headline. An earlier draft let cases fall out with the exclusion merely
-    *named*; Codex killed it, correctly — `scaffold` and `structured` could both drop while the arm
-    "passed", leaving a headline over 5 of 11 defects. Naming an exclusion does not repair the
-    estimand, it documents that a different benchmark was measured. `docs-only` is gated too, despite
-    holding no defects: it is the only negative control, so without it there is no false-positive
-    evidence at all.
-  - **G-C — unresolved-from-unscored ≤3 of 33.** Every unscored run (failed, truncated, unreadable)
-    contributes its case's scoreable defects as **unresolved** — lower bound 0 found, upper bound all
-    found — exactly as a cut run does, rather than shrinking the denominator. The corpus offers 33
-    defect-run opportunities (11 × 3). The ceiling is chosen as the largest value that keeps
-    missing-run uncertainty well below the cut-derived uncertainty already expected, so a missing run
-    is never the dominant term.
-  - **G-D — cut runs are not gated.** OAI-15 decided a cut run is scored with its silence reported as
-    a band; capping the cut-derived band would re-litigate that by the back door, and is unachievable
-    by construction for the dense arm (July: `scaffold` cut 2–3 of 3, `model-info` 1 of 3 → ≥8 of 33
-    from cuts alone). The two bands are gated separately. **The *published* interval sums both** —
-    only the thresholds stay apart, or the reported bound would undercover.
-  - **G-E — ledger completeness.** A missing or self-inconsistent `attempts[]` on any run invalidates
-    the invocation.
-  - **G-F — sole tenancy and artifact identity.** Nothing else connected; `lms ps` recorded before
-    *and* after each arm; harness SHA and tree-clean state, corpus state, LM Studio version and both
-    model ids recorded by hand (OAI-47 is not landed). **Stated limit:** pre/post residency does not
-    witness a reload *during* an arm.
-  - **G-L — instrument uniformity: every scored run must carry `contextChecked: true`.** Found while
-    writing this gate, in the July records: **every** off-pattern `analysisCap` there is exactly a
-    run whose window probe failed and whose reply budget silently fell back to 44,405 instead of the
-    window-derived figure — `config-origin` dense scored 44,405 beside 74,000, `caps` MoE 44,405
-    beside 74,000, `scaffold` MoE 44,405 beside 65,499 — and those runs cluster immediately after a
-    failed run. The fallback is not uniformly smaller (dense `scaffold` derives 30,683, below it), so
-    it is not a conservative default; it is **a different instrument**, and July scored it as if it
-    were the same one. Such a run is not scored and counts as unscored under G-C.
-
-  **G-G — the stopping rule is mechanical, because otherwise it is optional stopping.** The *first*
-  invocation of an arm satisfying G-A…G-L is the published arm **automatically, whatever recall it
-  shows**. A second invocation happens if and only if the first fails the gate; the second is final,
-  and if it fails too the arm is published as a failure, as 2026-07-30 was. No passing invocation is
-  ever re-run, and no arm is a merge of two. Every invocation is reported — including the
-  2026-08-04 smoke run (`--case docs-only --runs 1`, MoE, record `2026-08-04T19-53-16-806Z`) and any
-  aborted one.
-
-  **G-M — utility is separate from validity.** A valid arm whose full band (cut + unscored) leaves
-  more than **11 of 33** opportunities unresolved is a *valid bounded observation* and a **failed
-  baseline objective**: it is reported, it does **not** trigger another invocation, and it licenses
-  no downstream A/B. Above a third unresolved, even the majority reading of the corpus is unresolved.
-  This threshold sits only just above July's worst dense pattern, which is the honest position —
-  this arm may well pass validity and fail utility, and that outcome is itself the finding that the
-  OAI-15 ceiling must rise before a scalar baseline exists.
-
-  **The cross-arm comparison is between DEPLOYED SYSTEMS, and the clean decomposition is reported as
-  NOT OBTAINED.** This is the second thing Codex found and it is larger than the `structured`
-  confound already on file. The reply budget is derived from each model's served window, so the arms
-  do not run the same instrument on the same case — measured 2026-07-30, `model-info` capped at
-  **47,724 dense against 74,000 MoE**, `scaffold` at **30,683 against 65,499**, while `structured`
-  differs in *input* rung as well (dense `hunksOnly: true`, MoE `false`). **No case in this corpus is
-  a clean model-only comparison**, so predeclaring a "common support" of 8 defects would have been
-  false precision. What is published is "the shipped `/oai:review` with model A versus with model B,
-  each as deployed, including its window-derived reply budget". The model-versus-scoring-rule
-  decomposition this item originally wanted is **reported as not obtained**; a matched-budget arm is
-  **OAI-49**. Per-run `analysisCap`, `hunksOnly` and `estimatedTokens` are transcribed for every case
-  in both arms so the mismatch is data rather than prose. If one arm passes and the other fails, the
-  passing arm's **absolute** figure stands alone; no comparison is published.
-
-  **The control arm is a weak diagnostic and is labelled one.** `--max-attempts 1`, `scaffold`,
-  both models, `--runs 3`, run *after* both main arms. At most 3 failure observations per model,
-  temporally confounded by running last, and one case wide. It **cannot** establish retry's value or
-  its independence; the primary retry evidence is the main arms' `attempts[]` ledger. It carries no
-  gate — it is reported whatever it shows, and nothing from it may be quoted as a rate.
-
-
-  **Run logs, diagnostics and the 2026-07-30 attempt moved to [`evidence/019.md`](evidence/019.md)**
-  by the 2026-08-13 sweep — verbatim, nothing rewritten. That file carries: the 2026-08-04 run log
-  (invocations 0-2, the drop-rate replication, the retry analysis, the two failure shapes); the
-  2026-08-07/08 run log (invocations A-C and the token-exhaustion table); the diagnostics T1/T2/T3;
-  and the 2026-07-30 attempt. **G-G's every-invocation rule is satisfied there, not here.**
-  **The conclusion that matters: OAI-51 traded one failure class for another.** With a schema,
-  grammar-driven `empty-completion` transport drops. Without one, reasoning consumes the whole shared
-  budget and no findings are emitted. Both are now identified; neither is fixed.
-
-  **THIS ITEM WAS BLOCKED ON INSTRUMENT DEFECTS, not on measurement effort — both now shipped
-  2026-08-20 (OAI-115, OAI-116).** The token-exhaustion error path emitted no `attempts[]` at all,
-  so **G-E was structurally unpassable** for any arm containing one such failure — and that was the
-  dominant failure mode. Verified against 2026-08-04, where all 4 failed runs *did* carry ledgers, so
-  this was specific to the new path rather than general. No further arm was run while blocked; a dense
-  second invocation was deliberately not run for this reason, and because `scaffold` fails
-  deterministically (41,251 / 42,064 / 41,404 chars, a ±1% spread). The `--max-attempts 1` control arm
-  was deferred with it — all now unblocked, pending re-reading this body's other settled decisions
-  before scheduling.
-
-  **Dense arm's second and final invocation ran 2026-08-23/24 (Invocation D) — INVALID, and BOTH
-  arms are now PUBLISHED AS A FAILURE under G-G.** G-B fails on three of six cases (`caps` 1/3,
-  `model-info` 0/3, `scaffold` 0/3 scored — worse than Invocation C, which failed only on
-  `scaffold`); G-C fails at 17 of 33 unresolved-from-unscored against a ceiling of 3. Reviewed by
-  `codex-rescue` before this paragraph was written (session `01a032b0-a5e2-7ba3-b4fe-e3c766dd64ae`),
-  which independently re-derived the same gate arithmetic and confirmed the verdict. No dense
-  invocation remains (2 of 2 spent), and the MoE arm already exhausted both of its own in the 2026-08-07/08
-  session — **so OAI-19 as scoped produces no scalar recall baseline for either model**, and every
-  downstream item that "wants a number to beat" still has nothing to score against.
-  G-E, by contrast, passes cleanly — 0 null ledgers across all 18 runs, which is direct verification
-  that OAI-115/OAI-116 preserved a complete `attempts[]` for every observed run in this invocation
-  (not a universal guarantee for every future failure shape). The observability defect that blocked
-  this item is fixed; it did not fix recall. All 8 no-report runs in Invocation D fired the
-  `trySalvage` rescue and none of the 8 recovered; across all 14 salvage-eligible runs observed this
-  session (main arm + both halves of the deferred control arm) salvage fired 14/14 and rescued
-  exactly 1/14 (the MoE control's `scaffold` run 1 — `salvaged: true`, one anchored finding) — real
-  but rare, not "salvage never rescues." Full data, gate-by-gate arithmetic, and the Codex review are
-  in `bench/2026-08-23-oai19-run-notes.md`; not yet folded into `evidence/019.md`, per this repo's
-  convention of leaving that consolidation to a later sweep. **Open question, not decided here**:
-  whether a fix to the salvage recovery path (Codex's steer: trim the reasoning fed back into the
-  salvage prompt to a fixed head+tail retention, tried in isolation before touching the 2,048-token/
-  300s budget) is worth attempting before any further baseline arm, and whether OAI-49's matched-budget
-  arm becomes the more useful next measurement now that neither deployed-system arm cleared its gate.
-
-  ~~**The measurement is SUSPENDED, and the reason is OAI-51: the drops are our own bug.**~~
-  **Suspension DISCHARGED 2026-08-05 by the backlog sweep — OAI-51 is resolved and in
-  `BACKLOG_DONE.md`, verified against disk rather than off its commit messages.** The suspension was
-  right and the record of why it existed stands: the whole OAI-19/OAI-20/OAI-24/OAI-34 line of
-  investigation inferred server behaviour from the client side while LM Studio was writing a server
-  log the entire time, and that log names the cause outright as this plugin's own review schema.
-  Resuming before the fix would have produced a baseline contaminated by a defect we could remove.
-  **That defect is removed, so this run is launchable.** The gate below stands unchanged and was never
-  re-opened by any of this: nothing in it was wrong, it simply gated a run whose premise had moved.
-  **Two things the discharge does not license.** First, every arm run before 2026-08-04 was run against
-  the crashing instrument, so the 2026-07-30 and 2026-08-04 records are reliability evidence and not
-  recall evidence, and nothing from them may be differenced against a new arm. Second, **OAI-84 is a
-  live change to the reply parser** — two ways the default path discards an answer — so measuring
-  before it lands measures a parser that is about to change. That is the same argument OAI-51 made for
-  the suspension, one layer down, and it is the reason OAI-84 sorts ahead of this item.
 
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
@@ -448,7 +245,11 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
 - **OAI-50** — Decide whether a run whose context probe failed should be scored at all. **Filed
   2026-08-04 from OAI-19's gate work, where the July records answered the question by accident.**
   When `model-info.mjs` cannot detect a served window, the run proceeds with `contextChecked: false`
-  and the reply budget falls back to a fixed 44,405. Every off-pattern `analysisCap` in the
+  and the reply budget falls back to a fixed value. **The 44,405 figure below is the July arms'
+  observed `analysisCap` (a derived, character-based figure); re-checked 2026-08-24 against disk, the
+  fallback constant itself is now `REVIEW_UNKNOWN_WINDOW_TOKENS = 16_384` (tokens, in
+  `scripts/lib/review-request.mjs`) — the mechanism (fixed, unconditional, silent on probe failure)
+  is unchanged, only the literal number is not directly comparable across the two.** Every off-pattern `analysisCap` in the
   2026-07-30 arms is exactly such a run — `config-origin` dense at 44,405 beside 74,000, `caps` MoE
   at 44,405 beside 74,000, `scaffold` MoE at 44,405 beside 65,499 — and they cluster immediately
   after a failed run, which suggests the probe fails in whatever server state a drop leaves behind.
@@ -564,9 +365,14 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
   not replace them.
 
-- **OAI-159** — **78 citations in this file point at an `adr/` corpus that no longer exists, and 37 of
-  the 99 live items depend on one.** Filed 2026-08-14 by the backlog sweep, counted rather than
-  estimated: `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
+- **OAI-159** — **Citations in this file point at an `adr/` corpus that no longer exists.** Filed
+  2026-08-14 by the backlog sweep at 78 citations across 37 of that day's 99 live items, counted
+  rather than estimated; re-counted 2026-08-24 by this sweep against the *current* file — the backlog
+  has shrunk since filing (many carrier items closed and took their citations with them) — to **11
+  dangling citations, 7 in live item bodies (OAI-11, OAI-13, OAI-45, OAI-52, OAI-56, OAI-151 — one
+  item, OAI-151, carries two) plus 4 in this file's own header prose**, out of 19 live items today.
+  The mechanism and every load-bearing example below are unchanged; only the headline count was stale.
+  `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
   **This is a decision that was deferred, not an oversight** — and the deletion commit says so in its
   own words: *"agents/oai-delegate.md and BACKLOG*.md are pinned by tests and were deliberately not
   touched"*, while comment-only references elsewhere were *"left dangling as history, matching the
@@ -587,51 +393,12 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   **quoted sentence** it was standing in for, which survives the file it came from; (c) restore the
   corpus. **(a) plus (b) for the load-bearing few is the cheap combination**, and (b) is the only part
   that needs judgement — it means deciding which citations are evidence rather than provenance.
-  The full list of affected items, so the judgement pass has a worklist: OAI-11, OAI-13, OAI-19,
+  The full list of affected items, so the judgement pass has a worklist: OAI-11, OAI-13,
   OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-63, OAI-64,
   OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
   OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
-  (OAI-59 dropped 2026-08-23 when it shipped and its body left this file.)
-
-- **OAI-192** — **`job-launch-outcome.mjs:79`'s `terminalizeSpawnFailure` interpolates a raw spawn
-  error's `.message` directly into the object it hands to `errorReport()`, bypassing that function's
-  explicit-field-list redaction entirely** since the content is already baked into `.message` before
-  `errorReport` ever sees it. Found and deferred during OAI-185's review ladder (pass 1, Codex steer:
-  DEFER). Confirmed real but low-severity: production spawns `process.execPath` directly (the
-  companion script is an argument, not the executable), so a genuine spawn rejection here names the
-  Node binary or a local state/log path, never a remote endpoint, request target, response body, or
-  authorization value — the class of naturally secret-bearing input OAI-185 protects against. Reopen
-  if an actual secret-bearing spawn-error message is ever observed; until then this is structural
-  hardening, not a demonstrated leak.
-
-- **OAI-194** — **A server-reported model id can reach a `UserError` message unredacted, via
-  `model-selection.mjs`'s `unservedProblem`/`autoSelect` (`listModelIds` over the server's own
-  `/v1/models` response) → `delegate.mjs:111`'s `selectModel`.** Found by Codex during OAI-185's pass-5
-  adversarial review, real but assessed as not currently exploitable through the background
-  persistence path OAI-185 protects: model selection runs inside `prepareTask`'s `resolveTarget`,
-  which completes at submission time — before `task-submit.mjs` ever creates the job row — so a
-  refusal here fails the foreground submission outright rather than reaching `errorReport()`/`jobs.db`
-  or a worker's job log. Reopen if model selection is ever moved to run inside the worker, or if a
-  foreground-only exposure (this message on an operator's own terminal) is judged to need the same
-  structured-field treatment OAI-185 gave the transport layer.
-
-- **OAI-201** — `agents/oai-delegate.md`'s pre-existing `canon()` (path containment for `files`,
-  unrelated to model selection) checks only `/[\x00-\x1f]/` — C0 controls — not the fuller
-  `[\x00-\x1f\x7f-\x9f]` range OAI-181's model-id validator uses in the same file. A real in-tree
-  filename containing DEL or a C1 control character would be resolved and accepted despite the
-  attachment rule's stated "refuse a control character." Found by `codex-adversarial` during OAI-181's
-  review ladder (pass verdict point, round 5), 2026-08-23 — concrete and verifiable, but a
-  `files`/containment concern predating OAI-181, not a per-call-model one, so left out of that item's
-  diff rather than absorbing a second subsystem's fix into it.
-
-- **OAI-202** — `tests/delegate-template.test.js`'s file-level header comment ("runs the block under
-  EVERY shell on the machine") and several test names/comments repeating that claim overstate the
-  fixed `SHELLS` allowlist, which excludes any other shell installed on the machine — confirmed
-  present on this machine at `/bin/ksh` and `/bin/tcsh`, neither tested (the latter a C-shell
-  derivative, not even POSIX-family, so "every shell" was never literally true regardless of which
-  allowlist shipped). Found by `codex-plain` during OAI-181's review ladder (pass verdict point, round
-  5), 2026-08-23 — real, but a pre-existing documentation claim about the test file's own methodology,
-  predating OAI-181 and not something its diff introduced or needed to correct.
+  (OAI-59 dropped 2026-08-23, OAI-19 dropped 2026-08-24, each when it shipped/concluded and its body
+  left this file.)
 
 - **OAI-203** — `tests/delegate-containment.test.js` leaks a temp directory on every one of 13
   `mkdtempSync` call sites (`withScratchRepo`'s `repo`, and the direct `outside`/`nogit`/preload/
