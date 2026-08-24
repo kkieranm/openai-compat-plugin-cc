@@ -362,6 +362,29 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   was deferred with it — all now unblocked, pending re-reading this body's other settled decisions
   before scheduling.
 
+  **Dense arm's second and final invocation ran 2026-08-23/24 (Invocation D) — INVALID, and BOTH
+  arms are now PUBLISHED AS A FAILURE under G-G.** G-B fails on three of six cases (`caps` 1/3,
+  `model-info` 0/3, `scaffold` 0/3 scored — worse than Invocation C, which failed only on
+  `scaffold`); G-C fails at 17 of 33 unresolved-from-unscored against a ceiling of 3. Reviewed by
+  `codex-rescue` before this paragraph was written (session `01a032b0-a5e2-7ba3-b4fe-e3c766dd64ae`),
+  which independently re-derived the same gate arithmetic and confirmed the verdict. No dense
+  invocation remains (2 of 2 spent), and the MoE arm already exhausted both of its own in the 2026-08-07/08
+  session — **so OAI-19 as scoped produces no scalar recall baseline for either model**, and every
+  downstream item that "wants a number to beat" still has nothing to score against.
+  G-E, by contrast, passes cleanly — 0 null ledgers across all 18 runs, which is direct verification
+  that OAI-115/OAI-116 preserved a complete `attempts[]` for every observed run in this invocation
+  (not a universal guarantee for every future failure shape). The observability defect that blocked
+  this item is fixed; it did not fix recall. All 8 no-report runs in Invocation D fired the
+  `trySalvage` rescue and none of the 8 recovered; across all 14 salvage-eligible runs observed this
+  session (main arm + both halves of the deferred control arm) salvage fired 14/14 and rescued
+  exactly 1/14 (the MoE control's `scaffold` run 1 — `salvaged: true`, one anchored finding) — real
+  but rare, not "salvage never rescues." Full data, gate-by-gate arithmetic, and the Codex review are
+  in `bench/2026-08-23-oai19-run-notes.md`; not yet folded into `evidence/019.md`, per this repo's
+  convention of leaving that consolidation to a later sweep. **Open question, not decided here**:
+  whether a fix to the salvage recovery path (Codex's steer: trim the reasoning fed back into the
+  salvage prompt to a fixed head+tail retention, tried in isolation before touching the 2,048-token/
+  300s budget) is worth attempting before any further baseline arm, and whether OAI-49's matched-budget
+  arm becomes the more useful next measurement now that neither deployed-system arm cleared its gate.
 
   ~~**The measurement is SUSPENDED, and the reason is OAI-51: the drops are our own bug.**~~
   **Suspension DISCHARGED 2026-08-05 by the backlog sweep — OAI-51 is resolved and in
@@ -609,4 +632,40 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   allowlist shipped). Found by `codex-plain` during OAI-181's review ladder (pass verdict point, round
   5), 2026-08-23 — real, but a pre-existing documentation claim about the test file's own methodology,
   predating OAI-181 and not something its diff introduced or needed to correct.
+
+- **OAI-203** — `tests/delegate-containment.test.js` leaks a temp directory on every one of 13
+  `mkdtempSync` call sites (`withScratchRepo`'s `repo`, and the direct `outside`/`nogit`/preload/
+  openssl-conf/wrong-prefix/symlink fixtures) — none is wrapped in a `finally` or removed by any
+  `rmSync`/cleanup hook anywhere in the file, confirmed by reading the whole file. The 14th site, the
+  recipe's own `$dir` inside `runContainment`, is the only one cleaned, by the real shell `trap
+  'rm -rf "$dir"' EXIT INT TERM HUP` it exercises (`agents/oai-delegate.md:94`) — so this is
+  specifically the 13 sites the recipe's own trap does not reach. `withScratchRepo` is invoked
+  repeatedly across the file's tests, so the actual per-run leak count exceeds 13. Present,
+  deterministic and silent on every test run (not a hypothetical), so it clears the filing worth bar
+  unlike the other two candidates from the same sweep (see `bench/2026-08-23-oai19-run-notes.md`'s
+  Codex-reviewed triage). Found by an overnight `bench/review-sweep.mjs` run, 2026-08-24, confirmed by
+  direct reading and a second look from `codex-rescue`.
+
+- **OAI-204** — `trySalvage` (`scripts/lib/review-request.mjs`) fires exactly as designed on a
+  `token-reserve-cutoff`/`reasoning-only` failure but essentially never rescues it: measured directly
+  during OAI-19's 2026-08-23/24 dense-arm invocation, salvage fired on all 14 salvage-eligible runs
+  observed across that session (8 dense main-arm no-report runs, 3 dense control, 3 MoE control) and
+  rescued exactly 1 of 14. The follow-up feeds the model's own partial reasoning back as an assistant
+  turn (tens of thousands of chars on the failing cases) plus an explicit "stop reasoning, conclude
+  now" instruction, and gives it `TOKEN_RESERVE_TOKENS` (2,048) tokens / `SALVAGE_MAX_MS` (300,000ms)
+  to answer in — on every observed dense failure the model ignored the instruction and kept reasoning
+  inside the salvage window too, exhausting the 2,048-token cap without emitting content, well under
+  the 300s deadline (so the token cap binds, not the clock). Reviewed by `codex-rescue`
+  (`bench/2026-08-23-oai19-run-notes.md` "Ask 3"), which steered toward a narrow first fix: trial a
+  deterministic, recorded head+tail retention of the reasoning fed back into the salvage prompt
+  (never a second model-generated summary — that risks the same starvation), holding the 2,048-token/
+  300s budget fixed for a first A/B, to isolate whether transcript size is the lever before changing
+  more than one variable. Explicitly NOT recommended as a first move: raising the reserve/deadline
+  (T1, 2026-08-08, already showed the model just expands into a bigger budget; the 300s ceiling never
+  bound anyway) or routing large cases through `--diff-only` pre-emptively (changes what the ORIGINAL
+  review sees, not just recovery, and stacks a new window/hunks instrument-boundary confound on the
+  one OAI-19 already predeclared). Biggest named risk of the recommended trim: discarding the one
+  reasoning span that anchors the eventual finding, forcing re-analysis and making any resulting
+  recall figure a biased, non-comparable instrument. Not started — a decision to attempt it, and
+  whether it goes through `/feature` before or after another OAI-19-style arm, is still open.
 
