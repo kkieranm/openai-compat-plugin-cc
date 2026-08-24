@@ -274,20 +274,15 @@ is in its Session footguns section — not here.
   ledger fix, both display/prose-only (nothing dispatches on them): (1) it has no explanatory
   paragraph for `reasoning-only` now appearing as an ATTEMPT-level reason (`markUnanswered` can now
   reclassify a losing salvage sub-attempt to `failed`/`reasoning-only`) — it previously only ever
-  covered `reasoning-only` as a run-level/top-level reason; (2) its `token-reserve-cutoff` paragraph
+  covered `reasoning-only` as a run-level/top-level reason; **widened 2026-08-24 by OAI-206's ship:
+  attempt-level reclassification reasons are now THREE codes — `reasoning-only`, `token-exhaustion`
+  (a salvage follow-up's own `length` finish, distinct from the run-level code of the same name),
+  and `empty-answer` (whitespace-only follow-up answer) — none with a `reasonNotes` paragraph;** (2) its `token-reserve-cutoff` paragraph
   (line 158) asserts "the follow-up... attempt already ran and failed" unconditionally whenever that
   reason appears anywhere in a run's `attempts[]`, which is now false whenever that attempt's own
   ledger entry survives alongside a LATER successful salvage or an ineligible-for-salvage run — the
   attempt remaining in the record no longer implies salvage failed. Found by `codex-plain` at the
   OAI-204 review-ladder's verdict point, 2026-08-24.
-
-- **OAI-206** — `attemptSalvage` (`scripts/lib/review-request.mjs`) labels ANY salvage follow-up that
-  lands with empty content as `reasoning-only` via `reasoningOnlyFailure`, including one whose
-  `finish_reason` was `'length'` — a token-exhaustion shape, not a clean-finish-with-no-content shape.
-  This contradicts `client.mjs`'s own `isReasoningOnly` definition, which explicitly requires
-  `finishReason !== 'length'`. Attempt-record display only (nothing dispatches on `reason` here), but
-  a persisted record can now carry a wrong label for this case. Found by `agent-closer` at the OAI-204
-  review-ladder's pass, 2026-08-24, while auditing the `markUnanswered` fix's blast radius.
 
 - **OAI-207** — `bench/lib/sweep-outcome.mjs` has two pre-existing gaps, neither introduced by OAI-204
   but both found while auditing its diff: (1) `reported()` reads `report?.salvaged` explicitly but

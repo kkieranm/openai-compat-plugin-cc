@@ -1,3 +1,30 @@
+## 2026-08-24 — OAI-206 shipped: a losing salvage follow-up is labelled by its reply's shape (`f5addcb`)
+
+- **OAI-206** — `attemptSalvage` (`scripts/lib/review-request.mjs`) labels ANY salvage follow-up that
+  lands with empty content as `reasoning-only` via `reasoningOnlyFailure`, including one whose
+  `finish_reason` was `'length'` — a token-exhaustion shape, not a clean-finish-with-no-content shape.
+  This contradicts `client.mjs`'s own `isReasoningOnly` definition, which explicitly requires
+  `finishReason !== 'length'`. Attempt-record display only (nothing dispatches on `reason` here), but
+  a persisted record can now carry a wrong label for this case. Found by `agent-closer` at the OAI-204
+  review-ladder's pass, 2026-08-24, while auditing the `markUnanswered` fix's blast radius.
+  **Shipped 2026-08-24, `f5addcb`.** `salvageEmptyFailure` (`scripts/lib/review-request.mjs`)
+  dispatches the recorded failure: `length` → `token-exhaustion` (reusing `review-unparsed.mjs`'s
+  code for the same wire shape), the canonical `isReasoningOnly` → the existing
+  `reasoning-only` failure, and a whitespace-only answer → `empty-answer` — a new
+  attempt-level-only code in no reason `Set` (deliberately not `empty-completion`/
+  `blank-completion`, whose transport semantics and `RETRYABLE`/`COMPLETION_SHAPES` memberships
+  would misclassify model behaviour as server health), minted after the review ladder showed a
+  `null` reason rendered a positively-identified cause as `unclassified` in
+  `bench/lib/attempt-rows.mjs`. A truly 0-char reply never reaches the branch (refused as
+  `blank-completion` upstream), so the bare arm's one reachable shape is whitespace-only — the
+  round-1 dual dissent that settled the three-arm design against a two-arm simplification. A
+  non-length terminal finish (`content_filter`) with reasoning still labels `reasoning-only` by
+  the one canonical predicate, dismissed as correct on one-definition grounds by both approvers
+  twice. Salvage gate and outcome unchanged; three tests pin the three arms; the `===length`
+  dispatch mutation goes red four ways with restores diff-proved. Residue folded into live
+  OAI-205 (attempt-level reason vocabulary now three codes, none explained by `reasonNotes`).
+  Plan and three approval archives: `plans/oai-206-salvage-empty-label-taxonomy.md`.
+
 ## 2026-08-24 — OAI-203 shipped: every temp dir the delegate-containment suite creates is tracked and removed (`51e3354`)
 
 - **OAI-203** — `tests/delegate-containment.test.js` leaks a temp directory on every one of 13
