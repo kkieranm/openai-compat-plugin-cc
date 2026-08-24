@@ -1,8 +1,9 @@
 # Backlog
 
 IDs are stable and global (`OAI-n`, never reused). Item bodies sit in ascending ID order.
-**`tests/backlog-structure.test.js` asserts this on every `npm test`.** Project direction, prior
-header narrative and standing methodology notes are in `CLAUDE.md`'s Work tracker section, not here.
+**`tests/backlog-structure.test.js` asserts this on every `npm test`.** Project direction and prior
+header narrative are in `CLAUDE.md`'s Work tracker section; the standing N=1-per-arm methodology note
+is in its Session footguns section — not here.
 
 ## Items
 
@@ -206,7 +207,8 @@ header narrative and standing methodology notes are in `CLAUDE.md`'s Work tracke
 
 - **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half shipped
   2026-08-05** (`TASK_SPEC.booleanFlags` now includes `json`, mirroring `/oai:review`'s envelope) —
-  what remains live is `/oai:status` and `/oai:result`. OAI-80(a)'s forgeable `attachments` line is
+  full evidence moved to `BACKLOG_DONE.md`'s "OAI-57 (the `/oai:task` half)" entry, 2026-08-24, to keep
+  this item's still-open ask readable. What remains live is `/oai:status` and `/oai:result`. OAI-80(a)'s forgeable `attachments` line is
   still the reason to want the status half — *OAI-80 was parked 2026-08-18, `not worth doing`, so this
   is a reason and no longer a dependency.* Left out of OAI-3 phase 4 as unrequested surface, and
   recorded here so the omission is a decision rather than an oversight. Still small (the rows are
@@ -234,10 +236,12 @@ header narrative and standing methodology notes are in `CLAUDE.md`'s Work tracke
 - **OAI-159** — **Citations in this file point at an `adr/` corpus that no longer exists.** Filed
   2026-08-14 by the backlog sweep at 78 citations across 37 of that day's 99 live items, counted
   rather than estimated; re-counted 2026-08-24 by this sweep against the *current* file — the backlog
-  has shrunk since filing (many carrier items closed and took their citations with them) — to **11
-  dangling citations, 7 in live item bodies (OAI-11, OAI-13, OAI-45, OAI-52, OAI-56, OAI-151 — one
-  item, OAI-151, carries two) plus 4 in this file's own header prose**, out of 19 live items today.
-  The mechanism and every load-bearing example below are unchanged; only the headline count was stale.
+  has shrunk since filing (many carrier items closed and took their citations with them, and this
+  file's own header narrative, which used to carry a few, was retired entirely to
+  `evidence/backlog-header-history.md`) — to **7 dangling citations, all in live item bodies (OAI-11,
+  OAI-13, OAI-45, OAI-52, OAI-56, OAI-151 — one item, OAI-151, carries two)**, out of 15 live items
+  today. The mechanism and every load-bearing example below are unchanged; only the headline count was
+  stale.
   `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
   **This is a decision that was deferred, not an oversight** — and the deletion commit says so in its
   own words: *"agents/oai-delegate.md and BACKLOG*.md are pinned by tests and were deliberately not

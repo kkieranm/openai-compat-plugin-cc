@@ -25,7 +25,7 @@
 
 **Why parked:** The item's own text already concludes the unredacted path is not currently exploitable: model selection runs inside `resolveTarget` at submission time, before the job row exists, so a refusal here fails the foreground call outright and never reaches `errorReport()`/`jobs.db` or a worker's log — the persistence path OAI-185 protects.
 
-**Reopening bar (an instance, with a date):** Model selection moved to run inside the worker (so the message could reach persisted state), or a judged need for the same structured-field treatment on a foreground-only exposure — either with a date.
+**Reopening bar (an instance, with a date):** Model selection moved to run inside the worker, so the unredacted message can reach `errorReport()`/`jobs.db` or a worker's log — the date of that code change, not a judged risk assessment.
 
 *Filing kept verbatim:*
 

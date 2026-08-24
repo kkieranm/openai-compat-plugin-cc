@@ -1,8 +1,11 @@
 ## 2026-08-24 — OAI-19 concluded: baseline re-measurement, both arms published as failures, no scalar recall obtained
 
 - **OAI-19** — Re-measure `/oai:review`'s recall baseline, dense 27B against the MoE, under a
-  predeclared, adversarially-grilled gate (G-A through G-M — full text in the pre-2026-08-24 history
-  of this file's git log, and in `evidence/019.md`). **Concluded 2026-08-24: both arms exhausted their
+  predeclared, adversarially-grilled gate (G-A through G-M — full DEFINITIONS, thresholds and stopping
+  rule are not repeated here; they lived in `BACKLOG.md`'s own live-item text through 2026-08-23 and
+  are recoverable from `BACKLOG.md`'s git history before this closure, e.g. `git show 7c21dd2:BACKLOG.md`.
+  `evidence/019.md` holds the run-by-run arithmetic and verdicts scored AGAINST those gates, not the
+  gate definitions themselves). **Concluded 2026-08-24: both arms exhausted their
   two allowed invocations under G-G and both published as failures — no scalar baseline exists for
   either model, and none can be obtained under this item without a fresh, newly-predeclared arm.**
   - **MoE arm** — both invocations (2026-08-07, A and B) failed G-B/G-C/G-E; published as a failure
@@ -2222,6 +2225,20 @@ Highlights worth not re-deriving:
 
 Newest first.
 
+- **OAI-57 (the `/oai:task` half)** — `--json` on `/oai:task`, shipped 2026-08-05 as the prerequisite
+  Stage 2's task benchmark turned out to have: a bench that cannot read a machine-readable envelope
+  must parse prose, which is the retracted class. **Full evidence, migrated 2026-08-24 from the live
+  OAI-57 entry in `BACKLOG.md` to keep that item's still-open `/oai:status`/`/oai:result` ask
+  readable** (verbatim, no wording changed): What landed mirrors `/oai:review` exactly — the reply as
+  an opaque `content` string (nothing parses the answer's shape), the `notes` array so the template's
+  caveats cannot go missing on the machine path, `contextChecked` beside `estimatedTokens`, and
+  `errorReport` on failure with the exit code and stderr unchanged. **Verified against `TASK_SPEC` and
+  by running the command, same day:** before this shipped, only `/oai:review` had `--json`
+  (`REVIEW_SPEC.booleanFlags` included `json`; `TASK_SPEC.booleanFlags` was `['background']`, and
+  `task --json` exited 1 with "Unknown option"). The gap mattered because **Stage 2's task benchmark
+  needed exactly this** — a bench that cannot read a machine-readable task envelope must parse the
+  prose footer, which is the class this repo has retracted twice.
+
 - **OAI-83** — Task templates, starting with the one that makes a local **advisor** something you
   invoke rather than a prompt you rewrite. **Completed 2026-08-05**, Stage 2's first piece of
   `plans/local-llms-like-codex.md`. Plan: `plans/oai-83-advisor-template.md`; decision record:
@@ -2335,8 +2352,9 @@ Newest first.
   combined with `check-plan-gate.sh --dual-approved`, exit 0). It was filed the same day OAI-3
   shipped, because an owed review that lives only in a session transcript is one that never
   happens. Original scope and reasoning below, followed by what the ladder found.
-  The precedent for filing it as an item at all is the discharged `/code-review high` block recorded
-  in `BACKLOG.md`.
+  The precedent for filing it as an item at all is the discharged `/code-review high` block, recorded
+  in `evidence/backlog-header-history.md` since 2026-08-24 (moved out of `BACKLOG.md`'s header along
+  with the rest of the retired "parked theme" section it sat in).
   **Scope:** `e74eb2c^..HEAD` — eight commits, 19 new modules, 44 new tests.
   **It triggers `lean-wide` on the repo's own terms, and not marginally:** the CLAUDE.md rule is that
   wide mode fires when a change introduces or alters a module carrying vendor or protocol assumptions,
@@ -2354,7 +2372,8 @@ Newest first.
   is written down here is waste. `tests/job-auth.test.js` is therefore **inside this scope**, which
   stays `e74eb2c^..HEAD` and so extends to it automatically.
   **Full evidence, migrated 2026-08-24 from the live OAI-52 entry in `BACKLOG.md` to keep that item's
-  still-open sub-items readable** (verbatim, byte-for-byte, no wording changed):
+  still-open sub-items readable** (verbatim, no wording changed; one blank line added between the
+  two original paragraphs for blockquote rendering):
   > `tests/job-auth.test.js`, 8 tests. Both sides: `authPolicyFor` records an origin and provably not
   > the key, and `resolveCredential` is exercised on each of its four refusal legs plus the happy path.
   > The wire assertion the plan asked for is there as a real submission and a real detached worker, with

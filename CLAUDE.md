@@ -461,10 +461,13 @@ string a query-embedded credential could still be sitting inside.
   and the role of sustained load are unresolved): empty completion (`finish_reason: unknown`) or a
   stream drop ~50k chars into reasoning. It can also wedge with a model stuck `GENERATING`
   (fix: `~/.lmstudio/bin/lms unload`). **OAI-20 landed the client-side answer** — those shapes are
-  classified and retried, and every physical attempt is recorded. **OAI-19, the item that would have
-  read whether retry *recovers* the 37.5%, concluded 2026-08-24 without settling it** — both arms
-  exhausted their gate invocations as failures before producing a scalar recall number; see
-  `BACKLOG_DONE.md`.
+  classified and retried, and every physical attempt is recorded. **OAI-19 (concluded 2026-08-24,
+  both arms exhausted their gate invocations as failures — no scalar recall number for either model;
+  see `BACKLOG_DONE.md`) did settle the retry question separately, despite the arm's overall
+  invalidity: 11 runs answered on attempt 1, 3 more were rescued by retry, 4 were lost despite three
+  attempts — 61.1% → 77.8% complete. But `scaffold` went 0 answered, 0 rescued, 3 lost. Retry rescues
+  where a failure is independent and buys nothing where it's deterministic for that request — partial,
+  and not on the case that matters most (`evidence/019.md`).**
 - **Two claims about a bench arm were promoted from a single run per arm, and both were wrong**:
   "context dilution is measured" and, one paragraph after diagnosing that error, "two passes found
   different defects, so a union would score 2/2" — which compared runs from two *different modes* and
@@ -521,13 +524,17 @@ Domain:
 - The current direction is **"use local LLMs like I use Codex"** —
   [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Stated here
   rather than at the top of `BACKLOG.md`, which is data (items), not project context. Retired
-  `BACKLOG.md` header narrative (prior sweep rewrites, the pre-2026-08-04 "prove the reviewer
-  trustworthy first" theme, the N=1-per-arm methodology lesson) is archived verbatim at
-  [`evidence/backlog-header-history.md`](evidence/backlog-header-history.md).
+  `BACKLOG.md` header narrative (prior sweep rewrites, and the pre-2026-08-04 "prove the reviewer
+  trustworthy first" theme) is archived verbatim at
+  [`evidence/backlog-header-history.md`](evidence/backlog-header-history.md); the N=1-per-arm
+  methodology lesson moved live into this file's own "Session footguns" section instead, next to the
+  bench footguns it's about.
 - `BACKLOG_DONE.md` — completed items, newest first.
-- `BACKLOG_PARKED.md` — items whose **framing** was disproved, not merely deprioritised. Each carries a
-  **reopening bar**: what would have to be observed for it to become live again. An item still wanted
-  but unscheduled stays in `BACKLOG.md`; parking is for a premise that no longer holds.
+- `BACKLOG_PARKED.md` — two distinct reasons, never conflated: `refuted` (the item's **framing** was
+  disproved) or `not worth doing` (the framing is right but no dated instance clears the worth bar —
+  see `backlog-sweep`). Neither is "merely deprioritised." Each carries a **reopening bar**: what
+  would have to be observed for it to become live again. An item still wanted but unscheduled, or
+  awaiting a dated instance that just hasn't happened yet, stays in `BACKLOG.md`.
 - **"Pick next item" is a judgement call, not a file position** — `BACKLOG.md`'s bodies are in
   ascending ID order for lookup, not priority order, since the priority-ranking pass was retired
   2026-08-20; the top of the file is the lowest ID, not the most urgent item. "mark done" = move the
