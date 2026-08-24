@@ -50,9 +50,11 @@ function finishFrame(content) {
  * `content` — the actual reasoning-only shape, distinct from `finishFrame('')`
  * (no reasoning at all), which never reaches this bug: with BOTH channels
  * empty, `finishAnswer` refuses it as `BLANK_COMPLETION` before
- * `attemptSalvage` ever sees a result to judge.
+ * `attemptSalvage` ever sees a result to judge. `finishReason: 'length'`
+ * turns the same stream into the exhaustion shape instead — reasoning spent
+ * the whole budget and the answer never started.
  */
-function reasoningOnlyEmptyContentFrames(reasoningText) {
+function reasoningOnlyEmptyContentFrames(reasoningText, { finishReason = 'stop' } = {}) {
   return [
     `data: ${JSON.stringify({
       id: 'chatcmpl-test',
@@ -64,7 +66,7 @@ function reasoningOnlyEmptyContentFrames(reasoningText) {
       id: 'chatcmpl-test',
       object: 'chat.completion.chunk',
       model: 'test-model',
-      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
     })}\n\n`,
     'data: [DONE]\n\n',
   ].join('');
@@ -473,10 +475,10 @@ test('a salvage follow-up grown past the context window is refused, not sent unc
   }
 });
 
-// --- OAI-204: the salvage reasoning trim ---------------------------------
+// --- the salvage reasoning trim ------------------------------------------
 //
 // `token-reserve-cutoff` and `reasoning-only` get the smaller flat
-// TOKEN_RESERVE_TOKENS reserve AND (as of OAI-204) a head+tail trim of the
+// TOKEN_RESERVE_TOKENS reserve AND a head+tail trim of the
 // reasoning fed back into the follow-up; `deadline-timeout` keeps both its
 // full reserve and its full untouched reasoning, unchanged by this trial.
 //
@@ -498,8 +500,7 @@ const INDEXED_CHUNK_WIDTH = 51; // same width as REASONING_CHUNK, so the chunk-c
   // below (WIDE_CHUNKS_PAST_THRESHOLD, REASONING_ONLY_CHUNKS, cutoffChars) needs no change.
 
 /**
- * A non-repeating stand-in for REASONING_CHUNK (Finding 3, OAI-204 amendment,
- * `codex-adversarial`): every chunk embeds its own index, so no two windows
+ * A non-repeating stand-in for REASONING_CHUNK: every chunk embeds its own index, so no two windows
  * of the streamed reasoning are ever identical the way REASONING_CHUNK's
  * fixed 51-char period is — a periodic fixture can't tell a correctly-sliced
  * head/tail from one shifted by exactly the period (or any multiple of it),
@@ -508,8 +509,7 @@ const INDEXED_CHUNK_WIDTH = 51; // same width as REASONING_CHUNK, so the chunk-c
  * `.trim()` on the result (as `trySalvage` itself does) is a no-op — the
  * reconstruction below can rely on exact multiples of this width. Used only
  * by the two trim tests below, which assert the ENTIRE captured message
- * against an exact reconstruction rather than slice-plus-substring checks
- * (also Finding 3).
+ * against an exact reconstruction rather than slice-plus-substring checks.
  */
 function indexedChunk(i) {
   return `chunk${String(i).padStart(6, '0')}`.padEnd(INDEXED_CHUNK_WIDTH, '_');
@@ -728,9 +728,8 @@ test('salvageTrim is null on an ordinary non-salvaged run', async () => {
   }
 });
 
-// --- OAI-204 amendment (review-ladder pass 1, `codex-adversarial` and
-// `codex-plain`): the untrimmed fallback (Finding 1), the trim's expansion
-// guard (Finding 4), and its surrogate-pair safety (Finding 5). -----------
+// --- the untrimmed fallback, the trim's expansion guard, and its
+// surrogate-pair safety. --------------------------------------------------
 
 test('a trimmed salvage attempt that succeeds directly never fires the untrimmed fallback', async () => {
   const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
@@ -769,8 +768,7 @@ test('a trimmed salvage attempt that lands empty falls back to one untrimmed att
     followUpCount += 1;
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     if (followUpCount === 1) {
-      // The actual bug shape (Codex, OAI-204 review-ladder pass, mid-fix
-      // review): a clean stream that answers with real reasoning_content and
+      // The actual bug shape: a clean stream that answers with real reasoning_content and
       // genuinely empty content — never `finishFrame('')`, which carries no
       // reasoning either and so never reaches `attemptSalvage`'s content
       // check at all (`finishAnswer` refuses a reply with BOTH channels
@@ -793,8 +791,7 @@ test('a trimmed salvage attempt that lands empty falls back to one untrimmed att
     assert.equal(envelope.salvaged, true);
     assert.equal(envelope.findings[0].summary, 'concluded from the untrimmed fallback');
 
-    // The full ledger sequence — the bug this fixture was rewritten to
-    // reproduce (Codex, OAI-204 review-ladder): the losing trimmed attempt
+    // The full ledger sequence — the bug this fixture reproduces: the losing trimmed attempt
     // must NOT keep the `answered` outcome `settle()` gave it before its
     // empty content was judged unusable, or `bench/lib/attempt-rows.mjs`'s
     // `answeringAttempt()` (first `outcome === 'answered'` match) would pick
@@ -812,7 +809,7 @@ test('a trimmed salvage attempt that lands empty falls back to one untrimmed att
     assert.equal(envelope.attempts[2].outcome, 'answered', 'the winning untrimmed fallback attempt');
     assert.equal(envelope.attempts[2].reason, null);
 
-    // The field-attribution fix the amendment's round-2 review required: the
+    // The field-attribution rule: the
     // FALLBACK, not the trim, is what actually answered — the envelope must
     // say so, never the stale trimmed-attempt numbers. This is the mutation
     // target for that fix: mutate `salvageTrim` back to always reading
@@ -909,14 +906,69 @@ test('a salvage that fails on both the trimmed AND the untrimmed fallback attemp
   }
 });
 
-const NEAR_THRESHOLD_REASONING = 'x'.repeat(6_020); // Finding 4: inside the expansion-prone range
+test('a salvage follow-up that runs out of tokens is recorded token-exhaustion, never reasoning-only', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    // Non-empty reasoning is load-bearing: with both channels at 0 chars,
+    // `refuseUnusable` rejects the reply as `blank-completion` before
+    // `attemptSalvage`'s own content check ever sees it.
+    response.write(reasoningOnlyEmptyContentFrames('spent the whole follow-up budget reasoning', { finishReason: 'length' }));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'token-reserve-cutoff', 'the ORIGINAL failure still propagates');
+
+    assert.equal(envelope.attempts.length, 3, 'original + the trimmed attempt + the untrimmed fallback');
+    assert.equal(envelope.attempts[0].reason, 'token-reserve-cutoff');
+    assert.equal(envelope.attempts[1].outcome, 'failed', 'the trimmed salvage attempt');
+    assert.equal(envelope.attempts[1].reason, 'token-exhaustion');
+    assert.equal(envelope.attempts[2].outcome, 'failed', 'the untrimmed fallback attempt');
+    assert.equal(envelope.attempts[2].reason, 'token-exhaustion');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a salvage follow-up answering only whitespace is recorded empty-answer, never reasoning-only', async () => {
+  // `finishFrame(' ')` is the one route to the empty-answer arm: whitespace
+  // content passes `refuseUnusable`'s `.length` check (its own comment —
+  // whitespace has answered), trims empty at `attemptSalvage`'s gate, and
+  // carries no reasoning, so calling it `reasoning-only` would be false twice
+  // over. A literally empty reply never gets this far — `blank-completion`.
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(' '));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'token-reserve-cutoff', 'the ORIGINAL failure still propagates');
+
+    assert.equal(envelope.attempts.length, 3, 'original + the trimmed attempt + the untrimmed fallback');
+    assert.equal(envelope.attempts[1].outcome, 'failed', 'the trimmed salvage attempt');
+    assert.equal(envelope.attempts[1].reason, 'empty-answer', 'a positively-identified whitespace-only answer');
+    assert.equal(envelope.attempts[2].outcome, 'failed', 'the untrimmed fallback attempt');
+    assert.equal(envelope.attempts[2].reason, 'empty-answer');
+  } finally {
+    await server.close();
+  }
+});
+
+const NEAR_THRESHOLD_REASONING = 'x'.repeat(6_020); // Inside the expansion-prone range
   // (6,001-6,045 chars) where the omitted-count marker text is longer than what a trim in that
   // range actually removes — trimReasoning must refuse to "trim" into something longer than the
   // original rather than pretend a net-negative trim helped.
 
 /** A server whose FIRST request streams a single burst of reasoning, then
  * finishes CLEANLY with empty content (reasoning-only) — no watchdog, no
- * deadline, just a reasoning length chosen to land inside Finding 4's
+ * deadline, just a reasoning length chosen to land inside the
  * expansion-prone range. Every later request gets `onFollowUp` instead. */
 function nearThresholdReasoningThenFollowUp(onFollowUp) {
   let requestCount = 0;
@@ -949,7 +1001,7 @@ function nearThresholdReasoningThenFollowUp(onFollowUp) {
   };
 }
 
-test('reasoning just past the trim threshold is left untouched when trimming would expand it (Finding 4)', async () => {
+test('reasoning just past the trim threshold is left untouched when trimming would expand it', async () => {
   const handler = nearThresholdReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({
@@ -980,7 +1032,7 @@ test('reasoning just past the trim threshold is left untouched when trimming wou
  * A 10,000-char reasoning transcript with a real (correctly paired) UTF-16
  * surrogate pair — an emoji — placed to straddle each trim boundary exactly:
  * one across the head cut (index 1499/1500) and one across the tail cut
- * (index `length - 4500 - 1` / `length - 4500`). Finding 5 (`codex-plain`):
+ * (index `length - 4500 - 1` / `length - 4500`).
  * slice() at either boundary would otherwise split one of these pairs,
  * leaving an unpaired surrogate in the wire payload.
  */
@@ -1028,7 +1080,7 @@ function surrogateReasoningThenFollowUp(onFollowUp) {
   };
 }
 
-test('a surrogate pair straddling either trim boundary is never split in the sent follow-up (Finding 5)', async () => {
+test('a surrogate pair straddling either trim boundary is never split in the sent follow-up', async () => {
   const handler = surrogateReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({
@@ -1049,7 +1101,7 @@ test('a surrogate pair straddling either trim boundary is never split in the sen
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
     const sent = chatRequests[1].body.messages[2].content;
 
-    // (a) Finding 5's real hazard: a strict OpenAI-compatible server's own
+    // (a) The real hazard: a strict OpenAI-compatible server's own
     // JSON parser rejecting an unpaired surrogate in the wire payload.
     // Checked by a direct scan, never a JSON.stringify/parse round-trip —
     // that round-trips a lone surrogate successfully in JavaScript and would

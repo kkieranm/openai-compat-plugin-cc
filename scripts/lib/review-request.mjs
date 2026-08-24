@@ -101,7 +101,7 @@ function trimReasoning(reasoning, { apply, headChars = SALVAGE_TRIM_HEAD_CHARS, 
     return { text: reasoning, applied: false, originalChars, retainedChars: originalChars };
   }
 
-  // Finding 5 (OAI-204 amendment, `codex-plain`): slice() can split a UTF-16
+  // slice() can split a UTF-16
   // surrogate pair, leaving an unpaired surrogate in the wire payload. Shift
   // each cut inward by one char when it falls between a high surrogate and
   // its low surrogate. Every downstream figure — retainedChars, the marker's
@@ -124,7 +124,7 @@ function trimReasoning(reasoning, { apply, headChars = SALVAGE_TRIM_HEAD_CHARS, 
   const marker = `\n\n[...${omitted} characters of reasoning omitted...]\n\n`;
   const text = `${reasoning.slice(0, headEnd)}${marker}${reasoning.slice(tailStart)}`;
 
-  // Finding 4 (OAI-204 amendment, `codex-plain`): for reasoning just past the
+  // For reasoning just past the
   // threshold, the omitted-count marker text can be longer than what the trim
   // actually removed, so `text` comes out LONGER than `reasoning` despite
   // `applied: true` — the opposite of the goal. Checked against the real
@@ -227,6 +227,40 @@ function reasoningOnlyFailure(profile, result) {
 }
 
 /**
+ * The failure a salvage follow-up's empty answer is recorded as, by the
+ * reply's actual shape — mirroring `client.mjs`'s `requireAnswer` taxonomy, so
+ * a `finish_reason: 'length'` follow-up is never persisted as
+ * `reasoning-only`, a label `isReasoningOnly` itself excludes for that finish.
+ * The bare arm mints `empty-answer` — the branch positively identifies the
+ * shape (an answer channel that arrived holding only whitespace), and a bare
+ * `null` rendered a known cause as unclassified; deliberately not
+ * `empty-completion`/`blank-completion`, whose transport semantics and
+ * RETRYABLE/COMPLETION_SHAPES memberships do not apply. The server's
+ * unvalidated `finish_reason` rides on `error.finishReason`, never in
+ * `.message`. A truly 0-char both-channels
+ * reply never reaches here — `refuseUnusable` rejects it as
+ * `blank-completion` inside `chatCompletion` — so this arm's reachable shape
+ * is a whitespace-only answer, which is not reasoning-only either.
+ */
+function salvageEmptyFailure(profile, result) {
+  if (result.finishReason === 'length') {
+    const failure = new UserError(
+      `${profile.name} ran out of tokens before the salvage follow-up produced an answer.`,
+      { reason: 'token-exhaustion' },
+    );
+    failure.answer = { reasoning: result.reasoning, content: result.content };
+    return failure;
+  }
+  if (isReasoningOnly(result)) return reasoningOnlyFailure(profile, result);
+  const failure = new UserError(`${profile.name} returned an empty answer to the salvage follow-up.`, {
+    reason: 'empty-answer',
+  });
+  failure.finishReason = result.finishReason ?? 'unknown';
+  failure.answer = { reasoning: result.reasoning, content: result.content };
+  return failure;
+}
+
+/**
  * The request with no grammar behind it — the shape asked for in prose.
  *
  * **The default, and still the fallback after
@@ -285,10 +319,8 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
       // ran inside `chatCompletion` before this check ever saw the result) —
       // reclassify it now, before the failure propagates, or a run that
       // later succeeds on a later attempt ends up with two `answered`
-      // entries in one `attempts[]` array. A pre-existing instance of the
-      // same bug `attemptSalvage` below is fixed for (OAI-204 review-ladder,
-      // `codex-adversarial`): this was never reclassified either, even
-      // before salvage existed.
+      // entries in one `attempts[]` array. The same reclassification
+      // `attemptSalvage` below applies to a losing salvage attempt.
       result.markUnanswered(failure);
       throw failure;
     }
@@ -348,7 +380,7 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
  * first trial, and TOKEN_RESERVE_TOKENS/SALVAGE_MAX_MS stay unchanged so
  * transcript size is the only variable it isolates.
  *
- * Finding 2 (OAI-204 amendment, `codex-adversarial`): that isolation claim was
+ * That isolation claim was
  * already weaker than stated, and the untrimmed fallback (see `trySalvage`)
  * makes it weaker still. Head+tail trimming changes both how much AND which
  * content survives, so a trim failure alone can't distinguish "size was the
@@ -365,7 +397,7 @@ const SALVAGE_TRIM_TAIL_CHARS = 4_500;
 
 /**
  * The two failure reasons whose salvage reserve is already the smaller flat
- * TOKEN_RESERVE_TOKENS (see salvageReserve below) — and, per OAI-204, the
+ * TOKEN_RESERVE_TOKENS (see salvageReserve below) — and the
  * only two whose fed-back reasoning gets trimmed. `deadline-timeout` keeps
  * both its full built.reserve and its full untouched reasoning: that
  * combination was never observed failing to rescue in the measured data, so
@@ -390,8 +422,8 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 're
 /**
  * One physical salvage follow-up: build the messages carrying `reasoningText`
  * back as the model's own prior assistant turn, check the grown prompt
- * against the window, and send it. Extracted out of `trySalvage` (OAI-204
- * amendment, Finding 1) so it can be called twice — trimmed, then untrimmed
+ * against the window, and send it. Extracted out of `trySalvage` so it can
+ * be called twice — trimmed, then untrimmed
  * on the trimmed attempt's failure — with each call computing its own
  * `budget`/`estimatedTokens` via its own `checkContextBudget`/`estimateTokens`
  * call, never reusing another attempt's (already true for the single attempt
@@ -409,7 +441,9 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 're
  * `content`, not `isReasoningOnly`, because a wholly blank follow-up is the
  * same failure and the follow-up never carries a grammar, so `content` is the
  * only legitimate answer channel here regardless of whether the original
- * request was `--structured-output`.
+ * request was `--structured-output`. The failure the losing attempt is
+ * RECORDED as follows the reply's shape, though — see `salvageEmptyFailure`
+ * above, which owns that dispatch.
  */
 async function attemptSalvage(profile, built, schema, shared, send, salvageReserve, reasoningText) {
   const messages = [
@@ -469,7 +503,7 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
       // as unusable — reclassify it here, before returning, or the losing
       // salvage attempt keeps `answered` in the ledger beside whichever
       // attempt actually wins.
-      result.markUnanswered(reasoningOnlyFailure(profile, result));
+      result.markUnanswered(salvageEmptyFailure(profile, result));
       return null;
     }
     return { result, budget, estimatedTokens };
@@ -494,12 +528,10 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
  * tier 1 still preserves that answer on the ordinary failure path.
  *
  * **At most two attempts, never recursed further: trimmed, then untrimmed
- * once.** The trimmed follow-up regressed the one known-working case
- * (OAI-204 amendment, review-ladder pass 1, `codex-adversarial`) — confirmed
- * by direct replay, see the amendment section of
- * plans/oai-204-salvage-reasoning-trim.md — so a trimmed attempt's failure
+ * once.** The trimmed follow-up regressed the one known-working case —
+ * confirmed by direct replay — so a trimmed attempt's failure
  * gets exactly one further attempt with the reasoning fed back untouched
- * (the exact pre-OAI-204 behavior), but only when trimming actually removed
+ * (the reasoning exactly as an untrimmed salvage always sent it), but only when trimming actually removed
  * something (`trim.applied` — nothing to fall back from otherwise, and
  * `deadline-timeout`'s own attempt is already untrimmed, so this never fires
  * for it). A failure of both attempts (or of the single attempt when
@@ -582,7 +614,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
     };
   }
 
-  // Finding 1: nothing to fall back from if the reasoning was never trimmed
+  // Nothing to fall back from if the reasoning was never trimmed
   // in the first place — resending the identical text a second time would
   // just repeat the same failure for no gain.
   if (!trim.applied) return null;

@@ -146,7 +146,11 @@ when the trimmed one fails and trimming actually applied — `scripts/lib/review
 actually answered, never mixed across the two. This also means a trim SUCCESS is now ambiguous between
 "the trim rescued it" and "the untrimmed fallback rescued it" without reading a run's own
 `salvageTrim.applied` — no clean size-only isolation exists in this design, and the 25/75 head/tail
-split remains a stated, unmeasured choice rather than a derived one.
+split remains a stated, unmeasured choice rather than a derived one. `salvageEmptyFailure` labels a
+losing salvage follow-up's ledger entry by the reply's shape — `finish_reason: 'length'` →
+`token-exhaustion`, the canonical `isReasoningOnly` → `reasoning-only`, a whitespace-only answer →
+`empty-answer` — attempt-level labels only, never the run's top-level reason, which stays the
+original failure's.
 `client.mjs`'s `isReasoningOnly` is the shared predicate for a clean stream that left content empty
 after real reasoning; `unconstrained()` checks it right after its own `chatCompletion` call succeeds so
 the resulting throw lands in its own catch with `built` already in scope, since `requireAnswer`'s own
