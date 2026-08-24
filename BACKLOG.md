@@ -4,31 +4,21 @@ IDs are stable and global (`OAI-n`, never reused). Item bodies sit in ascending 
 **`tests/backlog-structure.test.js` asserts this on every `npm test`.**
 
 The direction is **"use local LLMs like I use Codex"** —
-[`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Two prior
-sweeps' full rewrite notes (2026-08-05, 2026-08-14 — what shipped, what each sweep verified and
-filed), plus the "parked theme" section that used to sit here (measurement-programme history,
-removed at the owner's request 2026-08-24 once OAI-19, the baseline it was framed around, concluded),
-are moved verbatim to
-[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md) rather than carried in
-this header.
-
-**The tier-ranking priority index and the absorbed-ID redirect table were retired 2026-08-20**,
-owner-directed, matching the same removal in `~/Code/backlog` and `~/Code/dotfiles`: no more
-priority-ranking pass over this file, and a merged item now gets a one-line stub bullet
-(`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
-resolved through the exact same `- **OAI-n**` shape as every other item — never a separate table. A
-stub always lives wherever its target lives, so it moves trackers with it (to `BACKLOG_DONE.md` when
-the target ships, to `BACKLOG_PARKED.md` if it's parked) rather than staying pinned to `## Items`.
+[`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Retired header
+narrative (two prior sweep rewrites, and the pre-2026-08-04 "prove the reviewer trustworthy first"
+theme) is archived verbatim at
+[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md).
 
 ### Standing methodology note, earned the hard way
 
 Two claims in this file were promoted from a single run per arm, and both were wrong: "context
-dilution is measured" (retracted 2026-07-28 — see below) and, one paragraph after diagnosing that
-error, "two passes found different defects, so a union would score 2/2" — which compared runs from two
-*different modes* and never reached this file only because it was caught first. **N=1 per arm is a
-lottery ticket, not a comparison, and a pair of cases that differ in more than the variable under test
-measures nothing.** Both are cheap to avoid: `--runs N` exists, and `--diff-only` gives a within-case
-arm.
+dilution is measured" (retracted 2026-07-28 — full account in
+[`evidence/backlog-header-history.md`](evidence/backlog-header-history.md)) and, one paragraph after
+diagnosing that error, "two passes found different defects, so a union would score 2/2" — which
+compared runs from two *different modes* and never reached this file only because it was caught
+first. **N=1 per arm is a lottery ticket, not a comparison, and a pair of cases that differ in more
+than the variable under test measures nothing.** Both are cheap to avoid: `--runs N` exists, and
+`--diff-only` gives a within-case arm.
 
 ## Items
 
