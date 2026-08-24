@@ -1,3 +1,42 @@
+## 2026-08-24 — OAI-204 shipped: head+tail trim for salvage's fed-back reasoning, with an untrimmed fallback (`e1d3c99`)
+
+- **OAI-204** — Filed 2026-08-24 from OAI-19's overnight measurement: salvage fired on 14 eligible
+  failures and rescued only 1, because `trySalvage` fed the model's own full partial reasoning (tens of
+  thousands of chars on the failing cases) back into the follow-up, and the model kept reasoning inside
+  the salvage window too rather than concluding. `codex-rescue` steered toward a narrow first fix: a
+  deterministic head+tail retention trim (1,500 head + 4,500 tail chars, derived from
+  `TOKEN_RESERVE_TOKENS`), holding the salvage budget fixed, scoped to `token-reserve-cutoff`/
+  `reasoning-only` only — `deadline-timeout` untouched. Grilled and shipped with no CLI flag,
+  recorded JSON-only via a new `salvageTrim` field.
+
+  A review-ladder pass on the shipped trim found it regressed the one salvage success OAI-19 had
+  measured: a direct live replay against the exact same case (MoE model, `scaffold`) showed the trim
+  turning a 1-of-3 anchored-finding rescue into a 0-of-3 miss. Per Codex's own conditional
+  ("if the trimmed path repeatedly misses while an untrimmed control succeeds, add a fallback"), now
+  met by direct evidence, the plan was amended to add an untrimmed fallback attempt — tried only when
+  the trimmed one fails and trimming actually applied — with `result`/`budget`/`estimatedTokens`/
+  `salvageTrim` always sourced from whichever attempt actually won, never mixed. That amendment went
+  through **3 rounds** of dual Codex+Claude plan review before implementation, each round closing a
+  precision gap the previous round's wording left open (attempt-attribution ambiguity, a surrogate-
+  boundary count not propagating to the reported figures, an invalid JSON-round-trip test oracle).
+
+  The review-ladder pass on the *implemented* fallback then found a second, independent, real bug
+  (confidence 0.99): a rejected salvage attempt's ledger entry stayed `outcome: 'answered'` even though
+  its content was unusable, so a run that failed once and then succeeded carried TWO `answered` entries
+  in one `attempts[]` array — violating `bench/lib/attempt-rows.mjs`'s stated "exactly one answered
+  attempt" invariant and misattributing `warmEligible`/prefill timing to the losing attempt. Fixed with
+  a `markUnanswered(error)` reclassification hook (`attempt-outcome.mjs`/`answer-attempts.mjs`), applied
+  at the new salvage-rejection site AND a pre-existing instance of the identical bug in
+  `unconstrained()`'s own reasoning-only handling that predates OAI-204 entirely — required for the
+  invariant to actually hold, not optional cleanup.
+
+  Both the trim-scope gate and the ledger fix are mutation-verified. Full review-ladder pass — two
+  rounds of acceptance-audit (checklist + whole-artifact instruments), adversarial and plain Codex
+  review, fork-opener (once retried after a narration-echo non-answer), agent-closer — dual-approved at
+  the verdict point with three non-blocking residue items, filed as OAI-205, OAI-206, OAI-207. Full
+  evidence trail: `bench/2026-08-23-oai19-run-notes.md`, `plans/oai-204-salvage-reasoning-trim.md` and
+  its `.approved/` archives.
+
 ## 2026-08-23 — OAI-181 shipped: per-call model selection for the delegate agent (`dd9de67`)
 
 - **OAI-181** — Filed 2026-08-17 from a direct user request ("we should be able to specify per call

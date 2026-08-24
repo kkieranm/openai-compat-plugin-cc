@@ -646,26 +646,35 @@ See [ADR 006](adr/006-benchmarking-the-reviewer.md); the harness prints the same
   Codex-reviewed triage). Found by an overnight `bench/review-sweep.mjs` run, 2026-08-24, confirmed by
   direct reading and a second look from `codex-rescue`.
 
-- **OAI-204** — `trySalvage` (`scripts/lib/review-request.mjs`) fires exactly as designed on a
-  `token-reserve-cutoff`/`reasoning-only` failure but essentially never rescues it: measured directly
-  during OAI-19's 2026-08-23/24 dense-arm invocation, salvage fired on all 14 salvage-eligible runs
-  observed across that session (8 dense main-arm no-report runs, 3 dense control, 3 MoE control) and
-  rescued exactly 1 of 14. The follow-up feeds the model's own partial reasoning back as an assistant
-  turn (tens of thousands of chars on the failing cases) plus an explicit "stop reasoning, conclude
-  now" instruction, and gives it `TOKEN_RESERVE_TOKENS` (2,048) tokens / `SALVAGE_MAX_MS` (300,000ms)
-  to answer in — on every observed dense failure the model ignored the instruction and kept reasoning
-  inside the salvage window too, exhausting the 2,048-token cap without emitting content, well under
-  the 300s deadline (so the token cap binds, not the clock). Reviewed by `codex-rescue`
-  (`bench/2026-08-23-oai19-run-notes.md` "Ask 3"), which steered toward a narrow first fix: trial a
-  deterministic, recorded head+tail retention of the reasoning fed back into the salvage prompt
-  (never a second model-generated summary — that risks the same starvation), holding the 2,048-token/
-  300s budget fixed for a first A/B, to isolate whether transcript size is the lever before changing
-  more than one variable. Explicitly NOT recommended as a first move: raising the reserve/deadline
-  (T1, 2026-08-08, already showed the model just expands into a bigger budget; the 300s ceiling never
-  bound anyway) or routing large cases through `--diff-only` pre-emptively (changes what the ORIGINAL
-  review sees, not just recovery, and stacks a new window/hunks instrument-boundary confound on the
-  one OAI-19 already predeclared). Biggest named risk of the recommended trim: discarding the one
-  reasoning span that anchors the eventual finding, forcing re-analysis and making any resulting
-  recall figure a biased, non-comparable instrument. Not started — a decision to attempt it, and
-  whether it goes through `/feature` before or after another OAI-19-style arm, is still open.
+- **OAI-205** — `bench/lib/reason-notes.mjs`'s `reasonNotes` has two accuracy gaps against the OAI-204
+  ledger fix, both display/prose-only (nothing dispatches on them): (1) it has no explanatory
+  paragraph for `reasoning-only` now appearing as an ATTEMPT-level reason (`markUnanswered` can now
+  reclassify a losing salvage sub-attempt to `failed`/`reasoning-only`) — it previously only ever
+  covered `reasoning-only` as a run-level/top-level reason; (2) its `token-reserve-cutoff` paragraph
+  (line 158) asserts "the follow-up... attempt already ran and failed" unconditionally whenever that
+  reason appears anywhere in a run's `attempts[]`, which is now false whenever that attempt's own
+  ledger entry survives alongside a LATER successful salvage or an ineligible-for-salvage run — the
+  attempt remaining in the record no longer implies salvage failed. Found by `codex-plain` at the
+  OAI-204 review-ladder's verdict point, 2026-08-24.
+
+- **OAI-206** — `attemptSalvage` (`scripts/lib/review-request.mjs`) labels ANY salvage follow-up that
+  lands with empty content as `reasoning-only` via `reasoningOnlyFailure`, including one whose
+  `finish_reason` was `'length'` — a token-exhaustion shape, not a clean-finish-with-no-content shape.
+  This contradicts `client.mjs`'s own `isReasoningOnly` definition, which explicitly requires
+  `finishReason !== 'length'`. Attempt-record display only (nothing dispatches on `reason` here), but
+  a persisted record can now carry a wrong label for this case. Found by `agent-closer` at the OAI-204
+  review-ladder's pass, 2026-08-24, while auditing the `markUnanswered` fix's blast radius.
+
+- **OAI-207** — `bench/lib/sweep-outcome.mjs` has two pre-existing gaps, neither introduced by OAI-204
+  but both found while auditing its diff: (1) `reported()` reads `report?.salvaged` explicitly but
+  never reads the new `salvageTrim` field, so a sweep's outcome classification is blind to whether a
+  rescued run was trimmed, fell back untrimmed, or wasn't eligible — out of scope for OAI-204 itself
+  (that field's design is explicitly JSON-only, no sweep-integration was ever asked for), but a real
+  gap for anyone wanting to compare trim-vs-fallback rescue rates from `bench/review-sweep.mjs` output
+  without reading raw JSON records by hand. (2) `STARVED_REASONS` (a `Set` including
+  `'token-reserve-cutoff'`/`'reasoning-only'` plus `'token-exhaustion'`) is a third, independently
+  maintained copy of a reason list that overlaps but does not match either
+  `SALVAGE_SMALL_RESERVE_REASONS` or `SALVAGE_REASONS` in `scripts/lib/review-request.mjs` — the exact
+  drift risk OAI-204 consolidated those two into one shared `Set` specifically to prevent, one file
+  over. Found by acceptance-audit's whole-artifact scout during the OAI-204 review-ladder, 2026-08-24.
 
