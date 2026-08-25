@@ -1,3 +1,54 @@
+## 2026-08-25 — OAI-209 shipped: one event, one true account of it (`67c7e7d`)
+
+Five review-ladder passes and three plan-gate episodes. The item as filed was display-only; the
+ladder turned up four defects that were not, and twelve instances of the item's own defect class —
+a sentence or comment asserting something the code does not do — every one caught by a reviewer and
+none by a test.
+
+**What shipped beyond the filed item.** `STARVED_WHY` became total over the exported
+`STARVED_REASONS`, selected with `Object.hasOwn`, so an unrecognised starved reason reads as
+unrecognised instead of inheriting `token-exhaustion`'s prose — production was fail-open, and the
+first fix guarded it only from the test side. `WHY.starved` is deleted. `reasonSuffix` is now the one
+place a row prints its reason, for every outcome: the predicate it replaced silently dropped a
+malformed reason from a non-starved row, losing the only evidence such a row carried. `displayReason`
+bounds and escapes every value it prints, because `unrecorded` carries a filesystem error message
+rather than a code and a backtick in one corrupted its row — found by the first instrument that read
+whole files instead of diffs, at pass four.
+
+**Two wordings were rejected before the third stood.** "Spent its whole reply budget" was replaced by
+"neared exhaustion", which is false at the arming boundary where the watchdog fires with half the
+budget unspent; that by the firing predicate itself; and that, finally, by directly observed facts
+only. Rendered sentences now make no causal, quantitative or proximity claim.
+
+**The prose defect rate never fell** — twelve instances across six batches, every batch shipping at
+least one, with two prescriptions tried and neither reversing it. The ladder stopped on instrument
+coverage instead: diff review, whole-file read, cross-file data-flow trace and execution over a value
+matrix have each been run against the final artifact and the last run of each found nothing new in
+rendered output. `tests/sweep-report.test.js` now states in its own header that it pins which
+sentence rendered and never whether it is true.
+
+**Shipped knowingly not injection-safe.** `finding.summary`, `entry.model` and `entry.subject` still
+reach Markdown unbounded and unescaped by independent, pre-existing routes — filed as OAI-213, and
+disclosed to both approvers at the verdict point rather than left for them to find.
+
+Suite 1220 → 1232, green. Every added conditional mutation-proved. Both plan-gate halves rejected a
+round apiece; the terminal verdict was dual-approved on digest `f81f66784dea`.
+
+- **OAI-209** — `scripts/lib/stream-collect.mjs`'s token-reserve-cutoff `UserError` message says the
+  model "spent its whole reply budget reasoning before writing an answer" — false by the mechanism's
+  own design: the watchdog fires at a character threshold chosen to trip BEFORE the pool is spent,
+  preserving the answer reserve, and the report paragraph `bench/lib/reason-notes.mjs` now renders
+  for the same event states that correctly, so the two user-facing accounts of one event contradict.
+  Display-only (`reason: 'token-reserve-cutoff'` is the machine-read discriminator; no test pins the
+  message). The same false claim renders a second way: `bench/lib/sweep-report.mjs`'s `STARVED_WHY`
+  special-cases only `reasoning-only`, so a `starved` `token-reserve-cutoff` entry falls to the
+  generic "the budget was gone" explanation — the report layer repeating the runtime message's
+  overclaim — and the renderer tests cover `reasoning-only`/`token-exhaustion` but not
+  `token-reserve-cutoff`. Dated instances: the `bench/results/review-sweep-2026-08-24*` reports
+  carry both renderings verbatim. Found by `codex-adversarial` at the OAI-205 review-ladder's
+  terminal pass, 2026-08-24; the report-layer sibling by the tracker-entry Codex check that
+  followed it.
+
 ## 2026-08-24 — OAI-205 shipped: reasonNotes' paragraphs made true and complete (`314ab82`)
 
 - **OAI-205** — `bench/lib/reason-notes.mjs`'s `reasonNotes` has two accuracy gaps against the OAI-204

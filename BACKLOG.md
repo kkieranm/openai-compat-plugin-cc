@@ -298,20 +298,6 @@ is in its Session footguns section — not here.
   class had one dated instance — a suite-wide fix is the recurrence that decision named, so
   graduation to `tests/structure.test.js` should be re-judged here, not assumed either way.
 
-- **OAI-209** — `scripts/lib/stream-collect.mjs`'s token-reserve-cutoff `UserError` message says the
-  model "spent its whole reply budget reasoning before writing an answer" — false by the mechanism's
-  own design: the watchdog fires at a character threshold chosen to trip BEFORE the pool is spent,
-  preserving the answer reserve, and the report paragraph `bench/lib/reason-notes.mjs` now renders
-  for the same event states that correctly, so the two user-facing accounts of one event contradict.
-  Display-only (`reason: 'token-reserve-cutoff'` is the machine-read discriminator; no test pins the
-  message). The same false claim renders a second way: `bench/lib/sweep-report.mjs`'s `STARVED_WHY`
-  special-cases only `reasoning-only`, so a `starved` `token-reserve-cutoff` entry falls to the
-  generic "the budget was gone" explanation — the report layer repeating the runtime message's
-  overclaim — and the renderer tests cover `reasoning-only`/`token-exhaustion` but not
-  `token-reserve-cutoff`. Dated instances: the `bench/results/review-sweep-2026-08-24*` reports
-  carry both renderings verbatim. Found by `codex-adversarial` at the OAI-205 review-ladder's
-  terminal pass, 2026-08-24; the report-layer sibling by the tracker-entry Codex check that
-  followed it.
 
 - **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
   three marker tests (`:75`, `:95`, `:115`) each read `const messageLine = result.stderr.split('\n')[0]`
@@ -342,3 +328,55 @@ is in its Session footguns section — not here.
   needs the raw invocation-D run data, not a wording edit. Filed because this is published evidence a
   concluded item's numbers were drawn from: whichever way it resolves, one of the two accounts in the
   file is currently wrong about `caps`.
+
+- **OAI-212** — **A keyed, whole-document clean review is visibly discarded as `parsed: false`.** A
+  reply whose ENTIRE text is `findings: []`, an `analysis:` paragraph and a `summary:` scalar — an
+  unambiguous "no defects found" — is read by nothing and reported unreadable, while the same
+  whole-document shape carrying one or more block-list items parses fine. The failure is asymmetric in
+  the worst direction for a reviewer: a clean review is indistinguishable from a broken run, and only
+  the clean one is lost. **Four observed replies across two dates**, not four independent
+  reproductions: `bench/2026-08-08-oai19-run-notes.md:71` records two, correlated within a single
+  qwen MoE invocation and pre-dating `findings-yaml.mjs` entirely, dismissed at the time as the model
+  not following the format; 2026-08-25 reproduced it live on `google/gemma-4-12b-qat` and again on
+  `google/gemma-4-26b-a4b-qat`, which is what establishes the gap is still open on today's tree.
+  Neither model family is the subject — qwen produced it too. **Two rejections, in order**:
+  `findings-yaml.mjs`'s first-line test requires line one to equal `findings:` exactly, so
+  `findings: []` is refused before the flow-collection rule is ever consulted; `findingsIn` then falls
+  through to `extractJson`, which scans the `[]` and hands it to `findingsShaped`, whose scanned-array
+  branch requires a non-empty list. Each rule is defensible where it stands — the YAML acceptor is
+  deliberately a narrow whole-document grammar rather than a YAML parser, and the non-empty rule
+  refuses a trailing decoy that names nothing — and the reply falls between them. Verified by calling
+  `parseFindings` directly rather than by reading it: `{"findings": [], "summary": "..."}` and a bare
+  `[]` are both accepted as whole replies, block-style YAML with one item is accepted, and every
+  `findings: []` variant returns `null`. **This does NOT meet OAI-112's reopening bar**, which names a
+  SILENT wrong-candidate selection; here nothing is selected and the run says so. It does sit against
+  that item's own carried evidence that *"a lone scanned empty could be accepted while genuine
+  competitors are refused"*, and OAI-112's candidate-selection replacement could cure this symptom
+  through the `extractJson` fallback without touching the YAML acceptor at all — so the two may later
+  merge, and this item does not claim the YAML half is the only adequate fix. It does not inherit
+  OAI-112's withdrawn-design plan gate. See also OAI-156 for the whole-document boundary the YAML
+  acceptor was drawn at.
+
+- **OAI-213** — **The sweep report interpolates untrusted text into Markdown at three sinks, and the
+  worst is reached by every ordinary run.** OAI-209 closed one of them (`entry.reason`, via
+  `displayReason`) after a `token-reserve-cutoff` row corrupted its own line; the focused
+  trust-boundary sweep run at that item's review then traced every other value reaching rendered
+  Markdown and found three more, all pre-existing and all by routes that change did not touch.
+  **`finding.summary` is the worst**: model-authored prose about code, arriving through the
+  unconstrained parser `bench/review-sweep.mjs` always uses — it never passes `--structured-output`,
+  and `normalizeFinding` applies no cap and no filtering there, the schema's `maxLength` being prompt
+  text a grammar engine may honour rather than anything this client enforces. It renders as plain
+  text with **no code span and no newline handling**, so a triple backtick opens an unterminated
+  fenced block and swallows the rest of the report, and a blank line breaks the list. Findings that
+  quote source are the ordinary shape of a review reply, not an edge case. `finding.file` and
+  `finding.evidence` share the route; `evidence` at least converts newlines to blockquote
+  continuations. **`entry.model`** is a server-reported id echoed into a code span at two sites
+  (`answeredBy`, and again inside `findingsBlock`), unbounded and unescaped — structurally the same
+  shape as the defect OAI-209 fixed, and adjacent to the OAI-185 residue about a server-reported
+  model id reaching a `UserError` message, though this is a different sink that note does not cover.
+  **`entry.subject`** is a git commit subject, foreign under `--repo`. Dated instance 2026-08-25: the
+  `entry.reason` case was reproduced by executing the renderer, and the enumeration above was
+  verified the same way. Filed rather than fixed in OAI-209 because the routes are independent of
+  that item's subject and predate it — a judgement `codex-adversarial` was asked to argue against and
+  upheld ("different input route, different rendering contract, no causal overlap").
+
