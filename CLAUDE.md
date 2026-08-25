@@ -161,7 +161,12 @@ genuine server-side drop already reaches `serverUnwell` by other routes — the 
 accepts directly, or `COMPLETION_SHAPES`. `bench/lib/sweep-outcome.mjs`
 classifies an unsalvaged `token-reserve-cutoff` alongside `token-exhaustion` as `starved`, never as
 a generic failure or a server-health symptom; `bench/lib/reason-notes.mjs` explains both codes to a
-reader in prose.
+reader in prose, and `bench/lib/sweep-report.mjs`'s `STARVED_WHY` is total over the exported
+`STARVED_REASONS` and selected with `Object.hasOwn`, so a coverage row's sentence is the one written
+for its own reason, while a reason that is unrecognised, blank or not text at all gets a sentence of
+its own; `reasonSuffix` is the one place a row prints the reason itself, and `displayReason` bounds
+and escapes every value it prints, because `unrecorded` carries a filesystem error message rather
+than a code.
 
 `scripts/lib/review-unparsed.mjs`'s `unparsedReply` is a post-hoc classifier, not a request-failure
 path: `token-exhaustion` (`finish_reason: 'length'`) and the reasoning-only fallthrough to

@@ -5,12 +5,26 @@
 // So these test the RENDERED TEXT. The rule under test is one sentence — what is
 // rendered is decided by what an entry CARRIES, never by what its outcome is
 // called — and each test below is one way keying on the outcome went wrong.
+//
+// WHAT THESE ASSERTIONS DO NOT ESTABLISH. Most match substrings of rendered
+// output, so they pin WHICH sentence a row rendered and whether a forbidden
+// phrase is absent; the totality test also reads the source tables directly.
+// None can tell whether a sentence is TRUE of the row it describes; a false
+// sentence here is caught by review, not by this file. So the truth of
+// rendered prose is checked by a reader, and the
+// sentences are kept to directly observed facts to shrink what a reader has to
+// check; treating a green run as evidence that the report is honest is the
+// mistake this note exists to prevent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
+import { STARVED_WHY, renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
+// Read from where it is DEFINED, never copied: the totality test below is a
+// consumer of the classifier's own list, so relocating that list changes an
+// import path here and nothing else.
+import { STARVED_REASONS } from '../bench/lib/sweep-outcome.mjs';
 
 const base = {
   startedAt: '2026-08-08T23:00:00.000Z',
@@ -203,6 +217,197 @@ test('a starved reasoning-only commit is NOT described as having run out of toke
 test('a starved token-exhaustion commit still says it ran out of tokens', () => {
   const out = render(commit({ outcome: 'starved', reason: 'token-exhaustion' }));
   assert.match(out, /ran out of tokens/);
+});
+
+// Same false diagnosis, second reason: the watchdog fires at a threshold chosen
+// to trip BEFORE the pool is spent, precisely so an answer reserve survives for
+// the salvage follow-up. Telling the reader the budget was gone describes the
+// failure the cutoff exists to prevent.
+test('a starved token-reserve-cutoff commit is NOT described as having run out of tokens', () => {
+  const out = render(commit({ outcome: 'starved', reason: 'token-reserve-cutoff' }));
+  assert.doesNotMatch(out, /ran out of tokens/);
+  assert.doesNotMatch(out, /budget was gone/);
+  assert.match(out, /stopped the stream at the reasoning cutoff/);
+  assert.match(out, /had not written an answer/);
+});
+
+// A starved reason must render prose written for itself, never prose written
+// for a different reason: the three differ on whether the token budget was
+// actually spent, so sharing a sentence tells the reader something that did not
+// happen.
+test('every starved reason renders prose of its own', () => {
+  assert.ok(STARVED_REASONS.size > 0, 'STARVED_REASONS is empty — the loop below would assert nothing');
+  for (const reason of STARVED_REASONS) {
+    // Asserted against the TABLE's own value, read before the renderer's
+    // guard can substitute for it. A blank or non-string entry is the case
+    // this catches, and checking only the rendered output could not: the
+    // guard would quietly replace it with the unrecognised sentence and an
+    // absence-only assertion would pass.
+    const prose = STARVED_WHY[reason];
+    assert.equal(typeof prose, 'string', `starved reason ${reason} has no string prose`);
+    assert.notEqual(prose.trim(), '', `starved reason ${reason} has blank prose`);
+    const out = render(commit({ outcome: 'starved', reason }));
+    assert.ok(out.includes(prose), `starved reason ${reason} does not render its own prose`);
+  }
+  // The other direction. An orphan key is reachable, not hypothetical: a
+  // foreign-build ledger can carry a starved row naming a reason this build
+  // dropped from the set, and `Object.hasOwn` would then serve stale prose
+  // instead of saying it does not recognise the reason.
+  for (const key of Object.keys(STARVED_WHY)) {
+    assert.ok(STARVED_REASONS.has(key), `STARVED_WHY has prose for ${key}, which is not a starved reason`);
+  }
+});
+
+// The fail-open regression control. Before the table was made total, an
+// unrecognised starved reason inherited token-exhaustion's "ran out of tokens"
+// — asserting something that did not happen. Reporting less is this section's
+// standing failure mode; reporting something false is worse.
+test('an unrecognised starved reason reads as unrecognised, never as having run out of tokens', () => {
+  const out = render(commit({ outcome: 'starved', reason: 'some-future-reason' }));
+  assert.match(out, /no explanation is defined/);
+  assert.doesNotMatch(out, /ran out of tokens/);
+  assert.doesNotMatch(out, /budget was gone/);
+});
+
+// A reason naming an Object.prototype key must not reach for the prototype's
+// value. Two independent guards produce this — the `Object.hasOwn` lookup and
+// the value-shape check — so the assertion is on the OUTPUT rather than on
+// which of them did the work; either alone would pass it.
+test('a starved reason that names an Object.prototype key does not select a function', () => {
+  const out = render(commit({ outcome: 'starved', reason: 'toString' }));
+  assert.match(out, /no explanation is defined/);
+});
+
+// A ledger written by another build can carry a starved row with no usable
+// reason at all — `readLedger` validates no shapes and `mergeManifest` passes
+// a recovered entry through verbatim.
+// Whitespace and the empty string route here with null and undefined: none is
+// a code a reader could look up, and the sentence says "no non-blank reason
+// code" rather than "nothing was recorded", which whitespace would falsify.
+test('every value that is not a usable reason code routes to the no-usable-code sentence', () => {
+  for (const reason of [undefined, null, '', '   ']) {
+    const out = render(commit({ outcome: 'starved', reason }));
+    assert.match(out, /NO USABLE REASON CODE/, `${JSON.stringify(reason)} did not route to the no-usable-code sentence`);
+    assert.doesNotMatch(out, /UNUSABLE REASON CODE —/, `${JSON.stringify(reason)} was treated as malformed`);
+  }
+});
+
+test('a starved row with no reason says so, and promises no code', () => {
+  const out = render(commit({ outcome: 'starved', reason: undefined }));
+  assert.match(out, /NO USABLE REASON CODE/);
+  assert.doesNotMatch(out, /no explanation is defined/);
+  assert.doesNotMatch(out, /ran out of tokens/);
+});
+
+// The sentences must scope their ignorance to the reason CODE. The row already
+// says `starved`, which is itself a why — it separates starvation from crashed,
+// truncated, unreadable and the skipped outcomes — so a sentence denying that
+// anything is known about why contradicts the line printing it. Pinned
+// negatively because a sentence can go false while every string a test matches
+// on stays correct.
+test('no starved sentence denies knowing what the row itself states', () => {
+  for (const reason of [...STARVED_REASONS, 'some-future-reason', undefined, { code: 42 }]) {
+    const out = render(commit({ outcome: 'starved', reason }));
+    assert.doesNotMatch(out, /nothing is known/, `reason ${String(reason)} denies knowing anything`);
+    assert.doesNotMatch(out, /is all that is known/, `reason ${String(reason)} claims to be all that is known`);
+  }
+});
+
+// The same route can carry a reason that is not a string. That value is still
+// something the record knows, so it is rendered rather than discarded — by the
+// shared suffix, exactly once, never also inside the sentence.
+test('a starved row whose reason is not a string renders the value exactly once', () => {
+  const out = render(commit({ outcome: 'starved', reason: { code: 42 } }));
+  assert.match(out, /UNUSABLE REASON/);
+  assert.doesNotMatch(out, /object Object/);
+  assert.doesNotMatch(out, /NO USABLE REASON CODE/);
+  assert.equal(out.match(/\{"code":42\}/g)?.length, 1, 'the recorded value must render exactly once');
+});
+
+// The regression this suffix exists to fix, and it is NOT a starved row. A
+// non-string reason on any other outcome used to print nothing at all: the
+// predicate said "not a usable code" and the row dropped the only evidence it
+// had. Same unvalidated-ledger route as the starved case.
+test('a non-starved row keeps a malformed reason instead of dropping it', () => {
+  const out = render(commit({ outcome: 'failed', reason: { kind: 'timeout' } }));
+  assert.match(out, /the review failed/);
+  assert.match(out, /\{"kind":"timeout"\}/);
+  assert.doesNotMatch(out, /object Object/);
+});
+
+// The suffix's arms must match the sentence's. A whitespace reason is not a
+// usable code, so the row says so — and must not then print the blank value
+// beside that sentence.
+test('a whitespace reason prints no code beside the sentence saying there is none', () => {
+  const out = render(commit({ outcome: 'starved', reason: '   ' }));
+  assert.match(out, /NO USABLE REASON CODE/);
+  assert.doesNotMatch(out, /recorded reason:/);
+  assert.doesNotMatch(out, /\(`\s*`\)/);
+});
+
+// A malformed reason is unvalidated ledger content arriving by the same route,
+// so it must not be able to break the row it renders into or run off the page.
+test('a malformed reason is bounded and cannot break out of its row', () => {
+  const long = render(commit({ outcome: 'starved', reason: { note: 'x'.repeat(400) } }));
+  assert.match(long, /…/);
+  assert.ok(long.split('\n').every((line) => line.length < 400), 'a row ran past its bound');
+  const ticked = render(commit({ outcome: 'starved', reason: { note: '`code`' } }));
+  assert.match(ticked, /UNUSABLE REASON/);
+  assert.doesNotMatch(ticked, /`code`/);
+});
+
+// The value is untrusted ledger content landing in a Markdown list item. A
+// backtick strip alone is not Markdown-safe: emphasis, links and images all
+// alter the report without one.
+test('a malformed reason cannot inject Markdown into the report', () => {
+  const out = render(commit({
+    outcome: 'starved',
+    reason: { note: '**forged** [link](http://x) ![img](y) <b>t</b> # h' },
+  }));
+  assert.match(out, /UNUSABLE REASON/);
+  for (const metachar of ['**', '[', ']', '(', ')', '<', '>', '#']) {
+    assert.ok(!out.includes(`forged${metachar}`) && !out.includes(`${metachar}forged`), 'emphasis survived');
+  }
+  assert.doesNotMatch(out, /\[link\]/);
+  assert.doesNotMatch(out, /!\[img\]/);
+  assert.doesNotMatch(out, /<b>/);
+});
+
+// The trust boundary the string arm was assumed not to have. `unrecorded`'s
+// reason is `gap.why`, which `sweep-ledger.mjs` sets to the text of a
+// filesystem error, so a "reason" reaching this row can be arbitrary and
+// unbounded — a backtick in it closes the code span and corrupts the row.
+test('a raw error message carried as a reason cannot corrupt or overrun its row', () => {
+  const out = render(commit({
+    outcome: 'unrecorded',
+    reason: `write EACCES, open \`/x/y\` ${'and on '.repeat(40)}`,
+  }));
+  assert.match(out, /unrecorded/);
+  assert.doesNotMatch(out, /`\/x\/y`/, 'a backtick in the message must not survive into the code span');
+  const row = out.split('\n').find((line) => line.includes('unrecorded'));
+  assert.ok(row.length < 320, `the row ran to ${row.length} chars`);
+});
+
+// The control for the test above: an ordinary minted code must survive the same
+// path byte-identical. Every reason this codebase mints is lowercase kebab
+// ASCII, so normalising them is a no-op — if it ever stops being one, this goes
+// red rather than a code quietly rendering mangled.
+test('a legitimate reason code renders unchanged through the same path', () => {
+  for (const code of ['token-reserve-cutoff', 'non-retryable-transport', 'bad-json', 'model-substituted']) {
+    const out = render(commit({ outcome: 'failed', reason: code }));
+    assert.match(out, new RegExp(`\\(\`${code}\`\\)`), `${code} did not render verbatim`);
+  }
+});
+
+// stringify throws on a circular structure, and the whole morning report would
+// be lost with it. Losing one row's detail is the acceptable failure here;
+// losing the artifact is not.
+test('a reason that cannot be stringified still renders a row', () => {
+  const circular = { self: null };
+  circular.self = circular;
+  const out = render(commit({ outcome: 'starved', reason: circular }));
+  assert.match(out, /UNUSABLE REASON/);
+  assert.match(out, /unrenderable object/);
 });
 
 // The window this run walked. Without it the artifact cannot say what it

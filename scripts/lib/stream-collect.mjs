@@ -158,7 +158,7 @@ export async function collectStream(
       ) {
         const reasoningChars = answer.reasoning.length;
         const failure = new UserError(
-          `${profile.name} spent its whole reply budget reasoning before writing an answer.`,
+          `${profile.name} was still reasoning and had not written an answer when the client stopped the stream at the reasoning cutoff.`,
           { hint: 'Attempting to conclude from the partial reasoning instead.' },
         );
         failure.reason = 'token-reserve-cutoff';

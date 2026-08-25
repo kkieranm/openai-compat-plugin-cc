@@ -273,6 +273,18 @@ test('a salvage attempt that itself fails falls back to reporting token-reserve-
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'token-reserve-cutoff');
     assert.equal(envelope.salvaged, undefined);
+    // Asserted HERE, on an envelope the watchdog actually minted, rather than
+    // against a hand-built error: an absence assertion on a message nothing
+    // produced passes for the wrong reason.
+    //
+    // The message states only what was observed — the model was reasoning, no
+    // answer existed, the client stopped the stream. It makes no claim about
+    // how much of the budget was spent, because the threshold is an estimate
+    // that fires before the budget is gone, and at the smallest armed budget
+    // it fires with half of it unspent.
+    assert.doesNotMatch(envelope.message, /whole reply budget|budget was gone|ran out of tokens|neared exhaustion/i);
+    assert.match(envelope.message, /reasoning cutoff/);
+    assert.match(envelope.message, /had not written an answer/);
     // Tier 1's guarantee: the partial reasoning survives even when salvage fails.
     assert.ok(envelope.partial?.reasoning?.length >= 6144);
     // Original + the failed trimmed attempt + the failed untrimmed fallback attempt.

@@ -180,7 +180,7 @@ function usableReason(stdout) {
 // alongside the others rather than as a generic failure — a salvaged one
 // already returns as `outcome: 'ok'` upstream and never reaches this
 // function.
-const STARVED_REASONS = new Set(['token-exhaustion', 'token-reserve-cutoff', 'reasoning-only']);
+export const STARVED_REASONS = new Set(['token-exhaustion', 'token-reserve-cutoff', 'reasoning-only']);
 
 function failure(stdout, status) {
   const reason = usableReason(stdout);

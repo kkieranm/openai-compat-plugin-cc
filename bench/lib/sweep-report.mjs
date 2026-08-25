@@ -21,21 +21,140 @@ import { serverHealth } from './sweep-health.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
 
 /**
- * Why each non-reviewed outcome left no findings, in the reader's terms.
+ * Why each STARVED commit left no findings, in the reader's terms — one entry
+ * per member of `STARVED_REASONS`, which the totality test enforces in both
+ * directions.
  *
- * Prose lives here rather than at the call site so that adding an outcome
- * without explaining it is a visible omission rather than a blank cell.
+ * Only one of the three ran out of tokens, so `entry.reason` rather than the
+ * outcome picks the prose.
  */
-// `starved` now covers a reason that never ran out of tokens at all —
-// `reasoning-only` is a clean stream that simply never left its reasoning
-// channel, not a budget exhausted mid-answer — so the outcome alone is no
-// longer enough to pick the prose; `entry.reason` decides.
-const STARVED_WHY = {
+export const STARVED_WHY = {
   'reasoning-only': 'reasoned at length but never wrote an answer, even though the stream ended cleanly — a model quirk, not a token budget running out',
+  'token-reserve-cutoff': 'the client stopped the stream at the reasoning cutoff while the model was still reasoning and had not written an answer',
+  // The server's own `finish_reason: 'length'`, so this is the one where the
+  // budget really was spent.
+  'token-exhaustion': 'ran out of tokens before writing findings — the model reasoned until the budget was gone',
 };
 
+/**
+ * What a `starved` row says when the table above has no prose for its reason.
+ *
+ * Not merely defensive: `sweep-ledger.mjs`'s `readLedger` accepts any truthy
+ * entry without validating its shape, and `recover-sweep.mjs`'s `mergeManifest`
+ * returns a recovered entry verbatim — so a ledger written by a build whose
+ * `STARVED_REASONS` had different membership reaches this renderer carrying a
+ * reason this build has never heard of, and one that is not a string at all
+ * arrives the same way.
+ */
+const UNRECOGNISED_STARVED = 'no explanation is defined for this starvation reason';
+const MISSING_STARVED_REASON = 'STARVATION WITH NO USABLE REASON CODE — the record contains no non-blank reason code, so this report cannot identify the kind of starvation';
+
+/**
+ * How much of a reason survives the slice below; an elided one renders one
+ * character longer, for the ellipsis.
+ *
+ * A ledger value is not this report's to trust: it arrives unvalidated, and an
+ * unbounded one would push the coverage row off the page it is meant to make
+ * readable.
+ */
+const MAX_DISPLAY_REASON_CHARS = 120;
+
+const UNUSABLE_STARVED_REASON = 'STARVATION WITH AN UNUSABLE REASON CODE — the record\'s reason is not text';
+
+/**
+ * A recorded reason made safe to place in a coverage row, whatever it is.
+ *
+ * EVERY arm goes through here, including the ordinary code, because "reason is
+ * a closed vocabulary this codebase mints" is false for one outcome:
+ * `unrecorded` carries `gap.why`, which `sweep-ledger.mjs` sets to the text of
+ * a filesystem error. A backtick in such a message closes the code span it is
+ * printed in and corrupts the row, and the message has no length limit of its
+ * own. The codes this codebase mints are lowercase kebab ASCII, so they pass
+ * through byte-identical.
+ *
+ * A string keeps its own text; anything else is JSON, never `String()`, which
+ * would turn an object into `[object Object]` and lose the content this exists
+ * to preserve. The stringify is wrapped because it throws on a circular
+ * structure, a BigInt or a hostile own `toJSON`, and returns `undefined` for a
+ * symbol or function — and a throw here would lose the whole morning report
+ * over one bad row.
+ *
+ * The substitution replaces the metacharacters listed in it and flattens
+ * whitespace to one line. It is not a general-purpose sanitiser, and what it
+ * does not cover is judged acceptable for a Markdown file the repo owner reads.
+ */
+function displayReason(reason) {
+  let shown;
+  if (typeof reason === 'string') {
+    shown = reason;
+  } else {
+    try {
+      shown = JSON.stringify(reason);
+    } catch {
+      shown = undefined;
+    }
+    if (typeof shown !== 'string') shown = `(unrenderable ${typeof reason})`;
+  }
+  shown = shown.replace(/[`*_[\]()<>#|~\\]/g, '.').replace(/\s+/g, ' ');
+  if (shown.length > MAX_DISPLAY_REASON_CHARS) shown = `${shown.slice(0, MAX_DISPLAY_REASON_CHARS)}…`;
+  return shown;
+}
+
+/**
+ * What a coverage row prints after its explanation, for EVERY outcome.
+ *
+ * A recorded-but-unusable reason is still the only evidence the row has about
+ * why it produced nothing, so it is rendered rather than dropped — before this
+ * existed, a `failed` row carrying an object reason printed nothing at all and
+ * the evidence was lost. An absent or blank reason prints nothing.
+ *
+ * Three arms, matching `starvedExplanation`'s, so a row's suffix can never
+ * disagree with the sentence in front of it.
+ */
+function reasonSuffix(reason) {
+  if (reasonPresent(reason)) return ` (\`${displayReason(reason)}\`)`;
+  if (reason === undefined || reason === null || typeof reason === 'string') return '';
+  return ` (recorded reason: ${displayReason(reason)})`;
+}
+
+/**
+ * Whether a row carries a reason a reader could actually look up.
+ *
+ * The coverage row's code-append below asks the same function, so a row can
+ * never print a code its own sentence has just accounted for differently.
+ */
+function reasonPresent(reason) {
+  return typeof reason === 'string' && reason.trim() !== '';
+}
+
+/**
+ * `Object.hasOwn` rather than `in`, so a reason of `toString` cannot reach for
+ * `Object.prototype`; the value-shape check below independently rejects
+ * everything that route could return, so the two are belt and braces and either
+ * alone would give the same output.
+ *
+ * The value check is not redundant against the table itself: an entry added
+ * with an empty or non-string value would otherwise render as blank prose, or
+ * as `undefined`, under a reason code — which reads as a report that knows
+ * something and declines to say it.
+ */
+function starvedExplanation(reason) {
+  if (!reasonPresent(reason)) {
+    return reason === undefined || reason === null || typeof reason === 'string'
+      ? MISSING_STARVED_REASON
+      : UNUSABLE_STARVED_REASON;
+  }
+  const prose = Object.hasOwn(STARVED_WHY, reason) ? STARVED_WHY[reason] : undefined;
+  return typeof prose === 'string' && prose.trim() !== '' ? prose : UNRECOGNISED_STARVED;
+}
+
 const WHY = {
-  starved: 'ran out of tokens before writing findings — the model reasoned until the budget was gone',
+  // No `starved` key, and NOT because nothing could reach it — a foreign-build
+  // ledger can carry a starved row with a reason this build never heard of, as
+  // the fallback docstring above sets out. It is because the coverage row sends
+  // every starved row to `starvedExplanation` before this table is consulted,
+  // so a key here could only ever be dead — and, written for `token-exhaustion`
+  // alone, would be false for the rows that reached it if it ever were not.
   truncated: 'the model\'s analysis was cut off before it finished looking, so whatever it managed to say is not a review of this commit',
   unreadable: 'the model answered, but the reply could not be parsed as findings',
   substituted: 'a DIFFERENT model answered than the one requested, so this is not a review by the model asked for',
@@ -74,12 +193,10 @@ function answeredBy(entry) {
 /**
  * Reviews that completed and reported nothing.
  *
- * **This section exists because without it a plain `clean` commit appeared
- * NOWHERE.** It has no findings, so the findings section skips it; it was
- * reviewed, so coverage skips it — and the whole artifact's stated invariant is
- * that no enumerated commit is absent from both. It was found by writing a test
- * for the renderer rather than the classifier, which is where the previous three
- * defects of this shape had also hidden.
+ * **Without this section a plain `clean` commit appears NOWHERE.** It has no
+ * findings, so the findings section skips it; it was reviewed, so coverage skips
+ * it — and the whole artifact's stated invariant is that no enumerated commit is
+ * absent from both.
  *
  * Its caveats are rendered here too: a commit reviewed diff-only (`hunksOnly`),
  * or one whose findings were all discarded (`dropped`), is a completed review of
@@ -171,10 +288,10 @@ function coverageSection(entries) {
     // failure renders identically and a `bad-json` night is indistinguishable
     // from a `deadline-timeout` one. For `starved` specifically, the reason
     // also picks WHICH prose applies — see `STARVED_WHY` above.
-    const explanation = entry.outcome === 'starved' && entry.reason in STARVED_WHY
-      ? STARVED_WHY[entry.reason]
+    const explanation = entry.outcome === 'starved'
+      ? starvedExplanation(entry.reason)
       : (WHY[entry.outcome] ?? 'no explanation recorded');
-    const why = entry.reason ? `${explanation} (\`${entry.reason}\`)` : explanation;
+    const why = `${explanation}${reasonSuffix(entry.reason)}`;
     lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
     if (hasFindings(entry)) {
       // A review that did not complete can still have reported something real.
