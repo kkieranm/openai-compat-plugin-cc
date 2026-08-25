@@ -312,3 +312,33 @@ is in its Session footguns section — not here.
   carry both renderings verbatim. Found by `codex-adversarial` at the OAI-205 review-ladder's
   terminal pass, 2026-08-24; the report-layer sibling by the tracker-entry Codex check that
   followed it.
+
+- **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
+  three marker tests (`:75`, `:95`, `:115`) each read `const messageLine = result.stderr.split('\n')[0]`
+  and assert the server-controlled `finish_reason` marker is not fused into it. Line 0 of stderr is
+  always `scripts/lib/delegate.mjs:145`'s `Checking <profile> for available models and context
+  window...` progress line, never the error line the message lands on — so `messageLine` cannot
+  contain the marker whatever the code under test does. A second, independent defeat: every guarded
+  message ends in a period before `oai-companion.mjs:71`'s ` (${detail})` parenthetical, so the
+  patterns `content \(`, `completion \(` and `answer \(` cannot match a period-preserving fusion
+  either. Dated instance 2026-08-25: interpolating `finishReason` into `.message` at the three throw
+  sites (`scripts/lib/completion.mjs:140`, `:161`, `client.mjs`'s empty-answer throw) and deleting the
+  separate `.finishReason` assignment left all 8 tests in the file passing. The paired
+  `assert.match(result.stderr, marker)` halves do work. **Not an open hole in the property itself**:
+  `tests/structure.test.js:438`'s source-level scan catches that same mutation, so "no
+  server-controlled value reaches a `UserError` message" stays pinned repo-wide — these three
+  assertions are dead weight claiming to pin it. Whoever takes it should decide between repointing
+  them at the real error line and deleting them as redundant with the structural scan; a fix that
+  keeps them must be mutation-proved, since that is the property they failed.
+
+- **OAI-211** — **`bench/2026-08-23-oai19-run-notes.md` does not add up, and OAI-19's conclusions rest
+  on it.** The per-case table (`:48`, `caps 1/3 ... structured 3/3`) and gate criterion G-C (`:53`,
+  `caps 1x2=2`) both imply `caps` has 2 unscored runs; Codex correction #1 (`:152`) enumerates 8 runs
+  with no report and names only one of them (`caps` run 2). With G-L's "all 9 scored runs" that gives
+  9 + 8 = 17, not the 18 the six-cases-by-three-runs design produces. The file never states that
+  "no-report" and "unscored" are the same set — a run could hold a report with `parsed: false`, which
+  would be unscored yet not no-report — so the file is **ambiguous rather than provably
+  self-contradictory**, and no such run is named anywhere in it. Resolving which reading is right
+  needs the raw invocation-D run data, not a wording edit. Filed because this is published evidence a
+  concluded item's numbers were drawn from: whichever way it resolves, one of the two accounts in the
+  file is currently wrong about `caps`.

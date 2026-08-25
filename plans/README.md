@@ -48,7 +48,7 @@ round-by-round verdict table, including the rounds that found defects.
 Written **by the gate, not by hand**: `check-plan-gate.sh --approved` verifies the reply's `DIGEST:`
 against the plan's own bytes and writes
 `<name>.approved/<episode>-round-<N>-<threaded|blind>.md`, first line
-`ARCHIVE — not the current spec; the plan beside it is`.
+`ARCHIVE — not the current spec; the live plan is the file beside it.`.
 
 **An archive exists if and only if that round's approval crossed the gate.** A dissent writes nothing.
 One file per approving round, because a pre-build and a mid-build episode each approve and one file
