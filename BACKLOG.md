@@ -379,4 +379,15 @@ is in its Session footguns section — not here.
   verified the same way. Filed rather than fixed in OAI-209 because the routes are independent of
   that item's subject and predate it — a judgement `codex-adversarial` was asked to argue against and
   upheld ("different input route, different rendering contract, no causal overlap").
+  **Amended 2026-08-25, same day, before the sweep's own enumeration was lost**: the three sinks
+  above are not the whole boundary. The report's HEADER interpolates `record.repo`,
+  `record.requestedModel` and `record.include` — operator-supplied strings, two of them inside code
+  spans — unescaped and unbounded. And `bench/lib/sweep-ledger.mjs`'s `envelopeOrNull` (`:204-207`)
+  validates only that `envelope.commits` is an array, so every other header field is unchecked: a
+  ledger written by a different build can deliver any of them as an unexpected type or shape
+  straight to those sites, which is the same cross-build route that made the `entry.reason` case
+  reachable rather than theoretical. Whoever takes this should treat the corrective decision as one
+  question — which values reaching this renderer are trusted, and what bounds the rest — rather than
+  patching the sinks one at a time, since patching one at a time is exactly how OAI-209 found a
+  fourth after fixing three.
 

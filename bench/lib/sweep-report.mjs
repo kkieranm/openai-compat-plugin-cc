@@ -29,7 +29,7 @@ import { REVIEWED } from './sweep-outcome.mjs';
  * outcome picks the prose.
  */
 export const STARVED_WHY = {
-  'reasoning-only': 'reasoned at length but never wrote an answer, even though the stream ended cleanly — a model quirk, not a token budget running out',
+  'reasoning-only': 'reasoned but never wrote an answer, even though the stream ended cleanly — a model quirk, not a token budget running out',
   'token-reserve-cutoff': 'the client stopped the stream at the reasoning cutoff while the model was still reasoning and had not written an answer',
   // The server's own `finish_reason: 'length'`, so this is the one where the
   // budget really was spent.

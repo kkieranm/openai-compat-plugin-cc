@@ -165,7 +165,7 @@ function usableReason(stdout) {
  * model that was ASKED, and nothing answered. Carrying it as `model` made the
  * report say "answered by X" about a model that never replied, conflating what
  * was requested with what actually served it. It is kept under its own name so
- * the record kkeeps the fact without the renderer being able to mistake it.
+ * the record keeps the fact without the renderer being able to mistake it.
  */
 // A model spending its whole reply budget reasoning and never reaching
 // content — `token-exhaustion` is the terminal shape (the server's own
