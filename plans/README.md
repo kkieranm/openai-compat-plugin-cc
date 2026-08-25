@@ -21,13 +21,14 @@ Head a plan with `provenance: harness slug <final-slug>`, naming the plan-mode p
 from. **A plan with no provenance line never entered plan mode**, and that is a fact about its
 authority, not a formatting omission.
 
-## The three states a file here can be in
+## The four states a file here can be in
 
 | State | How you recognise it | What it authorises |
 | --- | --- | --- |
 | **Approved** | `provenance:` line, and a sibling `<name>.approved/` directory | Building. |
 | **Withdrawn** | Superseded by another plan for the same item; the tracker says which | Nothing. Read-only evidence. |
 | **`unattended-draft`** | Opens with `STATE: unattended-draft — NOT harness approved`, and has **no** `provenance:` line | **Nothing.** Input to a later plan-mode session. |
+| **`dual-approved-unattended`** | Opens with `STATE: dual-approved-unattended`, quotes the owner's per-run authorisation with its date, and has **no** `provenance:` line — but **does** have a sibling `<name>.approved/` directory | Building, for that authorised run only. |
 
 ### `unattended-draft` — the one that is easy to misread
 
@@ -42,6 +43,30 @@ plan step done and start coding — which is the specific failure the state line
 
 Three such drafts were written on 2026-08-08 (OAI-64, OAI-66, OAI-67). Each carries its full
 round-by-round verdict table, including the rounds that found defects.
+
+### `dual-approved-unattended` — building without plan mode
+
+The plan step's approval is **either** the user's **or** Codex and an independent Claude verdict
+subagent in agreement, and the skill makes that venue-independent. Harness plan mode is the *venue*,
+not the gate: `ExitPlanMode` prompts, which is the whole reason `unattended-draft` exists. An owner
+who authorises an unattended run **and waives the plan-mode prompt by name** has removed that
+obstacle without removing the gate, so the dual gate runs in full — digest computed first, both
+approvers launched in the same turn, neither shown the other's reply, the Claude half under the
+read-only-delegation snapshot protocol, fail-closed envelope parsing — and two genuine approvals
+authorise building.
+
+**The owner's authorisation must be QUOTED in the plan file, with its date.** That quote is the
+state's condition, not decoration: without one an unattended run still writes `unattended-draft`, so
+no future unattended session can promote itself into this state on its own say-so.
+
+**The archive is what separates this state from `unattended-draft`.** A draft has no `.approved/`
+directory even where Codex approved it, deliberately. This state has one, gate-written, because the
+approval did cross `check-plan-gate.sh`.
+
+**Anything short of two approvals degrades to `unattended-draft`** — a dissent from either half, or a
+failed Codex launch, which at a gate is a failed approver and never a skip. The item blocks
+`blocked-on-plan` with both verdicts recorded, and the run moves to the next item. Nothing here ever
+invents an approval.
 
 ## Approval archives — `<name>.approved/`
 
