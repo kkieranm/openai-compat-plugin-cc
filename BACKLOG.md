@@ -391,3 +391,146 @@ is in its Session footguns section — not here.
   patching the sinks one at a time, since patching one at a time is exactly how OAI-209 found a
   fourth after fixing three.
 
+
+- **OAI-214** — **The request body cannot express the parameters a model's own vendor says it needs,
+  and a benchmark was invalidated by one.** `scripts/lib/client.mjs`'s body carries `model`,
+  `messages`, `stream`, `stream_options` plus optional `temperature`, `max_tokens` and
+  `response_format` — and nothing else. There is no `reasoning_effort`, no `top_p`, no `top_k`, no
+  `min_p`, no `presence_penalty`, and no route to a chat template's own variables. **Dated instance
+  2026-08-25**: `qwen/qwen3.8-27b` scored 0 of 6 cases on the `bench/` corpus, every case lost to a
+  runaway that never wrote an answer, because the model ships with `reasoning_effort` defaulting to
+  `xhigh` — its most verbose setting, which its release notes and third-party write-ups both single
+  out as the thing to change first. The parameter was reachable all along: LM Studio honours it, and
+  a direct API probe measured 74 reasoning tokens at `xhigh` against 36 at `low` on a trivial prompt.
+  The plugin simply had no way to send it, so the benchmark measured the model at its worst setting
+  and recorded the result as the model's. Vendor sampling recommendations are unreachable by the same
+  gap: qwen and gemma both publish per-mode `temperature`/`top_p`/`top_k`/`min_p` values, and qwen
+  splits `presence_penalty` by task, none of which this repo can express. **Not a request for a
+  generic passthrough** — an arbitrary body-merge would let a caller overwrite `messages` or
+  `stream`, which the transport's own contracts depend on. Whoever takes it should decide what the
+  admitted set is and where it is validated.
+
+- **OAI-215** — **`bench/run.mjs` cannot set the one option that made reviews work.** Its
+  `SPEC.valueFlags` is `['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts']`:
+  no `max-tokens`, and no `temperature` either, though `/oai:review` accepts both. **Dated instance
+  2026-08-25**: adding `--max-tokens 8192` to a review of one commit cut a `qwen3.5-4b-mlx` run from
+  740s producing zero findings to 208s producing three, by dropping the token-reserve watchdog's
+  firing threshold from ~92,160 reasoning characters to ~18,432 so a runaway is cut early enough for
+  salvage to still answer. The benchmark cannot express that configuration, so it necessarily scores
+  every model at the default reserve — `min(32768, contextLength/2)` — which is the configuration
+  observed producing ~700s runaways and empty answers across the dense 27b class the same day. The
+  effect is not neutral across models: the reserve is derived from the served window, so a model with
+  a large window is given more rope than one with a small window, and the benchmark's own rows are
+  therefore not budget-comparable to each other.
+
+- **OAI-216** — **`--max-seconds` does not bound the command, and CLAUDE.md says it does.**
+  `CLAUDE.md` states `--max-seconds` "caps a whole model call in wall clock, retries included".
+  **Dated instance 2026-08-25**: `review --commit f5addcb --max-seconds 900` ran **1,105s**. The
+  mechanism is not a bug in the deadline — it is a second, deliberate budget: the original request
+  gets the one expiry minted from `--max-seconds`, and `scripts/lib/review-request.mjs`'s salvage
+  path opens its own fresh `performance.now() + 300_000` for the follow-up. The attempt ledger shows
+  it directly — attempt 1 `deadline-timeout` after ~900s and ~50,867 chars of reasoning, attempt 2
+  the salvage follow-up answering 205s later. So the real bound is `--max-seconds` plus 300s, not
+  `--max-seconds`. Both halves are defensible on their own and the conflict is between the behaviour
+  and the documented contract, not within the code. It matters wherever a caller sizes a wall-clock
+  budget against this flag — an overnight sweep's per-commit cap, or a review-ladder stage that must
+  collect before a later group launches. Whoever takes it should decide which of the two is wrong:
+  the sentence, or the second budget.
+
+- **OAI-217** — **A benchmark record does not carry the server-side configuration that decided its
+  result.** `bench/` records the provider, the model id, the flags it was invoked with, and every
+  timing and token figure — and nothing about how the server was configured to run that model. A
+  reader cannot tell from a record whether the model answered under `reasoning_effort: xhigh` or
+  `low`, with its thinking channel enabled or disabled, at what loaded context length, or at what
+  temperature and sampling settings, because those live in the server's own per-model configuration
+  rather than in the request. **Dated instance 2026-08-25**: fourteen full six-case runs were
+  recorded across eleven models, and the `qwen/qwen3.8-27b` rows — 0 of 6 cases, every one lost to a
+  runaway — are unattributable from the record alone. The cause was `reasoning_effort` defaulting to
+  `xhigh`, a fact recoverable only by reading LM Studio's UI or `~/.lmstudio/hub/models/**/model.yaml`
+  by hand, long after the run. **The silent-failure mechanism is that the report reads as complete**:
+  every column a reader expects is populated, so nothing signals that the variable which determined
+  the outcome is absent. Two runs of the same model at different reasoning efforts produce records
+  that are byte-identical in their identity fields and wildly different in their results. Whoever
+  takes it should decide what is capturable without a provider-specific tangle — a served-model
+  probe, an operator-supplied note, or a declared unknown — since `providers.json` is deliberately
+  configuration rather than code paths.
+
+- **OAI-218** — **A benchmark row's lens depends on whatever context length the model happened to
+  load at, and the report does not say which.** `scripts/lib/review-ladder.mjs` picks the whole-file
+  rung when the window can hold it and falls to hunks when it cannot, so the same case can be
+  reviewed at very different fidelity by two models — or by the same model on two days — purely
+  because of how much KV cache fitted. The report prints `prompt tokens`, from which a careful reader
+  might infer the rung, but not the loaded context length, and `hunksOnly` is not surfaced per case.
+  **Dated instance 2026-08-25**: in one sweep `qwen/qwen3-coder-30b` loaded at 32,768 and lost the
+  `structured` case outright to an oversize refusal, while `qwen/qwen3.5-9b` loaded at 154,624 and
+  reviewed it whole — the two rows sit in the same table with no indication that one covered five
+  cases and the other six for a reason unrelated to the models. The same run also produced
+  `google/gemma-4-26b-a4b` at 49,408 against `google/gemma-4-26b-a4b-qat` at 116,736, so a
+  quantization comparison silently became a lens comparison. **Requesting a context length does not
+  fix it**: LM Studio honours `--context-length` for some models and silently clamps or ignores it
+  for others, which is itself only discoverable by reading the loaded value back.
+
+- **OAI-219** — **The one number that decides whether a reviewer is usable is not reported as a
+  number.** `docs-only` is the corpus's clean control — it contains no code — so the report states
+  that unmatched findings there "turn unmatched into false-positive by construction". That makes it
+  the only case whose unmatched count is a precision measurement rather than a scoring artifact, and
+  it is printed in the same `unmatched` column as every other case, distinguished only by prose the
+  reader has to know to apply. There is no per-run precision figure and no control-specific row.
+  **Dated instance 2026-08-25/26**: comparing fourteen models required extracting that column from
+  each report by hand and applying the rule mentally; the resulting comparison misreported at least
+  one model's control behaviour before it was caught, and a later verified re-run moved three
+  configurations across the pass/fail line on this measurement alone (`qwen/qwen3.8-27b` at both
+  `low` and `medium`, and `google/gemma-4-e4b`, each invented a defect on the control). **The
+  silent-failure shape is that a model with zero recall and zero control findings and a model with
+  zero recall and three control findings print an identical-looking row** — same `0/N` in every
+  defect column — while one is merely useless and the other is actively harmful to a reviewer's
+  time. Whoever takes it should decide whether the control earns its own reported figure or whether
+  `unmatched` on a no-code case should simply be named what it is.
+
+- **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
+  the assembly is where the errors are.** `bench/` writes one record and one report per invocation
+  and provides no way to read N of them together: no cross-run table, no diff of two records, no
+  ranking across models. **Dated instance 2026-08-25/26**: producing a ranking over fourteen models
+  and roughly 110 review invocations meant reading each report separately and building the table by
+  hand, which introduced three errors that had to be caught and corrected afterwards — a case's lens
+  recorded as whole-file when the record said `hunksOnly: true`, a finding tally that mixed per-finding
+  and per-cluster units, and a "worst performer" attribution drawn from the wrong run. Each was
+  recoverable only by rereading the records the harness had already written correctly. **The records
+  are not the problem — they are complete and machine-readable**; what is absent is any consumer of
+  more than one of them at a time, so the comparison a reader actually wants exists only in whatever
+  they typed into a terminal. Note this is the reporting half of what OAI-217 and OAI-218 describe
+  from the recording side: those items are about fields a record does not carry, this one is about
+  the absence of any reader across records that do.
+
+- **OAI-221** — **Whether a local model can review at all is decided by a setting this repo cannot
+  reach, and every benchmark figure it has published was taken on the wrong side of it.** A reasoning
+  model's thinking channel is controlled by the chat template's `enable_thinking` variable. It is not
+  an OpenAI request field: `scripts/lib/client.mjs` cannot send it, `chat_template_kwargs` is not
+  honoured by LM Studio (measured — a request carrying it returned identical reasoning-token counts
+  to one without), and the only route is the server's own per-model configuration, in LM Studio's UI
+  or `~/.lmstudio/hub/models/**/model.yaml`. **Dated instance 2026-08-26**: four models were scored
+  on the `bench/` corpus with thinking ON and again with it OFF, everything else identical, each
+  verified at `reasoning_tokens=0` immediately before its run.
+  | model | thinking ON | thinking OFF |
+  |---|---|---|
+  | `qwen/qwen3.8-27b` | 0/6 cases, every one timed out | 4/6 cases, 1 anchored, clean control |
+  | `qwen/qwen3.6-35b-a3b` | 2/6 cases, 1 anchored, 1,595s | 5/6 cases, 1 anchored, **319s** |
+  | `google/gemma-4-26b-a4b` | 4/6 cases, 1 anchored | 4/6 cases, 1 anchored, 0 unmatched |
+  | `gemma-4-12b-it-mlx` | *already off — no hub config to override the template default* | 5/6, 1 anchored |
+  Generation time collapsed from hundreds of seconds to 1-34s per case; prefill then dominates, which
+  is a hardware property rather than a model one. **The dominance of this one variable is what makes
+  it worth an item rather than a note**: every other lever measured across ~110 review invocations —
+  `reasoning_effort` (`low`/`medium`/`xhigh`), temperature, `top_p`/`top_k`/`min_p`, quantization from
+  2-bit to 6-bit, reply budgets, `--structured-output`, `--parallel` 1/4/8, and prompt phrasing —
+  moved availability or latency at best, and none moved capability. **Two consequences beyond the
+  ranking.** First, the pre-2026-08-26 benchmark figures in this repo compare models that mostly had
+  thinking on against `gemma-4-12b-it-mlx`, which had it off by accident of having no hub config —
+  so the variable was confounded with model identity and nobody knew. Second, the corpus is not the
+  one-case corpus it appeared to be: with thinking off, `qwen/qwen3.6-35b-a3b` anchored a defect in
+  `scaffold`, a case no model had matched in any prior run, while losing `config-origin` — so the two
+  best models now find **different** defects and neither finds the other's, which is the first direct
+  evidence for the multi-model agreement signal OAI-9 and OAI-11 propose. Related: OAI-214 is the
+  general inability to express vendor-required parameters; this item is the specific parameter that
+  turned out to decide the outcome, and OAI-217 is why a record cannot show which side of it a run
+  was on. **Evidence: [`evidence/221.md`](evidence/221.md)** — the measurement tables, the
+  replication that revised them, and the corrections, recorded rather than summarised.
