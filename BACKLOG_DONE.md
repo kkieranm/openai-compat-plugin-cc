@@ -1,3 +1,39 @@
+## 2026-08-27 — OAI-217 shipped: a record carries the server config that decided the run (`d79164d`)
+
+A `--json` review/task envelope and a `bench/` record carried the run's identity and timings but
+nothing about how the server was configured to run the model, so the `qwen/qwen3.8-27b` 0/6 runaway
+(2026-08-25) was unattributable from the record alone. Now every run carries four fields: the
+effective context window, its provenance (`contextSource`, a closed `CONTEXT_SOURCES` member), the
+detected window, and a per-knob `serverConfig` marker (`requested` vs `server-default-unobserved`).
+A new leaf `scripts/lib/run-context.mjs` builds them once for both flows from the *resolved* model's
+`effectiveWindow` (never the default's) and overwrites them onto a thrown error at each
+post-resolution catch, so the failure whose settings most need recording carries them.
+`review-report.mjs` `errorReport` reconstructs all four FAIL-CLOSED before `jobs.db` persistence
+(window via `positiveInteger`, source via a `CONTEXT_SOURCES` allowlist, `serverConfig` rebuilt as a
+fresh snapshot-once map). Bench readers copy the four onto failed and success records; a `--note`
+operator annotation (bounded by `boundNote`, MAX_NOTE 2000) rides the bench record alone, off the CLI
+envelope and `jobs.db`. `delegate.mjs` `resolveTarget` now returns the resolved model's
+window/source/detected-window, subsuming the old `selectModel`.
+
+**serverConfig scope**: three knobs (`reasoningEffort`/`temperature`/`thinking`), the plan's explicit
+choice — the other four `SAMPLING_PARAMS` are recorded in the separate `sampling` echo, not re-listed
+here. **Background scope**: a background task failure records the four fields `null` (the worker never
+runs the foreground catch), the same posture as `sampling` and the same gap OAI-214's deferred note
+points at — still not filed (explicit `null`, not a silent failure; no dated instance).
+
+**Review ladder** (5 passes, final full pass dual-approved `01b59cf1f4cc`): pass 1 caught two real
+bugs (the review try-wrap started after `reserveFor`, letting a too-small-`--max-tokens` throw escape
+with null run-context; a fail-closed TOCTOU fixed by snapshot-once). Pass 4 strengthened the
+`boundNote` surrogate test — the even-parity input never landed mid-pair, so the back-off had no
+positive control; an odd-parity case, mutation-witnessed against back-off deletion, gives it one.
+Pass 5 dismissed two adversarial findings: a getter/prototype-pollution forge (unreachable — every
+field repo-controlled, reads snapshot-once-then-validate, forging needs in-process ACE) and a
+pre-dispatch `requested` marker (accurate under the marker's caller-intent contract — a `not-sent`
+third state is undecidable at the pre-dispatch attach site and would contend with the co-located
+failure reason; the same call OAI-214 made for its sampling echo). Its one accepted finding was an
+exempt reword scoping the descriptive "resolved and acted on" over-claim to the window fields at nine
+sites. Fork/fable/advisor converged against Codex's "add a third state" steer.
+
 ## 2026-08-27 — OAI-214 shipped: vendor sampling/reasoning params in the request body (`88b0a87`)
 
 The chat body could carry only `model`/`messages`/`stream`/`stream_options` plus optional

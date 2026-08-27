@@ -11,24 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-217** — **A benchmark record does not carry the server-side configuration that decided its
-  result.** `bench/` records the provider, the model id, the flags it was invoked with, and every
-  timing and token figure — and nothing about how the server was configured to run that model. A
-  reader cannot tell from a record whether the model answered under `reasoning_effort: xhigh` or
-  `low`, with its thinking channel enabled or disabled, at what loaded context length, or at what
-  temperature and sampling settings, because those live in the server's own per-model configuration
-  rather than in the request. **Dated instance 2026-08-25**: fourteen full six-case runs were
-  recorded across eleven models, and the `qwen/qwen3.8-27b` rows — 0 of 6 cases, every one lost to a
-  runaway — are unattributable from the record alone. The cause was `reasoning_effort` defaulting to
-  `xhigh`, a fact recoverable only by reading LM Studio's UI or `~/.lmstudio/hub/models/**/model.yaml`
-  by hand, long after the run. **The silent-failure mechanism is that the report reads as complete**:
-  every column a reader expects is populated, so nothing signals that the variable which determined
-  the outcome is absent. Two runs of the same model at different reasoning efforts produce records
-  that are byte-identical in their identity fields and wildly different in their results. Whoever
-  takes it should decide what is capturable without a provider-specific tangle — a served-model
-  probe, an operator-supplied note, or a declared unknown — since `providers.json` is deliberately
-  configuration rather than code paths.
-
 - **OAI-218** — **A benchmark row's lens depends on whatever context length the model happened to
   load at, and the report does not say which.** `scripts/lib/review-ladder.mjs` picks the whole-file
   rung when the window can hold it and falls to hunks when it cannot, so the same case can be
