@@ -11,34 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-212** — **A keyed, whole-document clean review is visibly discarded as `parsed: false`.** A
-  reply whose ENTIRE text is `findings: []`, an `analysis:` paragraph and a `summary:` scalar — an
-  unambiguous "no defects found" — is read by nothing and reported unreadable, while the same
-  whole-document shape carrying one or more block-list items parses fine. The failure is asymmetric in
-  the worst direction for a reviewer: a clean review is indistinguishable from a broken run, and only
-  the clean one is lost. **Four observed replies across two dates**, not four independent
-  reproductions: `bench/2026-08-08-oai19-run-notes.md:71` records two, correlated within a single
-  qwen MoE invocation and pre-dating `findings-yaml.mjs` entirely, dismissed at the time as the model
-  not following the format; 2026-08-25 reproduced it live on `google/gemma-4-12b-qat` and again on
-  `google/gemma-4-26b-a4b-qat`, which is what establishes the gap is still open on today's tree.
-  Neither model family is the subject — qwen produced it too. **Two rejections, in order**:
-  `findings-yaml.mjs`'s first-line test requires line one to equal `findings:` exactly, so
-  `findings: []` is refused before the flow-collection rule is ever consulted; `findingsIn` then falls
-  through to `extractJson`, which scans the `[]` and hands it to `findingsShaped`, whose scanned-array
-  branch requires a non-empty list. Each rule is defensible where it stands — the YAML acceptor is
-  deliberately a narrow whole-document grammar rather than a YAML parser, and the non-empty rule
-  refuses a trailing decoy that names nothing — and the reply falls between them. Verified by calling
-  `parseFindings` directly rather than by reading it: `{"findings": [], "summary": "..."}` and a bare
-  `[]` are both accepted as whole replies, block-style YAML with one item is accepted, and every
-  `findings: []` variant returns `null`. **This does NOT meet OAI-112's reopening bar**, which names a
-  SILENT wrong-candidate selection; here nothing is selected and the run says so. It does sit against
-  that item's own carried evidence that *"a lone scanned empty could be accepted while genuine
-  competitors are refused"*, and OAI-112's candidate-selection replacement could cure this symptom
-  through the `extractJson` fallback without touching the YAML acceptor at all — so the two may later
-  merge, and this item does not claim the YAML half is the only adequate fix. It does not inherit
-  OAI-112's withdrawn-design plan gate. See also OAI-156 for the whole-document boundary the YAML
-  acceptor was drawn at.
-
 - **OAI-215** — **`bench/run.mjs` cannot set the one option that made reviews work.** Its
   `SPEC.valueFlags` is `['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts']`:
   no `max-tokens`, and no `temperature` either, though `/oai:review` accepts both. **Dated instance

@@ -1,3 +1,23 @@
+## 2026-08-27 — OAI-212 shipped: a whole-document empty-findings YAML review reads as clean (`c5ddc0f`)
+
+A reviewer that finds nothing sometimes answers in whole-document YAML — `findings: []` then an
+`analysis:` paragraph — which neither `extractJson` (no bracketed candidate; the `[]` is scanned and
+rejected as an empty decoy) nor `findingsInYaml` (a block `- ` list, not an inline empty one) can see,
+so a clean review was reported unreadable (OAI-156: 1245s of model work lost that way). New leaf
+`scripts/lib/findings-empty.mjs` `emptyFindingsDocument` reads exactly that shape and returns
+`{findings: []}`, wired last in `findingsIn` on the unconstrained (`!structured`) path.
+
+Review-ladder Pass 4 found and fixed a silent-false-clean the earlier design missed (F1): the acceptor
+is reached only after `extractJson(text, findingsShaped)` returns null, which ALSO happens for a real
+finding it could not parse — quote-blinded, bare-object, malformed, or truncated bracketed payload — so
+the acceptor would have masked it as clean. Guard: decline any `[`/`{` past the opener, the module's own
+"no bracketed candidate anywhere" premise finally enforced. Measured cost 1/15 recorded clean replies
+(one quoting a brace in prose) goes loud — fail-closed and recoverable. F2: `trim()` defeated the
+claimed column-0 anchor, so the false doc claim was dropped rather than adding threat-model-free
+machinery. The fix converged the long way — a lexical variant was broken twice at the Codex plan gate
+(decisively on a truncated `{file:...` finding it turned silently clean) before settling on the
+one-line bracket guard, which is provably safe against every case that broke the lexical one.
+
 ## 2026-08-27 — OAI-218 shipped: the corpus benchmark report names the review lens per case (`fd10a09`)
 
 A `bench/run.mjs` per-model report's per-case table showed prompt tokens and timing but not the review
