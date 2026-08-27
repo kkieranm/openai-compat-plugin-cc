@@ -11,27 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-218** — **A benchmark row's lens depends on whatever context length the model happened to
-  load at, and the report does not say which.** `scripts/lib/review-ladder.mjs` picks the whole-file
-  rung when the window can hold it and falls to hunks when it cannot, so the same case can be
-  reviewed at very different fidelity by two models — or by the same model on two days — purely
-  because of how much KV cache fitted. The report prints `prompt tokens`, from which a careful reader
-  might infer the rung, but not the loaded context length, and `hunksOnly` is not surfaced per case.
-  **Dated instance 2026-08-25**: in one sweep `qwen/qwen3-coder-30b` loaded at 32,768 and lost the
-  `structured` case outright to an oversize refusal, while `qwen/qwen3.5-9b` loaded at 154,624 and
-  reviewed it whole — the two rows sit in the same table with no indication that one covered five
-  cases and the other six for a reason unrelated to the models. The same run also produced
-  `google/gemma-4-26b-a4b` at 49,408 against `google/gemma-4-26b-a4b-qat` at 116,736, so a
-  quantization comparison silently became a lens comparison. **Requesting a context length does not
-  fix it**: LM Studio honours `--context-length` for some models and silently clamps or ignores it
-  for others, which is itself only discoverable by reading the loaded value back. **Second dated
-  instance, 2026-08-27**: the same case (`hold3-docs-only`, a 289KB `BACKLOG_DONE.md` at the pinned
-  commit) produced a ~20x prompt-token spread across two models with no code difference at all —
-  `qwen/qwen3.8-27b` (window 61,696) fell back to a hunks-only prompt at ~3,890 tokens, while
-  `qwen/qwen3.5-9b` (window 154,624) reviewed the whole file at ~88,170 tokens. Both scored the case
-  as a near-clean control, so the lens divergence did not surface as a failure — it surfaced as two
-  models being compared on a case they were not actually reviewing at the same depth.
-
 - **OAI-212** — **A keyed, whole-document clean review is visibly discarded as `parsed: false`.** A
   reply whose ENTIRE text is `findings: []`, an `analysis:` paragraph and a `summary:` scalar — an
   unambiguous "no defects found" — is read by nothing and reported unreadable, while the same

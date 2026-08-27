@@ -1,3 +1,30 @@
+## 2026-08-27 — OAI-218 shipped: the corpus benchmark report names the review lens per case (`fd10a09`)
+
+A `bench/run.mjs` per-model report's per-case table showed prompt tokens and timing but not the review
+LENS — whole-file vs hunks-only, and the context window that decided it (`review-ladder.mjs` picks the
+whole rung when the window holds the changed files, else hunks). So a case reviewed whole at 154,624
+and one reviewed as hunks at 61,696 read as comparable rows, and comparing two per-model reports
+silently became a lens comparison (both dated instances: 2026-08-25 `structured`, 2026-08-27
+`hold3-docs-only` with a ~20x prompt-token spread and no code difference).
+
+OAI-217 had already put `contextWindow`/`hunksOnly`/`skippedUnsizedWindow` in the review `--json`
+envelope (kept as `run.report`), so this was rendering only. `bench/lib/case-rows.mjs`'s `lensSamples`
+aggregates each case's distinct `<rung>@<window>` labels (`whole@154624`, `hunks@61696`,
+`hunks@unsized`, `diff`) over `measurable` runs; `bench/lib/report.mjs` renders them in one combined
+`lens` column beside `prompt tokens`. Deduped and joined with ` / ` — a `--runs` reload that changed
+the lens shows both values instead of silently picking one — and a substituted/failed run's lens is
+disowned exactly as its prompt and timing figures are.
+
+**Grill (converged Codex+fable):** one combined `lens` column, not two and not a caveat; **corpus path
+only** — the sweep path (`sweep-notes.mjs`) already renders `hunksOnly`, so only its window *number* is
+unshown there, which has no dated instance (noted, not filed); `--runs` divergence renders the deduped
+distinct set. **Review ladder** (one full pass, dual-approved `e173d6697a5b`): two adversarial findings
+dismissed — an absent-`hunksOnly` "silent whole" (unreachable at the producer's contract:
+`hunksOnly` is born `Boolean(target.diff.trim())`, always boolean into `jsonReport`; hardening the
+consumer alone would be a one-field exception to the repo's trust-the-producer posture — Codex's fix
+overruled by the convergence) and a case-id-with-`|` table break (pre-existing, and the lens alphabet
+has no `|`). The dedup-honesty invariant is mutation-witnessed.
+
 ## 2026-08-27 — OAI-217 shipped: a record carries the server config that decided the run (`d79164d`)
 
 A `--json` review/task envelope and a `bench/` record carried the run's identity and timings but
