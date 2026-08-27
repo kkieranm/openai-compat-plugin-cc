@@ -230,9 +230,17 @@ unreportable, rather than duplicated at its two `review-report.mjs` call sites (
 `parseFields`). Without it `errorReport()`'s `attempts` field silently read `null` for the dominant
 overnight-sweep failure mode, which made OAI-19's gate criterion G-E structurally unpassable.
 
-`--max-seconds` caps a whole model call in wall clock, retries included — `scripts/lib/http-budgets.mjs`
-arms it as the transport's `deadline` budget from one expiry `requestFindings` mints per command, and
-`scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
+`--max-seconds` caps the ORIGINAL model call in wall clock, its retries and capability fallbacks
+included — `scripts/lib/http-budgets.mjs` arms it as the transport's `deadline` budget from the expiry
+`requestFindings` mints for that call — **but it is not the command's ceiling**: a review's salvage
+follow-up (`trySalvage`, on any of `SALVAGE_REASONS`) opens its OWN fresh `SALVAGE_MAX_MS` (300s)
+deadline per attempt, outside `--max-seconds` entirely and deliberately — a `deadline-timeout` salvage
+exists precisely because the original budget is spent, so funding it from the remainder would starve the
+rescue the dated instance shows working. It runs on both the unconstrained and `--structured-output`
+paths, and the trimmed/untrimmed fallback means up to TWO attempts for `token-reserve-cutoff`/`reasoning-only`
+(one for `deadline-timeout`, which never gets the fallback), so a review's true wall-clock ceiling is
+`--max-seconds` plus up to 600s. `/oai:task` has no salvage, so there `--max-seconds` IS the whole
+call. `scripts/lib/throughput.mjs` divides the reply's completion tokens by the generation time it was
 measured over.
 
 `scripts/lib/failure-shape.mjs` names the shapes in which a request dies without the model saying no
