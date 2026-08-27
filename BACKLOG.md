@@ -11,24 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-214** — **The request body cannot express the parameters a model's own vendor says it needs,
-  and a benchmark was invalidated by one.** `scripts/lib/client.mjs`'s body carries `model`,
-  `messages`, `stream`, `stream_options` plus optional `temperature`, `max_tokens` and
-  `response_format` — and nothing else. There is no `reasoning_effort`, no `top_p`, no `top_k`, no
-  `min_p`, no `presence_penalty`, and no route to a chat template's own variables. **Dated instance
-  2026-08-25**: `qwen/qwen3.8-27b` scored 0 of 6 cases on the `bench/` corpus, every case lost to a
-  runaway that never wrote an answer, because the model ships with `reasoning_effort` defaulting to
-  `xhigh` — its most verbose setting, which its release notes and third-party write-ups both single
-  out as the thing to change first. The parameter was reachable all along: LM Studio honours it, and
-  a direct API probe measured 74 reasoning tokens at `xhigh` against 36 at `low` on a trivial prompt.
-  The plugin simply had no way to send it, so the benchmark measured the model at its worst setting
-  and recorded the result as the model's. Vendor sampling recommendations are unreachable by the same
-  gap: qwen and gemma both publish per-mode `temperature`/`top_p`/`top_k`/`min_p` values, and qwen
-  splits `presence_penalty` by task, none of which this repo can express. **Not a request for a
-  generic passthrough** — an arbitrary body-merge would let a caller overwrite `messages` or
-  `stream`, which the transport's own contracts depend on. Whoever takes it should decide what the
-  admitted set is and where it is validated.
-
 - **OAI-217** — **A benchmark record does not carry the server-side configuration that decided its
   result.** `bench/` records the provider, the model id, the flags it was invoked with, and every
   timing and token figure — and nothing about how the server was configured to run that model. A

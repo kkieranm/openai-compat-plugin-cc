@@ -1,3 +1,37 @@
+## 2026-08-27 — OAI-214 shipped: vendor sampling/reasoning params in the request body (`88b0a87`)
+
+The chat body could carry only `model`/`messages`/`stream`/`stream_options` plus optional
+`temperature`/`max_tokens`/`response_format`. Now `reasoning_effort`, `top_p`, `top_k`, `min_p` and
+`presence_penalty` are expressible per invocation, each a named body field, driven by one
+`SAMPLING_PARAMS` registry (`scripts/lib/sampling.mjs`) that also owns validation and the background
+DTO's persist/reconstruct — a parameter cannot be admitted in one place and dropped in another.
+`applySampling` iterates that table alone, so the body stays a closed set (`messages`/`stream`
+structurally unreachable from caller sampling — the "not a generic passthrough" bar the item drew).
+One `sampling` object threads `temperature`'s path through `/oai:review`, `/oai:task`, the
+salvage/structured review calls, and `--background`. `parseNumber` moved to a leaf module to break a
+`client → sampling → delegate → client` cycle. `reasoning_effort` is validated shape-only (its value
+set is server-owned; an allowlist would re-create this item's own defect).
+
+**Live-verified against the motivating model**: `qwen/qwen3.8-27b` at `--reasoning-effort low`
+answered cleanly (finishReason `stop`), the model whose `xhigh` default scored it 0/6 on the bench.
+
+**Grill/plan decisions** (Codex + Claude, four plan-gate rounds): the named five only (no
+`frequency_penalty`); flags only for v1 — `providers.json` sampling defaults and chat-template
+variable passthrough both deferred (no dated instance); the `--json` envelope echoes the *requested*
+params on the foreground success and failure paths.
+
+**Review ladder** (one full pass, dual-approved `fec4136065c0`): both Codex stages converged on one
+finding — the failure envelope attached sampling on pre-dispatch failures too, while comments called
+it "sent". Fixed by documenting the field as *requested* (parallel to `requestedModel`, present even
+earlier since it is known from parse time), not by gating on dispatch (rejected: threads a flag
+through four functions the command-catch design avoided, and drops the informative context-overflow
+case). Two mutation-witnessed pre-dispatch regression tests pin it.
+
+**Deferred, not filed** (fails the worth bar — explicitly latent, no dated instance): a `--background`
+job *sends* sampling but its `--json` failure envelope shows `sampling: null` (the worker never runs
+the command catch) and `/oai:result` surfaces no request knob — consistent with how `temperature` is
+(not) surfaced there. Full background request-config capture is OAI-217's territory.
+
 ## 2026-08-25 — OAI-209 shipped: one event, one true account of it (`67c7e7d`)
 
 Five review-ladder passes and three plan-gate episodes. The item as filed was display-only; the
