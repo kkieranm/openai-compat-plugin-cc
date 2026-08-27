@@ -1,3 +1,135 @@
+## 2026-08-27 — parked by the backlog sweep's worth bar
+
+3 items plus 3 sub-items of a fourth, all `not worth doing`. All were verified STILL TRUE against
+disk by three parallel scouts this same sweep (OAI-9/11/13/45/49/50/52/56/57/151/159/207/208/
+210/211/212/213 — 17 pre-2026-08-25 live items in total; OAI-13 and OAI-159 were checked inline
+rather than by scout). Every disposition below was also searched against `evidence/`,
+`BACKLOG_DONE.md`, `bench/*.md` and `git log` for a dated instance the item's own body might not
+carry, per this skill's "search both sources and both scopes" rule — none surfaced. Two items
+(OAI-208, and OAI-52 sub-item (6)) verified STILL TRUE but stayed live: OAI-208's defect manifests
+on every `npm test` run, which is itself the dated instance, and OAI-52(6) clears the worth bar via
+the silence exception, argued in the item's own text. Everything below has no dated instance of
+actual harm — only of discovery by a reviewer reading code, or (for OAI-52's three sub-items) by
+the original OAI-3 plan review — and no silent-failure argument.
+
+### OAI-52 sub-items (2), (4), (5) — parked, `not worth doing`
+
+**Why parked:** All three are properties the OAI-3 plan said would be proved, found untested by a
+reviewer re-reading that plan against the shipped tests — not defects anyone has observed firing.
+(2) is an atomicity property that "holds by construction today"; nothing has ever exercised the
+edit that would break it. (4) is an assumption about SQLite's own crash behavior, not about this
+code, and no real kill-mid-transaction has ever been run against `jobs.db` (searched `tests/`,
+`evidence/`, `BACKLOG_DONE.md` for any such test or incident — the nearest hits are a sweep-ledger
+SIGKILL test and a job-log world-readability finding, both different mechanisms). (5) is a
+test-methodology preference (row count vs mtime) with no instance of the count-based check ever
+producing a false confidence. Sub-item (6), by contrast, stays live in `BACKLOG.md` — it argues the
+silence exception directly (a session-id leak is exactly the class of defect an unfalsifiable check
+would hide), which these three do not.
+
+**Reopening bar (an instance, with a date):** (2) — a later edit is found to have split the
+`state='running'`/`worker_pid` write into two statements, observed via a row where one is set
+without the other. (4) — a real process kill mid-transaction against `jobs.db` is ever run (in a
+test or in production) and produces a partial-state row. (5) — the row-count-based check for
+"submitted exactly once" is shown to pass on disk while ordinary human debugging shows a job
+that resent visible side effects.
+
+*Filing kept verbatim (original OAI-52 sub-items, before this sweep split the item):*
+
+- **(2) `state='running'` and `worker_pid` are never observable apart.** The plan called for this as
+  an *atomicity* assertion, having previously called for a test of the window between them — which
+  the one-transaction design makes unreachable, and a test that cannot fail was itself a gate finding.
+  The property holds by construction today; nothing notices if a later edit splits the `UPDATE`.
+- **(4) A real process killed mid-transaction leaves either the pre-transaction or the committed
+  state, never a partial one.** This is a claim about SQLite rather than about this code, which is why
+  it is fourth; but the design rests on it, and the repo's own habit is that a load-bearing claim gets
+  executed rather than cited.
+- **(5) The submitter writes the row exactly once on the success path** — counted through a fresh
+  connection to the real store, **not** by mtime, an mtime being the last write rather than a count.
+
+### OAI-56 — parked, `not worth doing`
+
+**Why parked:** The prefill-overlap mechanism is real and measured (LM Studio's own disconnect
+message, ~335s dense / ~67s MoE prefill), but no dated instance exists of it actually causing harm
+— no observed double-model-residency crash or OOM traced to a cancel/dead-job overlap. This
+session's own swap/OOM incidents (2026-08-26/27) were traced to a *different* mechanism entirely — a
+stale resident model left loaded for hours, not a cancelled job's prefill overlapping a new load —
+so they do not supply the instance this item needs, and searching `evidence/`, `BACKLOG_DONE.md`
+found no other candidate.
+
+**Reopening bar (an instance, with a date):** An actual double-model-residency crash, OOM, or
+LM Studio guardrail refusal traced specifically to a cancelled-or-dead job's prefill overlapping a
+different model's JIT load — not a stale-resident-model incident, which is the mechanism OAI-133
+already governs.
+
+*Filing kept verbatim:*
+
+- **OAI-56** — The prefill-overlap bound: a cancelled or dead job can hold the server for the
+  remainder of its prefill after the queue has moved on. **Measured, not assumed** — LM Studio says so
+  itself on disconnect ("If the model is busy processing the prompt, it will finish first"), and
+  prefill is the expensive half here at ~335s dense / ~67s MoE. Same model next: only a slowdown.
+  Different model next: its JIT load overlaps that prefill, which is the two-models-resident case the
+  memory ceiling forbids. **Deliberately not mitigated in OAI-3**, because the obvious mitigation —
+  polling `lms ps` for idleness before dispatch — is a vendor-specific check in a plugin that is
+  generic by construction ([ADR 001](adr/001-generic-openai-compatible-plugin.md)), and would put an
+  `if LM Studio` where the whole repo has providers-as-data. Any fix must be shaped as configuration
+  or as a generic post-cancel settle delay, not as a vendor probe.
+
+### OAI-57 — parked, `not worth doing`
+
+**Why parked:** The item's own text already names its trigger — "do it when something actually
+consumes it" — and its one stated reason to want it sooner, OAI-80(a)'s forgeable `attachments`
+line, was itself parked 2026-08-18 as `not worth doing`. No consumer has appeared since (the likely
+first one, the `oai-delegate` agent, ships without needing it). Parking this makes the existing
+deferral condition the tracker's own bar rather than a judgement call restated every sweep.
+
+**Reopening bar (an instance, with a date):** A real consumer of `/oai:status`/`/oai:result` JSON
+output appears — the `oai-delegate` agent or otherwise — and is blocked or degraded by its absence.
+
+*Filing kept verbatim:*
+
+- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half shipped
+  2026-08-05** (`TASK_SPEC.booleanFlags` now includes `json`, mirroring `/oai:review`'s envelope) —
+  full evidence moved to `BACKLOG_DONE.md`'s "OAI-57 (the `/oai:task` half)" entry, 2026-08-24, to keep
+  this item's still-open ask readable. What remains live is `/oai:status` and `/oai:result`. OAI-80(a)'s forgeable `attachments` line is
+  still the reason to want the status half — *OAI-80 was parked 2026-08-18, `not worth doing`, so this
+  is a reason and no longer a dependency.* Left out of OAI-3 phase 4 as unrequested surface, and
+  recorded here so the omission is a decision rather than an oversight. Still small (the rows are
+  already JSON-shaped records) but a **contract** the moment it exists — the enumerated-field problem
+  OAI-36 describes for the bench reliability prose applies to it exactly. Do it when something
+  actually consumes it (the `oai-delegate` agent in OAI-5 is the likely first consumer), and version
+  the envelope when you do.
+
+### OAI-207 — parked, `not worth doing`
+
+**Why parked:** Both sub-claims are structural drift risks found by a reviewer auditing OAI-204's
+diff, not instances of anyone actually being misled. (1) means a reader cannot distinguish
+trim-vs-fallback rescue rates from `bench/review-sweep.mjs` output without reading raw JSON — no
+comparison has actually needed that distinction yet. (2) means three reason-lists could silently
+diverge — checked `evidence/`, `BACKLOG_DONE.md` for any run whose classification was actually wrong
+because of this; found only OAI-204's own shipping notes, which document the field's design, not a
+misclassification it caused.
+
+**Reopening bar (an instance, with a date):** (1) — someone actually needs a trim-vs-fallback
+rescue-rate comparison from sweep output and has to read raw JSON to get it, with a date. (2) — a
+sweep report's `starved`/not-starved classification for a real run is shown to disagree with what
+`SALVAGE_REASONS`/`SALVAGE_SMALL_RESERVE_REASONS` would have classified it as, because the three
+Sets have actually drifted apart in membership.
+
+*Filing kept verbatim:*
+
+- **OAI-207** — `bench/lib/sweep-outcome.mjs` has two pre-existing gaps, neither introduced by OAI-204
+  but both found while auditing its diff: (1) `reported()` reads `report?.salvaged` explicitly but
+  never reads the new `salvageTrim` field, so a sweep's outcome classification is blind to whether a
+  rescued run was trimmed, fell back untrimmed, or wasn't eligible — out of scope for OAI-204 itself
+  (that field's design is explicitly JSON-only, no sweep-integration was ever asked for), but a real
+  gap for anyone wanting to compare trim-vs-fallback rescue rates from `bench/review-sweep.mjs` output
+  without reading raw JSON records by hand. (2) `STARVED_REASONS` (a `Set` including
+  `'token-reserve-cutoff'`/`'reasoning-only'` plus `'token-exhaustion'`) is a third, independently
+  maintained copy of a reason list that overlaps but does not match either
+  `SALVAGE_SMALL_RESERVE_REASONS` or `SALVAGE_REASONS` in `scripts/lib/review-request.mjs` — the exact
+  drift risk OAI-204 consolidated those two into one shared `Set` specifically to prevent, one file
+  over. Found by acceptance-audit's whole-artifact scout during the OAI-204 review-ladder, 2026-08-24.
+
 ## 2026-08-24 — parked by the backlog sweep's worth bar
 
 4 items, all `not worth doing`. Each was verified STILL TRUE against disk by a scout this same sweep — the code they describe is real and unchanged — but each is a structural-hardening gap found by a reviewer reading code, not a dated instance of the defect actually manifesting, and three of the four already state their own reopening condition in the filing text. Applying the worth bar uniformly against the other 15 live items surfaced these four as the ones with no dated instance of actual harm, only of discovery.

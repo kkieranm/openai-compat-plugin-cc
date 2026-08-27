@@ -102,7 +102,11 @@ is in its Session footguns section — not here.
   scenario uses a 500ms reply against a 300ms bar, so nothing ever produces a request that fails to
   clear the margin. It is the verdict that catches a wasted episode, so a break in it would show up
   as the sweep silently banking runs that tested nothing. A scenario needs only a reply delay below
-  the bar.
+  the bar. **Refined by the 2026-08-27 consolidation sweep**: `no-exposure` IS exercised today, but
+  only by direct unit calls against the pure verdict function (`tests/ttl-vocabulary.test.js`,
+  `tests/ttl-verdict.test.js`) — never through the real end-to-end driver/stub matrix, which is what
+  this item is actually about. The gap is narrower than "untested" but the claim stands: nothing
+  proves the verdict is *reachable through the real entry point*, which is OAI-34's own stated rule.
   **(2)** `tests/ttl-stub-lms.mjs` documents five scenario knobs; **three are used by no test** —
   `unreadableFromMs`, `lastUsedAdvances`, `failLoad`. Unused affordances in a fixture are worse than
   absent ones: they read as coverage. Either exercise them (the first two map to real recorded
@@ -155,67 +159,30 @@ is in its Session footguns section — not here.
   louder, or retry the probe, rather than quietly reviewing under a budget nobody chose? The size
   guard is disarmed on exactly that path, which is when an oversized request goes out unrefused.
 
-- **OAI-52** — **Six items from OAI-3's own verification list did not land** — ~~five~~ **four remain
-  here, both corrections dated 2026-08-05: item (1) is done, and item (3) was superseded by OAI-62,
-  which found the property is not merely untested but false at two sites.** Item (6) also survives in
-  a weaker form than filed — see its entry. Filed the day the feature shipped, from reading the plan's
-  verification section back against the tests that exist, so
-  that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. None of these is a known
-  defect; each is a property the plan said would be proved and that nothing currently proves. Ordered
-  by what it would cost to be wrong about.
+- **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
+  feature shipped, from reading the plan's verification section back against the tests that exist,
+  so that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. **Consolidation sweep,
+  2026-08-27: verified STILL TRUE against disk, then worth-barred sub-item by sub-item — (2), (4)
+  and (5) had no dated instance of the property they guard actually failing and no silent-failure
+  argument, so they parked to `BACKLOG_PARKED.md` (`not worth doing`); (1) and (3) were already
+  resolved/superseded; (6) is the one sub-item that survives live.**
   **~~(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.~~ DONE 2026-08-05** —
   `tests/job-auth.test.js`, 8 tests, mutation-proved, shipped with a positive control. Full evidence
-  moved to `BACKLOG_DONE.md`'s OAI-58 entry, 2026-08-24, to keep this item's still-open sub-items
-  readable.
-  **(2) `state='running'` and `worker_pid` are never observable apart.** The plan called for this as
-  an *atomicity* assertion, having previously called for a test of the window between them — which
-  the one-transaction design makes unreachable, and a test that cannot fail was itself a gate finding.
-  The property holds by construction today; nothing notices if a later edit splits the `UPDATE`.
-  **(3) A `SQLITE_BUSY` expiry is retried, never terminalized.** `isBusy` exists in `job-store.mjs`
-  and three call sites use it, but no test contends the database hard enough to produce one. This is
-  the failure that kills live work if it ever regresses — a job failed because two processes wrote at
-  the same moment.
-  **(4) A real process killed mid-transaction leaves either the pre-transaction or the committed
-  state, never a partial one.** This is a claim about SQLite rather than about this code, which is why
-  it is fourth; but the design rests on it, and the repo's own habit is that a load-bearing claim gets
-  executed rather than cited.
-  **(5) The submitter writes the row exactly once on the success path** — counted through an injected
-  store, **not** by mtime, an mtime being the last write rather than a count.
-  **(6) No session identifier appears in a row.** ~~Structurally true … and guarded by nothing.~~
-  **Corrected 2026-08-05 by the OAI-58 ladder: this sub-item was misfiled.** A guard exists —
-  `tests/status.test.js:43` asserts `doesNotMatch(JSON.stringify(row), /session/i)` — and it was added
-  in `3e7d429`, *inside* the OAI-3 range and **predating this filing** (`370efc1`). What is true is
-  weaker than "no test": the check is a string match on a JSON dump, so it would catch a column *named*
-  with that word but not a session id stored under an unrelated key, and it carries no positive control
-  proving it can fail. So the remaining work is to strengthen an existing guard, not to write a missing
-  one. It is the property that distinguishes this design from the reference plugin's, whose `SessionEnd`
-  sweep depends on exactly the field this schema omits. Noted in
-  [ADR 014](adr/014-async-jobs.md) where the claim is made.
+  moved to `BACKLOG_DONE.md`'s OAI-58 entry, 2026-08-24.
   **(3) is superseded by OAI-62**, which found the property is not merely untested but false at two
   sites, one of which kills a running worker.
-
-- **OAI-56** — The prefill-overlap bound: a cancelled or dead job can hold the server for the
-  remainder of its prefill after the queue has moved on. **Measured, not assumed** — LM Studio says so
-  itself on disconnect ("If the model is busy processing the prompt, it will finish first"), and
-  prefill is the expensive half here at ~335s dense / ~67s MoE. Same model next: only a slowdown.
-  Different model next: its JIT load overlaps that prefill, which is the two-models-resident case the
-  memory ceiling forbids. **Deliberately not mitigated in OAI-3**, because the obvious mitigation —
-  polling `lms ps` for idleness before dispatch — is a vendor-specific check in a plugin that is
-  generic by construction ([ADR 001](adr/001-generic-openai-compatible-plugin.md)), and would put an
-  `if LM Studio` where the whole repo has providers-as-data. Any fix must be shaped as configuration
-  or as a generic post-cancel settle delay, not as a vendor probe.
-
-- **OAI-57** — No `--json` on `/oai:status` or `/oai:result`. **The `/oai:task` half shipped
-  2026-08-05** (`TASK_SPEC.booleanFlags` now includes `json`, mirroring `/oai:review`'s envelope) —
-  full evidence moved to `BACKLOG_DONE.md`'s "OAI-57 (the `/oai:task` half)" entry, 2026-08-24, to keep
-  this item's still-open ask readable. What remains live is `/oai:status` and `/oai:result`. OAI-80(a)'s forgeable `attachments` line is
-  still the reason to want the status half — *OAI-80 was parked 2026-08-18, `not worth doing`, so this
-  is a reason and no longer a dependency.* Left out of OAI-3 phase 4 as unrequested surface, and
-  recorded here so the omission is a decision rather than an oversight. Still small (the rows are
-  already JSON-shaped records) but a **contract** the moment it exists — the enumerated-field problem
-  OAI-36 describes for the bench reliability prose applies to it exactly. Do it when something
-  actually consumes it (the `oai-delegate` agent in OAI-5 is the likely first consumer), and version
-  the envelope when you do.
+  **(6) No session identifier appears in a row, and the one guard against it cannot be shown to
+  fail.** `tests/status.test.js:43` asserts `doesNotMatch(JSON.stringify(row), /session/i)` (added in
+  `3e7d429`, predating this filing) with no positive control proving the regex can ever match — a
+  string match on a JSON dump would catch a column *named* with that word but not a session id stored
+  under an unrelated key. **This clears the worth bar via the silence exception, not a dated
+  instance**: the failure mode this guards against is a session identifier leaking into a persisted
+  row, which is exactly the kind of defect an unfalsifiable check would hide rather than catch — an
+  instance would only ever be observed by someone reading raw job rows by hand, which is the absence
+  this check exists to make unnecessary. It is the property that distinguishes this design from the
+  reference plugin's, whose `SessionEnd` sweep depends on exactly the field this schema omits. Noted
+  in [ADR 014](adr/014-async-jobs.md) where the claim is made. Reconfirmed STILL TRUE against disk,
+  2026-08-27 sweep: no positive control has been added since filing.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
@@ -240,8 +207,11 @@ is in its Session footguns section — not here.
   file's own header narrative, which used to carry a few, was retired entirely to
   `evidence/backlog-header-history.md`) — to **7 dangling citations, all in live item bodies (OAI-11,
   OAI-13, OAI-45, OAI-52, OAI-56, OAI-151 — one item, OAI-151, carries two)**, out of 15 live items
-  today. The mechanism and every load-bearing example below are unchanged; only the headline count was
-  stale.
+  that day. **Re-counted a third time 2026-08-27 by this same consolidation sweep, after it parked
+  OAI-56: 6 dangling citations across 5 live items (OAI-11, OAI-13, OAI-45, OAI-52, OAI-151 — OAI-151
+  still carries two), out of 28 live items** — the newest items (OAI-207 onward, minus OAI-207 and
+  OAI-56/57 themselves, now parked) carry none. The mechanism and every load-bearing example below
+  are unchanged; only the headline counts were stale.
   `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
   **This is a decision that was deferred, not an oversight** — and the deletion commit says so in its
   own words: *"agents/oai-delegate.md and BACKLOG*.md are pinned by tests and were deliberately not
@@ -270,33 +240,27 @@ is in its Session footguns section — not here.
   (OAI-59 dropped 2026-08-23, OAI-19 dropped 2026-08-24, each when it shipped/concluded and its body
   left this file.)
 
-- **OAI-207** — `bench/lib/sweep-outcome.mjs` has two pre-existing gaps, neither introduced by OAI-204
-  but both found while auditing its diff: (1) `reported()` reads `report?.salvaged` explicitly but
-  never reads the new `salvageTrim` field, so a sweep's outcome classification is blind to whether a
-  rescued run was trimmed, fell back untrimmed, or wasn't eligible — out of scope for OAI-204 itself
-  (that field's design is explicitly JSON-only, no sweep-integration was ever asked for), but a real
-  gap for anyone wanting to compare trim-vs-fallback rescue rates from `bench/review-sweep.mjs` output
-  without reading raw JSON records by hand. (2) `STARVED_REASONS` (a `Set` including
-  `'token-reserve-cutoff'`/`'reasoning-only'` plus `'token-exhaustion'`) is a third, independently
-  maintained copy of a reason list that overlaps but does not match either
-  `SALVAGE_SMALL_RESERVE_REASONS` or `SALVAGE_REASONS` in `scripts/lib/review-request.mjs` — the exact
-  drift risk OAI-204 consolidated those two into one shared `Set` specifically to prevent, one file
-  over. Found by acceptance-audit's whole-artifact scout during the OAI-204 review-ladder, 2026-08-24.
-
 - **OAI-208** — The temp-dir leak OAI-203 fixed in one file is the suite's normal state: `mkdtempSync`
-  appears in 27 files under `tests/`, and cleanup exists in only 3 (`tests/job-busy.test.js`,
-  `tests/job-busy-open.test.js`, `tests/bench-warm-up.test.js`) — counted by repo-wide grep,
-  2026-08-24, during OAI-203's probe; every other file leaks its scratch dirs on every `npm test`.
-  Present, deterministic and silent, the same worth-bar shape OAI-203 itself cleared. Two related
-  facts for whoever takes it: (1) `tests/runtime-capability.test.js:74-87` already carries its own
-  hand-rolled copy of the same tracked-array-plus-`after`-hook machinery OAI-203 shipped
-  (`TEMP_STATE`/`stateDir`), so the suite now holds two independently-maintained copies that can
-  drift — the OAI-203 `/simplify` reuse reviewer proposed extracting a shared helper into
-  `tests/helpers.mjs` with both entry points (`tracked(prefix)` and a bare `track(path)` for
-  non-mkdtemp paths), rejected there only as out of that item's approved scope; (2) OAI-203's plan
-  deliberately declined a structural test ratcheting "every `mkdtempSync` is tracked" while the
-  class had one dated instance — a suite-wide fix is the recurrence that decision named, so
-  graduation to `tests/structure.test.js` should be re-judged here, not assumed either way.
+  appears in 27 files under `tests/` — recount 2026-08-27 matches the original 2026-08-24 count
+  exactly — and cleanup by literal `mkdtempSync`+`rmSync` pairing exists in only 3 of them today
+  (`tests/bench-warm-up.test.js`, `tests/delegate-containment.test.js`, `tests/runtime-capability.test.js`
+  — **this list has drifted from the original filing**, which named `tests/job-busy.test.js` and
+  `tests/job-busy-open.test.js`; those two clean up via the `stateDir()` wrapper in
+  `tests/job-helpers.mjs` rather than a literal `mkdtempSync` call, so a literal grep never counted
+  them as leaking or as clean — the leak count itself, ~22-24 of 27, is unchanged). **Consolidation
+  sweep, 2026-08-27: kept live, not parked** — distinct from a structural-hardening ask with no
+  observed harm, this defect manifests on every single `npm test` invocation, which is itself the
+  dated, recurring instance. Present, deterministic and silent, the same worth-bar shape OAI-203
+  itself cleared. Three related facts for whoever takes it: (1) `tests/runtime-capability.test.js:74-87`
+  carries its own hand-rolled copy of the tracked-array-plus-`after`-hook machinery OAI-203 shipped
+  (`TEMP_STATE`/`stateDir`); (2) **a third independent copy was found during this sweep**:
+  `tests/delegate-containment.test.js:70,74` hand-rolls its own `tracked(prefix)`/`TRACKED`
+  array-plus-`after()` cleanup, unrelated to either of the other two — the drift this item warned
+  about is no longer hypothetical, it has already happened once more since filing, with no shared
+  helper yet consolidating any of the three; (3) OAI-203's plan deliberately declined a structural
+  test ratcheting "every `mkdtempSync` is tracked" while the class had one dated instance — now three
+  independently-drifting copies plus 22-24 untracked files, so graduation to `tests/structure.test.js`
+  should be re-judged here, not assumed either way.
 
 
 - **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
