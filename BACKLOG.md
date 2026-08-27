@@ -468,7 +468,13 @@ is in its Session footguns section — not here.
   `google/gemma-4-26b-a4b` at 49,408 against `google/gemma-4-26b-a4b-qat` at 116,736, so a
   quantization comparison silently became a lens comparison. **Requesting a context length does not
   fix it**: LM Studio honours `--context-length` for some models and silently clamps or ignores it
-  for others, which is itself only discoverable by reading the loaded value back.
+  for others, which is itself only discoverable by reading the loaded value back. **Second dated
+  instance, 2026-08-27**: the same case (`hold3-docs-only`, a 289KB `BACKLOG_DONE.md` at the pinned
+  commit) produced a ~20x prompt-token spread across two models with no code difference at all —
+  `qwen/qwen3.8-27b` (window 61,696) fell back to a hunks-only prompt at ~3,890 tokens, while
+  `qwen/qwen3.5-9b` (window 154,624) reviewed the whole file at ~88,170 tokens. Both scored the case
+  as a near-clean control, so the lens divergence did not surface as a failure — it surfaced as two
+  models being compared on a case they were not actually reviewing at the same depth.
 
 - **OAI-219** — **The one number that decides whether a reviewer is usable is not reported as a
   number.** `docs-only` is the corpus's clean control — it contains no code — so the report states
@@ -534,3 +540,47 @@ is in its Session footguns section — not here.
   turned out to decide the outcome, and OAI-217 is why a record cannot show which side of it a run
   was on. **Evidence: [`evidence/221.md`](evidence/221.md)** — the measurement tables, the
   replication that revised them, and the corrections, recorded rather than summarised.
+
+- **OAI-222** — **An exhaustive sampling-parameter search bought a real precision gain and no
+  recall gain that survives leaving the panel it was tuned on.** A 7-stage, Codex-designed search
+  over temperature/top_p/top_k/min_p/reasoning_effort/`--structured-output` across ~150 invocations
+  (2026-08-26/27) froze one config per finalist model (`qwen/qwen3.8-27b`, `qwen/qwen3.5-9b`, both
+  `enable_thinking: false` per OAI-221). **Dated instance**: on two hold-out cases the search never
+  touched, both frozen configs anchored zero real defects across 20 combined repetitions
+  (N=5 x 2 cases x 2 models) — not 20 independent misses, since 6 of the 20 were parser failures or
+  a timeout rather than semantic misses (OAI-224). `qwen/qwen3.5-9b`'s config also **regressed**
+  recall on the three hardest full-corpus cases versus its own untuned baseline: 0 of 11 answered
+  reps anchored anything under tuning, vs 3 of 9 at baseline, while its clean-control precision
+  improved (2/3 clean baseline -> 5/5 clean tuned) — the config was selected on a 2-case panel that
+  never included the cases it regressed on, the overfitting risk the tune/hold-out split was
+  designed to catch. Reopening path: fix OAI-212/OAI-224's parser gap first, then test materially
+  different models against a preregistered, structurally diverse corpus with explicit recall and
+  runtime gates — not more sampling search on these two models. **Evidence:
+  [`evidence/222.md`](evidence/222.md)**.
+
+- **OAI-223** — **`qwen/qwen3.8-27b` cannot complete a review of this repo's two largest bench
+  cases within 600 seconds, confirmed directly rather than estimated.** `model-info` (~41k prompt
+  tokens) and `scaffold` (~47k prompt tokens) timed out in every rep of Stages 2, 6 and 7 (12 of 12
+  attempts) at the standard 300s cap. **Dated instance 2026-08-27**: a targeted diagnostic doubled
+  the budget to `--max-seconds 600` for one rep of each case, frozen sampling config, no other
+  change — both still failed, and neither produced any HTTP response at all within the full 600s,
+  not merely a slow generation cut short. At this model's measured ~148 tok/s prefill rate, `caps`
+  needed 215s of prefill alone for a 31,863-token prompt; `scaffold`'s ~47k-token prompt implies well
+  over 300s of prefill before a token of `model-info`/`scaffold`'s own — larger — prompts could even
+  begin generating. Distinct from OAI-216 (which is about `--max-seconds` not bounding the command's
+  actual wall clock): this is the model failing to complete even under a budget already double the
+  one OAI-216 shows the harness silently extends to. No budget beyond 600s was tried. **Evidence:
+  [`evidence/222.md`](evidence/222.md)**.
+
+- **OAI-224** — **`qwen/qwen3.8-27b` produced zero readable replies on `hold2-hostile-coercion`
+  across 5 attempts.** **Dated instance 2026-08-27**: Stage 7 of the OAI-222 tuning exercise ran
+  this case 5 times (N=5, frozen sampling config, `--cold`) and every single attempt was recorded
+  `unreadable` — not a recall miss, no findings were ever extracted to score. This may be the same
+  mechanism OAI-212 documents (a whole-document clean-or-near-clean reply the harness's acceptors
+  cannot parse), but the raw replies were not captured in a form that lets this item confirm that
+  identity — `bench/run.mjs` was run without `--json`, so only the rendered summary survives, not the
+  raw completion. Filed separately from OAI-212 rather than folded in until that identity is
+  checked, because OAI-212's own dated instances are all on `findings: []` clean replies, and this
+  case has one real defect, so a genuinely different failure shape is also possible. Whichever it
+  is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
+  nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
