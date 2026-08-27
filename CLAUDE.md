@@ -490,7 +490,7 @@ string a query-embedded credential could still be sitting inside.
   bugs the POSIX shells agree to miss — it is also the shell the recipe actually runs in. Declared
   here rather than left implicit, and required rather than skipped, because a suite that silently
   shrinks its shell matrix is a check that has stopped being able to fail.
-- Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`)
+- Benchmark the reviewer: `npm run bench` (opt-in, needs a real model; `--runs N`, `--case <id>`, `--diff-only`, `--cold`, `--warm-up`, `--max-attempts N`, `--max-tokens N`, `--temperature T`)
 - Overnight review sweep: `node bench/review-sweep.mjs --minutes N|--until HH:MM [--repo <path> --include <prefix>...] [...]`
   (opt-in, needs a real model). With no `--repo`, sweeps this repo under its own defaults. Pointed at
   another repo, `--include` is **required** — one or more path prefixes in the target's own layout —

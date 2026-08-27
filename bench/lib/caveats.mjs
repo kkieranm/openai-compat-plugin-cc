@@ -191,8 +191,25 @@ function schemaNote(structuredOutput, rows) {
  * report files would otherwise credit a difference to the reviewer that belongs
  * to a flag.
  */
-function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds }) {
+function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature }) {
   const notes = [...schemaNote(structuredOutput, rows)];
+  // The sampling knobs, stated whenever set for the same reason the budgets are:
+  // both change completion rate and recall, so two arms differing only in one of
+  // them are not comparable, and a reader who cannot see the value here will
+  // credit the difference to the model.
+  if (maxTokens !== undefined) {
+    notes.push(
+      `**\`--max-tokens ${maxTokens}\` was on**, capping each reply's token budget — which on a model that `
+      + 'spends its whole window reasoning is what lets it finish and answer at all, so its recall is not '
+      + 'comparable to an arm run without it.',
+    );
+  }
+  if (temperature !== undefined) {
+    notes.push(
+      `**\`--temperature ${temperature}\` was on**: this arm did not use the model's default sampling `
+      + 'temperature, so its findings and their variance are not comparable to an arm run at the default.',
+    );
+  }
   // Stated whenever set, for the same reason --cold is: a reader comparing two
   // report files has to know that one of them was run under a wall-clock cap,
   // or a row with fewer completed runs reads as a worse model rather than a

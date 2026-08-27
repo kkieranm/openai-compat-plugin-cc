@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { MAX_ATTEMPTS_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
 import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
@@ -31,7 +32,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts', 'note'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note'],
   booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
   repeatableFlags: ['case'],
 };
@@ -88,6 +89,13 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   // wait is a property of this invocation, not of the case. Command line only.
   if (options.timeout) flags.push('--timeout', options.timeout);
   if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
+  // The two sampling budgets `/oai:review` already accepts. `--max-tokens` is the
+  // one that made reviews complete on a starved model (a run that spent its whole
+  // window reasoning and never answered), and `--temperature` is forwarded beside
+  // it; `!== undefined` because `--temperature 0` is a legitimate deterministic
+  // setting that a truthy check would silently drop.
+  if (options['max-tokens'] !== undefined) flags.push('--max-tokens', options['max-tokens']);
+  if (options.temperature !== undefined) flags.push('--temperature', options.temperature);
   // The control arm: `--max-attempts 1` reproduces the pre-retry behaviour, so
   // one corpus run can measure the failure rate with retry and another without.
   if (options['max-attempts']) flags.push('--max-attempts', options['max-attempts']);
@@ -243,6 +251,18 @@ function validateOptions(options) {
   const budget = { min: 1, max: MAX_BUDGET_SECONDS };
   if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
   if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
+  // Same early-refusal reason as the budgets above: a bad value must fail in
+  // milliseconds, not after materializing every repo and recording each child's
+  // refusal as a failed run. The floor is `MIN_REVIEW_RESERVE_TOKENS`, not 1 —
+  // `/oai:review`'s `reserveFor` refuses an explicit `--max-tokens` below it
+  // unconditionally (a reply too small to hold its findings), so a value in
+  // `[1, MIN_REVIEW_RESERVE_TOKENS)` would pass a `min: 1` check here and then be
+  // rejected by every spawned child, which is exactly what this up-front check
+  // exists to prevent. Temperature uses `/oai:review`'s own 0–2 domain.
+  if (options['max-tokens'] !== undefined) {
+    parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: MIN_REVIEW_RESERVE_TOKENS });
+  }
+  if (options.temperature !== undefined) parseNumber(options.temperature, 'temperature', { min: 0, max: 2 });
   // Same domain as the command it forwards to, for the reason stated above: an
   // out-of-range value here otherwise materializes every repo, spawns every
   // child, records each validation refusal as a failed run, and renders a table
@@ -282,6 +302,11 @@ async function main() {
     structuredOutput: Boolean(options['structured-output']),
     timeoutSeconds: options.timeout,
     maxSeconds: options['max-seconds'],
+    // Same reason as the budgets above: two arms differing only in a sampling
+    // knob must be tellable apart in the artifact, or a reader differences them
+    // anyway and credits the gap to the wrong cause.
+    maxTokens: options['max-tokens'],
+    temperature: options.temperature,
   });
   const { recordPath, reportPath } = persist(ROOT, stamp, { runsPerCase, options, warmed, results }, markdown);
 

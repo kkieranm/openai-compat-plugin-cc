@@ -264,6 +264,23 @@ test('a schema arm says so in its header and its caveats, and an unconstrained o
   assert.doesNotMatch(off, /the reply shape was enforced/);
 });
 
+// OAI-215: `--max-tokens`/`--temperature` change completion rate and recall, so an
+// arm run under one must name it in the artifact, or a reader differences two arms
+// and credits the gap to the model. Present/absent twins, like the schema arm above.
+test('a sampling-knob arm names the knob in its caveats, and a default arm does not', () => {
+  const base = { runsPerCase: 1, model: 'm', provider: 'p' };
+  const results = [{ caseDef: CASE, runs: [goodRun()] }];
+  const tokens = renderReport(results, { ...base, maxTokens: '8192' });
+  const temp = renderReport(results, { ...base, temperature: '0' });
+  const off = renderReport(results, base);
+
+  assert.match(tokens, /`--max-tokens 8192` was on/);
+  assert.doesNotMatch(off, /--max-tokens/);
+  // temperature 0 is the edge case the forwarding guards — it must still render.
+  assert.match(temp, /`--temperature 0` was on/);
+  assert.doesNotMatch(off, /--temperature/);
+});
+
 // The lens column (OAI-218): a case's row must say at what depth it was reviewed —
 // whole file vs hunks, and the window that decided it — so two per-model reports
 // compared on one case cannot silently be a lens comparison wearing a model's name.

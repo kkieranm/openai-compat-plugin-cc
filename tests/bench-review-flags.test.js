@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { reviewFlags } from '../bench/run.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // THE GUARD THAT GUARDS THE GUARD (F4), SECOND ATTEMPT — the first one could not fail.
@@ -80,6 +81,27 @@ test('--structured-output is ABSENT by default', () => {
   assert.ok(!build({ 'structured-output': false }).includes('--structured-output'));
 });
 
+test('--max-tokens is forwarded with its value when asked for, absent by default', () => {
+  // OAI-215: bench could not set the one option that made a starved review complete.
+  const flags = build({ 'max-tokens': '8192' });
+  const at = flags.indexOf('--max-tokens');
+  assert.ok(at !== -1, '--max-tokens must be forwarded');
+  assert.equal(flags[at + 1], '8192', 'the value must ride the flag');
+  assert.ok(!build({}).includes('--max-tokens'), 'absent when not asked for');
+});
+
+test('--temperature is forwarded, and 0 is not dropped', () => {
+  const flags = build({ temperature: '0.2' });
+  const at = flags.indexOf('--temperature');
+  assert.ok(at !== -1 && flags[at + 1] === '0.2');
+  // The negative twin AND the edge case: 0 is a legitimate deterministic setting a
+  // truthy check would silently drop, so it must still be forwarded.
+  const zero = build({ temperature: 0 });
+  const zat = zero.indexOf('--temperature');
+  assert.ok(zat !== -1 && String(zero[zat + 1]) === '0', 'temperature 0 must forward');
+  assert.ok(!build({}).includes('--temperature'), 'absent when not asked for');
+});
+
 test('the review subcommand and --json envelope are always present', () => {
   // Guards the seam itself: a refactor that reorders or drops these turns every
   // run into an unparseable one, and the benchmark reads results from --json.
@@ -104,4 +126,27 @@ test('--cold mints a cache-buster unique to the case and run', () => {
   assert.ok(first.includes('--cache-buster'));
   assert.notEqual(busterOf(first), busterOf(second));
   assert.ok(!build({}).includes('--cache-buster'));
+});
+
+test('bench refuses --max-tokens below the review reserve floor BEFORE materializing (OAI-215)', async () => {
+  // The whole point of validating up front (like the budgets): a value in
+  // [1, MIN_REVIEW_RESERVE_TOKENS) passes /oai:review's parse but is refused by
+  // every child's reserveFor, so without this floor a multi-case sweep would
+  // materialize every repo and record predictable failures. The refusal must
+  // name the floor and cost milliseconds, not repos.
+  const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
+  const child = spawn(process.execPath, [runPath, '--max-tokens', '100'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+  });
+  let err = '';
+  child.stdout.on('data', (d) => { err += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
+  clearTimeout(timer);
+  assert.equal(signal, null, `child was killed (${signal}), proving nothing: ${err.slice(0, 300)}`);
+  assert.notEqual(code, 0, `a below-floor --max-tokens must be refused: ${err.slice(0, 300)}`);
+  assert.match(err, new RegExp(String(MIN_REVIEW_RESERVE_TOKENS)), 'the refusal must name the real floor');
+  // No case was materialized: the refusal is a validation message, not a per-run failure record.
+  assert.doesNotMatch(err, /run \d+\/\d+/, 'must refuse before running any case');
 });
