@@ -1,3 +1,16 @@
+## 2026-08-27 — OAI-215 shipped: bench/run.mjs forwards --max-tokens and --temperature (`8469ef9`)
+
+`bench/run.mjs` could not set the two sampling options `/oai:review` already accepts, so it scored
+every model at the default reserve `min(32768, contextLength/2)` — the configuration observed producing
+~700s runaways and empty answers on the dense 27b class (dated 2026-08-25: `--max-tokens 8192` cut a
+`qwen3.5-4b-mlx` review from 740s/0 findings to 208s/3). Both flags now flow: added to
+`SPEC.valueFlags`, forwarded by `reviewFlags` (temperature via `!== undefined`, since `--temperature 0`
+is a legitimate deterministic setting a truthy check would drop), validated up front against
+`MIN_REVIEW_RESERVE_TOKENS` (not 1 — `reserveFor` refuses a lower explicit `--max-tokens`
+unconditionally, so a value in `[1, floor)` would otherwise materialize every repo and fail every
+child), and threaded into the rendered report's identity and caveats so two arms differing only by a
+knob are tellable apart. Codex's pre-commit review caught the floor and the report-identity gaps.
+
 ## 2026-08-27 — OAI-212 shipped: a whole-document empty-findings YAML review reads as clean (`c5ddc0f`)
 
 A reviewer that finds nothing sometimes answers in whole-document YAML — `findings: []` then an

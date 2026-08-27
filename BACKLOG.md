@@ -11,19 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-215** — **`bench/run.mjs` cannot set the one option that made reviews work.** Its
-  `SPEC.valueFlags` is `['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts']`:
-  no `max-tokens`, and no `temperature` either, though `/oai:review` accepts both. **Dated instance
-  2026-08-25**: adding `--max-tokens 8192` to a review of one commit cut a `qwen3.5-4b-mlx` run from
-  740s producing zero findings to 208s producing three, by dropping the token-reserve watchdog's
-  firing threshold from ~92,160 reasoning characters to ~18,432 so a runaway is cut early enough for
-  salvage to still answer. The benchmark cannot express that configuration, so it necessarily scores
-  every model at the default reserve — `min(32768, contextLength/2)` — which is the configuration
-  observed producing ~700s runaways and empty answers across the dense 27b class the same day. The
-  effect is not neutral across models: the reserve is derived from the served window, so a model with
-  a large window is given more rope than one with a small window, and the benchmark's own rows are
-  therefore not budget-comparable to each other.
-
 - **OAI-216** — **`--max-seconds` does not bound the command, and CLAUDE.md says it does.**
   `CLAUDE.md` states `--max-seconds` "caps a whole model call in wall clock, retries included".
   **Dated instance 2026-08-25**: `review --commit f5addcb --max-seconds 900` ran **1,105s**. The
