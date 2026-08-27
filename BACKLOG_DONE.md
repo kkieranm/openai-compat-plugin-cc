@@ -1,3 +1,19 @@
+## 2026-08-27 — OAI-216 shipped: the --max-seconds doc corrected for review salvage (`d4e8db5`)
+
+`CLAUDE.md` and `commands/review.md` claimed `--max-seconds` "caps a whole model call in wall clock,
+retries included". True for the original request and its retries, but a review's salvage follow-up
+(`trySalvage`) opens its own fresh `SALVAGE_MAX_MS` (300s) deadline per attempt, outside `--max-seconds`
+— so `review --commit f5addcb --max-seconds 900` ran 1105s (dated 2026-08-25). Fixed the DOC, not the
+behavior: a `deadline-timeout` salvage runs precisely because the original budget is spent, so funding
+it from the remainder would starve the rescue the dated instance shows working. The corrected wording
+states the true ceiling is `--max-seconds` plus up to 600s (two salvage attempts for
+`token-reserve-cutoff`/`reasoning-only`, one for `deadline-timeout`), on both review paths, and notes
+`/oai:task` has no salvage. `commands/task.md`/`status.md` checked and left (accurate);
+`bench/review-sweep.mjs` already documented the +600s exception. Fork converged B via a Codex steer and
+a fable agent, both verifying the mechanism against the code. A hard-total-cap flag (`--total-seconds`)
+was considered and NOT filed — no dated instance of the bounded overshoot causing harm, and the doc now
+states it where the sweep operator reads it.
+
 ## 2026-08-27 — OAI-215 shipped: bench/run.mjs forwards --max-tokens and --temperature (`8469ef9`)
 
 `bench/run.mjs` could not set the two sampling options `/oai:review` already accepts, so it scored

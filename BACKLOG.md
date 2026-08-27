@@ -11,20 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-216** — **`--max-seconds` does not bound the command, and CLAUDE.md says it does.**
-  `CLAUDE.md` states `--max-seconds` "caps a whole model call in wall clock, retries included".
-  **Dated instance 2026-08-25**: `review --commit f5addcb --max-seconds 900` ran **1,105s**. The
-  mechanism is not a bug in the deadline — it is a second, deliberate budget: the original request
-  gets the one expiry minted from `--max-seconds`, and `scripts/lib/review-request.mjs`'s salvage
-  path opens its own fresh `performance.now() + 300_000` for the follow-up. The attempt ledger shows
-  it directly — attempt 1 `deadline-timeout` after ~900s and ~50,867 chars of reasoning, attempt 2
-  the salvage follow-up answering 205s later. So the real bound is `--max-seconds` plus 300s, not
-  `--max-seconds`. Both halves are defensible on their own and the conflict is between the behaviour
-  and the documented contract, not within the code. It matters wherever a caller sizes a wall-clock
-  budget against this flag — an overnight sweep's per-commit cap, or a review-ladder stage that must
-  collect before a later group launches. Whoever takes it should decide which of the two is wrong:
-  the sentence, or the second budget.
-
 - **OAI-213** — **The sweep report interpolates untrusted text into Markdown at three sinks, and the
   worst is reached by every ordinary run.** OAI-209 closed one of them (`entry.reason`, via
   `displayReason`) after a `token-reserve-cutoff` row corrupted its own line; the focused
