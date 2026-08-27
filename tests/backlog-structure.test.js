@@ -11,10 +11,19 @@
 // replacement — there is no more priority-ranking pass over `BACKLOG.md`. The absorbed-table check
 // DOES have one, below ("every stub bullet's target resolves in the same tracker"): a merged item
 // now gets a one-line stub bullet (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the
-// item it merged into lives. The duplicate/ordering checks below see a stub's OWN id, the same as
-// any other bullet, but NOT its target — a stub whose target was mistyped or renamed would pass
-// every other check here silently, which is exactly what the old absorbed-table test existed to
-// catch.
+// item it merged into lives. The duplicate check below sees a stub's OWN id, the same as any other
+// bullet, but NOT its target — a stub whose target was mistyped or renamed would pass every other
+// check here silently, which is exactly what the old absorbed-table test existed to catch.
+//
+// Physical order stopped being ID order 2026-08-27 (owner-directed: item bodies are now ordered by
+// priority, most urgent first, and reordering is expected). The old "ascending id order" test is
+// replaced below by a canonical-shape check: not because ordering can be validated mechanically —
+// priority is a judgement call — but because a stray malformed or mis-indented item line used to be
+// invisible to every other check here (`bodyIds()` only recognizes the correct shape, so a broken one
+// silently disappears from every set-based test). Requiring an actual bullet marker before the ID is
+// load-bearing, not decoration — this file's own prose wraps citation lists onto new lines that begin
+// with a bare `OAI-n`, and a marker-optional pattern flagged eight of those as malformed on the file
+// as it stood when this test was written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -36,8 +45,6 @@ export function bodyIds(backlog) {
  * reason the shape is pinned to the same `- **OAI-n**` heading `bodyIds` uses.
  */
 const closedIds = (text) => new Set([...text.matchAll(/^- \*\*(OAI-\d+)\*\*/gm)].map((m) => m[1]));
-
-const num = (id) => Number(id.slice(4));
 
 /** Stub bullets only: `- **OAI-n** — Absorbed into OAI-m...`. Maps stub id -> target id. */
 const stubTargets = (text) =>
@@ -63,12 +70,16 @@ test('no id appears twice among the live bodies', () => {
   assert.deepEqual(repeated, [], `more than one live body for: ${repeated.join(', ')}`);
 });
 
-test('item bodies are in ascending id order', () => {
-  const breaks = [];
-  for (let i = 1; i < BODIES.length; i++) {
-    if (num(BODIES[i]) < num(BODIES[i - 1])) breaks.push(`${BODIES[i - 1]} -> ${BODIES[i]}`);
-  }
-  assert.deepEqual(breaks, [], `bodies out of ascending order at: ${breaks.join(', ')}`);
+test('every item-shaped line is a canonical top-level body', () => {
+  // "Item-shaped" requires an actual bullet/heading marker before the ID, not just a line that
+  // starts with "OAI-n" — this file's own prose wraps citation lists across lines, and a
+  // marker-optional pattern flags those wrapped continuation lines as malformed items. A positive
+  // control (a bullet missing its em-dash, or missing the space after `**`) still trips this.
+  const itemLines = BACKLOG.split('\n').filter((line) =>
+    /^\s*(?:[-+*]|#{1,6})\s+\*{0,2}OAI-\d+\b/.test(line),
+  );
+  const malformed = itemLines.filter((line) => !/^- \*\*OAI-\d+\*\* — /.test(line));
+  assert.deepEqual(malformed, [], `non-canonical item-shaped lines: ${malformed.join(' | ')}`);
 });
 
 test('no id is both live and closed out', () => {

@@ -523,17 +523,24 @@ Domain:
 
 ## Work tracker
 
-- `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …), bodies in ascending ID
-  order. **`tests/backlog-structure.test.js` enforces this on every `npm test`** (OAI-104,
-  2026-08-09 — before it, the same guarantee was prose naming a script that did not exist, and it
-  found three classes of live drift on its first run): no ID repeats among the live bodies, the
-  bodies are in ID order, nothing is live and closed out at once, and every stub bullet's target
-  resolves in the same tracker and never to another stub. **The tier-ranking priority
-  index and the absorbed-ID redirect table were retired 2026-08-20**, owner-directed, matching the
-  same removal in `~/Code/backlog` and `~/Code/dotfiles` — there is no more priority-ranking pass
-  over this file. A merged item now gets a one-line stub bullet
+- `BACKLOG.md` — numbered items with stable global IDs (`OAI-1`, `OAI-2`, …). IDs never encode
+  order and never renumber. **`tests/backlog-structure.test.js` enforces tracker integrity on every
+  `npm test`** (OAI-104, 2026-08-09 — before it, the same guarantee was prose naming a script that
+  did not exist, and it found three classes of live drift on its first run): no ID repeats among the
+  live bodies, every item-shaped line is a canonical top-level body (not a malformed or
+  mis-indented one), nothing is live and closed out at once, and every stub bullet's target resolves
+  in the same tracker and never to another stub. **The tier-ranking priority index and the
+  absorbed-ID redirect table were retired 2026-08-20**, owner-directed, matching the same removal in
+  `~/Code/backlog` and `~/Code/dotfiles` — there is no priority-ranking *pass* (no separate index,
+  no table) over this file. A merged item now gets a one-line stub bullet
   (`- **OAI-n** — Absorbed into OAI-m; see that item.`) wherever the item it merged into lives,
   resolved through the ordinary `- **OAI-n**` shape every item uses, never a separate table.
+  **Physical order is a separate question from the retired tier system, clarified 2026-08-27**:
+  item bodies are ordered by priority, most urgent first, and moving an item is expected as
+  priority changes — the 2026-08-20 retirement removed the *tiers* label and the redirect table, not
+  the ability to reorder. Nothing mechanically enforces priority order (it is a judgement call,
+  same as picking the next item always was); find a specific item by exact-ID search, not by
+  position.
 - The current direction is **"use local LLMs like I use Codex"** —
   [`plans/local-llms-like-codex.md`](plans/local-llms-like-codex.md), paired with Codex. Stated here
   rather than at the top of `BACKLOG.md`, which is data (items), not project context. Retired
@@ -548,12 +555,12 @@ Domain:
   see `backlog-sweep`). Neither is "merely deprioritised." Each carries a **reopening bar**: what
   would have to be observed for it to become live again. An item still wanted but unscheduled, or
   awaiting a dated instance that just hasn't happened yet, stays in `BACKLOG.md`.
-- **"Pick next item" is a judgement call, not a file position** — `BACKLOG.md`'s bodies are in
-  ascending ID order for lookup, not priority order, since the priority-ranking pass was retired
-  2026-08-20; the top of the file is the lowest ID, not the most urgent item. "mark done" = move the
-  item to BACKLOG_DONE.md with the date; "park" = move to BACKLOG_PARKED.md with a reopening bar. If
-  a merge leaves an ID cited elsewhere with no body of its own, give it a one-line stub bullet
-  wherever the surviving item lives.
+- **"Pick next item" means the first live body in `BACKLOG.md`** — physical top-to-bottom order
+  encodes priority (owner-directed 2026-08-27), most urgent first, and reordering is expected as
+  priority changes. IDs are stable global identities and are never renumbered when an item moves.
+  "mark done" = move the item to BACKLOG_DONE.md with the date; "park" = move to BACKLOG_PARKED.md
+  with a reopening bar. If a merge leaves an ID cited elsewhere with no body of its own, give it a
+  one-line stub bullet wherever the surviving item lives.
 - **Filing a NEW item clears the same worth bar `backlog-sweep`'s consolidate pass applies
   retroactively (2026-08-18, after 188 issued IDs and ~two-thirds of live items turned out to be
   another item's residue): a dated instance already observed, or a named silent-failure mechanism —
