@@ -32,7 +32,7 @@ function withoutUndefined(fields) {
  * — it would be an instant on a clock that no longer exists. `maxMs` is stored
  * and the worker mints its own, exactly as the foreground path does.
  */
-export function persistRequest({ profile, numeric, messages, template, estimatedTokens, budget }) {
+export function persistRequest({ profile, numeric, messages, template, estimatedTokens, budget, sampling }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   return {
     messages,
@@ -62,6 +62,10 @@ export function persistRequest({ profile, numeric, messages, template, estimated
       retryDelayMs: resolveRetryDelay(profile),
       maxMs: resolveMax(profile, maxSeconds),
       temperature,
+      // An additive optional field, the same posture as temperature/maxTokens:
+      // an object of set params or absent. An older build reading a newer row
+      // simply drops it and sends an unsampled request.
+      sampling,
       maxTokens,
       maxAttempts,
     }),
@@ -83,6 +87,7 @@ export function reconstructRequest(dto, { model, ledger }) {
       retryDelayMs: dto.retryDelayMs,
       maxMs,
       temperature: dto.temperature,
+      sampling: dto.sampling,
       maxTokens: dto.maxTokens,
       maxAttempts: dto.maxAttempts,
       // Minted here, on this process's clock, at the last moment before the

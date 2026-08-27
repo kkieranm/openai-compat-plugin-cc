@@ -6,26 +6,15 @@ import { UserError } from './errors.mjs';
 import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
 import { describeModels, windowFor } from './model-info.mjs';
 import { planSelection } from './model-selection.mjs';
+import { parseNumber } from './parse-number.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
 
 export const PROBE_TIMEOUT_MS = 5000;
 
-// `min` is inclusive: temperature 0 is the standard value for deterministic
-// sampling, so it must be accepted even though timeouts must exceed zero.
-export function parseNumber(raw, flag, { integer = false, min, max } = {}) {
-  const value = Number(raw);
-  const valid =
-    Number.isFinite(value) &&
-    (!integer || Number.isInteger(value)) &&
-    (min === undefined || value >= min) &&
-    (max === undefined || value <= max);
-
-  if (!valid) {
-    const range = max === undefined ? `at least ${min}` : `between ${min} and ${max}`;
-    throw new UserError(`--${flag} must be ${integer ? 'an integer' : 'a number'} ${range}, got "${raw}".`);
-  }
-  return value;
-}
+// Re-exported from its leaf module, where it also serves `sampling.mjs` without
+// pulling that file into this one's `client.mjs` import (which would close a
+// cycle). The public name stays here so existing callers are unaffected.
+export { parseNumber };
 
 /**
  * A ceiling on `--max-attempts`, for the reason `MAX_BUDGET_SECONDS` exists.

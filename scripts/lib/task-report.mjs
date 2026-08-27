@@ -56,6 +56,11 @@ function jsonTaskReport(outcome, answer) {
     artifact: outcome.artifact ?? null,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
+    // The vendor sampling/reasoning params requested for this run, or null — a
+    // fact about the request, echoed the same way the review envelope does. This
+    // is the success path, so requested and sent coincide; the failure envelope
+    // uses the same "requested" framing for the pre-dispatch case.
+    sampling: outcome.sampling ?? null,
     estimatedTokens,
     // Whether the size guard was ever armed, and the note saying so when it was
     // not. Omitting these would report a bare token count a caller could not

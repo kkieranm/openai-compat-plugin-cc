@@ -86,7 +86,7 @@ function templateFor(options) {
  * Resolving the target probes the server — building this beside that lookup
  * would quietly bill a cold `/v1/models` round trip to the answer's budget.
  */
-function taskRequest({ profile, model, messages, numeric, ledger }) {
+function taskRequest({ profile, model, messages, numeric, sampling, ledger }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   const maxMs = resolveMax(profile, maxSeconds);
   return {
@@ -101,6 +101,9 @@ function taskRequest({ profile, model, messages, numeric, ledger }) {
     expiresAt: maxMs === undefined ? undefined : performance.now() + maxMs,
     maxMs,
     temperature,
+    // The validated vendor sampling params, applied to the body by
+    // `chatCompletion` under their own wire names.
+    sampling,
     maxTokens,
     maxAttempts,
     // One ledger for the whole command, so every physical request this answer
@@ -122,7 +125,7 @@ function taskRequest({ profile, model, messages, numeric, ledger }) {
  * facts about a run in flight, and belong to whoever is running it. stdout is,
  * because that is the rendering.
  */
-export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
+export async function prepareTask({ spec, options, inlinePrompt, terminated, sampling }) {
   const numeric = parseNumericOptions(options);
 
   const { config } = loadConfig();
@@ -154,6 +157,9 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
 
   return {
     numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget,
+    // Carried onto `prep` so it reaches both the request (foreground) and
+    // `persistRequest` (background), and the report echo.
+    sampling,
     // The NAME, not the resolved template: this is what crosses into persisted
     // state, and a queued job must not snapshot prose that the build reading it
     // back may have changed.
@@ -173,7 +179,7 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated }) {
  */
 export async function executeTask(args) {
   const prep = await prepareTask(args);
-  const { numeric, profile, files, model, messages, estimatedTokens, budget, template } = prep;
+  const { numeric, profile, files, model, messages, estimatedTokens, budget, template, sampling } = prep;
 
   process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
@@ -190,7 +196,7 @@ export async function executeTask(args) {
 
   const ledger = createLedger();
   const startedAt = Date.now();
-  const request = taskRequest({ profile, model, messages, numeric, ledger });
+  const request = taskRequest({ profile, model, messages, numeric, sampling, ledger });
   const result = await withProgress((onProgress) => chatCompletion(profile, { ...request, onProgress }));
 
   return {
@@ -208,6 +214,8 @@ export async function executeTask(args) {
     // foreground run that silently prints none of them while the background path
     // prints them all.
     template,
+    // What we sent, echoed on the success envelope by `jsonTaskReport`.
+    sampling,
     // Computed HERE, beside every other fact about the run, so it survives onto a
     // persisted outcome and reaches `/oai:result`. The worker computes its own for
     // the same reason.

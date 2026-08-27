@@ -189,6 +189,12 @@ export function jsonReport(parsed, context) {
     unreadable: target.unreadable,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
+    // The vendor sampling/reasoning params requested for this run, or null — a
+    // fact about the request, same class as `requestedModel`. On this success
+    // path the request went out, so requested and sent coincide; the failure
+    // envelope carries the same field (read off the thrown error), where
+    // "requested" is the honest word since a pre-dispatch failure never sent it.
+    sampling: context.sampling ?? null,
     estimatedTokens,
     // Whether `estimatedTokens` was ever tested against a window, and the note
     // saying so when it was not. The text footer has always carried this as
@@ -253,6 +259,15 @@ export function errorReport(error) {
     // only place the id survives — without it the reliability table cannot
     // attribute an all-failed sweep to the model that failed.
     requestedModel: error?.requestedModel ?? null,
+    // The sampling params the run was REQUESTED with, attached to the error by
+    // the command-level catch — so a post-dispatch runaway records what it ran
+    // under, and a pre-dispatch failure records what it would have. Not
+    // "sent": on a pre-dispatch failure no request went out, and this field is
+    // present regardless, earlier than `requestedModel` (which needs the model
+    // resolved). `null` on a background failure (the worker never runs that
+    // catch) and on a parse failure (none were valid) — the same "cannot live on
+    // one path alone" rule as requestedModel above.
+    sampling: error?.sampling ?? null,
     // What the model had already produced when the failure cut it off —
     // `stream-collect.mjs` attaches `.answer` to every
     // failure it catches, but most carry nothing (a pre-stream refusal, no

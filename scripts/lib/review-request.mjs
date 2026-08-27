@@ -642,7 +642,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
-  const { maxAttempts, ledger, retryDelayMs, structuredOutput } = plan;
+  const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling } = plan;
   const shared = sharedRequest(profile, plan);
   // Minted once, here, because this function is the outermost layer that can
   // retry a model call: the `response_format` catch below sends a *second*
@@ -658,7 +658,10 @@ export async function requestFindings(profile, plan) {
   // `ledger` rides with the budgets and is shared by BOTH completion calls
   // below, so the schema request and the degraded one after it land in one
   // record with continuous indexes rather than each starting from 1.
-  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, maxAttempts, retryDelayMs, ledger, onProgress };
+  // `sampling` rides on `send` deliberately: it is spread into the salvage
+  // follow-up too (unlike `reasoningReserveTokens`), because the user's chosen
+  // sampling settings belong to that same logical request.
+  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, sampling, maxAttempts, retryDelayMs, ledger, onProgress };
   const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
 
   // No grammar unless one was asked for. Not a fallback here and not an error

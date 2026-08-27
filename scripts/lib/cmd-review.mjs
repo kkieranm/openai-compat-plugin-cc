@@ -12,6 +12,7 @@ import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { errorReport, report } from './review-report.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
+import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { parseFindings } from './structured.mjs';
 
 // Exported so `tests/plugin.test.js` can prove every flag this command accepts
@@ -20,7 +21,7 @@ import { parseFindings } from './structured.mjs';
 export const REVIEW_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'cache-buster', 'max-attempts',
+    'cache-buster', 'max-attempts', ...SAMPLING_FLAGS,
   ],
   booleanFlags: ['staged', 'diff-only', 'json', 'structured-output'],
   repeatableFlags: ['file'],
@@ -42,9 +43,17 @@ export const REVIEW_SPEC = {
  */
 export async function runReview(argv) {
   const { options, prompt: instructions, terminated } = parseCommandLine(argv, REVIEW_SPEC);
+  // Declared out here so the catch can attach it: the failures worth recording
+  // the settings on — a reasoning-only runaway — are thrown by the report stage
+  // *after* the model call returned, so this is the one scope that sees them all.
+  let sampling;
   try {
-    await reviewFlow(options, instructions, terminated);
+    sampling = parseSampling(options);
+    await reviewFlow(options, instructions, terminated, sampling);
   } catch (error) {
+    // Record the run's sampling on the error so the --json failure envelope can
+    // report it — including for a runaway refused after the model call returned.
+    attachSampling(error, sampling);
     // Written before the rethrow, so the companion still writes prose to stderr
     // and exits 1 (or 2) exactly as it did. Additive: nothing that worked
     // before reads differently.
@@ -79,7 +88,7 @@ function assertAskable(options, instructions, terminated) {
  * Lifted out of `reviewFlow` at the function size budget. The seam: this decides
  * *what to ask for*, while the caller runs it and renders what comes back.
  */
-function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, ledger }) {
+function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   return {
     model,
@@ -88,6 +97,9 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
     instructions,
     reserve: reserveFor(contextLength, maxTokens),
     temperature,
+    // The validated vendor sampling params, threaded onto `send` in
+    // `requestFindings` and echoed in the report.
+    sampling,
     cacheBuster: options['cache-buster'],
     timeoutMs: resolveTimeout(profile, timeoutSeconds),
     idleMs: resolveIdle(profile),
@@ -116,7 +128,7 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
   };
 }
 
-async function reviewFlow(options, instructions, terminated) {
+async function reviewFlow(options, instructions, terminated, sampling) {
   assertAskable(options, instructions, terminated);
   const numeric = parseNumericOptions(options);
 
@@ -136,7 +148,7 @@ async function reviewFlow(options, instructions, terminated) {
   // model an all-failed run had asked for, and bucketed every one as "unknown".
   const named = (error) => Object.assign(error, { requestedModel: error.requestedModel ?? model });
   const ledger = createLedger();
-  const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, ledger });
+  const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
   const startedAt = Date.now();
   process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
 
@@ -172,6 +184,9 @@ async function reviewFlow(options, instructions, terminated) {
     estimatedTokens,
     durationMs: Date.now() - startedAt,
     json: Boolean(options.json),
+    // What we sent, echoed on the success envelope — the failure envelope reads
+    // it off the thrown error instead (see runReview's catch).
+    sampling: plan.sampling,
     ledger,
   });
 }

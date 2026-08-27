@@ -16,6 +16,13 @@ endpoints by response shape, trusting only served windows over model ceilings.
 named, and refuses an id a recognised catalogue does not list; `scripts/lib/model-identity.mjs`
 `substitution()` is the one comparison that says the model which answered is not the one requested.
 
+`scripts/lib/sampling.mjs`'s `SAMPLING_PARAMS` is the single registry of the vendor sampling/reasoning
+parameters a request may carry — `reasoning_effort`, `top_p`, `top_k`, `min_p`, `presence_penalty` —
+each row naming its flag, option key, wire field and validator, so `parseSampling` (validation),
+`applySampling` (the body) and `job-request.mjs`'s DTO cannot admit a parameter in one place and drop
+it in another; `applySampling` iterates that table alone, which is what keeps the request body a closed
+set — `messages`/`stream` are structurally unreachable from caller sampling, never a merge.
+
 `scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff **when the window can be
 sized** — an unsizeable one skips that rung and the report says so — taking content from the
 revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by

@@ -6,6 +6,7 @@
 import { parseCommandLine, splitBlob } from './args.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { errorReport } from './review-report.mjs';
+import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { executeTask } from './task-execute.mjs';
 import { report } from './task-report.mjs';
 import { submitTask } from './task-submit.mjs';
@@ -16,7 +17,7 @@ import { submitTask } from './task-submit.mjs';
 export const TASK_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'prompt-file', 'system', 'template', 'timeout', 'max-seconds', 'max-tokens',
-    'temperature', 'max-attempts', 'max-wait',
+    'temperature', 'max-attempts', 'max-wait', ...SAMPLING_FLAGS,
   ],
   booleanFlags: ['background', 'json'],
   repeatableFlags: ['file'],
@@ -48,10 +49,16 @@ export async function runTask(argv) {
   // it is prompt text. A tolerant pre-parse answers the same question the parser
   // would, and falls back to false when even that cannot be determined.
   const wantsJson = jsonIntent(argv);
+  // Held out here so the catch can attach it to a failure thrown after the model
+  // call returned — the reasoning-only/empty runaway `requireAnswer` refuses in
+  // the report stage, which is the exact case whose settings need recording.
+  let sampling;
   try {
     const { options, prompt: inlinePrompt, terminated } = parseCommandLine(argv, TASK_SPEC);
-    await taskFlow(options, inlinePrompt, terminated);
+    sampling = parseSampling(options);
+    await taskFlow(options, inlinePrompt, terminated, sampling);
   } catch (error) {
+    attachSampling(error, sampling);
     if (wantsJson) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
     throw error;
   }
@@ -83,8 +90,11 @@ function jsonIntent(argv) {
   return false;
 }
 
-async function taskFlow(options, inlinePrompt, terminated) {
-  const args = { spec: TASK_SPEC, options, inlinePrompt, terminated };
+async function taskFlow(options, inlinePrompt, terminated, sampling) {
+  // `sampling` rides in `args` so both `submitTask` (which spreads `{...args,
+  // options}` into `prepareTask`) and `executeTask` receive the same parsed
+  // value without a separate parameter to keep in sync.
+  const args = { spec: TASK_SPEC, options, inlinePrompt, terminated, sampling };
 
   if (options.background) {
     const { id } = await submitTask(args);

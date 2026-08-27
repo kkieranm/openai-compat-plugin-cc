@@ -2,6 +2,7 @@ import { answerWithRetry } from './answer-attempts.mjs';
 import { readJson } from './body.mjs';
 import { UserError } from './errors.mjs';
 import { authHeaders, request } from './provider.mjs';
+import { applySampling } from './sampling.mjs';
 
 export { authHeaders };
 
@@ -45,6 +46,11 @@ export async function chatCompletion(profile, options) {
   if (temperature !== undefined) body.temperature = temperature;
   if (maxTokens !== undefined) body.max_tokens = maxTokens;
   if (responseFormat !== undefined) body.response_format = responseFormat;
+  // The vendor sampling/reasoning parameters, each added under its own wire name
+  // by the one place that admits them. Iterates a fixed table, so it can only
+  // ever set those fields — never `messages`/`stream`, which the transport
+  // depends on. Undefined for every caller that passed no such flag.
+  applySampling(body, options.sampling);
 
   // Streaming and stream_options are new demands on servers that worked before,
   // and a strict one refusing either would fail every request from here on. So
