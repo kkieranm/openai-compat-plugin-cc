@@ -23,6 +23,27 @@ each row naming its flag, option key, wire field and validator, so `parseSamplin
 it in another; `applySampling` iterates that table alone, which is what keeps the request body a closed
 set — `messages`/`stream` are structurally unreachable from caller sampling, never a merge.
 
+`scripts/lib/run-context.mjs` records the server configuration a run resolved — the effective window
+it acted on and its provenance (`contextWindow`/`contextSource`/`detectedWindow`, sourced once
+from `resolveTarget`'s `effectiveWindow(profile, described, options.model)` so the recorded window is
+the resolved model's, never the default's), and a per-parameter request-conditional `serverConfig`
+marker (`serverConfigFrom` — a knob reads `requested` when the request carried it, else
+`server-default-unobserved`, which stays true once bench forwards the flag rather than a constant
+stamp). `attachRunContext` OVERWRITES these onto a thrown error at each flow's post-resolution catch —
+the window is resolved mid-flow, so it cannot ride the command-level catch `sampling` uses; the review
+flow wraps its whole post-resolution body, the task flow attaches in `prepareTask`, `executeTask` and
+`taskFlow` (the reasoning-only refusal is raised in `taskFlow`'s `report`, after `executeTask`
+returned). `review-report.mjs`'s `errorReport` reconstructs all four FAIL-CLOSED before persisting them
+to `jobs.db` — a window only through `positiveInteger`, a source only if in `CONTEXT_SOURCES`, and
+`serverConfig` rebuilt as a fresh three-knob map so a foreign prototype/`toJSON` never reaches the
+serialized output. `bench/lib/outcome.mjs`'s `runContextFrom` copies the four onto a failed bench
+record (`bench/run.mjs`'s `failedRun` and `sweep-outcome.mjs`'s `failure`, since neither keeps the whole
+envelope), and `sweep-outcome.mjs`'s `reported` carries them on the success path — the failure path is
+where the window matters most, since OAI-215's watchdog threshold derives from it. Foreground only: a
+background task failure records the fields `null`, the same posture as `sampling`. The bench `--note`
+(`bench/run.mjs`, `bench/review-sweep.mjs`, bounded by `sweep-ledger.mjs`'s `boundNote`) is the operator's
+own annotation of what no API exposes, kept on the bench record alone, off the CLI envelope and `jobs.db`.
+
 `scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff **when the window can be
 sized** — an unsizeable one skips that rung and the report says so — taking content from the
 revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by

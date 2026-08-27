@@ -154,6 +154,9 @@ export function envelopeFor(options, commits, startMs) {
   return {
     startedAt: new Date(startMs).toISOString(),
     requestedModel: options.model ?? null,
+    // The operator's own annotation of what the record cannot probe — the
+    // server-side reasoning/thinking/temperature defaults no API exposes.
+    note: boundNote(options.note),
     maxSeconds: options.maxSeconds,
     // The threshold the health section states. Without it a reader is told a
     // streak reached two and has no idea whether that was nearly an abort.
@@ -185,6 +188,33 @@ export function envelopeFor(options, commits, startMs) {
     // IDENTITY of the 38 to dispose of them.
     commits,
   };
+}
+
+/**
+ * A cap on the operator note, so a pasted essay cannot bloat the record; the cut
+ * is marked rather than silent, the same posture `sweep-outcome.mjs`'s `MAX_RAW`
+ * keeps for a captured reply.
+ */
+export const MAX_NOTE = 2000;
+
+/**
+ * The operator's free-text annotation for a run — the one place a fact the record
+ * cannot probe (a server set to `xhigh` in the UI) can be recorded by hand.
+ * Bounded, and deliberately never echoed into a `UserError` message or the CLI
+ * envelope: it stays on the bench record alone, off `jobs.db`.
+ */
+export function boundNote(note) {
+  if (note === undefined || note === null) return null;
+  const text = String(note);
+  if (text.length <= MAX_NOTE) return text;
+  // Keep the whole result — marker included — within MAX_NOTE, and never leave a
+  // lone high surrogate at the cut: slice by UTF-16 units, then back off one unit
+  // if the last is the leading half of a pair (the shape `trimReasoning` uses).
+  const marker = '… [note truncated]';
+  let head = text.slice(0, MAX_NOTE - marker.length);
+  const last = head.charCodeAt(head.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) head = head.slice(0, -1);
+  return head + marker;
 }
 
 /**

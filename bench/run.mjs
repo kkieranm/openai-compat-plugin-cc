@@ -20,7 +20,8 @@ import { MAX_ATTEMPTS_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
-import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom } from './lib/outcome.mjs';
+import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
+import { boundNote } from './lib/sweep-ledger.mjs';
 import { persist, reportIdentity } from './lib/record.mjs';
 import { renderReport } from './lib/report.mjs';
 import { recall, scoreRun } from './lib/score.mjs';
@@ -30,7 +31,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-attempts', 'note'],
   booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
   repeatableFlags: ['case'],
 };
@@ -153,7 +154,7 @@ function reviewOnce(caseDef, options, runIndex) {
  * `reason` is the category beside the prose, read from the command's own
  * `--json` envelope rather than matched out of stderr.
  */
-function failedRun(error, caseDef, options, diffOnly) {
+export function failedRun(error, caseDef, options, diffOnly) {
   const said = String(error.stderr ?? '').trim();
   return {
     diffOnly,
@@ -170,6 +171,11 @@ function failedRun(error, caseDef, options, diffOnly) {
     // Kept even here — see attemptsFrom. Scoring reads logical runs; reliability
     // reads every physical request, including all of the ones that failed.
     attempts: attemptsFrom(error.stdout),
+    // The server config the failed run acted on — without this the motivating
+    // review-bench FAILURE record (a reasoning runaway) drops the loaded window
+    // its watchdog threshold was derived from. `record.mjs` persists this reduced
+    // object, not the whole envelope, so the copy has to happen here.
+    ...runContextFrom(error.stdout),
   };
 }
 
@@ -249,6 +255,10 @@ function validateOptions(options) {
 
 async function main() {
   const { options } = parseArgs(process.argv.slice(2), SPEC);
+  // The operator's annotation of what the record cannot probe (a server set to a
+  // reasoning default in the UI). Bounded here so the persisted `options` block
+  // carries a size-capped value; it never leaves the bench record.
+  options.note = boundNote(options.note);
   const runsPerCase = validateOptions(options);
 
   const cases = selectCases(loadCases(ROOT), options.case);

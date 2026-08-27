@@ -58,6 +58,35 @@ export function partialFrom(stdout) {
   return failureEnvelope(stdout)?.partial ?? null;
 }
 
+/**
+ * The server config a FAILED run resolved, off the same envelope —
+ * one reader for all four fields rather than parsing the envelope four times.
+ *
+ * The motivating case: `qwen/qwen3.8-27b` scored 0/6, every case a reasoning
+ * runaway, and the record could not say the loaded window the run's watchdog
+ * threshold was derived from. Carried here because `failedRun`/`failure` build a
+ * narrow record from the envelope, not the whole of it, so a field left unread
+ * is a field the failure record drops.
+ */
+export function runContextFrom(stdout) {
+  return pickRunContext(failureEnvelope(stdout));
+}
+
+/**
+ * The four run-context fields off any source that carries them — a failure
+ * envelope (`runContextFrom`) or a success report (`sweep-outcome.mjs`'s
+ * `reported`), which use the same field names. One pick so the two readers cannot
+ * drift on which fields they carry or how they default.
+ */
+export function pickRunContext(source) {
+  return {
+    contextWindow: source?.contextWindow ?? null,
+    contextSource: source?.contextSource ?? null,
+    detectedWindow: source?.detectedWindow ?? null,
+    serverConfig: source?.serverConfig ?? null,
+  };
+}
+
 function failureEnvelope(stdout) {
   try {
     const parsed = JSON.parse(String(stdout ?? ''));

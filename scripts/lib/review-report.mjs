@@ -5,8 +5,10 @@
 // writes to stdout and throws. The refusals that decide whether a run is
 // REPORTABLE AT ALL left for `review-unparsed.mjs` at the size ratchet, so this
 // file no longer owns them and this line no longer claims it does.
+import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
+import { reconstructServerConfig } from './run-context.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
 function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged, ledger }) {
@@ -195,6 +197,16 @@ export function jsonReport(parsed, context) {
     // envelope carries the same field (read off the thrown error), where
     // "requested" is the honest word since a pre-dispatch failure never sent it.
     sampling: context.sampling ?? null,
+    // The server configuration this run resolved: the effective
+    // context window and its provenance (`config` = operator-asserted, else the
+    // server-detected source), the detected window when it conflicts with a
+    // configured one, and which server-owned knobs were left at a default no API
+    // exposes. A context-derived fact, same class as `sampling`; the failure
+    // envelope reads the same four off the thrown error.
+    contextWindow: context.contextWindow ?? null,
+    contextSource: context.contextSource ?? null,
+    detectedWindow: context.detectedWindow ?? null,
+    serverConfig: context.serverConfig ?? null,
     estimatedTokens,
     // Whether `estimatedTokens` was ever tested against a window, and the note
     // saying so when it was not. The text footer has always carried this as
@@ -236,6 +248,14 @@ export function jsonReport(parsed, context) {
  * The prose is carried too rather than replaced: a reason is a category, and the
  * message is what actually happened.
  */
+// Snapshot the source ONCE before validating it: a getter could otherwise pass
+// `CONTEXT_SOURCES.has` on the first read and hand a different, foreign value to
+// the second — the same read-twice hazard `reconstructServerConfig` guards.
+function allowedSource(error) {
+  const source = error?.contextSource;
+  return CONTEXT_SOURCES.has(source) ? source : null;
+}
+
 export function errorReport(error) {
   return {
     error: true,
@@ -268,6 +288,17 @@ export function errorReport(error) {
     // catch) and on a parse failure (none were valid) — the same "cannot live on
     // one path alone" rule as requestedModel above.
     sampling: error?.sampling ?? null,
+    // The server config the run resolved, reconstructed FAIL-CLOSED
+    // because this object is what `publishFailure` persists into `jobs.db`: a
+    // window only as a positive integer, a source only if it is one
+    // `effectiveWindow` can produce, and `serverConfig` rebuilt as a fresh
+    // three-knob map — a foreign object carrying a custom prototype or `toJSON`
+    // can never reach the serialized output, and `null` where the failure
+    // preceded resolution (the same "cannot live on one path alone" rule).
+    contextWindow: positiveInteger(error?.contextWindow) ?? null,
+    contextSource: allowedSource(error),
+    detectedWindow: positiveInteger(error?.detectedWindow) ?? null,
+    serverConfig: reconstructServerConfig(error?.serverConfig),
     // What the model had already produced when the failure cut it off —
     // `stream-collect.mjs` attaches `.answer` to every
     // failure it catches, but most carry nothing (a pre-stream refusal, no

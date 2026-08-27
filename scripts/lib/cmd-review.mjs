@@ -12,6 +12,7 @@ import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { errorReport, report } from './review-report.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
+import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { parseFindings } from './structured.mjs';
 
@@ -141,52 +142,72 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   }
 
   const target = await collectTarget(options);
-  const { model, contextLength } = await resolveTarget(profile, options);
+  const { model, contextLength, contextSource, detectedWindow } = await resolveTarget(profile, options);
+  // The server configuration this run resolved — the effective
+  // window and its provenance, and which server-owned knobs were left at a
+  // default nothing here could observe. Built once, attached to every failure
+  // below and echoed on the success envelope.
+  const runContext = buildRunContext({ contextLength, contextSource, detectedWindow }, { sampling, temperature: numeric.temperature });
   // Attached to anything thrown from here on. The model is usually resolved from
   // providers.json rather than passed as a flag, so a caller reading the failure
   // envelope — the benchmark's reliability table — could not otherwise say which
-  // model an all-failed run had asked for, and bucketed every one as "unknown".
-  const named = (error) => Object.assign(error, { requestedModel: error.requestedModel ?? model });
-  const ledger = createLedger();
-  const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
-  const startedAt = Date.now();
-  process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
+  // model an all-failed run had asked for, and bucketed every one as "unknown";
+  // the run context is here for the same reason — the qwen runaway that scored
+  // 0/6 is a report-stage throw, and only the window on its record makes it
+  // readable. The window is resolved here rather than at command entry, so it
+  // rides this closure rather than `runReview`'s catch the way `sampling` does.
+  const named = (error) =>
+    attachRunContext(Object.assign(error, { requestedModel: error.requestedModel ?? model }), runContext);
 
-  // A review is the long silent run this exists for: whole-file passes measured
-  // 38–245s before, and a cold prefill alone is minutes.
-  const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress((onProgress) =>
-    requestFindings(profile, { ...plan, onProgress }).catch((error) => {
-      throw named(error);
-    }),
-  );
+  // The WHOLE post-resolution body under one catch — `reviewPlan` INCLUDED, since
+  // its `reserveFor` refuses a too-small `--max-tokens`: a review that fails there
+  // must still carry the run context, not a null failure envelope. And a
+  // reasoning-only runaway thrown by the report stage — after the model call
+  // returned — carries it too, not just a failure from `requestFindings`.
+  try {
+    const ledger = createLedger();
+    const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
+    const startedAt = Date.now();
+    process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
+    // A review is the long silent run this exists for: whole-file passes measured
+    // 38–245s before, and a cold prefill alone is minutes.
+    const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress((onProgress) =>
+      requestFindings(profile, { ...plan, onProgress }),
+    );
 
-  // On stderr and before `report`, because `--json` routes around every human
-  // rendering: a harness gets the pair in the envelope, an operator gets it here.
-  const notice = substitutionNotice(result);
-  if (notice) process.stderr.write(notice);
+    // On stderr and before `report`, because `--json` routes around every human
+    // rendering: a harness gets the pair in the envelope, an operator gets it here.
+    const notice = substitutionNotice(result);
+    if (notice) process.stderr.write(notice);
 
-  report(parseFindings(result, { structured, schema }), {
-    result,
-    structured,
-    profile,
-    model,
-    target,
-    hunksOnly,
-    skipped,
-    salvaged: Boolean(salvaged),
-    salvageTrim: salvageTrim ?? null,
-    // What was ASKED for, beside `structured` which is what was obtained. Only
-    // the pair distinguishes "fell back after a refusal" from "never wanted a
-    // schema" — since 2026-08-04 the second is the ordinary case, and the two
-    // were indistinguishable for exactly as long as the first was the only one.
-    structuredOutput: Boolean(options['structured-output']),
-    budget,
-    estimatedTokens,
-    durationMs: Date.now() - startedAt,
-    json: Boolean(options.json),
-    // What we sent, echoed on the success envelope — the failure envelope reads
-    // it off the thrown error instead (see runReview's catch).
-    sampling: plan.sampling,
-    ledger,
-  });
+    report(parseFindings(result, { structured, schema }), {
+      result,
+      structured,
+      profile,
+      model,
+      target,
+      hunksOnly,
+      skipped,
+      salvaged: Boolean(salvaged),
+      salvageTrim: salvageTrim ?? null,
+      // What was ASKED for, beside `structured` which is what was obtained. Only
+      // the pair distinguishes "fell back after a refusal" from "never wanted a
+      // schema" — since 2026-08-04 the second is the ordinary case, and the two
+      // were indistinguishable for exactly as long as the first was the only one.
+      structuredOutput: Boolean(options['structured-output']),
+      budget,
+      estimatedTokens,
+      durationMs: Date.now() - startedAt,
+      json: Boolean(options.json),
+      // What we sent, echoed on the success envelope — the failure envelope reads
+      // it off the thrown error instead (see runReview's catch).
+      sampling: plan.sampling,
+      // The server config, echoed on the success envelope beside `sampling` — the
+      // failure envelope reads these off the thrown error (attached by `named`).
+      ...runContext,
+      ledger,
+    });
+  } catch (error) {
+    throw named(error);
+  }
 }

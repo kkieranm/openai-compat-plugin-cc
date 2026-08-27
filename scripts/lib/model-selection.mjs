@@ -96,7 +96,7 @@ function unservedProblem(id, described) {
   const offered = [...served].filter((servedId) => !embedders.has(servedId));
   return {
     problem: {
-      // Not "Provider does not serve …": `selectModel` prefixes every problem
+      // Not "Provider does not serve …": `resolveTarget` prefixes every problem
       // with `Provider "<name>": `, so that phrasing stuttered in the one place
       // a user actually reads it.
       message: offered.length > 0

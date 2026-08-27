@@ -39,7 +39,7 @@ test('a defaultModel absent from a recognised catalogue is refused before anythi
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Model "ghost" is not served here\. Available: chat-a, chat-b/);
-  // The prefix `selectModel` adds, checked once so the two halves cannot drift
+  // The prefix `resolveTarget` adds, checked once so the two halves cannot drift
   // into "Provider "local": Provider does not serve …".
   assert.match(result.stderr, /Provider "local": Model "ghost"/);
   assert.equal(chatRequests(server).length, 0, 'the refusal is worth nothing if the run was spent anyway');

@@ -61,6 +61,14 @@ function jsonTaskReport(outcome, answer) {
     // is the success path, so requested and sent coincide; the failure envelope
     // uses the same "requested" framing for the pre-dispatch case.
     sampling: outcome.sampling ?? null,
+    // The server config this run resolved — the same four fields,
+    // and the same diagnostic class, as the review envelope. Read off the
+    // `runContext` carried on the outcome; the failure envelope reads them off
+    // the thrown error (attached at each task flow catch).
+    contextWindow: outcome.runContext?.contextWindow ?? null,
+    contextSource: outcome.runContext?.contextSource ?? null,
+    detectedWindow: outcome.runContext?.detectedWindow ?? null,
+    serverConfig: outcome.runContext?.serverConfig ?? null,
     estimatedTokens,
     // Whether the size guard was ever armed, and the note saying so when it was
     // not. Omitting these would report a bare token count a caller could not

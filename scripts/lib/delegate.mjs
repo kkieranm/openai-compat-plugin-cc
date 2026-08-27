@@ -4,8 +4,7 @@ import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
-import { describeModels, windowFor } from './model-info.mjs';
-import { planSelection } from './model-selection.mjs';
+import { describeModels, effectiveWindow } from './model-info.mjs';
 import { parseNumber } from './parse-number.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
 
@@ -94,14 +93,6 @@ export async function describeProvider(profile, { required = true } = {}) {
   }
 }
 
-export function selectModel(profile, explicit, described) {
-  const plan = planSelection(profile, explicit, described);
-  if (plan.problem) {
-    throw new UserError(`Provider "${profile.name}": ${plan.problem.message}`, { hint: plan.problem.hint });
-  }
-  return plan.modelId;
-}
-
 /**
  * Which model to send to, and how big its window is.
  *
@@ -134,8 +125,22 @@ export async function resolveTarget(profile, options) {
   process.stderr.write(`Checking ${profile.name} for available models and context window...\n`);
   const described = await describeProvider(profile, { required: mustChooseModel });
 
-  const model = selectModel(profile, options.model, described);
-  return { model, contextLength: profile.contextLength ?? windowFor(described, model) };
+  // One authority for the model AND its window: `effectiveWindow` resolves both
+  // through `planSelection`, so passing `options.model` makes the recorded window
+  // provably the resolved model's, never the default's, and throwing on its own
+  // `problem` keeps the `Provider "<name>": ` refusal it always produced.
+  // `contextSource`/`detectedWindow` ride out so the run's `--json` envelope can
+  // say whether the window was operator-asserted (`config`) or server-detected.
+  const resolved = effectiveWindow(profile, described, options.model);
+  if (resolved.problem) {
+    throw new UserError(`Provider "${profile.name}": ${resolved.problem.message}`, { hint: resolved.problem.hint });
+  }
+  return {
+    model: resolved.modelId,
+    contextLength: resolved.window ?? null,
+    contextSource: resolved.source ?? null,
+    detectedWindow: resolved.detected ?? null,
+  };
 }
 
 /**

@@ -6,6 +6,7 @@
 import { parseCommandLine, splitBlob } from './args.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { errorReport } from './review-report.mjs';
+import { attachRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { executeTask } from './task-execute.mjs';
 import { report } from './task-report.mjs';
@@ -108,16 +109,25 @@ async function taskFlow(options, inlinePrompt, terminated, sampling) {
 
   const outcome = await executeTask(args);
 
-  // Before the answer, not after: the operator should learn which model is
-  // speaking before reading what it said. On stderr and before `report`, which
-  // is where an empty answer is refused — the same order `/oai:review` keeps,
-  // and the one that stops a substitution warning vanishing from a run that
-  // both got the wrong model and got nothing out of it.
-  // On stderr and before `report`, because `--json` routes around every human
-  // rendering: a harness gets the pair inside the envelope, an operator gets it
-  // here.
-  const notice = substitutionNotice(outcome.result);
-  if (notice) process.stderr.write(notice);
+  // The reasoning-only/empty runaway `report`'s `requireAnswer` refuses is raised
+  // HERE, after `executeTask` already returned the outcome — the one
+  // post-resolution throw its own wrap cannot see. Under this catch it carries
+  // the run context into the `--json` failure envelope like every other
+  // post-resolution failure.
+  try {
+    // Before the answer, not after: the operator should learn which model is
+    // speaking before reading what it said. On stderr and before `report`, which
+    // is where an empty answer is refused — the same order `/oai:review` keeps,
+    // and the one that stops a substitution warning vanishing from a run that
+    // both got the wrong model and got nothing out of it.
+    // On stderr and before `report`, because `--json` routes around every human
+    // rendering: a harness gets the pair inside the envelope, an operator gets it
+    // here.
+    const notice = substitutionNotice(outcome.result);
+    if (notice) process.stderr.write(notice);
 
-  report(outcome, { json: Boolean(options.json) });
+    report(outcome, { json: Boolean(options.json) });
+  } catch (error) {
+    throw attachRunContext(error, outcome.runContext);
+  }
 }

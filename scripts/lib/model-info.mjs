@@ -55,9 +55,23 @@ export function probeRoot(baseUrl) {
   return `${url.origin}${root}`;
 }
 
-function positiveInteger(value) {
+export function positiveInteger(value) {
   return Number.isInteger(value) && value > 0 ? value : undefined;
 }
+
+// The source string each dialect reader below stamps on a detected window, and
+// the `'config'` an operator-asserted `contextLength` carries. Named as constants
+// so `CONTEXT_SOURCES` is built from the very values the readers emit — the set
+// cannot drift from its producers — and `review-report.mjs` can validate a
+// persisted `contextSource` against exactly what `effectiveWindow` can report,
+// refusing a foreign string rather than serializing it into `jobs.db`.
+const SOURCE_CONFIG = 'config';
+const SOURCE_VLLM = '/v1/models max_model_len';
+const SOURCE_LMSTUDIO = 'LM Studio /api/v0/models';
+const SOURCE_LLAMACPP = 'llama.cpp /props n_ctx';
+const SOURCE_TGI = 'TGI /info max_total_tokens';
+const SOURCE_OMLX = 'oMLX /v1/models/status';
+export const CONTEXT_SOURCES = new Set([SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX]);
 
 /** vLLM puts the served length on the standard model object. Costs no extra request. */
 function readVllm(payload) {
@@ -74,7 +88,7 @@ function readVllm(payload) {
   // this repo's "a fact names its source" rule exists against; here the source
   // line was itself the guess. The order stays (a window already in hand costs no
   // round trip); what it buys is the window, not a claim about the product.
-  return models.length > 0 ? { models, source: '/v1/models max_model_len' } : null;
+  return models.length > 0 ? { models, source: SOURCE_VLLM } : null;
 }
 
 /**
@@ -92,7 +106,7 @@ function readLmStudio(payload) {
     window: entry.state === 'loaded' ? positiveInteger(entry.loaded_context_length) : undefined,
     ceiling: positiveInteger(entry.max_context_length),
   }));
-  return { models, source: 'LM Studio /api/v0/models' };
+  return { models, source: SOURCE_LMSTUDIO };
 }
 
 /** llama.cpp's /props reports the window it is actually serving (-c). */
@@ -101,14 +115,14 @@ function readLlamaCpp(payload) {
   if (!window) return null;
   // /props describes the one loaded model and does not name it, so the window
   // applies to whatever the server answers with.
-  return { models: [], serverWindow: window, source: 'llama.cpp /props n_ctx' };
+  return { models: [], serverWindow: window, source: SOURCE_LLAMACPP };
 }
 
 /** Text Generation Inference reports its configured limits at /info. */
 function readTgi(payload) {
   const window = positiveInteger(payload?.max_total_tokens);
   if (!window) return null;
-  return { models: [], serverWindow: window, source: 'TGI /info max_total_tokens' };
+  return { models: [], serverWindow: window, source: SOURCE_TGI };
 }
 
 /**
@@ -131,7 +145,7 @@ function readOmlx(payload) {
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_context_window))
     .map((entry) => ({ id: entry.id, window: entry.max_context_window }));
-  return models.length > 0 ? { models, source: 'oMLX /v1/models/status' } : null;
+  return models.length > 0 ? { models, source: SOURCE_OMLX } : null;
 }
 
 // Tried in order; the first recognisable shape wins. Each entry is a path
@@ -253,7 +267,7 @@ export function effectiveWindow(profile = {}, described, explicitModel) {
     // server is no longer serving.
     return {
       window: configured,
-      source: 'config',
+      source: SOURCE_CONFIG,
       modelId: plan.modelId,
       // Why that model, not just which. An auto-selected id is a fact with a
       // source, and a fact names its source so a guess never reads as a

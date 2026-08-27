@@ -17,6 +17,7 @@ import { withProgress } from './progress.mjs';
 import { artifactFor } from './task-artifact.mjs';
 import { NO_RATE_NOTE, estimateNote, estimateRun } from './eta.mjs';
 import { readFileBlocks, readStdin } from './prompt.mjs';
+import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { resolveTemplate } from './task-template.mjs';
 
 /**
@@ -138,33 +139,46 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated, sam
   const template = templateFor(options);
   const prompt = resolvePrompt(spec, options, inlinePrompt, terminated);
   const files = readFileBlocks(options.file);
-  const { model, contextLength } = await resolveTarget(profile, options);
+  const { model, contextLength, contextSource, detectedWindow } = await resolveTarget(profile, options);
+  // The server config this run resolved. Built once the target
+  // resolves and carried on `prep` so `executeTask` can attach it to a later
+  // throw and echo it on the outcome; the oversize refusal `prepareRequest` can
+  // raise below is the post-resolution failure this function's own catch covers.
+  const runContext = buildRunContext({ contextLength, contextSource, detectedWindow }, { sampling, temperature: numeric.temperature });
 
-  const { messages, estimatedTokens, budget } = prepareRequest({
-    profile,
-    prompt,
-    files,
-    model,
-    contextLength,
-    maxTokens: numeric.maxTokens,
-    // The whole skeleton goes here and nothing is wrapped around the user's
-    // prompt. `requestTextOf` recovers "what this job was asked to do" from the
-    // tail of the user message, and `/oai:status` shows its first line — so a
-    // template prefixed to the prompt would replace the user's own request in
-    // that summary with boilerplate identical on every templated job.
-    system: template ? template.system : options.system,
-  });
+  try {
+    const { messages, estimatedTokens, budget } = prepareRequest({
+      profile,
+      prompt,
+      files,
+      model,
+      contextLength,
+      maxTokens: numeric.maxTokens,
+      // The whole skeleton goes here and nothing is wrapped around the user's
+      // prompt. `requestTextOf` recovers "what this job was asked to do" from the
+      // tail of the user message, and `/oai:status` shows its first line — so a
+      // template prefixed to the prompt would replace the user's own request in
+      // that summary with boilerplate identical on every templated job.
+      system: template ? template.system : options.system,
+    });
 
-  return {
-    numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget,
-    // Carried onto `prep` so it reaches both the request (foreground) and
-    // `persistRequest` (background), and the report echo.
-    sampling,
-    // The NAME, not the resolved template: this is what crosses into persisted
-    // state, and a queued job must not snapshot prose that the build reading it
-    // back may have changed.
-    template: template?.name,
-  };
+    return {
+      numeric, profile, prompt, files, model, contextLength, messages, estimatedTokens, budget,
+      // Carried onto `prep` so it reaches both the request (foreground) and
+      // `persistRequest` (background), and the report echo.
+      sampling,
+      // The run context, carried onto `prep` for the outcome echo and the
+      // attach at `executeTask`'s and `taskFlow`'s later throw sites. A background
+      // submission ignores it (decision F): the worker records the fields null.
+      runContext,
+      // The NAME, not the resolved template: this is what crosses into persisted
+      // state, and a queued job must not snapshot prose that the build reading it
+      // back may have changed.
+      template: template?.name,
+    };
+  } catch (error) {
+    throw attachRunContext(error, runContext);
+  }
 }
 
 /**
@@ -179,48 +193,60 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated, sam
  */
 export async function executeTask(args) {
   const prep = await prepareTask(args);
-  const { numeric, profile, files, model, messages, estimatedTokens, budget, template, sampling } = prep;
+  const { numeric, profile, files, model, messages, estimatedTokens, budget, template, sampling, runContext } = prep;
 
-  process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
+  // The WHOLE body after `prepareTask` returns, under one catch: a transport or
+  // stream-watchdog failure from `chatCompletion`, or any outcome-assembly throw,
+  // reaches `runTask` (sampling only) otherwise, so its `--json` failure envelope
+  // would record null run context. `prepareTask`'s own throws carry its own
+  // catch, so its call sitting outside this try is correct, not a gap.
+  try {
+    process.stderr.write(`Contacting ${profile.name} (${model}) with ${files.length} file(s), ~${estimatedTokens} tokens...\n`);
 
-  // Before the wait, because that is the only moment it can change a decision:
-  // prefill is silent and can be minutes, and the choice between waiting and
-  // `--background` has to be made now. Nothing is printed when the provider
-  // carries no measured rates — an invented figure would be worse than silence,
-  // since the whole value of this line is that a reader can act on it.
-  // Says which of the two it is. Silence would leave a reader unable to tell an
-  // unmeasured provider from a run nobody thought to estimate — and NO_RATE_NOTE
-  // exists precisely so every caller says that the same way.
-  const estimate = estimateRun({ estimatedTokens, maxTokens: numeric.maxTokens, profile });
-  process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
+    // Before the wait, because that is the only moment it can change a decision:
+    // prefill is silent and can be minutes, and the choice between waiting and
+    // `--background` has to be made now. Nothing is printed when the provider
+    // carries no measured rates — an invented figure would be worse than silence,
+    // since the whole value of this line is that a reader can act on it.
+    // Says which of the two it is. Silence would leave a reader unable to tell an
+    // unmeasured provider from a run nobody thought to estimate — and NO_RATE_NOTE
+    // exists precisely so every caller says that the same way.
+    const estimate = estimateRun({ estimatedTokens, maxTokens: numeric.maxTokens, profile });
+    process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
 
-  const ledger = createLedger();
-  const startedAt = Date.now();
-  const request = taskRequest({ profile, model, messages, numeric, sampling, ledger });
-  const result = await withProgress((onProgress) => chatCompletion(profile, { ...request, onProgress }));
+    const ledger = createLedger();
+    const startedAt = Date.now();
+    const request = taskRequest({ profile, model, messages, numeric, sampling, ledger });
+    const result = await withProgress((onProgress) => chatCompletion(profile, { ...request, onProgress }));
 
-  return {
-    result,
-    profile,
-    // What was ASKED for, beside the reply that says what answered. The footer
-    // prefers the served id; a renderer that has only that one names nothing
-    // when a reply carries no model, which is the fallback `review-report.mjs`
-    // spells `result.model || model`.
-    model,
-    budget,
-    estimatedTokens,
-    // Carried explicitly because this is a NEW object, not the prep: the notes a
-    // template owes its reader are rendered from here, and a field left out is a
-    // foreground run that silently prints none of them while the background path
-    // prints them all.
-    template,
-    // What we sent, echoed on the success envelope by `jsonTaskReport`.
-    sampling,
-    // Computed HERE, beside every other fact about the run, so it survives onto a
-    // persisted outcome and reaches `/oai:result`. The worker computes its own for
-    // the same reason.
-    artifact: artifactFor({ template, answer: result.content ?? '', cwd: process.cwd() }),
-    durationMs: Date.now() - startedAt,
-    ledger,
-  };
+    return {
+      result,
+      profile,
+      // What was ASKED for, beside the reply that says what answered. The footer
+      // prefers the served id; a renderer that has only that one names nothing
+      // when a reply carries no model, which is the fallback `review-report.mjs`
+      // spells `result.model || model`.
+      model,
+      budget,
+      estimatedTokens,
+      // Carried explicitly because this is a NEW object, not the prep: the notes a
+      // template owes its reader are rendered from here, and a field left out is a
+      // foreground run that silently prints none of them while the background path
+      // prints them all.
+      template,
+      // What we sent, echoed on the success envelope by `jsonTaskReport`.
+      sampling,
+      // The run context, carried onto the outcome so `taskFlow`'s report-stage
+      // catch can attach it and `jsonTaskReport` can echo it.
+      runContext,
+      // Computed HERE, beside every other fact about the run, so it survives onto a
+      // persisted outcome and reaches `/oai:result`. The worker computes its own for
+      // the same reason.
+      artifact: artifactFor({ template, answer: result.content ?? '', cwd: process.cwd() }),
+      durationMs: Date.now() - startedAt,
+      ledger,
+    };
+  } catch (error) {
+    throw attachRunContext(error, runContext);
+  }
 }

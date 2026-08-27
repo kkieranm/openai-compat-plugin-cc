@@ -23,7 +23,7 @@
 // path alone". Reading `findings` and none of them is how the first version of
 // this file reported a truncated analysis as `clean`.
 import { COMPLETION_SHAPES, NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../../scripts/lib/failure-shape.mjs';
-import { outcomeFor, partialFrom, reasonFrom, requestedModelFrom } from './outcome.mjs';
+import { outcomeFor, partialFrom, pickRunContext, reasonFrom, requestedModelFrom, runContextFrom } from './outcome.mjs';
 
 /** Outcomes that mean a model actually read the commit and reported on it. */
 export const REVIEWED = new Set(['findings', 'clean']);
@@ -193,6 +193,11 @@ function failure(stdout, status) {
     // invoked directly, outside the sweep) — one mapping, not a second
     // construction site, per this file's own rule.
     partial: partialFrom(stdout),
+    // The server config the failed commit resolved — the failure path is where
+    // the loaded window matters most (the watchdog threshold derives from it),
+    // so it rides here beside `requestedModel` rather than living on the success
+    // path alone.
+    ...runContextFrom(stdout),
   };
 }
 
@@ -221,6 +226,11 @@ function reported(report) {
     // rides beside every other belief-changing field here rather than being
     // inferred later.
     salvaged: report?.salvaged ?? null,
+    // The server config the commit was reviewed under — the effective window
+    // and its provenance, and which server-owned knobs were left unobserved.
+    // Read off the report directly on this success path; the `failure` path
+    // above reads the same four off the envelope, both through `pickRunContext`.
+    ...pickRunContext(report),
   };
   // `null` is "could not be read" and `[]` is "read, nothing found" — a
   // distinction worth keeping distinct.

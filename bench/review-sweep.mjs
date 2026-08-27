@@ -34,7 +34,7 @@ const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
 export const SPEC = {
   valueFlags: [
     'until', 'minutes', 'from', 'max-commits', 'scan-limit', 'max-seconds', 'max-attempts',
-    'abort-after', 'model', 'provider', 'base-url', 'out-dir', 'repo',
+    'abort-after', 'model', 'provider', 'base-url', 'out-dir', 'repo', 'note',
   ],
   booleanFlags: ['diff-only'],
   repeatableFlags: ['include'],
@@ -303,6 +303,10 @@ export function optionsFrom(parsed, startMs, root = ROOT) {
     from: parsed.from ?? 'HEAD',
     diffOnly: Boolean(parsed['diff-only']),
     model: parsed.model,
+    // The operator's free-text annotation of what the record cannot probe — the
+    // server-side reasoning/thinking/temperature defaults no API exposes.
+    // `envelopeFor` bounds it into the ledger header.
+    note: parsed.note,
     provider: parsed.provider,
     'base-url': parsed['base-url'],
     outDir: parsed['out-dir'] ?? join(root, 'bench', 'results'),
