@@ -93,6 +93,31 @@ under-report findings the model actually sent, the same honesty `capDiagnostics`
 already guards `file`/`summary`, so a hostile-object value (own `toString`/`valueOf` set to `null`)
 defaults rather than throwing out of the whole reply's parse.
 
+`scripts/lib/findings-empty.mjs` `emptyFindingsDocument` is the last-resort reader for a clean review
+a model wrote as whole-document YAML — a first line that is an inline empty `findings: []` declaration
+followed by prose — which neither `extractJson` (its only bracket is the embedded `[]`, read as scalar
+text) nor `findingsInYaml` (a block list of `- ` items, not an inline empty one) can see, so the
+review was discarded as unreadable instead of reported clean. It returns `{ findings: [] }` and never a
+real finding — the YAML spelling of the empty mapping `extractJson` already accepts as JSON. Three
+conditions must all hold to read clean, each refusing a way the reply could be hiding a finding: the
+first line (after the whole text is `trim()`med — deliberately NOT a column-0 check) is exactly the
+inline empty declaration; no later line is a second `findings:` KEY (plain or paired-quoted, any
+indentation — a bracket-free decoy); and **no `[`/`{` appears past the opener** (OAI-212 Pass 4, F1).
+That last guard is the module's own "no bracketed candidate anywhere" premise finally ENFORCED: since
+the acceptor is reached only after `extractJson` returned null, any bracket past the opener is material
+`extractJson` could NOT read — blinded by an unbalanced quote, malformed, truncated, or a rejected
+shape — so a reply that declared `findings: []` yet carries it is contradictory and left loud, never
+silently clean. Disclosed cost, fail-closed: a genuinely clean review that merely quotes a bracket in
+prose also goes loud (1 of 15 recorded clean replies — the one quoting `response_format: {type:
+"json_schema"}`); a bracket-free real finding written as pure prose, or under a case/position-variant
+key, remains disclosed residue. Same never-throw contract as the two readers above, so it too stays off
+`tests/structure.test.js`'s `RESPONSE_BOUNDARY_FILES` — it builds no `UserError`. `findingsIn` gates it
+on `!structured` like `findingsInYaml` and places it last in the `shaped` `??` chain after
+`extractJson`'s `parsed`; the bracket guard makes the two DISJOINT by construction (a bracket-free body
+is one `extractJson` found no candidate in), so `parsed` always wins where it has one and the chain
+order is no longer load-bearing — the old ordering mutation is inert, and the two bracket-guard decline
+witnesses (a blinded array, a bare object) are what pin the behaviour instead.
+
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
 SSE, while the first-token and idle budgets that mean "the model is working" live in

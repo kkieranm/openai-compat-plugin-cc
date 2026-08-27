@@ -11,6 +11,7 @@ import {
 import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
 
 import { FINDING, payload } from './findings-fixtures.mjs';
+import { emptyFindingsDocument } from '../scripts/lib/findings-empty.mjs';
 
 test('a strict schema declares every property required and forbids extras', () => {
   // OpenAI's strict mode rejects a schema with an optional property, so an
@@ -221,4 +222,179 @@ test('only a rejection of the format itself triggers the fallback', () => {
     false,
   );
   assert.equal(isFormatRejection(new Error('connection refused')), false);
+});
+
+// A model that reviews a diff and finds nothing sometimes answers in whole-document
+// YAML-ish prose — `findings: []` then an `analysis:` paragraph — instead of JSON.
+// That reply is a clean review, and it used to be discarded as unreadable because no
+// bracketed candidate exists for the JSON path and its opener is inline, not the block
+// list `findingsInYaml` reads.
+const REAL_YAML_REPLIES = {
+  'single-line analysis': 'findings: []\nanalysis: The diff implements the cap correctly. No defects found.',
+  'analysis carrying a markdown bullet': [
+    'findings: []',
+    'analysis:',
+    'I checked the changed functions:',
+    '- addField refuses a repeated key rather than last-write-wins.',
+    '- no path constructs a UserError from server content.',
+    'No defects found.',
+  ].join('\n'),
+  'bare opener with no prose tail': 'findings: []',
+};
+
+// The one observed clean reply that carries a bracket in prose. It is a genuine
+// no-defects review, but its analysis quotes `response_format: {type: "json_schema"}`,
+// and the acceptor refuses ANY `[`/`{` past the opener (a bracket is material
+// `extractJson` was meant to read and could not — its content is unknown). So this
+// reply is read loud-unreadable, not silently clean: the disclosed, fail-closed cost
+// of the bracket guard, pinned here rather than left as a surprise. 1 of 15 recorded
+// `findings: []` replies trips it; the operator still sees the raw text.
+const BRACKET_IN_PROSE_CLEAN_REPLY = [
+  'findings: []',
+  '',
+  'analysis:',
+  'The change adds /oai:review and structured output via response_format: {type: "json_schema"}.',
+  'No defects were found in the changed code.',
+].join('\n');
+
+test('a clean review that quotes a bracket in prose goes loud-unreadable (disclosed cost)', () => {
+  assert.equal(emptyFindingsDocument(BRACKET_IN_PROSE_CLEAN_REPLY), null);
+  assert.equal(
+    parseFindings({ content: BRACKET_IN_PROSE_CLEAN_REPLY, reasoning: '' }, { structured: false }),
+    null,
+  );
+});
+
+for (const [name, reply] of Object.entries(REAL_YAML_REPLIES)) {
+  test(`a whole-document empty-findings YAML reply reads as a clean review (${name})`, () => {
+    const parsed = parseFindings({ content: reply, reasoning: '' }, { structured: false });
+    assert.notEqual(parsed, null, 'a clean review must not be discarded as unreadable');
+    assert.deepEqual(parsed.findings, []);
+    assert.equal(parsed.summary, '');
+  });
+}
+
+test('emptyFindingsDocument accepts the observed shapes and refuses everything else', () => {
+  // Accepted: an inline empty declaration on line 1, whatever prose follows.
+  assert.deepEqual(emptyFindingsDocument('findings: []'), { findings: [] });
+  assert.deepEqual(emptyFindingsDocument('findings: []\nanalysis: clean'), { findings: [] });
+  assert.deepEqual(emptyFindingsDocument('findings: [ ]\nanalysis: also clean'), { findings: [] });
+  // Refused: never a string / empty text.
+  assert.equal(emptyFindingsDocument(null), null);
+  assert.equal(emptyFindingsDocument('   '), null);
+  // Refused: the opener is not on line 1 (embedded mid-prose).
+  assert.equal(emptyFindingsDocument('Here is my review.\nfindings: []'), null);
+  // Refused: a non-empty inline list is a real finding, not a clean review.
+  assert.equal(emptyFindingsDocument('findings: [{"file":"a"}]'), null);
+});
+
+test('mutation-1 witness: an arbitrary prose reply with no findings line is unreadable', () => {
+  // Its refusal routes SOLELY through the line-1 anchor — findingsInYaml and extractJson
+  // both decline (no `findings:` opener, no brackets), and the tail-scan finds nothing.
+  // This is the negative that goes red if the anchor is removed.
+  const prose = 'The review is complete; no issues were found.';
+  assert.equal(emptyFindingsDocument(prose), null);
+  assert.equal(parseFindings({ content: prose, reasoning: '' }, { structured: false }), null);
+});
+
+test('a real bracketed payload after findings: [] is read by extractJson, not the acceptor', () => {
+  // extractJson reads the real named-finding array. The acceptor and extractJson are
+  // DISJOINT by construction — the acceptor refuses any `[`/`{` past the opener, so it
+  // can only fire on a body extractJson found no candidate in — which is why its
+  // position in the chain is no longer load-bearing (the old ordering mutation is inert;
+  // the two decline arms below are the real witnesses).
+  const reply = `findings: []\n[${JSON.stringify(FINDING)}]`;
+  const parsed = parseFindings({ content: reply, reasoning: '' }, { structured: false });
+  assert.notEqual(parsed, null);
+  assert.equal(parsed.findings.length, 1);
+  assert.equal(parsed.findings[0].file, FINDING.file);
+  // Disjointness stated directly: when the acceptor fires, extractJson found nothing.
+  assert.equal(emptyFindingsDocument(reply), null);
+});
+
+// A reply that DECLARED findings: [] yet carries a real finding extractJson could not
+// read must stay loud-unreadable, never silently clean. These are the bracket-guard's
+// reason to exist (OAI-212 Pass 4, F1): each has a bracketed payload extractJson maps
+// to null, so pre-guard the acceptor would have read them clean and vanished the finding.
+const HIDDEN_FINDING_REPLIES = {
+  // Quote-blinded: the unterminated `"` leaves extractJson's scanner in-string, hiding
+  // the trailing array.
+  'quote-blinded array': 'findings: []\nSource line: doSomething("unterminated\n[{"file":"a.js","summary":"real bug"}]',
+  // Bare object, no findings wrapper — extractJson's acceptor rejects it.
+  'bare finding object': 'findings: []\nOn reflection:\n{"file":"a.js","summary":"real bug","severity":"high"}',
+  // Malformed (unquoted keys) — never JSON.parse-able, so extractJson finds no candidate.
+  'malformed object': 'findings: []\nActually:\n{file: "a.js", summary: "real bug"}',
+  'malformed array': 'findings: []\nActually:\n[{file: "a.js", summary: "real bug"}]',
+  // Truncated mid-finding (unclosed brace) — the token-exhaustion shape.
+  'truncated finding': 'findings: []\n{file: "a.js", summary: "real bug"',
+};
+
+test('a findings: [] reply carrying a bracketed payload extractJson cannot read is unreadable', () => {
+  for (const [name, reply] of Object.entries(HIDDEN_FINDING_REPLIES)) {
+    assert.equal(emptyFindingsDocument(reply), null, `${name}: acceptor must refuse`);
+    assert.equal(
+      parseFindings({ content: reply, reasoning: '' }, { structured: false }),
+      null,
+      `${name}: whole reply must be loud-unreadable, never clean`,
+    );
+  }
+});
+
+test('a findings: [] opener followed by a second findings declaration is left unreadable', () => {
+  // Contradictory: an empty declaration, then a real block of findings. Loud-unreadable
+  // is the safe reading — never a silent clean review. The scan is indent-tolerant, so a
+  // second declaration nested under another key (a real defect a column-0 scan would have
+  // read as clean) is caught too.
+  const listForm = 'findings: []\nfindings:\n  - file: a.js\n    summary: real bug';
+  const mappingForm = 'findings: []\nfindings:\n  file: a.js\n  summary: real bug';
+  const indentedList = 'findings: []\nnotes:\n  findings:\n    - file: a.js\n      summary: real bug';
+  const indentedMapping = 'findings: []\nnotes:\n  findings:\n    file: a.js\n    summary: real bug';
+  const tabIndented = 'findings: []\n\tfindings:\n\t- file: a.js';
+  // A second declaration under a QUOTED key is the same decoy, spelled with quotes.
+  // It must be a BLOCK-form body: an inline bracketed `"findings": [{...}]` would be
+  // read by extractJson and never reach this acceptor, so it would prove nothing here.
+  const doubleQuoted = 'findings: []\nnotes:\n  "findings":\n    - file: a.js\n      summary: real bug';
+  const singleQuoted = "findings: []\n'findings':\n  - file: a.js\n    summary: real bug";
+  for (const reply of [listForm, mappingForm, indentedList, indentedMapping, tabIndented, doubleQuoted, singleQuoted]) {
+    assert.equal(emptyFindingsDocument(reply), null);
+    // And end to end: the whole reply is unreadable, not a silent clean review.
+    assert.equal(parseFindings({ content: reply, reasoning: '' }, { structured: false }), null);
+  }
+});
+
+test('an indented non-findings key does not defeat the empty-findings clean review', () => {
+  // The reject scan matches the `findings` KEY specifically — plain or paired-quoted,
+  // at any indentation — NOT any indented key, and NOT a mismatched quote pair. Without
+  // these witnesses, over-widening the scan to `/^\s*\w+\s*:/` (any key) or dropping the
+  // quote pairing would go unnoticed.
+  const nestedOtherKey = 'findings: []\nanalysis:\n  detail: the diff is clean';
+  const indentedSummary = 'findings: []\n  summary: no defects were found';
+  // A quoted NON-findings key stays clean (pins "findings, not any quoted key").
+  const quotedOtherKey = 'findings: []\n"analysis": the diff is clean';
+  // A mismatched quote pair is not a real key spelling, so the doc stays clean (pins
+  // the backreference — reds if someone "simplifies" to independent optional quotes).
+  const mismatchedQuote = 'findings: []\n\'findings": were all clear';
+  for (const reply of [nestedOtherKey, indentedSummary, quotedOtherKey, mismatchedQuote]) {
+    assert.deepEqual(emptyFindingsDocument(reply), { findings: [] });
+    assert.deepEqual(parseFindings({ content: reply, reasoning: '' }, { structured: false }).findings, []);
+  }
+});
+
+test('a case-variant Findings: second declaration is accepted-clean residue', () => {
+  // The reject scan is case-sensitive on purpose: `Findings:` is a distinct YAML key no
+  // reader here treats as findings, and a case-insensitive scan would wrongly reject a
+  // clean review whose prose carries a `Findings:` heading — a common shape. So this
+  // (contradictory, 0/15) reply is read clean, the disclosed residue. This pins the
+  // boundary: a future case-insensitive change reds here and forces a re-decision.
+  const caseVariant = 'findings: []\nFindings:\n  - file: a.js\n    summary: real bug';
+  assert.deepEqual(emptyFindingsDocument(caseVariant), { findings: [] });
+  assert.deepEqual(parseFindings({ content: caseVariant, reasoning: '' }, { structured: false }).findings, []);
+});
+
+test('the empty-findings acceptor never runs on the structured path', () => {
+  // Under a schema the reply must conform to that schema; a YAML clean-review spelling
+  // is not read here. `{findings: []}` also lacks the required analysis/summary, so it is
+  // rejected downstream regardless — the gate keeps it off the schema path explicitly.
+  const reply = 'findings: []\nanalysis: clean';
+  assert.equal(parseFindings({ content: reply, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }), null);
 });

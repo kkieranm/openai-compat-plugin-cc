@@ -4,6 +4,7 @@
 import { extractJson } from './json-scan.mjs';
 import { findingsShaped } from './findings-candidate.mjs';
 import { findingsInYaml } from './findings-yaml.mjs';
+import { emptyFindingsDocument } from './findings-empty.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
 
 const SEVERITIES = new Set(['high', 'medium', 'low']);
@@ -250,13 +251,25 @@ function findingsIn(text, { structured, schema }) {
   // entirely once the YAML acceptor above already matched the whole document —
   // there is nothing left in `text` for it to legitimately win.
   const parsed = yaml ? null : extractJson(text, findingsShaped);
+  // Last resort: the YAML spelling of an empty-findings mapping, which neither
+  // reader above can see (see findings-empty.mjs). Gated on `structured` alone,
+  // like `yaml` — a structured request must answer under its schema, never here.
+  // Its precedence lives in ONE place, its position last in the chain below: it
+  // is USED only when `yaml` and `parsed` both declined. Deliberately NOT also
+  // guarded on `parsed` — one expression of that precedence, not two that could
+  // drift. Computed even when `parsed` won (then discarded by the `??`
+  // short-circuit): the cost is one line-1 regex whenever the opener does not
+  // match, since the anchor declines it before the line scan; only a reply that
+  // opens with an empty declaration AND is out-competed by `parsed` pays the full
+  // line scan before being discarded.
+  const emptyDoc = structured ? null : emptyFindingsDocument(text);
   // A bare top-level array is the SAME REPLY as `{findings: [...]}`, and asked
   // in prose a model emits one about as readily as the other. It used to be
   // discarded — not on the `typeof` test, which arrays pass, but on
   // `parsed.findings` being undefined. Wrapped HERE, before anything downstream
   // reads it, so the two spellings cannot diverge rather than merely agreeing
   // about accept/reject.
-  const shaped = yaml ?? (Array.isArray(parsed) ? { findings: parsed } : parsed);
+  const shaped = yaml ?? (Array.isArray(parsed) ? { findings: parsed } : parsed) ?? emptyDoc;
   if (!shaped || typeof shaped !== 'object' || !Array.isArray(shaped.findings)) return NO_PAYLOAD;
 
   // Under a schema, conformance is the whole proof. A server that accepts
