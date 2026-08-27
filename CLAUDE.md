@@ -423,7 +423,11 @@ marker profile is evidence quality, **not** Stage 2's economic gate.
 
 `bench/` scores `/oai:review` against committed snapshots of this repo's history: each case is a
 historical commit re-staged as `before/`/`after/` trees with its known defects catalogued, run through
-the real CLI via `--json` and matched on a quoted anchor line.
+the real CLI via `--json` and matched on a quoted anchor line. `bench/lib/report.mjs`'s per-case table
+carries a `lens` column — `bench/lib/case-rows.mjs`'s `lensSamples` aggregates each case's distinct
+`<rung>@<window>` labels (`whole@154624`, `hunks@61696`, `hunks@unsized`, `diff`) over `measurable`
+runs and joins them, so two per-model reports compared on one case reveal when they reviewed it at
+different depths rather than silently equating a hunks-only review with a whole-file one.
 
 `bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it,
 against **this** repo by default or `--repo <path>` for another one — which requires an explicit

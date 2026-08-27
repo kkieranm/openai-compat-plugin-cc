@@ -76,15 +76,29 @@ function recallCell(row) {
   return `${row.found}/${row.opportunities} (${pct(row.found, row.opportunities)})`;
 }
 
+/**
+ * The distinct lenses a case reviewed at, joined — or an em dash when no run was
+ * measurable, matching `tokenCell`'s own "nobody measured this". The join, never
+ * a pick, is the point: `whole@154624 / hunks@61696` in one cell is the divergence
+ * a silent single value would hide.
+ */
+function lensCell(lens) {
+  return lens.length > 0 ? lens.join(' / ') : '—';
+}
+
 function table(rows) {
   const lines = [
     // Prefill and generation are two columns, never one. They are not two views
     // of the same quantity: a prompt cache moves the first by tens of times and
     // leaves the second alone, so summing them produces a figure that describes
     // neither, which is exactly what the `seconds` column they replace did.
+    //
+    // `lens` sits beside `prompt tokens` on purpose: a hunks lens is why a
+    // prompt-token count is small, and reading the pair together is what tells a
+    // reviewer two rows were not reviewed at the same depth.
     '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed '
-    + '| prompt tokens | prefill s | generate s | gen tok/s |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    + '| lens | prompt tokens | prefill s | generate s | gen tok/s |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const row of rows) {
     // `scored` is printed beside `runs` so the row's own arithmetic can be
@@ -111,7 +125,7 @@ function table(rows) {
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
       + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
-      + `| ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
+      + `| ${lensCell(row.lens)} | ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
     );
   }
   return lines;

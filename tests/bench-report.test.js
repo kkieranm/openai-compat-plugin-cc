@@ -263,3 +263,77 @@ test('a schema arm says so in its header and its caveats, and an unconstrained o
   assert.match(on, /one failure class\s+versus the other/, 'the note must name the trade, not just the flag');
   assert.doesNotMatch(off, /the reply shape was enforced/);
 });
+
+// The lens column (OAI-218): a case's row must say at what depth it was reviewed —
+// whole file vs hunks, and the window that decided it — so two per-model reports
+// compared on one case cannot silently be a lens comparison wearing a model's name.
+function lensRun({ hunksOnly = false, contextWindow, skippedUnsizedWindow = false, diffOnly = false } = {}) {
+  const run = goodRun();
+  return { ...run, diffOnly, report: { ...run.report, hunksOnly, contextWindow, skippedUnsizedWindow } };
+}
+
+test('the lens column names the rung and the window that decided it', () => {
+  assert.equal(cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 })]), 'lens'), 'whole@154624');
+  assert.equal(cell(render([lensRun({ hunksOnly: true, contextWindow: 61696 })]), 'lens'), 'hunks@61696');
+});
+
+test('a window that could not be sized reads unsized, never a bare @0', () => {
+  assert.equal(
+    cell(render([lensRun({ hunksOnly: true, contextWindow: null, skippedUnsizedWindow: true })]), 'lens'),
+    'hunks@unsized',
+  );
+  // A 0/negative window is not a real ceiling — it must not print as one.
+  assert.equal(cell(render([lensRun({ hunksOnly: false, contextWindow: 0 })]), 'lens'), 'whole@unsized');
+});
+
+test('a diff-only run reads diff, and the diff branch precedes the rung branch', () => {
+  assert.equal(cell(render([lensRun({ diffOnly: true, contextWindow: 154624 })]), 'lens'), 'diff');
+  // Both diffOnly AND hunksOnly set: `diff` must still win, proving precedence
+  // rather than a bare diff-only run happening to read `diff`.
+  assert.equal(cell(render([lensRun({ diffOnly: true, hunksOnly: true, contextWindow: 61696 })]), 'lens'), 'diff');
+});
+
+test('a case whose every run failed shows no lens, not a fabricated one', () => {
+  assert.equal(cell(render([{ diffOnly: false, error: 'the server refused' }]), 'lens'), '—');
+});
+
+test('two runs at different lenses BOTH show — a silent single value is the defect this fixes', () => {
+  // The item's own comparand: one model reviewed whole at 154624, another as hunks
+  // at 61696, and the table equated them. Within one row (a --runs reload) the same
+  // conflation is possible, and the cell must refuse to pick one.
+  assert.equal(
+    cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 }), lensRun({ hunksOnly: true, contextWindow: 61696 })]), 'lens'),
+    'whole@154624 / hunks@61696',
+  );
+  // When the runs agree, the deduped set is one value — no ` / `.
+  assert.equal(
+    cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 }), lensRun({ hunksOnly: false, contextWindow: 154624 })]), 'lens'),
+    'whole@154624',
+  );
+});
+
+test('a substituted run does not lend its lens to the row', () => {
+  // Its reply came from the WRONG model, so its lens is not this case's — disowned
+  // exactly as its prompt and timing figures are.
+  const substitutedHunks = { ...lensRun({ hunksOnly: true, contextWindow: 61696 }), error: 'substituted', reason: 'model-substituted' };
+  assert.equal(
+    cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 }), substitutedHunks]), 'lens'),
+    'whole@154624',
+  );
+});
+
+test('the table stays well-formed: header, delimiter and every data row have equal cell counts', () => {
+  // The by-name cell() reader never reads the delimiter row, so a delimiter left
+  // one cell short of the header (adding a column and forgetting its `---`) is a
+  // malformed table invisible to every other assertion here. This is the only
+  // test that reads the delimiter.
+  const report = render([lensRun({ hunksOnly: true, contextWindow: 61696 }), goodRun()]);
+  const lines = report.split('\n');
+  const width = (line) => line.split('|').slice(1, -1).length;
+  const header = lines.find((line) => line.startsWith('| case |'));
+  const delimiter = lines.find((line) => line.startsWith('|---'));
+  const dataRows = lines.filter((line) => line.startsWith('| `'));
+  assert.ok(header && delimiter && dataRows.length > 0, 'header, delimiter and at least one data row must render');
+  assert.equal(width(delimiter), width(header), 'the delimiter row must have as many cells as the header');
+  for (const row of dataRows) assert.equal(width(row), width(header), `a data row is a different width than the header: ${row}`);
+});

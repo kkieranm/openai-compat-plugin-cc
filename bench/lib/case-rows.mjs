@@ -131,6 +131,50 @@ function rateSamples(runs) {
 }
 
 /**
+ * The lens one run reviewed at — the rung it took (whole file vs hunks) and the
+ * context window that decided the rung — as `whole@154624`, `hunks@61696`,
+ * `hunks@unsized`, or `diff`.
+ *
+ * The rung is chosen by how much of the changed set the loaded window can hold
+ * (`review-ladder.mjs`), so two models on one case — or one model on two days —
+ * can review at very different fidelity purely because of how much KV cache
+ * fitted, and prompt tokens is the only column from which that could previously
+ * be guessed. `whole@154624` against `hunks@61696` is not two samples of one
+ * measurement, and naming it is what stops a lens divergence reading as a model
+ * result.
+ *
+ * A `--diff-only` run reviews the diff and never attempts the whole-file rung, so
+ * it reads `diff` outright — the window did not decide anything to report. The
+ * window is `unsized` when it could not be determined (`skippedUnsizedWindow`) or
+ * is not a positive finite number, rather than a bare `hunks@0` that reads as a
+ * real ceiling.
+ */
+function lensLabel(run) {
+  if (run.diffOnly) return 'diff';
+  const rung = run.report.hunksOnly ? 'hunks' : 'whole';
+  const { contextWindow } = run.report;
+  const window = run.report.skippedUnsizedWindow || !(Number.isFinite(contextWindow) && contextWindow > 0)
+    ? 'unsized'
+    : String(contextWindow);
+  return `${rung}@${window}`;
+}
+
+/**
+ * The distinct lenses a case's runs reviewed at, first-seen order preserved.
+ *
+ * Deduped rather than one value, and over `measurable` runs alone, for the two
+ * reasons the neighbouring sample helpers share: `--runs N` can load a different
+ * window run to run (a JIT reload between runs), and collapsing to run 1's lens
+ * would reconflate exactly the divergence this exists to surface; and a
+ * substituted or failed run's lens is disowned here as its prompt and timing
+ * figures are — a substituted run carries a report and a reply on the WRONG
+ * model, so its lens is not this case's. Empty when no run was measurable.
+ */
+function lensSamples(runs) {
+  return [...new Set(measurable(runs).map(lensLabel))];
+}
+
+/**
  * How the failed runs failed, split only as far as the record actually says.
  *
  * A timeout and a model error were the same thing in this table until the CLI
@@ -258,6 +302,10 @@ export function caseRows(results, { cold = false } = {}) {
       scored: scored.length,
       runs: runs.length,
       diffOnly: runs.some((run) => run.diffOnly),
+      // The distinct lenses this case's runs reviewed at — see `lensSamples`. The
+      // row carries the set; `report.mjs` joins it. A silent single value here
+      // would reproduce the very lens-conflation the column exists to expose.
+      lens: lensSamples(runs),
       // See `schemaDegrade` above. Per RUN, never a boolean.
       reported: runs.filter((run) => run.report).length,
       degraded: runs.filter((run) => run.report?.degraded).length,
