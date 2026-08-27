@@ -1,0 +1,24 @@
+{
+  "id": "hold2-hostile-coercion",
+  "label": "One 4-line coercion guard, isolated single-file case",
+  "mode": "commit",
+  "origin": {
+    "commit": "b96ae2c",
+    "note": "Built for the OAI-221 overnight tuning matrix, 2026-08-26 — never scored by any run before this corpus. Small and single-file by design, to pair against hold1-exit-code's four-site defect at similar prompt size."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "hostile-severity-line-throws",
+      "file": "scripts/lib/structured.mjs",
+      "lines": [116, 117],
+      "fixedIn": "b96ae2c",
+      "confidence": "high",
+      "description": "normalizeFinding coerces raw.severity and raw.line with bare String()/Number() before any typeof check. A JSON-producible object with own toString/valueOf set to null throws TypeError out of the coercion, uncaught, crashing the whole reply's findings parse for one malformed finding rather than dropping just that finding.",
+      "anchor": "const severity = String(raw.severity ?? '').toLowerCase();"
+    }
+  ],
+  "dropped": []
+}

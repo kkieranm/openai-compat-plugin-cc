@@ -1,0 +1,15 @@
+{
+  "id": "hold3-docs-only",
+  "label": "Negative control: a backlog-trim commit with no code at all",
+  "mode": "commit",
+  "origin": {
+    "commit": "62a0436",
+    "note": "Built for the OAI-221 overnight tuning matrix, 2026-08-26 — never scored by any run before this corpus. Two markdown files, zero code, prose-editing only (moving a DONE writeup, trimming stale narrative). Every finding here is a false positive by construction. NOTE (added post-hoc): BACKLOG_DONE.md is 289KB at this commit, making this case ~90k prompt tokens rather than the few-KB doc-trim intended -- larger and slower than the other control (docs-only). Left as-is once two model runs already scored against it; a future rebuild should pick a smaller docs-only commit."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "control": true,
+  "defects": [],
+  "dropped": []
+}
