@@ -11,39 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-221** — **Whether a local model can review at all is decided by a setting this repo cannot
-  reach, and every benchmark figure it has published was taken on the wrong side of it.** A reasoning
-  model's thinking channel is controlled by the chat template's `enable_thinking` variable. It is not
-  an OpenAI request field: `scripts/lib/client.mjs` cannot send it, `chat_template_kwargs` is not
-  honoured by LM Studio (measured — a request carrying it returned identical reasoning-token counts
-  to one without), and the only route is the server's own per-model configuration, in LM Studio's UI
-  or `~/.lmstudio/hub/models/**/model.yaml`. **Dated instance 2026-08-26**: four models were scored
-  on the `bench/` corpus with thinking ON and again with it OFF, everything else identical, each
-  verified at `reasoning_tokens=0` immediately before its run.
-  | model | thinking ON | thinking OFF |
-  |---|---|---|
-  | `qwen/qwen3.8-27b` | 0/6 cases, every one timed out | 4/6 cases, 1 anchored, clean control |
-  | `qwen/qwen3.6-35b-a3b` | 2/6 cases, 1 anchored, 1,595s | 5/6 cases, 1 anchored, **319s** |
-  | `google/gemma-4-26b-a4b` | 4/6 cases, 1 anchored | 4/6 cases, 1 anchored, 0 unmatched |
-  | `gemma-4-12b-it-mlx` | *already off — no hub config to override the template default* | 5/6, 1 anchored |
-  Generation time collapsed from hundreds of seconds to 1-34s per case; prefill then dominates, which
-  is a hardware property rather than a model one. **The dominance of this one variable is what makes
-  it worth an item rather than a note**: every other lever measured across ~110 review invocations —
-  `reasoning_effort` (`low`/`medium`/`xhigh`), temperature, `top_p`/`top_k`/`min_p`, quantization from
-  2-bit to 6-bit, reply budgets, `--structured-output`, `--parallel` 1/4/8, and prompt phrasing —
-  moved availability or latency at best, and none moved capability. **Two consequences beyond the
-  ranking.** First, the pre-2026-08-26 benchmark figures in this repo compare models that mostly had
-  thinking on against `gemma-4-12b-it-mlx`, which had it off by accident of having no hub config —
-  so the variable was confounded with model identity and nobody knew. Second, the corpus is not the
-  one-case corpus it appeared to be: with thinking off, `qwen/qwen3.6-35b-a3b` anchored a defect in
-  `scaffold`, a case no model had matched in any prior run, while losing `config-origin` — so the two
-  best models now find **different** defects and neither finds the other's, which is the first direct
-  evidence for the multi-model agreement signal OAI-9 and OAI-11 propose. Related: OAI-214 is the
-  general inability to express vendor-required parameters; this item is the specific parameter that
-  turned out to decide the outcome, and OAI-217 is why a record cannot show which side of it a run
-  was on. **Evidence: [`evidence/221.md`](evidence/221.md)** — the measurement tables, the
-  replication that revised them, and the corrections, recorded rather than summarised.
-
 - **OAI-222** — **An exhaustive sampling-parameter search bought a real precision gain and no
   recall gain that survives leaving the panel it was tuned on.** A 7-stage, Codex-designed search
   over temperature/top_p/top_k/min_p/reasoning_effort/`--structured-output` across ~150 invocations
@@ -87,6 +54,25 @@ its Session footguns section — not here.
   case has one real defect, so a genuinely different failure shape is also possible. Whichever it
   is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
   nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
+
+- **OAI-225** — **The failure envelope's reasoning witness is inert on the one failure mode it would
+  most want to observe.** OAI-221's observed reasoning witness (shipped `c0711d9`) reads `error.usage`
+  on the failure path, but no throw site sets it, so `errorReport(...).reasoning` is always
+  `{state: 'unknown', tokens: null}` — including on a token-exhaustion failure, where the model spent
+  its whole budget reasoning and a real `usage` carrying `reasoning_tokens` was in scope at the throw.
+  **Named mechanism, 2026-08-28 (review of OAI-221)**: `scripts/lib/review-unparsed.mjs`'s
+  token-exhaustion throw and `scripts/lib/client.mjs`'s `requireAnswer` refusals (`token-limit`,
+  `reasoning-only`, `empty-answer`) each construct a new `UserError` without copying the in-scope
+  `result.usage`; a Codex executable probe confirmed both `unparsedReply` and `requireAnswer` throw
+  errors whose `.usage` is `undefined`. On a late stream failure the reply's usage instead sits on
+  `error.answer.usage` (`stream-collect.mjs` attaches `.answer`); `errorReport` reads `error.usage`
+  and so misses both routes. Deliberately deferred from OAI-221's ladder (owner-decided): the approved
+  plan scoped the failure witness to always-`unknown`, and the bench self-labeling the witness exists
+  for reads only successful/`measurable` runs, so nothing ships broken — the field is honestly
+  labelled `unknown`. Fix would attach the reply's usage to the error at those throw sites
+  (`error.answer.usage` for stream shapes, `result.usage` for the post-hoc throws). **Implementation
+  note**: proving a fix needs a new failure fixture that carries `completion_tokens_details`, since the
+  existing truncated-reply test's usage frame has none and would read `unknown` even after the fix.
 - **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
   the assembly is where the errors are.** `bench/` writes one record and one report per invocation
   and provides no way to read N of them together: no cross-run table, no diff of two records, no

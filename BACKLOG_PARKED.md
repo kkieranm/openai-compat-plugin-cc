@@ -1,3 +1,53 @@
+## 2026-08-28 — OAI-221 parked, `not worth doing` as its own item after its witness shipped
+
+Its one actionable code consequence — a record could not say which side of the `enable_thinking`
+switch a run ran on — shipped as `scripts/lib/reasoning-witness.mjs`'s observed reasoning witness in
+`c0711d9`. What remains of OAI-221 is a true finding plus research residue (the multi-model agreement
+signal, the MoE's precision) that is owned by OAI-9/OAI-11 and preserved in full at `evidence/221.md`,
+so no further work belongs to OAI-221 as its own live item. The framing was never refuted — it is
+correct and load-bearing — which is why this is `not worth doing`, not `refuted`.
+
+**Reopening bar:** reopens if the observed witness proves insufficient — a provider whose
+`reasoning_tokens` is unreliable enough that `no-reasoning-observed`/`unknown` mislead — or if active
+pre-run verification of the thinking state (rather than post-hoc observation) is shown to be needed.
+
+### OAI-221 — the thinking switch decides whether a local model can review at all
+
+- **OAI-221** — **Whether a local model can review at all is decided by a setting this repo cannot
+  reach, and every benchmark figure it has published was taken on the wrong side of it.** A reasoning
+  model's thinking channel is controlled by the chat template's `enable_thinking` variable. It is not
+  an OpenAI request field: `scripts/lib/client.mjs` cannot send it, `chat_template_kwargs` is not
+  honoured by LM Studio (measured — a request carrying it returned identical reasoning-token counts
+  to one without), and the only route is the server's own per-model configuration, in LM Studio's UI
+  or `~/.lmstudio/hub/models/**/model.yaml`. **Dated instance 2026-08-26**: four models were scored
+  on the `bench/` corpus with thinking ON and again with it OFF, everything else identical, each
+  verified at `reasoning_tokens=0` immediately before its run.
+  | model | thinking ON | thinking OFF |
+  |---|---|---|
+  | `qwen/qwen3.8-27b` | 0/6 cases, every one timed out | 4/6 cases, 1 anchored, clean control |
+  | `qwen/qwen3.6-35b-a3b` | 2/6 cases, 1 anchored, 1,595s | 5/6 cases, 1 anchored, **319s** |
+  | `google/gemma-4-26b-a4b` | 4/6 cases, 1 anchored | 4/6 cases, 1 anchored, 0 unmatched |
+  | `gemma-4-12b-it-mlx` | *already off — no hub config to override the template default* | 5/6, 1 anchored |
+  Generation time collapsed from hundreds of seconds to 1-34s per case; prefill then dominates, which
+  is a hardware property rather than a model one. **The dominance of this one variable is what makes
+  it worth an item rather than a note**: every other lever measured across ~110 review invocations —
+  `reasoning_effort` (`low`/`medium`/`xhigh`), temperature, `top_p`/`top_k`/`min_p`, quantization from
+  2-bit to 6-bit, reply budgets, `--structured-output`, `--parallel` 1/4/8, and prompt phrasing —
+  moved availability or latency at best, and none moved capability. **Two consequences beyond the
+  ranking.** First, the pre-2026-08-26 benchmark figures in this repo compare models that mostly had
+  thinking on against `gemma-4-12b-it-mlx`, which had it off by accident of having no hub config —
+  so the variable was confounded with model identity and nobody knew. Second, the corpus is not the
+  one-case corpus it appeared to be: with thinking off, `qwen/qwen3.6-35b-a3b` anchored a defect in
+  `scaffold`, a case no model had matched in any prior run, while losing `config-origin` — so the two
+  best models now find **different** defects and neither finds the other's, which is the first direct
+  evidence for the multi-model agreement signal OAI-9 and OAI-11 propose. Related: OAI-214 is the
+  general inability to express vendor-required parameters; this item is the specific parameter that
+  turned out to decide the outcome, and OAI-217 is why a record cannot show which side of it a run
+  was on. The observed-witness consequence shipped in `c0711d9` (OAI-225 tracks the one remaining code
+  gap: the failure envelope's witness is inert until a throw site attaches the reply's usage).
+  **Evidence: [`evidence/221.md`](evidence/221.md)** — the measurement tables, the
+  replication that revised them, and the corrections, recorded rather than summarised.
+
 ## 2026-08-27 — parked by the backlog sweep's worth bar
 
 3 items plus 3 sub-items of a fourth, all `not worth doing`. All were verified STILL TRUE against
