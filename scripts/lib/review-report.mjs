@@ -308,15 +308,28 @@ export function errorReport(error) {
     detectedWindow: positiveInteger(error?.detectedWindow) ?? null,
     serverConfig: reconstructServerConfig(error?.serverConfig),
     // The observed reasoning state, on the failure path too so the success and
-    // failure envelopes stay the same shape. No throw site sets `error.usage` —
-    // the field this reads — so it is currently always `{ state: 'unknown',
-    // tokens: null }`, even for a post-response failure whose reply did report
-    // reasoning (the reply's usage lives on `error.answer` or in the unthrown
-    // `result`, never here). Needs no fail-closed reconstruction the way
-    // `serverConfig` does: `reasoningWitness` reads only a number and returns a
-    // fresh constant-and-primitive object, so nothing off a foreign error can
-    // reach the persisted output through it, and it never throws.
-    reasoning: reasoningWitness(error?.usage),
+    // failure envelopes stay the same shape. The reply's usage is carried onto
+    // the error at each post-hoc throw site — `error.usage` for a failure with no
+    // reply envelope (token-exhaustion in `review-unparsed.mjs`, `requireAnswer`'s
+    // refusals), `error.answer.usage` for one that builds a reply envelope
+    // (`review-request.mjs`'s reasoning-only/salvage failures, and a generic
+    // stream drop, whose `.answer` `stream-collect.mjs` attaches to a failure it
+    // catches). Read post-hoc field first; the two carriers are disjoint by site,
+    // so the order is defensive, not load-bearing. Two carriers rather than folding
+    // usage into `.answer` everywhere: a site with no reply envelope uses the bare
+    // `error.usage` precisely so `partial` below stays absent for it — reusing
+    // `.answer` there would start persisting its non-empty reasoning as a partial,
+    // a behaviour beyond this witness's mandate. `unknown` wherever the error
+    // carries no classifiable reasoning usage: no usage frame reached the reply (a
+    // pre-stream refusal, or a mid-stream cutoff before that frame); a frame
+    // arrived but reported no `reasoning_tokens` detail; or a `completion.mjs`
+    // `refuseUnusable` completion-shape refusal (empty/unfinished/blank) attached
+    // no usage carrier at all — the last a not-yet-covered gap, tracked separately.
+    // Needs no fail-closed reconstruction the way `serverConfig` does:
+    // `reasoningWitness` reads only a number and returns a fresh
+    // constant-and-primitive object, so nothing off a foreign error can reach the
+    // persisted output through it, and it never throws.
+    reasoning: reasoningWitness(error?.usage ?? error?.answer?.usage),
     // What the model had already produced when the failure cut it off —
     // `stream-collect.mjs` attaches `.answer` to every
     // failure it catches, but most carry nothing (a pre-stream refusal, no

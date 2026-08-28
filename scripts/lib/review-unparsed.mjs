@@ -35,7 +35,7 @@ export function unparsedReply(result, { structured, profile, ledger }) {
     // a closed, populated entry for it — so the failure this throws must carry
     // that record rather than leave `errorReport()`'s `attempts` field null,
     // which left the dominant overnight-sweep failure mode unmeasurable.
-    throw withLedger(new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
+    const failure = new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
       // Tagged so a caller can tell "the budget ran out" from "the server broke"
       // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
       // off the `--json` envelope and states the rule its own header keeps —
@@ -47,7 +47,14 @@ export function unparsedReply(result, { structured, profile, ledger }) {
         'Review a smaller target — a single commit with --commit, or specific files with --file. '
         + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
         + 'reasoning rather than more room for the findings themselves.',
-    }), ledger);
+    });
+    // The reply's usage carried onto the error so `errorReport`'s reasoning
+    // witness can observe it: this is the failure mode it most wants to see — the
+    // model spent its whole budget reasoning, and `result.usage` here reports how
+    // much. Read only as a validated number by `reasoningWitness`, never
+    // serialized raw, so it cannot reach the persisted envelope as a foreign shape.
+    failure.usage = result.usage;
+    throw withLedger(failure, ledger);
   }
 
   // Under a schema the reasoning channel carries the constrained output, so it

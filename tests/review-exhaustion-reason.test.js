@@ -64,6 +64,59 @@ test('a token-exhausted review still carries the attempt that produced it', asyn
   }
 });
 
+// OAI-221's reasoning witness on the failure envelope was inert until the reply's
+// usage was carried onto the error at the throw site: token-exhaustion is the
+// mode it most wants to observe, since the model spent its whole budget reasoning.
+// This reads the `error.usage` route through `unparsedReply`.
+test('a token-exhausted reply carrying reasoning usage reads reasoning-observed on the failure envelope', async () => {
+  const { dir, server, configPath } = await scenario(replies({ finishReason: 'length', reasoningTokens: 512 }));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.error, true);
+    assert.equal(report.reason, 'token-exhaustion');
+    assert.deepEqual(report.reasoning, { state: 'reasoning-observed', tokens: 512 });
+  } finally {
+    await server.close();
+  }
+});
+
+// The reasoning-only route reaches the envelope by a different carrier —
+// `error.answer.usage`, built in review-request.mjs's reasoningOnlyFailure —
+// so it is pinned separately from the token-exhaustion route above.
+test('a reasoning-only reply carrying reasoning usage reads reasoning-observed on the failure envelope', async () => {
+  const { dir, server, configPath } = await scenario(
+    (request, response) => respondStream(response, completionFrames('reasoned but never answered', { channel: 'reasoning', finishReason: 'stop', reasoningTokens: 300 })),
+  );
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.error, true);
+    assert.equal(report.reason, 'reasoning-only');
+    assert.deepEqual(report.reasoning, { state: 'reasoning-observed', tokens: 300 });
+  } finally {
+    await server.close();
+  }
+});
+
+// The positive control that makes the two tests above capable of failing: a
+// witness hardcoded to `reasoning-observed`, or one reading a constant, would
+// pass them. This reply is byte-identical to the first token-exhaustion fixture
+// but its usage frame carries NO `completion_tokens_details`, so the honest
+// reading is `unknown` — proving the witness tracks the frame, not the code.
+test('a token-exhausted reply with no reasoning detail reads unknown on the failure envelope', async () => {
+  const { dir, server, configPath } = await scenario(replies({ finishReason: 'length' }));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.error, true);
+    assert.equal(report.reason, 'token-exhaustion');
+    assert.deepEqual(report.reasoning, { state: 'unknown', tokens: null });
+  } finally {
+    await server.close();
+  }
+});
+
 test('the prose still says what happened, so a human loses nothing to the field', async () => {
   const { dir, server, configPath } = await scenario(replies({ finishReason: 'length' }));
   try {

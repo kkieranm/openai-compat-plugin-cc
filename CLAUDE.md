@@ -53,9 +53,16 @@ reaches it (OAI-221). A leaf that never throws (the read is `try/catch`-wrapped 
 getter; `Number.isFinite` rejects a non-number without coercing) and builds a fresh
 constant-plus-number object, so it needs no fail-closed reconstruction the way pass-through
 `serverConfig` does — `review-report.mjs`'s `jsonReport`/`errorReport` and `task-report.mjs`'s
-`jsonTaskReport` carry it (the shared `errorReport` covers both failure paths, currently always `unknown`
-because no throw site sets `error.usage` — a post-response failure whose reply reported reasoning keeps that
-usage on `error.answer` or the unthrown `result`, not on the error this reads). `bench/lib/report.mjs`'s per-case `reasoning` column
+`jsonTaskReport` carry it (the shared `errorReport` covers both failure paths, reading
+`error?.usage ?? error?.answer?.usage` — the reply's usage carried onto the error at each post-hoc
+throw site: `error.usage` for a failure with no reply envelope (`review-unparsed.mjs`'s
+token-exhaustion, `client.mjs`'s `requireAnswer` refusals), `error.answer.usage` for one that builds a
+reply envelope (`review-request.mjs`'s reasoning-only/salvage failures, and a generic stream drop
+`stream-collect.mjs` attaches), so the witness is `unknown` wherever the error carries no classifiable
+reasoning usage: no usage frame reached the reply (a pre-stream refusal, or a mid-stream cutoff before
+that frame), a frame reported no `reasoning_tokens` detail, or a `completion.mjs` `refuseUnusable`
+completion-shape refusal (empty/unfinished/blank) attached no carrier at all — the last a not-yet-covered
+gap (OAI-225)). `bench/lib/report.mjs`'s per-case `reasoning` column
 (`case-rows.mjs`'s `reasoningSamples`) derives from `report.usage`, never a stored field, so a record
 written before the column existed still classifies; the interactive footer derives it inline and stays
 silent on `unknown`. `no-reasoning-observed` is a provider-reported zero and is never read as "off".

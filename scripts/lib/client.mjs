@@ -130,16 +130,25 @@ export function reasoningOnlyRefusal(profile) {
 export function requireAnswer(result, profile) {
   if (result.content.trim()) return result.content;
 
+  // Every refusal here carries the reply's usage so `errorReport`'s reasoning
+  // witness can observe what the model did before it failed — a reasoning-only or
+  // token-limit reply is exactly where the count matters. `reasoningWitness` reads
+  // it as a validated number and never serializes it raw, so nothing off `usage`
+  // reaches the persisted envelope as a foreign shape.
   if (result.finishReason === 'length') {
-    throw new UserError(
+    const failure = new UserError(
       `${profile.name} stopped at the token limit before writing an answer` +
         `${result.reasoning ? ', having spent the whole budget reasoning' : ''}.`,
       { hint: 'Raise --max-tokens (reasoning models can think for thousands of tokens before replying).' },
     );
+    failure.usage = result.usage;
+    throw failure;
   }
   if (isReasoningOnly(result)) {
     const { message, hint } = reasoningOnlyRefusal(profile);
-    throw new UserError(message, { hint });
+    const failure = new UserError(message, { hint });
+    failure.usage = result.usage;
+    throw failure;
   }
   // result.finishReason is unvalidated server payload — travels on
   // .finishReason, never .message; see completion.mjs's refuseUnusable.
@@ -147,5 +156,6 @@ export function requireAnswer(result, profile) {
     hint: 'Try again, or check the server log — nothing was generated.',
   });
   failure.finishReason = result.finishReason ?? 'unknown';
+  failure.usage = result.usage;
   throw failure;
 }

@@ -213,6 +213,19 @@ function sharedRequest(profile, plan) {
 }
 
 /**
+ * The reply envelope carried on a post-hoc review failure — the subset of a
+ * reply `errorReport` reads back: `reasoning`/`content` for its `partial` field
+ * and `usage` for its reasoning witness (`reasoningWitness` reads `usage` as a
+ * validated number, never serialized raw). One builder for all three throw
+ * branches so a field rides the envelope once rather than being added at each
+ * site in lockstep — the drift the witness's own `usage` addition would have
+ * risked, silent because a missed site reads an honest-looking `unknown`.
+ */
+function replyEnvelope(result) {
+  return { reasoning: result.reasoning, content: result.content, usage: result.usage };
+}
+
+/**
  * The tagged error for a clean stream that never left its reasoning channel —
  * shared by both places that reject that shape (`unconstrained()`'s own
  * request and `attemptSalvage`'s follow-up) so the two never drift into two
@@ -222,7 +235,7 @@ function sharedRequest(profile, plan) {
 function reasoningOnlyFailure(profile, result) {
   const { message, hint } = reasoningOnlyRefusal(profile);
   const failure = new UserError(message, { reason: 'reasoning-only', hint });
-  failure.answer = { reasoning: result.reasoning, content: result.content };
+  failure.answer = replyEnvelope(result);
   return failure;
 }
 
@@ -248,7 +261,7 @@ function salvageEmptyFailure(profile, result) {
       `${profile.name} ran out of tokens before the salvage follow-up produced an answer.`,
       { reason: 'token-exhaustion' },
     );
-    failure.answer = { reasoning: result.reasoning, content: result.content };
+    failure.answer = replyEnvelope(result);
     return failure;
   }
   if (isReasoningOnly(result)) return reasoningOnlyFailure(profile, result);
@@ -256,7 +269,7 @@ function salvageEmptyFailure(profile, result) {
     reason: 'empty-answer',
   });
   failure.finishReason = result.finishReason ?? 'unknown';
-  failure.answer = { reasoning: result.reasoning, content: result.content };
+  failure.answer = replyEnvelope(result);
   return failure;
 }
 
