@@ -21,6 +21,7 @@
 // happened — entries carried only `seconds`, a rounded duration — so the timeline
 // is what got recorded, and everything here is computed from it.
 import { isOutage } from './sweep-outcome.mjs';
+import { safeInline } from './markdown-safe.mjs';
 
 /** Commits the loop actually attempted, in the order it attempted them.
  *
@@ -38,9 +39,17 @@ function attempted(entries) {
 // a bare `13:18:38` beside a run the reader remembers starting at 14:18 BST reads
 // as a wrong time rather than as a different zone. Rendering it locally instead
 // would need a zone the record does not carry.
+// A pure formatter — returns the raw time-of-day, escaped by its caller. Built with `+` rather than a
+// template so it holds no interpolation of its own for the render-boundary structural test to scan;
+// its one untrusted value (`iso`, a foreign-ledger timestamp) is neutralised where it renders, below.
 function clock(iso) {
-  return typeof iso === 'string' && iso.length >= 19 ? `${iso.slice(11, 19)}Z` : String(iso ?? '?');
+  if (typeof iso === 'string' && iso.length >= 19) return iso.slice(11, 19) + 'Z';
+  return String(iso ?? '?');
 }
+
+// One outage's `sha time` label, hoisted out of the interpolation below so both its untrusted values
+// are wrapped at a top-level interpolation the structural test can see.
+const outageLabel = (entry) => `\`${safeInline(entry.sha).slice(0, 9)}\` ${safeInline(clock(entry.startedAt))}`;
 
 /**
  * Replay the counter over the entries that SETTLED, and report what it did.
@@ -106,16 +115,16 @@ export function serverHealth(entries, abortAfter, timelineComplete = true) {
     lines.push('> **Derived from an INCOMPLETE timeline.** This record was recovered, so commits are missing from it. A gap between two recorded outages can make them appear consecutive when a healthy commit sat between, and a gap that was itself an outage understates the streak. Read every figure below as a reading of what survived, never as the sequence the run experienced.', '');
   }
   const commits = tried === 1 ? 'commit' : 'commits';
-  lines.push(`- **${tried} ${commits} attempted · ${outages.length} judged a server outage** · abort threshold ${abortAfter ?? '(not recorded)'}`);
+  lines.push(`- **${safeInline(tried)} ${safeInline(commits)} attempted · ${safeInline(outages.length)} judged a server outage** · abort threshold ${safeInline(abortAfter) || '(not recorded)'}`);
   if (outages.length === 0) {
     lines.push('- No outage was recorded, so the streak never started. This is the fail-fast having nothing to do, which is different from it holding.', '');
     return lines;
   }
-  lines.push(`- **Longest consecutive streak reached: ${longest}** · a non-outage reset a live streak **${resets}** time(s)`);
+  lines.push(`- **Longest consecutive streak reached: ${safeInline(longest)}** · a non-outage reset a live streak **${safeInline(resets)}** time(s)`);
   // Named individually, because a pattern is what the counts cannot show: three
   // outages in five minutes is a server falling over, three across eight hours
   // is noise, and both render as "3".
-  lines.push(`- Outages fell at ${outages.map((entry) => `\`${entry.sha.slice(0, 9)}\` ${clock(entry.startedAt)}`).join(', ')}`);
+  lines.push(`- Outages fell at ${outages.map(outageLabel).join(', ')}`);
   if (resets > 0) {
     lines.push('- **Read the abort with that in mind.** A streak that was reset is a streak that did not reach the threshold, so a sweep which ran to its full wall clock may have done so against a server that was failing intermittently rather than a healthy one.');
   }

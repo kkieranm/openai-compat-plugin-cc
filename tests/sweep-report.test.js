@@ -479,3 +479,78 @@ test('the JSON record is private, because it is the only artifact holding raw ou
   // asymmetry deliberate rather than looking like an oversight.
   assert.notEqual(statSync(reportPath).mode & 0o777, 0o600);
 });
+
+// OAI-213 — untrusted values are escaped before they reach the Markdown, so a hostile
+// finding, id, subject, path or evidence cannot corrupt the report or throw. These assert
+// the RENDERED behaviour; the structural guarantee that EVERY sink is wrapped lives in
+// tests/structure.test.js.
+import { safeInline } from '../bench/lib/markdown-safe.mjs';
+
+test('a hostile finding.summary cannot open a fence or break the list (OAI-213)', () => {
+  const out = render(commit({
+    outcome: 'findings',
+    model: 'qwen/qwen3.6-27b',
+    findings: [{ file: 'a.mjs', line: 4, severity: 'high', summary: 'look:\n```\nrm -rf /\n```\nrest' }],
+  }));
+  // The rest of the report survives — a swallowed report would lose these later sections.
+  assert.match(out, /## Coverage/);
+  assert.match(out, /## What these are, and are not/);
+  // No triple backtick reached the output.
+  assert.doesNotMatch(out, /```/);
+});
+
+test('a hostile model id and commit subject are escaped, not rendered as markup (OAI-213)', () => {
+  const out = render(commit({
+    outcome: 'findings',
+    subject: 'fix **bold** and `code`',
+    model: 'srv/`inject`-model',
+    findings: [{ file: 'a.mjs', line: 1, severity: 'high', summary: 'x' }],
+  }));
+  assert.doesNotMatch(out, /\*\*bold\*\*/, 'the subject must not render as bold');
+  assert.doesNotMatch(out, /`inject`/, 'the model id backtick must not break its code span');
+  assert.match(out, /srv\/\.inject\.-model/);
+});
+
+test('multi-line evidence with a bare \\r keeps every line inside the blockquote (OAI-213)', () => {
+  const out = render(commit({
+    outcome: 'findings',
+    model: 'qwen/qwen3.6-27b',
+    findings: [{ file: 'a.mjs', line: 1, severity: 'high', summary: 'x', evidence: 'l1\rl2\r\nl3\nl4' }],
+  }));
+  // Every evidence line is prefixed as a blockquote continuation — no un-prefixed line breaks out.
+  for (const line of ['l1', 'l2', 'l3', 'l4']) {
+    assert.match(out, new RegExp(`    > ${line}`), `evidence line ${line} must be blockquote-prefixed`);
+  }
+});
+
+test('a non-array / circular / throwing record.include renders without throwing (OAI-213)', () => {
+  const circular = []; circular.push(circular);
+  const throwing = new Proxy(['a'], { get(t, p) { if (p === Symbol.iterator) throw new Error('boom'); return t[p]; } });
+  for (const include of ['not-an-array', 42, circular, throwing]) {
+    assert.doesNotThrow(() => renderSweep({ ...base, include, enumerated: 0, entries: [] }));
+  }
+  // A valid array still renders its elements joined and escaped.
+  const out = renderSweep({ ...base, include: ['scripts', 'bench/`x`'], enumerated: 0, entries: [] });
+  assert.match(out, /scripts, bench\/\.x\./);
+});
+
+test('safeInline is idempotent (double-wrap is safe) (OAI-213)', () => {
+  for (const v of ['a`b*c_d', '/var/folders/x_y/z', 'HEAD~5', '{"code":42}']) {
+    assert.equal(safeInline(safeInline(v)), safeInline(v));
+  }
+});
+
+test('a finding.file/line with a throwing toString does not abort the report (OAI-213 review)', () => {
+  const hostile = { toString() { throw new Error('boom'); } };
+  assert.doesNotThrow(() => render(commit({
+    outcome: 'findings',
+    model: 'qwen/qwen3.6-27b',
+    findings: [{ file: hostile, line: hostile, severity: 'high', summary: 'x' }],
+  })));
+});
+
+test('a revoked array proxy in record.include does not abort the report (OAI-213 review)', () => {
+  const { proxy, revoke } = Proxy.revocable([], {});
+  revoke();
+  assert.doesNotThrow(() => renderSweep({ ...base, include: proxy, enumerated: 0, entries: [] }));
+});

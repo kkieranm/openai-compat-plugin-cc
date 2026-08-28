@@ -4,6 +4,7 @@
 // reviewed-nothing section — so it is the report's only shared vocabulary
 // rather than a helper belonging to any one of them, and it is the piece that
 // grows every time the CLI learns to report a new way of coming up short.
+import { safeInline } from './markdown-safe.mjs';
 
 /**
  * The caveats that ride along with a review that DID complete.
@@ -26,7 +27,7 @@ export function incompleteness(entry) {
   // was ALSO cut — lost the fact entirely.
   if (entry.analysisCut) notes.push('the analysis was cut off before the model finished looking, so this is not a complete review of the commit');
   if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
-  if (entry.dropped) notes.push(`${entry.dropped} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
+  if (entry.dropped) notes.push(`${safeInline(entry.dropped)} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
   // State, not cause — `--diff-only` reaches this too, so the wording this
   // replaced ("the changed files did not fit the window") was already false for
   // that flag before there was a second cause. The cause is the next line, and
@@ -35,6 +36,6 @@ export function incompleteness(entry) {
   if (entry.skippedUnsizedWindow) notes.push('the provider\'s context window could not be determined, so the whole-file rung was skipped rather than sent unmeasured — set "contextLength" for the provider to enable it');
   if (entry.rawTruncated) notes.push('the raw reply was truncated in the machine record');
   if (entry.stderrTruncated) notes.push('the captured stderr was truncated in the machine record');
-  if (entry.signal) notes.push(`the child was terminated by signal ${entry.signal}`);
+  if (entry.signal) notes.push(`the child was terminated by signal ${safeInline(entry.signal)}`);
   return notes;
 }

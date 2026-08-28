@@ -530,3 +530,196 @@ test('the detector itself still catches every historical leak this ladder found 
       'or interpolations() regressed silently (OAI-185).',
   );
 });
+
+// ---------------------------------------------------------------------------
+// The sweep report interpolates untrusted text — model finding prose, server ids,
+// git subjects, operator paths, foreign-build ledger values — into Markdown across
+// three files that compose one artifact. Every such interpolation must be a
+// markdown-safe wrapper call (`safeInline`/`safeBlockquoteLines`/`displayReason`),
+// or a reviewed FORMATTING exception. A new sink added unwrapped fails this test
+// (OAI-213). This is default-deny: the rule is not a list of known-bad fields (which
+// fails open on the next field added) but a positive whitelist of the ONLY safe
+// interpolation SHAPE, so a value reaching render under any name is caught.
+const SWEEP_RENDER_FILES = [
+  'bench/lib/sweep-report.mjs',
+  'bench/lib/sweep-health.mjs',
+  'bench/lib/sweep-notes.mjs',
+  // markdown-safe.mjs itself is NOT scanned — its interpolations ARE the sanitiser.
+];
+
+// Formatting / intentional-Markdown / non-report-content interpolations, per file and
+// exact expression (file-bound: the same text in another file is not auto-accepted).
+// NONE is untrusted data — each emits deliberate markup, or is a helper whose own
+// interpolations are themselves in the scanned surface and independently wrapped.
+// KNOWN WEAK EDGE: the bare-identifier entries (severity, evidence, line, note, explanation,
+// why, cause) are trusted by NAME — their safety lives in a nearby assignment the grammar
+// cannot bind to. A future rebinding of one of those locals to an untrusted value would pass
+// silently. All are safe today (constructions visible in-file); re-verify on any change to them.
+const SWEEP_SAFE_EXPRESSIONS = {
+  'bench/lib/sweep-report.mjs': new Set([
+    'subjectLine(entry)',   // helper: a code span, sha/subject wrapped inside it
+    'answeredBy(entry)',    // helper: entry.model wrapped inside it
+    'reasonSuffix(entry.reason)', // helper: displayReason inside it
+    'shortfall(record)',    // helper: its own interpolations wrapped
+    'tally(record.entries)',// helper: its own interpolations wrapped
+    'severity',             // built with intentional ** and a wrapped finding.severity
+    'evidence',             // built with intentional > and safeBlockquoteLines
+    'line',                 // a built finding line (its parts wrapped)
+    'note',                 // an incompleteness() sentence — fixed prose / wrapped in sweep-notes
+    'explanation',          // fixed prose (WHY table via Object.hasOwn, or starvedExplanation)
+    'why',                  // explanation + reasonSuffix, both safe
+    'cause',                // fixed prose composed from wrapped scanLimit/walked
+    'indent',               // layout whitespace — MUST NOT be wrapped (safeInline flattens it)
+    'stamp',                // a filename, not report content
+    'renderSweep(record)',  // the composed report string
+    'JSON.stringify(record, null, 2)', // the private JSON record, not report markdown
+  ]),
+  'bench/lib/sweep-health.mjs': new Set([
+    "outages.map(outageLabel).join(', ')", // composition of the wrapped outageLabel
+  ]),
+  'bench/lib/sweep-notes.mjs': new Set([]),
+};
+
+// String-aware comment stripping — a deliberate fork of the shared `withoutComments`
+// above, not consolidated with it: `withoutComments` also feeds the OAI-185 credential
+// leak detector, whose historical-leak inputs are pinned by their own test, so making the
+// shared stripper string-aware would change that detector's blast radius.
+//
+// A single whole-source scan, so it is correct where a naive stripper is a false NEGATIVE (a sink
+// hidden from the guard): `//` or `/* */` INSIDE a string/template is preserved (a report template can
+// legitimately hold a `https://` URL or `/* */` text before a `${sink}`), and string state carries
+// across lines so a `//` on a multi-line template's continuation line is not mistaken for a comment.
+// REAL comments — `//` to end of line, `/* */` across lines, both outside any string — are removed, so
+// a `${…}` example inside a doc comment does not become a false POSITIVE.
+function sweepStripComments(source) {
+  let out = '';
+  let quote = null; // the ', " or ` currently open, or null
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') { out += next ?? ''; i += 1; continue; } // an escaped char cannot close the string
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '/' && next === '/') { // line comment — skip to end of line
+      while (i < source.length && source[i] !== '\n') i += 1;
+      out += '\n';
+      continue;
+    }
+    if (c === '/' && next === '*') { // block comment — skip to the closing */
+      i += 2;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 1; // the loop's own i++ consumes the final '/'
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { quote = c; out += c; continue; }
+    out += c;
+  }
+  return out;
+}
+
+// The anchored, NO-OPTIONS grammar: an interpolation is accepted iff it is exactly one
+// balanced wrapper call (single argument — no top-level comma, so a two-arg options
+// call is rejected outright), optionally `.slice(<int>, <int>)`, and/or a trailing
+// `|| '<string literal>'` (one quote-delimited run, no interior quote or concatenation).
+// The argument is ALWAYS passed through the sanitiser, so concat inside it is safe;
+// concat/spread/shorthand/indirect option injection cannot be written into this shape.
+const SWEEP_WRAPPERS = /^(safeInline|safeBlockquoteLines|displayReason)\s*\(/;
+function sweepArgHasTopLevelComma(argText) {
+  let depth = 0;
+  for (const c of argText) {
+    if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') depth--;
+    else if (c === ',' && depth === 0) return true;
+  }
+  return false;
+}
+function sweepInterpolationAccepted(expr) {
+  const t = expr.trim();
+  const m = SWEEP_WRAPPERS.exec(t);
+  if (!m) return false;
+  const open = m[0].length - 1; // index of the wrapper's '('
+  let depth = 1;
+  let j = open + 1;
+  for (; j < t.length && depth > 0; j++) {
+    if (t[j] === '(') depth++;
+    else if (t[j] === ')') depth--;
+  }
+  if (depth !== 0) return false; // unbalanced
+  if (sweepArgHasTopLevelComma(t.slice(open + 1, j - 1))) return false; // exactly one argument
+  let rest = t.slice(j).trim();
+  const sliceMatch = /^\.slice\(\s*\d+\s*,\s*\d+\s*\)/.exec(rest);
+  if (sliceMatch) rest = rest.slice(sliceMatch[0].length).trim();
+  if (rest === '') return true;
+  // optional trailing || '<string literal>' — a whole single quote-delimited run
+  return /^\|\|\s*'[^'\\]*'$/.test(rest) || /^\|\|\s*"[^"\\]*"$/.test(rest);
+}
+
+test('every untrusted interpolation in the sweep render files is markdown-safe-wrapped or an exception (OAI-213)', () => {
+  const offenders = [];
+  for (const rel of SWEEP_RENDER_FILES) {
+    const allowed = SWEEP_SAFE_EXPRESSIONS[rel];
+    const source = sweepStripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    for (const expr of interpolations(source)) {
+      const t = expr.trim();
+      if (allowed.has(t)) continue;
+      if (sweepInterpolationAccepted(t)) continue;
+      offenders.push(`${rel}: \${${t}}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'an untrusted value reaches the sweep report unescaped — wrap it in safeInline/safeBlockquoteLines ' +
+      '(fallback via a trailing `|| \'literal\'`); add a file-bound SWEEP_SAFE_EXPRESSIONS entry ONLY for ' +
+      'intentional Markdown/layout that is provably safe (OAI-213).',
+  );
+});
+
+// Positive control: the grammar and the walker must actually fire. Proven against the
+// pre-fix files (56 offenders); here pinned so a broken grammar/walker fails rather
+// than passing vacuously.
+test('the sweep interpolation grammar rejects unsafe shapes and accepts the wrapped ones (OAI-213 positive control)', () => {
+  const mustReject = [
+    'entry.model',
+    "abortAfter ?? '(not recorded)'",
+    'safeInline(entry.model) + entry.provider',
+    'slice',
+    'obj[entry.key]',
+    "cond ? `${entry.model}` : ''",
+    'safeInline(x, { whenAbsent: entry.model })',
+    'safeInline(x, { continuation: entry.model })',
+    "safeInline(x) || entry.model",
+    "safeInline(x) || 'a' + 'b'",
+    "safeInline(x) || '' + entry.y",
+    'record.newlyAddedField',
+  ];
+  const mustAccept = [
+    'safeInline(entry.model)',
+    "safeInline(entry.model) || 'unknown'",
+    'safeInline(entry.sha).slice(0, 9)',
+    'safeBlockquoteLines(finding.evidence)',
+    "safeInline(where) || '(no location given)'",
+    'safeInline(record.include)',
+    'displayReason(reason)',
+  ];
+  const wrongly = [];
+  for (const e of mustReject) if (sweepInterpolationAccepted(e)) wrongly.push(`accepted unsafe: ${e}`);
+  for (const e of mustAccept) if (!sweepInterpolationAccepted(e)) wrongly.push(`rejected safe: ${e}`);
+  assert.deepEqual(wrongly, [], 'the sweep interpolation grammar mis-classified a control case (OAI-213).');
+});
+
+test('sweepStripComments preserves interpolations in strings/templates and drops only real comments (OAI-213)', () => {
+  // False NEGATIVE cases — an interpolation that must survive stripping, or the guard misses a sink:
+  // a `//` inside a string before it.
+  assert.deepEqual(interpolations(sweepStripComments('x(`- see https://example.com ${entry.model}`);')), ['entry.model']);
+  // a `/* */` inside a TEMPLATE (not a comment) before it.
+  assert.deepEqual(interpolations(sweepStripComments('x(`/* note */ ${entry.model}`);')), ['entry.model']);
+  // a `//` on a multi-line template's continuation line.
+  assert.deepEqual(interpolations(sweepStripComments('x(`line one // not a comment\n${entry.model}`);')), ['entry.model']);
+  // False POSITIVE cases — a real comment's example interpolation must be removed:
+  assert.deepEqual(interpolations(sweepStripComments('const x = 1; // ${entry.model} in a comment')), []);
+  assert.deepEqual(interpolations(sweepStripComments('/* ${entry.model} in a\n block comment */ const y = 2;')), []);
+});

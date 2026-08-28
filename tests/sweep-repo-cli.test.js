@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { closedPort, writeConfig } from './helpers.mjs';
+import { safeInline } from '../bench/lib/markdown-safe.mjs';
 
 const run = promisify(execFile);
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -68,7 +69,11 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
   // name the repo they describe, or a foreign-repo artifact is unattributed
   // and indistinguishable from this tool's own history.
   assert.equal(record.repo, target);
-  assert.match(readReport(outDir), new RegExp(`Repository.*${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  // The rendered report escapes the repo path for display (it is untrusted operator/foreign
+  // data in a code span — a backtick would break out); the raw path stays in the JSON record
+  // above. Attribution survives escaping, which is what this asserts (OAI-213).
+  const shownRepo = safeInline(target);
+  assert.match(readReport(outDir), new RegExp(`Repository.*${shownRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
 
 // The test above proves enumeration is rooted at the target repo, but every

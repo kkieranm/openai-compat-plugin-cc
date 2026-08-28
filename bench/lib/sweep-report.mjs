@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { incompleteness } from './sweep-notes.mjs';
 import { serverHealth } from './sweep-health.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
+import { safeInline, safeBlockquoteLines, displayReason } from './markdown-safe.mjs';
 
 /**
  * Why each STARVED commit left no findings, in the reader's terms — one entry
@@ -49,56 +50,10 @@ export const STARVED_WHY = {
 const UNRECOGNISED_STARVED = 'no explanation is defined for this starvation reason';
 const MISSING_STARVED_REASON = 'STARVATION WITH NO USABLE REASON CODE — the record contains no non-blank reason code, so this report cannot identify the kind of starvation';
 
-/**
- * How much of a reason survives the slice below; an elided one renders one
- * character longer, for the ellipsis.
- *
- * A ledger value is not this report's to trust: it arrives unvalidated, and an
- * unbounded one would push the coverage row off the page it is meant to make
- * readable.
- */
-const MAX_DISPLAY_REASON_CHARS = 120;
-
 const UNUSABLE_STARVED_REASON = 'STARVATION WITH AN UNUSABLE REASON CODE — the record\'s reason is not text';
 
-/**
- * A recorded reason made safe to place in a coverage row, whatever it is.
- *
- * EVERY arm goes through here, including the ordinary code, because "reason is
- * a closed vocabulary this codebase mints" is false for one outcome:
- * `unrecorded` carries `gap.why`, which `sweep-ledger.mjs` sets to the text of
- * a filesystem error. A backtick in such a message closes the code span it is
- * printed in and corrupts the row, and the message has no length limit of its
- * own. The codes this codebase mints are lowercase kebab ASCII, so they pass
- * through byte-identical.
- *
- * A string keeps its own text; anything else is JSON, never `String()`, which
- * would turn an object into `[object Object]` and lose the content this exists
- * to preserve. The stringify is wrapped because it throws on a circular
- * structure, a BigInt or a hostile own `toJSON`, and returns `undefined` for a
- * symbol or function — and a throw here would lose the whole morning report
- * over one bad row.
- *
- * The substitution replaces the metacharacters listed in it and flattens
- * whitespace to one line. It is not a general-purpose sanitiser, and what it
- * does not cover is judged acceptable for a Markdown file the repo owner reads.
- */
-function displayReason(reason) {
-  let shown;
-  if (typeof reason === 'string') {
-    shown = reason;
-  } else {
-    try {
-      shown = JSON.stringify(reason);
-    } catch {
-      shown = undefined;
-    }
-    if (typeof shown !== 'string') shown = `(unrenderable ${typeof reason})`;
-  }
-  shown = shown.replace(/[`*_[\]()<>#|~\\]/g, '.').replace(/\s+/g, ' ');
-  if (shown.length > MAX_DISPLAY_REASON_CHARS) shown = `${shown.slice(0, MAX_DISPLAY_REASON_CHARS)}…`;
-  return shown;
-}
+// `displayReason` (the recorded-reason sanitiser, unbounded `unrecorded` filesystem messages included)
+// is the same escape as every other sink now, and lives in `markdown-safe.mjs`.
 
 /**
  * What a coverage row prints after its explanation, for EVERY outcome.
@@ -187,7 +142,7 @@ const WHY = {
  * actually served the request, which this plugin must not do.
  */
 function answeredBy(entry) {
-  return entry.model ? ` *(answered by \`${entry.model}\`)*` : '';
+  return entry.model ? ` *(answered by \`${safeInline(entry.model)}\`)*` : '';
 }
 
 /**
@@ -215,15 +170,22 @@ function reviewedSection(entries) {
 }
 
 function subjectLine(entry) {
-  return `\`${entry.sha.slice(0, 9)}\` ${entry.subject ?? ''}`.trim();
+  // coerce before slice: a non-string sha (foreign build) would throw on `.slice`.
+  return `\`${safeInline(entry.sha).slice(0, 9)}\` ${safeInline(entry.subject)}`.trim();
 }
 
 function findingLines(entry) {
   return entry.findings.map((finding) => {
-    const where = [finding.file, finding.line].filter((part) => part !== undefined && part !== null).join(':');
-    const severity = finding.severity ? `**${finding.severity}** ` : '';
-    const evidence = finding.evidence ? `\n    > ${String(finding.evidence).replace(/\n/g, '\n    > ')}` : '';
-    return `- ${severity}\`${where || '(no location given)'}\` — ${finding.summary ?? '(no summary)'}${evidence}`;
+    // Each component is escaped BEFORE the join — `Array.join` coerces via `toString`, so a hostile
+    // `finding.file`/`finding.line` with a throwing `toString` would otherwise abort the whole report
+    // before `safeInline` ran. The empty join still falls through to the literal fallback below.
+    const where = [finding.file, finding.line]
+      .filter((part) => part !== undefined && part !== null)
+      .map((part) => safeInline(part))
+      .join(':');
+    const severity = finding.severity ? `**${safeInline(finding.severity)}** ` : '';
+    const evidence = finding.evidence ? `\n    > ${safeBlockquoteLines(finding.evidence)}` : '';
+    return `- ${severity}\`${safeInline(where) || '(no location given)'}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
   });
 }
 
@@ -253,7 +215,7 @@ function findingsBlock(entry, indent = '', { attribute = true } = {}) {
   // The caller may already have named the answering model on its own row — a
   // coverage row does. Naming it twice for one commit is noise the tests could
   // not see, since they assert the string is PRESENT.
-  const lines = attribute ? [`${indent}*answered by \`${entry.model ?? 'unknown'}\`*`, ''] : [];
+  const lines = attribute ? [`${indent}*answered by \`${safeInline(entry.model) || 'unknown'}\`*`, ''] : [];
   for (const note of incompleteness(entry)) lines.push(`${indent}> **Incomplete:** ${note}`, '');
   for (const line of findingLines(entry)) lines.push(`${indent}${line}`);
   lines.push('');
@@ -282,17 +244,21 @@ function coverageSection(entries) {
     lines.push('Every enumerated commit was reviewed.', '');
     return lines;
   }
-  lines.push(`**${missed.length} of ${entries.length} enumerated commits produced no review.**`, '');
+  lines.push(`**${safeInline(missed.length)} of ${safeInline(entries.length)} enumerated commits produced no review.**`, '');
   for (const entry of missed) {
     // `entry.reason` is the code the classifier captured; without it every
     // failure renders identically and a `bad-json` night is indistinguishable
     // from a `deadline-timeout` one. For `starved` specifically, the reason
     // also picks WHICH prose applies — see `STARVED_WHY` above.
+    // `Object.hasOwn`, not `??`: a foreign-build `entry.outcome` of `constructor`/`__proto__` would
+    // otherwise read an inherited `Object.prototype` value (a function's source, carrying `{`/`(`) as
+    // the explanation. Matches `starvedExplanation`'s own-property discipline, and is what keeps the
+    // allowlisted `explanation`/`why` provably fixed prose.
     const explanation = entry.outcome === 'starved'
       ? starvedExplanation(entry.reason)
-      : (WHY[entry.outcome] ?? 'no explanation recorded');
+      : (Object.hasOwn(WHY, entry.outcome) ? WHY[entry.outcome] : 'no explanation recorded');
     const why = `${explanation}${reasonSuffix(entry.reason)}`;
-    lines.push(`- ${subjectLine(entry)} — **${entry.outcome}**: ${why}${answeredBy(entry)}`);
+    lines.push(`- ${subjectLine(entry)} — **${safeInline(entry.outcome)}**: ${why}${answeredBy(entry)}`);
     if (hasFindings(entry)) {
       // A review that did not complete can still have reported something real.
       // Those leads are rendered HERE rather than in the Findings section so
@@ -315,7 +281,7 @@ function coverageSection(entries) {
 function tally(entries) {
   const counts = new Map();
   for (const entry of entries) counts.set(entry.outcome, (counts.get(entry.outcome) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1]).map(([outcome, n]) => `${outcome}: ${n}`).join(' · ');
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([outcome, n]) => `${safeInline(outcome)}: ${safeInline(n)}`).join(' · ');
 }
 
 /**
@@ -336,9 +302,9 @@ function shortfall(record) {
   // way sent a reader to tune a knob that was never the constraint.
   const hitLimit = record.scanLimit !== undefined && record.walked !== undefined && record.walked >= record.scanLimit;
   const cause = hitLimit
-    ? `the scan stopped at its \`--scan-limit\` of ${record.scanLimit} commits`
-    : `only ${record.walked ?? 'those'} commits are reachable from that revision`;
-  return ` — **only ${found} of the ${asked} requested commits were eligible**: ${cause}`;
+    ? `the scan stopped at its \`--scan-limit\` of ${safeInline(record.scanLimit)} commits`
+    : `only ${safeInline(record.walked) || 'those'} commits are reachable from that revision`;
+  return ` — **only ${safeInline(found)} of the ${safeInline(asked)} requested commits were eligible**: ${cause}`;
 }
 
 function header(record) {
@@ -353,18 +319,18 @@ function header(record) {
     // A recovered run passes `endedAt: null` on purpose — it was killed, so it
     // has no end, and the last thing observed is stated in `stoppedBecause`
     // where it can be labelled as an observation rather than an ending.
-    `- **Started** ${record.startedAt} · **ended** ${record.endedAt ?? 'not observed'}`,
+    `- **Started** ${safeInline(record.startedAt)} · **ended** ${safeInline(record.endedAt) || 'not observed'}`,
     // Always, even for a self-review: its ABSENCE is exactly what would let a
     // foreign --repo run's artifact go unattributed.
-    `- **Repository** \`${record.repo ?? '(not recorded)'}\``,
-    `- **Stopped because** ${record.stoppedBecause}`,
-    `- **Model requested** \`${record.requestedModel ?? '(provider default)'}\``,
-    `- **Enumerated** ${enumerated} commits · **reviewed** ${reviewed} · **no review** ${enumerated - reviewed}`,
-    `- **Per-commit cap** ${record.maxSeconds}s · **paths included** ${record.include.join(', ')}`,
+    `- **Repository** \`${safeInline(record.repo) || '(not recorded)'}\``,
+    `- **Stopped because** ${safeInline(record.stoppedBecause)}`,
+    `- **Model requested** \`${safeInline(record.requestedModel) || '(provider default)'}\``,
+    `- **Enumerated** ${safeInline(enumerated)} commits · **reviewed** ${safeInline(reviewed)} · **no review** ${safeInline(enumerated - reviewed)}`,
+    `- **Per-commit cap** ${safeInline(record.maxSeconds)}s · **paths included** ${safeInline(record.include)}`,
     // The window this run walked. Without it the artifact cannot say what it
     // enumerated FROM, and two arms of a benchmark cannot be shown to have
     // reviewed the same commits.
-    `- **Enumerated from** \`${record.from ?? 'HEAD'}\`${shortfall(record)}`,
+    `- **Enumerated from** \`${safeInline(record.from) || 'HEAD'}\`${shortfall(record)}`,
     `- ${tally(record.entries)}`,
     '',
   ];

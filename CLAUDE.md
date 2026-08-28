@@ -484,6 +484,18 @@ selecting attempted commits on `startedAt` — and its `timelineComplete` warnin
 timeline, so a missing **ineligible** commit does not raise it while coverage still disposes of that
 commit.
 
+`bench/lib/markdown-safe.mjs`'s `safeInline` / `safeBlockquoteLines` / `displayReason` are the single
+Markdown-metacharacter escape (`/[\`*_[\]()<>#|~\\]/g` → `.`, whitespace-flattened, capped, never
+throwing — array-aware and throw-guarded) every untrusted value the sweep report interpolates passes
+through, across the three files `renderSweep` composes (`sweep-report.mjs`, `sweep-health.mjs`,
+`sweep-notes.mjs`). The helpers take **no options** by design — a fallback is a caller's trailing `||
+'literal'`, not an option value that could carry unsanitised data. `tests/structure.test.js`'s anchored
+grammar enforces the boundary: every `${…}` interpolation in those three files must be exactly one
+balanced wrapper call (optionally `.slice(int,int)` and/or `|| '<literal>'`) or an exact file-bound
+`SWEEP_SAFE_EXPRESSIONS` entry for intentional Markdown/layout — default-deny, so a NEW sink added
+unwrapped fails the test rather than being caught by the next reader. The record JSON stays raw;
+escaping is display-only.
+
 `scripts/lib/config.mjs`'s `loadConfig()` gives `providers.json` the same posture `job-store.mjs` gives
 `jobs.db` — `0600` at creation and unconditionally repaired on every later load, since a profile may
 carry an inline `apiKey` — and `cmd-setup.mjs`'s `probeProvider` redacts a failed profile's `baseUrl`
