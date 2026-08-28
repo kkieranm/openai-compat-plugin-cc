@@ -1,3 +1,103 @@
+## 2026-08-28 — parked: four findings blocked on hardware or an unrecorded measurement
+
+Owner-directed park (Codex-steered) so the live top of `BACKLOG.md` distinguishes blocked findings
+from work feasible this session. All four are `not worth doing` in this tracker's sense — each
+framing is correct and load-bearing, but no action on any of them clears the worth bar under the
+models and recordings available now. None of the four framings was refuted — though within OAI-226
+the ship-blocking headline case its review raised WAS refuted, and what stays live is only the
+narrower, unmeasured EMPTY/BLANK-with-usage residual. OAI-222/223/224 share one root: the two
+finalist qwen models (`qwen/qwen3.8-27b`, `qwen/qwen3.5-9b`) cannot be pushed further on this
+repo's corpus and hardware, which is exactly the condition OAI-222's own reopening path names
+(materially different models). OAI-226 is measure-first: nothing has yet recorded the broken-completion
+shape its fix would target. Evidence is preserved verbatim — `evidence/222.md` for OAI-222/223/224 —
+and each body is reproduced in full below.
+
+**Reopening bars, taken from each finding's own stated path:**
+- **OAI-222** — a preregistered, structurally diverse corpus with explicit recall/runtime gates, run
+  against *materially different* models (not more sampling search on these two), after OAI-212's
+  shipped parser work is confirmed to cover OAI-224's failure shape.
+- **OAI-223** — `model-info`/`scaffold` retried with a budget beyond the 600s already shown to fail
+  (the item records none was tried), or against a materially faster model, and completing — which
+  folds into OAI-222's "materially different models" path.
+- **OAI-224** — a captured raw reply (`--json`) on `hold2-hostile-coercion` showing the failure
+  shape, which would either confirm it as the shipped-OAI-212 mechanism (closing it) or expose a new
+  one (reopening it as its own defect).
+- **OAI-226** — unchanged from its body: a recorded broken-completion failure whose reply carried
+  `completion_tokens_details` yet showed `unknown` on the envelope.
+
+### OAI-222 — an exhaustive sampling tune bought precision but no portable recall gain
+
+- **OAI-222** — **An exhaustive sampling-parameter search bought a real precision gain and no
+  recall gain that survives leaving the panel it was tuned on.** A 7-stage, Codex-designed search
+  over temperature/top_p/top_k/min_p/reasoning_effort/`--structured-output` across ~150 invocations
+  (2026-08-26/27) froze one config per finalist model (`qwen/qwen3.8-27b`, `qwen/qwen3.5-9b`, both
+  `enable_thinking: false` per OAI-221). **Dated instance**: on two hold-out cases the search never
+  touched, both frozen configs anchored zero real defects across 20 combined repetitions
+  (N=5 x 2 cases x 2 models) — not 20 independent misses, since 6 of the 20 were parser failures or
+  a timeout rather than semantic misses (OAI-224). `qwen/qwen3.5-9b`'s config also **regressed**
+  recall on the three hardest full-corpus cases versus its own untuned baseline: 0 of 11 answered
+  reps anchored anything under tuning, vs 3 of 9 at baseline, while its clean-control precision
+  improved (2/3 clean baseline -> 5/5 clean tuned) — the config was selected on a 2-case panel that
+  never included the cases it regressed on, the overfitting risk the tune/hold-out split was
+  designed to catch. Reopening path: fix OAI-212/OAI-224's parser gap first, then test materially
+  different models against a preregistered, structurally diverse corpus with explicit recall and
+  runtime gates — not more sampling search on these two models. **Evidence:
+  [`evidence/222.md`](evidence/222.md)**.
+
+### OAI-223 — qwen3.8-27b cannot review this repo's two largest cases within 600s
+
+- **OAI-223** — **`qwen/qwen3.8-27b` cannot complete a review of this repo's two largest bench
+  cases within 600 seconds, confirmed directly rather than estimated.** `model-info` (~41k prompt
+  tokens) and `scaffold` (~47k prompt tokens) timed out in every rep of Stages 2, 6 and 7 (12 of 12
+  attempts) at the standard 300s cap. **Dated instance 2026-08-27**: a targeted diagnostic doubled
+  the budget to `--max-seconds 600` for one rep of each case, frozen sampling config, no other
+  change — both still failed, and neither produced any HTTP response at all within the full 600s,
+  not merely a slow generation cut short. At this model's measured ~148 tok/s prefill rate, `caps`
+  needed 215s of prefill alone for a 31,863-token prompt; `scaffold`'s ~47k-token prompt implies well
+  over 300s of prefill before a token of `model-info`/`scaffold`'s own — larger — prompts could even
+  begin generating. Distinct from OAI-216 (which is about `--max-seconds` not bounding the command's
+  actual wall clock): this is the model failing to complete even under a budget already double the
+  one OAI-216 shows the harness silently extends to. No budget beyond 600s was tried. **Evidence:
+  [`evidence/222.md`](evidence/222.md)**.
+
+### OAI-224 — qwen3.8-27b produced zero readable replies on hold2-hostile-coercion
+
+- **OAI-224** — **`qwen/qwen3.8-27b` produced zero readable replies on `hold2-hostile-coercion`
+  across 5 attempts.** **Dated instance 2026-08-27**: Stage 7 of the OAI-222 tuning exercise ran
+  this case 5 times (N=5, frozen sampling config, `--cold`) and every single attempt was recorded
+  `unreadable` — not a recall miss, no findings were ever extracted to score. This may be the same
+  mechanism OAI-212 documents (a whole-document clean-or-near-clean reply the harness's acceptors
+  cannot parse), but the raw replies were not captured in a form that lets this item confirm that
+  identity — `bench/run.mjs` was run without `--json`, so only the rendered summary survives, not the
+  raw completion. Filed separately from OAI-212 rather than folded in until that identity is
+  checked, because OAI-212's own dated instances are all on `findings: []` clean replies, and this
+  case has one real defect, so a genuinely different failure shape is also possible. Whichever it
+  is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
+  nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
+
+### OAI-226 — the failure-path reasoning witness is inert on refuseUnusable's completion-shape refusals
+
+- **OAI-226** — **The failure-path reasoning witness is still inert on `refuseUnusable`'s
+  completion-shape refusals — a narrow, unmeasured gap left by OAI-225.** `scripts/lib/completion.mjs`'s
+  `refuseUnusable` throws `EMPTY_COMPLETION`/`STREAM_UNFINISHED`/`BLANK_COMPLETION` from inside
+  `finishAnswer` (outside `collectStream`'s `.answer`-attaching catch) with the accumulator `answer` —
+  and thus `answer.usage` — in scope, but attaches no usage carrier, so `errorReport(...).reasoning`
+  reads `unknown` for these even if a usage frame arrived. **Named mechanism, 2026-08-28 (OAI-225 review
+  ladder)**: raised by codex-adversarial at confidence 0.99 as ship-blocking, but its headline case was
+  **refuted** — under this repo's measured LM-Studio frame ordering the usage frame follows the
+  `finish_reason` frame (`tests/helpers.mjs`, `completion.mjs`'s usage-frame comment), and
+  `STREAM_UNFINISHED` fires only when `!answer.finishReason` (`completion.mjs:146`), so a reply that
+  received usage cannot land there; the dominant mid-reasoning stream drop is already covered via
+  `error.answer.usage`. What genuinely remains is `EMPTY`/`BLANK` completion **with** a usage frame
+  present, and whether those broken replies actually carry one is **unmeasured** — nothing persisted
+  failure-path usage before OAI-225 (2026-07-30's empty-completion instances, `finish_reason: unknown`,
+  were never inspected for a usage frame). So this is measure-first, not a blind fix. **Reopening bar**:
+  a recorded broken-completion failure whose reply carried `completion_tokens_details` yet showed
+  `unknown` on the envelope. **Implementation constraint**: any fix must attach bare `failure.usage =
+  answer.usage`, **never** `failure.answer = answer` — attaching the accumulator would flip
+  `errorReport`'s `partial` non-null for `STREAM_UNFINISHED`'s real text, a persisted-envelope behaviour
+  change beyond the witness's mandate.
+
 ## 2026-08-28 — OAI-221 parked, `not worth doing` as its own item after its witness shipped
 
 Its one actionable code consequence — a record could not say which side of the `enable_thinking`

@@ -11,70 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-222** — **An exhaustive sampling-parameter search bought a real precision gain and no
-  recall gain that survives leaving the panel it was tuned on.** A 7-stage, Codex-designed search
-  over temperature/top_p/top_k/min_p/reasoning_effort/`--structured-output` across ~150 invocations
-  (2026-08-26/27) froze one config per finalist model (`qwen/qwen3.8-27b`, `qwen/qwen3.5-9b`, both
-  `enable_thinking: false` per OAI-221). **Dated instance**: on two hold-out cases the search never
-  touched, both frozen configs anchored zero real defects across 20 combined repetitions
-  (N=5 x 2 cases x 2 models) — not 20 independent misses, since 6 of the 20 were parser failures or
-  a timeout rather than semantic misses (OAI-224). `qwen/qwen3.5-9b`'s config also **regressed**
-  recall on the three hardest full-corpus cases versus its own untuned baseline: 0 of 11 answered
-  reps anchored anything under tuning, vs 3 of 9 at baseline, while its clean-control precision
-  improved (2/3 clean baseline -> 5/5 clean tuned) — the config was selected on a 2-case panel that
-  never included the cases it regressed on, the overfitting risk the tune/hold-out split was
-  designed to catch. Reopening path: fix OAI-212/OAI-224's parser gap first, then test materially
-  different models against a preregistered, structurally diverse corpus with explicit recall and
-  runtime gates — not more sampling search on these two models. **Evidence:
-  [`evidence/222.md`](evidence/222.md)**.
-
-- **OAI-223** — **`qwen/qwen3.8-27b` cannot complete a review of this repo's two largest bench
-  cases within 600 seconds, confirmed directly rather than estimated.** `model-info` (~41k prompt
-  tokens) and `scaffold` (~47k prompt tokens) timed out in every rep of Stages 2, 6 and 7 (12 of 12
-  attempts) at the standard 300s cap. **Dated instance 2026-08-27**: a targeted diagnostic doubled
-  the budget to `--max-seconds 600` for one rep of each case, frozen sampling config, no other
-  change — both still failed, and neither produced any HTTP response at all within the full 600s,
-  not merely a slow generation cut short. At this model's measured ~148 tok/s prefill rate, `caps`
-  needed 215s of prefill alone for a 31,863-token prompt; `scaffold`'s ~47k-token prompt implies well
-  over 300s of prefill before a token of `model-info`/`scaffold`'s own — larger — prompts could even
-  begin generating. Distinct from OAI-216 (which is about `--max-seconds` not bounding the command's
-  actual wall clock): this is the model failing to complete even under a budget already double the
-  one OAI-216 shows the harness silently extends to. No budget beyond 600s was tried. **Evidence:
-  [`evidence/222.md`](evidence/222.md)**.
-
-- **OAI-224** — **`qwen/qwen3.8-27b` produced zero readable replies on `hold2-hostile-coercion`
-  across 5 attempts.** **Dated instance 2026-08-27**: Stage 7 of the OAI-222 tuning exercise ran
-  this case 5 times (N=5, frozen sampling config, `--cold`) and every single attempt was recorded
-  `unreadable` — not a recall miss, no findings were ever extracted to score. This may be the same
-  mechanism OAI-212 documents (a whole-document clean-or-near-clean reply the harness's acceptors
-  cannot parse), but the raw replies were not captured in a form that lets this item confirm that
-  identity — `bench/run.mjs` was run without `--json`, so only the rendered summary survives, not the
-  raw completion. Filed separately from OAI-212 rather than folded in until that identity is
-  checked, because OAI-212's own dated instances are all on `findings: []` clean replies, and this
-  case has one real defect, so a genuinely different failure shape is also possible. Whichever it
-  is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
-  nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
-
-- **OAI-226** — **The failure-path reasoning witness is still inert on `refuseUnusable`'s
-  completion-shape refusals — a narrow, unmeasured gap left by OAI-225.** `scripts/lib/completion.mjs`'s
-  `refuseUnusable` throws `EMPTY_COMPLETION`/`STREAM_UNFINISHED`/`BLANK_COMPLETION` from inside
-  `finishAnswer` (outside `collectStream`'s `.answer`-attaching catch) with the accumulator `answer` —
-  and thus `answer.usage` — in scope, but attaches no usage carrier, so `errorReport(...).reasoning`
-  reads `unknown` for these even if a usage frame arrived. **Named mechanism, 2026-08-28 (OAI-225 review
-  ladder)**: raised by codex-adversarial at confidence 0.99 as ship-blocking, but its headline case was
-  **refuted** — under this repo's measured LM-Studio frame ordering the usage frame follows the
-  `finish_reason` frame (`tests/helpers.mjs`, `completion.mjs`'s usage-frame comment), and
-  `STREAM_UNFINISHED` fires only when `!answer.finishReason` (`completion.mjs:146`), so a reply that
-  received usage cannot land there; the dominant mid-reasoning stream drop is already covered via
-  `error.answer.usage`. What genuinely remains is `EMPTY`/`BLANK` completion **with** a usage frame
-  present, and whether those broken replies actually carry one is **unmeasured** — nothing persisted
-  failure-path usage before OAI-225 (2026-07-30's empty-completion instances, `finish_reason: unknown`,
-  were never inspected for a usage frame). So this is measure-first, not a blind fix. **Reopening bar**:
-  a recorded broken-completion failure whose reply carried `completion_tokens_details` yet showed
-  `unknown` on the envelope. **Implementation constraint**: any fix must attach bare `failure.usage =
-  answer.usage`, **never** `failure.answer = answer` — attaching the accumulator would flip
-  `errorReport`'s `partial` non-null for `STREAM_UNFINISHED`'s real text, a persisted-envelope behaviour
-  change beyond the witness's mandate.
 - **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
   the assembly is where the errors are.** `bench/` writes one record and one report per invocation
   and provides no way to read N of them together: no cross-run table, no diff of two records, no
@@ -212,7 +148,6 @@ its Session footguns section — not here.
   test ratcheting "every `mkdtempSync` is tracked" while the class had one dated instance — now three
   independently-drifting copies plus 22-24 untracked files, so graduation to `tests/structure.test.js`
   should be re-judged here, not assumed either way.
-
 
 - **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
   three marker tests (`:75`, `:95`, `:115`) each read `const messageLine = result.stderr.split('\n')[0]`
