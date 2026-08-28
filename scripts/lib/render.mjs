@@ -3,6 +3,7 @@ import { formatTokens } from './context-guard.mjs';
 import { substitution } from './model-identity.mjs';
 import { effectiveWindow } from './model-info.mjs';
 import { listModelIds, planSelection } from './model-selection.mjs';
+import { UNKNOWN as REASONING_UNKNOWN, reasoningWitness } from './reasoning-witness.mjs';
 import { formatRate, tokensPerSecond } from './throughput.mjs';
 
 /**
@@ -200,6 +201,17 @@ export function renderTaskFooter({
   if (Number.isFinite(usage?.prompt_tokens)) {
     const completion = Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : '?';
     parts.push(`tokens: ${usage.prompt_tokens} in / ${completion} out`);
+  }
+  // The observed reasoning state, read off the same `usage`. Derived inline
+  // rather than from a persisted field, so it stays correct on the `/oai:result`
+  // path (which passes an unvalidated `outcome.usage`) — `reasoningWitness` never
+  // throws — and needs no `RENDER_CONSUMED_FIELDS` entry. The label IS the state
+  // string, so the vocabulary lives only in the leaf; the count rides along when
+  // there is one (`no-reasoning-observed` carries 0, which is falsy). Silent on
+  // `unknown`: there is nothing observed to say, so no part is added.
+  const reasoning = reasoningWitness(usage);
+  if (reasoning.state !== REASONING_UNKNOWN) {
+    parts.push(`reasoning: ${reasoning.state}${reasoning.tokens ? ` (${reasoning.tokens})` : ''}`);
   }
   // On the human path for the same reason prefill is, and it fails the same test
   // if left off: "is this model too slow to use" is a fact that changes what the

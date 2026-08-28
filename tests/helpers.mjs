@@ -120,10 +120,16 @@ export function deltaFrame(delta, extra = {}, model = 'test-model') {
  * it claims. Any frame able to name a model has to take the override.
  */
 export function completionFrames(text, {
-  channel = 'content', usage = true, finishReason = 'stop', model = 'test-model',
+  channel = 'content', usage = true, finishReason = 'stop', model = 'test-model', reasoningTokens,
 } = {}) {
   const key = channel === 'reasoning' ? 'reasoning_content' : 'content';
   const seam = Math.ceil(text.length / 2);
+  // A real reasoning model reports its thinking spend in
+  // `completion_tokens_details.reasoning_tokens` on the usage frame; opting it in
+  // lets a test drive the observed-reasoning witness end to end. Absent by
+  // default so every existing footer assertion sees the same usage it always did.
+  const usageObject = { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 };
+  if (Number.isFinite(reasoningTokens)) usageObject.completion_tokens_details = { reasoning_tokens: reasoningTokens };
   return [
     deltaFrame({ role: 'assistant', content: null }, {}, model),
     deltaFrame({ [key]: text.slice(0, seam) }, {}, model),
@@ -139,7 +145,7 @@ export function completionFrames(text, {
             object: 'chat.completion.chunk',
             model,
             choices: [],
-            usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
+            usage: usageObject,
           },
         ]
       : []),

@@ -9,6 +9,7 @@ import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
+import { reasoningWitness } from './reasoning-witness.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
 function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged, ledger }) {
@@ -190,6 +191,13 @@ export function jsonReport(parsed, context) {
     skippedUnsizedWindow: skipped === 'unsized-window',
     unreadable: target.unreadable,
     usage: result.usage ?? null,
+    // The reasoning state OBSERVED in this reply — `reasoning-observed` /
+    // `no-reasoning-observed` / `unknown`, derived from `usage`'s
+    // `reasoning_tokens`. A fact read off the reply, distinct from
+    // `serverConfig` (what the request carried): the thinking channel is set by
+    // the server's chat template, unreachable over the wire, so the reply is the
+    // only place a run's actual reasoning state is visible.
+    reasoning: reasoningWitness(result.usage),
     finishReason: result.finishReason ?? null,
     // The vendor sampling/reasoning params requested for this run, or null — a
     // fact about the request, same class as `requestedModel`. On this success
@@ -299,6 +307,16 @@ export function errorReport(error) {
     contextSource: allowedSource(error),
     detectedWindow: positiveInteger(error?.detectedWindow) ?? null,
     serverConfig: reconstructServerConfig(error?.serverConfig),
+    // The observed reasoning state, on the failure path too so the success and
+    // failure envelopes stay the same shape. No throw site sets `error.usage` —
+    // the field this reads — so it is currently always `{ state: 'unknown',
+    // tokens: null }`, even for a post-response failure whose reply did report
+    // reasoning (the reply's usage lives on `error.answer` or in the unthrown
+    // `result`, never here). Needs no fail-closed reconstruction the way
+    // `serverConfig` does: `reasoningWitness` reads only a number and returns a
+    // fresh constant-and-primitive object, so nothing off a foreign error can
+    // reach the persisted output through it, and it never throws.
+    reasoning: reasoningWitness(error?.usage),
     // What the model had already produced when the failure cut it off —
     // `stream-collect.mjs` attaches `.answer` to every
     // failure it catches, but most carry nothing (a pre-stream refusal, no

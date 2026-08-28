@@ -8,6 +8,7 @@
 // obvious half-move, leaving the sampling helpers behind and importing them back,
 // is an import cycle waiting to happen.
 import { tokensPerSecond } from '../../scripts/lib/throughput.mjs';
+import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
 import { answeringAttempt } from './attempt-rows.mjs';
 import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 
@@ -175,6 +176,27 @@ function lensSamples(runs) {
 }
 
 /**
+ * The distinct observed reasoning states a case's runs reviewed under —
+ * `reasoning-observed`, `no-reasoning-observed`, `unknown` — first-seen order.
+ *
+ * The thinking channel is set by the server's chat template, unreachable over the
+ * wire, so two models — or one model on two days — can differ on the one variable
+ * that moved review capability most, with nothing in the record to show it. This
+ * surfaces that per case, beside `lens`.
+ *
+ * Derived from `run.report.usage` (never a stored `reasoning` field) for the two
+ * reasons the neighbouring sample helpers share: it is the raw source every record
+ * carries, so a record written before this column existed still classifies
+ * correctly, and the classification then lives in exactly one place; and it reads
+ * `measurable` runs alone, so a substituted or failed run's usage — its reply is
+ * on the wrong model or absent — is disowned here as its lens and timings are.
+ * Empty when no run was measurable.
+ */
+function reasoningSamples(runs) {
+  return [...new Set(measurable(runs).map((run) => reasoningWitness(run.report.usage).state))];
+}
+
+/**
  * How the failed runs failed, split only as far as the record actually says.
  *
  * A timeout and a model error were the same thing in this table until the CLI
@@ -312,6 +334,11 @@ export function caseRows(results, { cold = false } = {}) {
       // row carries the set; `report.mjs` joins it. A silent single value here
       // would reproduce the very lens-conflation the column exists to expose.
       lens: lensSamples(runs),
+      // The distinct observed reasoning states this case's runs ran under — see
+      // `reasoningSamples`. The row carries the set; `report.mjs` joins it. Beside
+      // `lens` because it is the same class of fact: what the review actually was,
+      // not what it found.
+      reasoning: reasoningSamples(runs),
       // See `schemaDegrade` above. Per RUN, never a boolean.
       reported: runs.filter((run) => run.report).length,
       degraded: runs.filter((run) => run.report?.degraded).length,

@@ -6,6 +6,7 @@
 // deliberately, for the reason that file gives: that module is pure
 // string-building, and this one writes to stdout and throws.
 import { requireAnswer } from './client.mjs';
+import { reasoningWitness } from './reasoning-witness.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { artifactNote } from './task-artifact.mjs';
 import { artifactKind, templateNotes } from './task-template.mjs';
@@ -55,6 +56,11 @@ function jsonTaskReport(outcome, answer) {
     // and "nothing could check it" are three different failures.
     artifact: outcome.artifact ?? null,
     usage: result.usage ?? null,
+    // The reasoning state observed in this reply, the same witness the review
+    // envelope carries — read off `usage`, distinct from the requested
+    // `serverConfig`. The task FAILURE path needs no edit: it reuses the shared
+    // review `errorReport`, which already carries this field.
+    reasoning: reasoningWitness(result.usage),
     finishReason: result.finishReason ?? null,
     // The vendor sampling/reasoning params requested for this run, or null — a
     // fact about the request, echoed the same way the review envelope does. This

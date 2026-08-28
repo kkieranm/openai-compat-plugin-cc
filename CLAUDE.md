@@ -44,6 +44,22 @@ background task failure records the fields `null`, the same posture as `sampling
 (`bench/run.mjs`, `bench/review-sweep.mjs`, bounded by `sweep-ledger.mjs`'s `boundNote`) is the operator's
 own annotation of what no API exposes, kept on the bench record alone, off the CLI envelope and `jobs.db`.
 
+`scripts/lib/reasoning-witness.mjs`'s `reasoningWitness(usage)` classifies a reply's OBSERVED reasoning
+— `reasoning-observed`/`no-reasoning-observed`/`unknown`, the raw count beside the label — off
+`usage.completion_tokens_details.reasoning_tokens`. A separate axis from `run-context.mjs`'s
+`serverConfig`: that records what the request CARRIED, this what the reply DID, since the thinking
+channel is set by the server's chat template (`enable_thinking`) and no OpenAI-compatible request field
+reaches it (OAI-221). A leaf that never throws (the read is `try/catch`-wrapped against a hostile
+getter; `Number.isFinite` rejects a non-number without coercing) and builds a fresh
+constant-plus-number object, so it needs no fail-closed reconstruction the way pass-through
+`serverConfig` does — `review-report.mjs`'s `jsonReport`/`errorReport` and `task-report.mjs`'s
+`jsonTaskReport` carry it (the shared `errorReport` covers both failure paths, currently always `unknown`
+because no throw site sets `error.usage` — a post-response failure whose reply reported reasoning keeps that
+usage on `error.answer` or the unthrown `result`, not on the error this reads). `bench/lib/report.mjs`'s per-case `reasoning` column
+(`case-rows.mjs`'s `reasoningSamples`) derives from `report.usage`, never a stored field, so a record
+written before the column existed still classifies; the interactive footer derives it inline and stays
+silent on `unknown`. `no-reasoning-observed` is a provider-reported zero and is never read as "off".
+
 `scripts/lib/git-diff.mjs` sends each changed file whole alongside the diff **when the window can be
 sized** — an unsizeable one skips that rung and the report says so — taking content from the
 revision the diff describes; `collectTarget` splits pinned `files` (untracked, `--file` — covered by

@@ -105,8 +105,11 @@ function unmatchedCell(row) {
  * a pick, is the point: `whole@154624 / hunks@61696` in one cell is the divergence
  * a silent single value would hide.
  */
-function lensCell(lens) {
-  return lens.length > 0 ? lens.join(' / ') : '—';
+// The cell for a deduped set of labels — the lens rungs, the reasoning states —
+// joined, or an em dash when no run was measurable. One helper across both
+// columns, the same way `rangeCell` already serves prefill and generation.
+function setCell(values) {
+  return values.length > 0 ? values.join(' / ') : '—';
 }
 
 function table(rows) {
@@ -120,8 +123,8 @@ function table(rows) {
     // prompt-token count is small, and reading the pair together is what tells a
     // reviewer two rows were not reviewed at the same depth.
     '| case | defects found | unresolved | anchored | unmatched | scored | truncated | unreadable | failed '
-    + '| lens | prompt tokens | prefill s | generate s | gen tok/s |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    + '| lens | reasoning | prompt tokens | prefill s | generate s | gen tok/s |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   ];
   for (const row of rows) {
     // `scored` is printed beside `runs` so the row's own arithmetic can be
@@ -148,7 +151,7 @@ function table(rows) {
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
       + `| ${row.anchored} | ${unmatchedCell(row)} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
-      + `| ${lensCell(row.lens)} | ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
+      + `| ${setCell(row.lens)} | ${setCell(row.reasoning)} | ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
     );
   }
   return lines;

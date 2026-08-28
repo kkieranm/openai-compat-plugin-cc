@@ -383,6 +383,17 @@ function lensRun({ hunksOnly = false, contextWindow, skippedUnsizedWindow = fals
   return { ...run, diffOnly, report: { ...run.report, hunksOnly, contextWindow, skippedUnsizedWindow } };
 }
 
+// A good run reporting `reasoningTokens` in its usage. `undefined` leaves the
+// usage detail off entirely — the shape of a record written before this column
+// existed, which the column must still classify (as `unknown`) rather than crash.
+function reasoningRun(reasoningTokens) {
+  const run = goodRun();
+  const usage = reasoningTokens === undefined
+    ? run.report.usage
+    : { ...run.report.usage, completion_tokens_details: { reasoning_tokens: reasoningTokens } };
+  return { ...run, report: { ...run.report, usage } };
+}
+
 test('the lens column names the rung and the window that decided it', () => {
   assert.equal(cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 })]), 'lens'), 'whole@154624');
   assert.equal(cell(render([lensRun({ hunksOnly: true, contextWindow: 61696 })]), 'lens'), 'hunks@61696');
@@ -431,6 +442,36 @@ test('a substituted run does not lend its lens to the row', () => {
     cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 }), substitutedHunks]), 'lens'),
     'whole@154624',
   );
+});
+
+test('the reasoning column names the observed state, a zero apart from a positive count', () => {
+  assert.equal(cell(render([reasoningRun(5998)]), 'reasoning'), 'reasoning-observed');
+  // A provider that counted and got zero is no-reasoning-observed, never "off".
+  assert.equal(cell(render([reasoningRun(0)]), 'reasoning'), 'no-reasoning-observed');
+});
+
+test('a record carrying only usage with no reasoning detail reads unknown, not a crash', () => {
+  // The backward-compatibility guarantee: a bench record written before this
+  // column existed has `report.usage` but no reasoning detail, and the column
+  // derives from `usage` so it classifies rather than throwing.
+  assert.equal(cell(render([reasoningRun(undefined)]), 'reasoning'), 'unknown');
+});
+
+test('two runs at different reasoning states BOTH show, deduped when they agree', () => {
+  assert.equal(
+    cell(render([reasoningRun(5998), reasoningRun(0)]), 'reasoning'),
+    'reasoning-observed / no-reasoning-observed',
+  );
+  assert.equal(cell(render([reasoningRun(5998), reasoningRun(4200)]), 'reasoning'), 'reasoning-observed');
+});
+
+test('a case whose every run failed shows no reasoning state, not a fabricated one', () => {
+  assert.equal(cell(render([{ diffOnly: false, error: 'the server refused' }]), 'reasoning'), '—');
+});
+
+test('a substituted run does not lend its reasoning state to the row', () => {
+  const substituted = { ...reasoningRun(5998), error: 'substituted', reason: 'model-substituted' };
+  assert.equal(cell(render([reasoningRun(0), substituted]), 'reasoning'), 'no-reasoning-observed');
 });
 
 test('the table stays well-formed: header, delimiter and every data row have equal cell counts', () => {

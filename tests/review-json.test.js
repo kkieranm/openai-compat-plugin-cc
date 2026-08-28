@@ -65,9 +65,17 @@ test('--json emits one object carrying the findings and every caveat field', asy
     // asked for. tests/review-unsized-window.test.js owns the behaviour; this
     // pins the key's presence, which is what a harness reads.
     'skippedUnsizedWindow',
+    // The observed reasoning state read off the reply's usage — a harness that
+    // compares two runs needs to know which side of the thinking switch each ran
+    // on, and a missing key reads as `undefined`, the same silent-reassurance
+    // hazard as every other caveat here.
+    'reasoning',
   ]) {
     assert.ok(key in report, `--json must report ${key}`);
   }
+  // This scenario's usage frame carries no reasoning_tokens, so the witness is
+  // `unknown` — but it is still the `{ state, tokens }` shape, never a bare null.
+  assert.deepEqual(report.reasoning, { state: 'unknown', tokens: null });
   assert.equal(report.contextChecked, true, 'this scenario configures a window, so the guard ran');
   assert.equal(report.contextNote, null, 'and there is nothing to warn about');
   assert.equal(report.provider, 'local');
@@ -91,6 +99,56 @@ test('an unreadable reply is parsed:false with the raw text, never an empty find
   // be said about whether it hit the cap.
   assert.equal(report.atCap, null);
   assert.equal(report.analysisCut, null);
+});
+
+test('a reply reporting reasoning tokens carries reasoning-observed with the count', async () => {
+  const { dir, server, configPath } = await scenario(
+    replies(clean, { reasoningTokens: 5998 }),
+    { contextLength: 131_072 },
+  );
+
+  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = parseReport(result);
+  assert.deepEqual(report.reasoning, { state: 'reasoning-observed', tokens: 5998 });
+});
+
+test('a reply reporting exactly zero reasoning tokens is no-reasoning-observed, never off', async () => {
+  const { dir, server, configPath } = await scenario(
+    replies(clean, { reasoningTokens: 0 }),
+    { contextLength: 131_072 },
+  );
+
+  const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = parseReport(result);
+  assert.deepEqual(report.reasoning, { state: 'no-reasoning-observed', tokens: 0 });
+});
+
+test('the text footer names an observed reasoning state, and stays silent on unknown', async () => {
+  const observed = await scenario(replies(clean, { reasoningTokens: 5998 }), { contextLength: 131_072 });
+  const withReasoning = await runCompanion(['review'], { configPath: observed.configPath, cwd: observed.dir });
+  await observed.server.close();
+  assert.match(withReasoning.stdout, /reasoning: reasoning-observed \(5998\)/);
+
+  // An explicit zero -> no-reasoning-observed, rendered WITHOUT a count: the
+  // `reasoning.tokens ? ... : ''` branch is falsy on 0, and the zero case is the
+  // only route to it (observed always carries a positive count, unknown prints
+  // nothing), so this one assertion pins that branch.
+  const zero = await scenario(replies(clean, { reasoningTokens: 0 }), { contextLength: 131_072 });
+  const noneObserved = await runCompanion(['review'], { configPath: zero.configPath, cwd: zero.dir });
+  await zero.server.close();
+  assert.match(noneObserved.stdout, /reasoning: no-reasoning-observed/);
+  assert.doesNotMatch(noneObserved.stdout, /no-reasoning-observed \(/);
+
+  // No reasoning_tokens reported -> unknown -> the footer says nothing about it,
+  // rather than printing a misleading "off".
+  const quiet = await scenario(replies(clean), { contextLength: 131_072 });
+  const noReasoning = await runCompanion(['review'], { configPath: quiet.configPath, cwd: quiet.dir });
+  await quiet.server.close();
+  assert.doesNotMatch(noReasoning.stdout, /reasoning:/);
 });
 
 test('a cut analysis reaches the JSON, so a guillotined run cannot score as clean', async () => {
@@ -232,4 +290,9 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   assert.equal('findings' in envelope, false);
   assert.equal('parsed' in envelope, false);
   assert.match(envelope.message, /ran out of tokens/);
+  // The failure envelope carries the reasoning witness too, so its shape matches
+  // the success envelope's. The witness reads `error.usage`, which no throw site
+  // sets — this reply's own usage is dropped when the token-exhaustion error is
+  // thrown — so it is the `unknown` witness: present, never absent.
+  assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
 });

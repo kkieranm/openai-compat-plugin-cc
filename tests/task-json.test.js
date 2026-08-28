@@ -45,6 +45,10 @@ test('--json emits one parseable object carrying the run identity and the answer
     assert.ok('model' in envelope);
     assert.equal(typeof envelope.durationMs, 'number');
     assert.ok('finishReason' in envelope && 'usage' in envelope);
+    // The observed reasoning witness the review envelope also carries. This
+    // reply reports no reasoning_tokens, so it is `unknown` — but present, and
+    // the same `{ state, tokens }` shape.
+    assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
   } finally {
     await server.close();
   }
@@ -136,6 +140,9 @@ test('a failed run is machine-readable too, and still exits nonzero', async () =
     assert.equal(envelope.error, true);
     assert.equal(typeof envelope.message, 'string');
     assert.ok('reason' in envelope && 'attempts' in envelope && 'requestedModel' in envelope);
+    // The task failure path reuses the shared review errorReport, so it carries
+    // the reasoning witness too — `unknown`, since no throw site sets `error.usage`.
+    assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
   } finally {
     await server.close();
   }
