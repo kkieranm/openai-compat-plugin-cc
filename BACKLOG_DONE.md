@@ -1,3 +1,47 @@
+## 2026-08-28 — OAI-219 shipped: a control case's precision measurement is named in the bench report (`d64b1a3`)
+
+A control case (no code, no catalogued defects) measures precision — every unmatched finding there is
+a false positive by construction — but the report printed that count in the same `unmatched` column as
+an ordinary case's scoring-artifact unmatched, distinguished only by a caveat that hard-coded the id
+`docs-only` (stale since `hold3-docs-only` was added, and present in every default run). Resolution took
+the item's second option ("name `unmatched` on a no-code case what it is"), not the first (a dedicated
+precision figure — no consumer, Option B declined):
+
+- The manifest `control: true` flag is propagated onto each report row by `caseRows` and read by **one**
+  predicate at every sink — `recallCell`'s `— (control)`, `unmatchedCell`, the caveat — replacing the
+  `listed === 0` proxy.
+- `unmatchedCell` marks a **measured** control's cell `N (false pos)`, and an **em dash** when no run
+  scored it (a precision figure over zero observations is a measurement nobody made — the same honesty
+  `tokenCell` already keeps; found by the review ladder, not the plan).
+- The caveat names its control cases **structurally from the rows**, only the scored ones (matching the
+  cell), replacing the hard-coded `docs-only` sentence — a second control had already made it stale.
+- `corpus.mjs`'s `validateDefects` enforces the invariant **both ways**: a zero-defect case must set the
+  flag, and the flag forbids **any** defect claim, `defects` or `dropped` (a dropped claim is a
+  real-but-unlocated defect an unmatched finding could be catching, so a control with one is not a clean
+  target — the guard the plan's first draft only half-wrote; the loader's own hint steers a
+  `defects:[]`+`dropped:[…]` author straight into it).
+
+Converged via Codex steer + a fable agent (Option A, unanimous). Dual-approved plan (two gate rounds:
+round 1 caught the unenforced converse invariant). Five-pass review ladder: pass 1 found C1 (the
+`0 (false pos)`-over-zero-runs honesty defect), pass 2 C3 (caveat/cell inconsistency the em-dash
+introduced), pass 3 F3 (the dropped-claim guard gap) — with C4 (a substituted control run in the
+`## Unmatched findings` supplement) **refuted by an executable repro** (a substituted run has `error`
+set so `run.mjs` attaches no `run.score`, so it never reaches the supplement). Pass 4 converged, pass 5
+(full) dual-approved with F5 (an invalid remediation path in the new guard's hint) fixed in an exempt
+post-approval batch. 1311 tests green; each new conditional and the propagation invariant mutation-proved.
+
+**Disclosed residue, recorded not filed (below the worth bar — structurally reachable, historically
+unexercised: 0 of 660 recorded `finishReason`s):** the pre-existing `## Unmatched findings` supplement
+(`report.mjs:181`, a documented raw superset residue) reads `run.score?.unmatched` over ALL runs. A
+`finishReason: 'length'` reply whose findings JSON completed before the cut DOES parse (`refuseUnusable`
+does not refuse a length reply carrying content; the token-exhaustion throw is on the `!parsed` branch),
+so such a run carries a score yet is bucketed `truncated` (excluded from `scored`). A control whose only
+run is that shape would show cell `—` while the supplement lists its findings — and the comments at
+`run-buckets.mjs:32-33` / `caveats.mjs:40-42` calling truncated runs "never parsed" are false for that
+reachable member. Untouched by this change (all pre-existing, not in the diff); the supplement is a
+deliberate superset so filtering it would regress its purpose. Left as residue rather than filed per the
+tracker's worth bar. Evidence: this feature's review transcript.
+
 ## 2026-08-28 — OAI-213 shipped: the sweep report escapes untrusted text at every render sink (`96d31d6`)
 
 New `bench/lib/markdown-safe.mjs` (`safeInline`/`safeBlockquoteLines`/`displayReason`, one

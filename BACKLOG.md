@@ -87,23 +87,6 @@ its Session footguns section — not here.
   case has one real defect, so a genuinely different failure shape is also possible. Whichever it
   is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
   nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
-- **OAI-219** — **The one number that decides whether a reviewer is usable is not reported as a
-  number.** `docs-only` is the corpus's clean control — it contains no code — so the report states
-  that unmatched findings there "turn unmatched into false-positive by construction". That makes it
-  the only case whose unmatched count is a precision measurement rather than a scoring artifact, and
-  it is printed in the same `unmatched` column as every other case, distinguished only by prose the
-  reader has to know to apply. There is no per-run precision figure and no control-specific row.
-  **Dated instance 2026-08-25/26**: comparing fourteen models required extracting that column from
-  each report by hand and applying the rule mentally; the resulting comparison misreported at least
-  one model's control behaviour before it was caught, and a later verified re-run moved three
-  configurations across the pass/fail line on this measurement alone (`qwen/qwen3.8-27b` at both
-  `low` and `medium`, and `google/gemma-4-e4b`, each invented a defect on the control). **The
-  silent-failure shape is that a model with zero recall and zero control findings and a model with
-  zero recall and three control findings print an identical-looking row** — same `0/N` in every
-  defect column — while one is merely useless and the other is actively harmful to a reviewer's
-  time. Whoever takes it should decide whether the control earns its own reported figure or whether
-  `unmatched` on a no-code case should simply be named what it is.
-
 - **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
   the assembly is where the errors are.** `bench/` writes one record and one report per invocation
   and provides no way to read N of them together: no cross-run table, no diff of two records, no
