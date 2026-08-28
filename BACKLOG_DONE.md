@@ -1,3 +1,40 @@
+## 2026-08-28 — OAI-225 shipped: the failure envelope's reasoning witness is observable on the failure path (`439761c`)
+
+OAI-221's `reasoning: reasoningWitness(error?.usage)` on `errorReport` was inert — no throw site set
+`error.usage`, so every failure read `{state:'unknown', tokens:null}`, including token-exhaustion (the
+mode it most wanted to observe). Fix attaches the reply's usage at each post-hoc throw site with it in
+scope, in two carriers matching what each site already holds:
+
+- **bare `error.usage`** where there is no reply envelope — `review-unparsed.mjs`'s token-exhaustion
+  throw, `client.mjs`'s three `requireAnswer` refusals (length/reasoning-only/empty-answer).
+- **`usage` on the `.answer` reply envelope** where one is built — `review-request.mjs`'s
+  `reasoningOnlyFailure`/`salvageEmptyFailure`, via a new `replyEnvelope(result)` helper (also
+  consolidating three drift-prone `{reasoning, content}` literals, from `/simplify`).
+
+`errorReport` reads `reasoningWitness(error?.usage ?? error?.answer?.usage)`; the carriers are disjoint
+by site (the bare-`error.usage` sites fire post-stream, never through `stream-collect`'s catch), so the
+`??` order is defensive. The bare carrier is **load-bearing, not incidental**: reusing `.answer` at the
+envelope-less sites would start persisting their reasoning as a `partial`. Usage never serializes raw —
+it reaches only `reasoningWitness`, which returns a validated number, so the jobs.db fail-closed posture
+is unchanged. The task failure path shares `errorReport`, so it gains the witness too, including
+background tasks (whose run-context fields stay `null` but whose `requireAnswer` failures now carry
+usage). Tests pin both carrier routes separately plus a positive control (no `completion_tokens_details`
+-> `unknown`), reusing `completionFrames`' existing `reasoningTokens` option.
+
+No product forks. Dual-approved plan (Codex + independent Claude verdict, one round). Review ladder: one
+full pass + a verification-only pass. Pass 1 accepted **F1** (an overclaiming comment + CLAUDE.md note
+that said the witness reads `unknown` in only two cases — corrected to enumerate all three: no usage
+frame, a frame with no `reasoning_tokens` detail, or a `refuseUnusable` refusal that attaches no
+carrier; fixed in the pass-1 exempt batch) and deferred **F2** to **OAI-226**. F2 (the `refuseUnusable`
+gap) was raised by codex-adversarial at 0.99 as "do not ship"; an independent fable convergence agent
+**refuted** the ship-blocking framing on the measured LM-Studio frame ordering (usage frame follows
+`finish_reason`, so `STREAM_UNFINISHED` — gated on `!finishReason` — cannot carry usage; the dominant
+drop is already covered via `error.answer.usage`), leaving only an unmeasured `EMPTY`/`BLANK`-with-usage
+kernel → measure-first backlog item. Both verdict approvers accepted the deferral. Mutation check: two
+independent mutations each red exactly their named test (drop the `?? error?.answer?.usage` fallback ->
+reasoning-only test; drop the `review-unparsed.mjs` attach -> token-exhaustion test). 1331 tests green.
+Plan: `plans/oai-225-usage-on-failure-path.md`.
+
 ## 2026-08-28 — OAI-219 shipped: a control case's precision measurement is named in the bench report (`d64b1a3`)
 
 A control case (no code, no catalogued defects) measures precision — every unmatched finding there is

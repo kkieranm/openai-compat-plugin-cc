@@ -55,24 +55,26 @@ its Session footguns section — not here.
   is, this is the second harness-side reason (with OAI-223's capacity ceiling) that qwen3.8 answered
   nothing on 2 of its 3 Stage 7 cases despite never having a chance to demonstrate recall on them.
 
-- **OAI-225** — **The failure envelope's reasoning witness is inert on the one failure mode it would
-  most want to observe.** OAI-221's observed reasoning witness (shipped `c0711d9`) reads `error.usage`
-  on the failure path, but no throw site sets it, so `errorReport(...).reasoning` is always
-  `{state: 'unknown', tokens: null}` — including on a token-exhaustion failure, where the model spent
-  its whole budget reasoning and a real `usage` carrying `reasoning_tokens` was in scope at the throw.
-  **Named mechanism, 2026-08-28 (review of OAI-221)**: `scripts/lib/review-unparsed.mjs`'s
-  token-exhaustion throw and `scripts/lib/client.mjs`'s `requireAnswer` refusals (`token-limit`,
-  `reasoning-only`, `empty-answer`) each construct a new `UserError` without copying the in-scope
-  `result.usage`; a Codex executable probe confirmed both `unparsedReply` and `requireAnswer` throw
-  errors whose `.usage` is `undefined`. On a late stream failure the reply's usage instead sits on
-  `error.answer.usage` (`stream-collect.mjs` attaches `.answer`); `errorReport` reads `error.usage`
-  and so misses both routes. Deliberately deferred from OAI-221's ladder (owner-decided): the approved
-  plan scoped the failure witness to always-`unknown`, and the bench self-labeling the witness exists
-  for reads only successful/`measurable` runs, so nothing ships broken — the field is honestly
-  labelled `unknown`. Fix would attach the reply's usage to the error at those throw sites
-  (`error.answer.usage` for stream shapes, `result.usage` for the post-hoc throws). **Implementation
-  note**: proving a fix needs a new failure fixture that carries `completion_tokens_details`, since the
-  existing truncated-reply test's usage frame has none and would read `unknown` even after the fix.
+- **OAI-226** — **The failure-path reasoning witness is still inert on `refuseUnusable`'s
+  completion-shape refusals — a narrow, unmeasured gap left by OAI-225.** `scripts/lib/completion.mjs`'s
+  `refuseUnusable` throws `EMPTY_COMPLETION`/`STREAM_UNFINISHED`/`BLANK_COMPLETION` from inside
+  `finishAnswer` (outside `collectStream`'s `.answer`-attaching catch) with the accumulator `answer` —
+  and thus `answer.usage` — in scope, but attaches no usage carrier, so `errorReport(...).reasoning`
+  reads `unknown` for these even if a usage frame arrived. **Named mechanism, 2026-08-28 (OAI-225 review
+  ladder)**: raised by codex-adversarial at confidence 0.99 as ship-blocking, but its headline case was
+  **refuted** — under this repo's measured LM-Studio frame ordering the usage frame follows the
+  `finish_reason` frame (`tests/helpers.mjs`, `completion.mjs`'s usage-frame comment), and
+  `STREAM_UNFINISHED` fires only when `!answer.finishReason` (`completion.mjs:146`), so a reply that
+  received usage cannot land there; the dominant mid-reasoning stream drop is already covered via
+  `error.answer.usage`. What genuinely remains is `EMPTY`/`BLANK` completion **with** a usage frame
+  present, and whether those broken replies actually carry one is **unmeasured** — nothing persisted
+  failure-path usage before OAI-225 (2026-07-30's empty-completion instances, `finish_reason: unknown`,
+  were never inspected for a usage frame). So this is measure-first, not a blind fix. **Reopening bar**:
+  a recorded broken-completion failure whose reply carried `completion_tokens_details` yet showed
+  `unknown` on the envelope. **Implementation constraint**: any fix must attach bare `failure.usage =
+  answer.usage`, **never** `failure.answer = answer` — attaching the accumulator would flip
+  `errorReport`'s `partial` non-null for `STREAM_UNFINISHED`'s real text, a persisted-envelope behaviour
+  change beyond the witness's mandate.
 - **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
   the assembly is where the errors are.** `bench/` writes one record and one report per invocation
   and provides no way to read N of them together: no cross-run table, no diff of two records, no
