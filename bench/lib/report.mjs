@@ -72,8 +72,31 @@ function tokenCell({ values, measured, completed }) {
  * observation.
  */
 function recallCell(row) {
-  if (row.listed === 0) return '— (control)';
+  if (row.control) return '— (control)';
   return `${row.found}/${row.opportunities} (${pct(row.found, row.opportunities)})`;
+}
+
+/**
+ * The unmatched count, named for what it actually is on this row.
+ *
+ * On an ordinary case an unmatched finding may be a real defect the anchor-line
+ * matcher missed in different words, so the bare count is right and the caveat
+ * says why it is not a false-positive tally. On a control — a clean target with
+ * no catalogued defects — there is nothing for a finding to have matched, so
+ * every unmatched finding is a false positive by construction. The cell says so
+ * itself, rather than leaving a reader to carry a prose rule over to the right
+ * column. Marked for every measured control value, `0 (false pos)` included — an
+ * unmarked control `0` is indistinguishable from an ordinary `0`, when one is
+ * perfect precision and the other is an ordinary scoring artifact.
+ *
+ * But an em dash, not `0 (false pos)`, when NO run was scored: with nothing
+ * measured there is no precision to claim, and the affirmative label would be a
+ * measurement nobody made — exactly the trap `tokenCell` guards against for a
+ * case whose runs all failed.
+ */
+function unmatchedCell(row) {
+  if (!row.control) return `${row.unmatched}`;
+  return row.scored === 0 ? '—' : `${row.unmatched} (false pos)`;
 }
 
 /**
@@ -124,7 +147,7 @@ function table(rows) {
     const failedCell = why.length > 0 ? `${row.failed} (${why.join(', ')})` : `${row.failed}`;
     lines.push(
       `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
-      + `| ${row.anchored} | ${row.unmatched} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
+      + `| ${row.anchored} | ${unmatchedCell(row)} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
       + `| ${lensCell(row.lens)} | ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
     );
   }

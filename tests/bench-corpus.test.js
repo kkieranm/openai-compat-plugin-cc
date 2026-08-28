@@ -206,6 +206,43 @@ test('a case with no defects loads only when it declares itself a control', () =
   });
 });
 
+// The other half of the same either/or, and the positive control for it. A
+// control measures precision on a clean target, so its unmatched findings are
+// false positives by construction — a claim the report now prints in the case's
+// own cell. A manifest that sets the flag AND lists defects makes two
+// contradictory claims at once, so the loader refuses it rather than letting the
+// report label a genuine recall case a precision control.
+test('a control that also lists defects is refused — the two claims contradict', () => {
+  const contradictory = { ...MANIFEST, control: true };
+  assert.throws(() => loadCases(writeCorpus(contradictory, TREE)), (error) => {
+    assert.equal(error.name, 'UserError');
+    assert.match(error.message, /"control": true/);
+    assert.match(error.message, /defect/);
+    return true;
+  });
+});
+
+// A control with DROPPED claims is refused too: a dropped defect is a historical
+// claim that could not be located, so an unmatched finding there may be a real
+// catch of it — the "every finding is a false positive by construction" premise
+// the report's `(false pos)` cell rests on does not hold. Without this, the
+// zero-defect hint would steer a `defects: []` + `dropped: [...]` case into a
+// control it does not qualify as.
+test('a control with dropped defect claims is refused — it is not a clean target', () => {
+  const withDropped = {
+    ...MANIFEST,
+    defects: [],
+    control: true,
+    dropped: [{ claim: 'a defect history claims but the snapshot lost', reason: 'file not present in this snapshot' }],
+  };
+  assert.throws(() => loadCases(writeCorpus(withDropped, TREE)), (error) => {
+    assert.equal(error.name, 'UserError');
+    assert.match(error.message, /"control": true/);
+    assert.match(error.message, /dropped claim/);
+    return true;
+  });
+});
+
 // The corpus that actually ships, not a fixture. Every manifest here was
 // hand-authored against a historical blob, and a mistyped path or a range
 // nobody filled in would surface as the reviewer missing a defect rather than

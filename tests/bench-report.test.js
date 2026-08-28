@@ -244,6 +244,100 @@ test('the control case is not reported as a recall failure', () => {
   assert.match(report, /— \(control\)/, 'zero defects found out of zero is not 0%');
 });
 
+/** One finding that matched no catalogued defect. */
+function unmatchedFinding() {
+  return { file: 'x.mjs', line: 9, severity: 'medium', summary: 'invented a defect' };
+}
+/** goodRun, re-scored with one unmatched finding and the given recall context. */
+function runWithUnmatched({ byDefect, recall }) {
+  return { ...goodRun(), score: { matched: [], unmatched: [unmatchedFinding()], byDefect, recall } };
+}
+
+// On a control every unmatched finding is a false positive by construction, so
+// the cell names it — while an ordinary case's unmatched may be a real defect
+// the anchor matcher missed in different words, so it stays a bare count. The
+// negative twin is scoped to the CELL, never the whole report: the unconditional
+// caveat legitimately contains the words "false positive".
+test('a control names its unmatched cell as false positives; an ordinary case does not', () => {
+  const control = { ...CASE, defects: [], control: true, dropped: [] };
+  const controlReport = renderReport([{ caseDef: control, runs: [runWithUnmatched({ byDefect: [], recall: { total: 0, found: 0, anchored: 0, ranged: 0 } })] }], {
+    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false,
+  });
+  assert.equal(cell(controlReport, 'unmatched'), '1 (false pos)');
+
+  // The ordinary case's unmatched cell is a bare count — the exact-string equal
+  // pins that it is NOT marked, scoped to the cell rather than the report (the
+  // unconditional caveat legitimately contains "false positive").
+  const ordinaryReport = render([runWithUnmatched({ byDefect: [{ id: 'the-defect', found: false, via: null }], recall: { total: 1, found: 0, anchored: 0, ranged: 0 } })]);
+  assert.equal(cell(ordinaryReport, 'unmatched'), '1');
+
+  // Including the zero case: an unmarked control `0` is indistinguishable from an
+  // ordinary `0`, so the label must show even when precision is perfect.
+  const cleanControl = renderReport([{ caseDef: control, runs: [goodRun()] }], {
+    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false,
+  });
+  assert.equal(cell(cleanControl, 'unmatched'), '0 (false pos)');
+});
+
+// A control whose runs all failed measured no precision, so its unmatched cell is
+// an em dash — `0 (false pos)` there would claim perfect precision over a
+// measurement nobody made, the same trap `tokenCell` guards against.
+test('a control with no scored run shows no false-positive figure', () => {
+  const control = { ...CASE, defects: [], control: true, dropped: [] };
+  const failed = { diffOnly: false, error: new Error('boom'), reason: 'deadline-timeout' };
+  const report = renderReport([{ caseDef: control, runs: [failed] }], {
+    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false,
+  });
+  assert.equal(cell(report, 'unmatched'), '—');
+});
+
+// The caveat names only MEASURED controls, so its claim ("the table marks their
+// `unmatched` cell `(false pos)`") stays true: an all-failed control shows an em
+// dash, so naming it would contradict the table. Mixed report — a scored control
+// (`ctrl-ok`) and an all-failed one (id `sample`, so the `cell` helper reads it).
+test('the caveat names only measured controls, matching the cell', () => {
+  const measured = { ...CASE, id: 'ctrl-ok', defects: [], control: true, dropped: [] };
+  const dead = { ...CASE, id: 'sample', defects: [], control: true, dropped: [] };
+  const failed = { diffOnly: false, error: new Error('boom'), reason: 'deadline-timeout' };
+  const report = renderReport(
+    [{ caseDef: measured, runs: [runWithUnmatched({ byDefect: [], recall: { total: 0, found: 0, anchored: 0, ranged: 0 } })] },
+      { caseDef: dead, runs: [failed] }],
+    { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false },
+  );
+  const caveatLine = report.split('\n').find((line) => line.includes('"Unmatched" is not "false positive"'));
+  assert.ok(caveatLine, 'the unconditional caveat must be present');
+  assert.match(caveatLine, /`ctrl-ok`/, 'the measured control is named');
+  assert.doesNotMatch(caveatLine, /`sample`/, 'the all-failed control shows an em dash, so the caveat must not name it');
+  assert.equal(cell(report, 'unmatched'), '—', 'and its cell (id `sample`) is an em dash, not `(false pos)`');
+});
+
+// The false-positive caveat names its control cases from the rows, so a second
+// (or third) control cannot recreate the staleness the hard-coded `docs-only`
+// sentence carried — and it is omitted entirely when the run has no control.
+test('the false-positive caveat names every control structurally, not a hard-coded id', () => {
+  const one = { ...CASE, id: 'ctrl-one', defects: [], control: true, dropped: [] };
+  const two = { ...CASE, id: 'ctrl-two', defects: [], control: true, dropped: [] };
+  const withControls = renderReport(
+    [{ caseDef: one, runs: [goodRun()] }, { caseDef: two, runs: [goodRun()] }],
+    { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false },
+  );
+  // Match the ids INSIDE the caveat's own line, never the whole report: the table
+  // already prints every row id in backticks, so a report-wide match would pass on
+  // the table rows alone and pin nothing about the caveat's structural naming.
+  const caveatLine = withControls.split('\n').find((line) => line.includes('"Unmatched" is not "false positive"'));
+  assert.ok(caveatLine, 'the unconditional caveat must be present');
+  assert.match(caveatLine, /false positive by construction/);
+  assert.match(caveatLine, /`ctrl-one`/, 'the first control must be named in the caveat');
+  assert.match(caveatLine, /`ctrl-two`/, 'the second must be too — this is the staleness the hard-coded id caused');
+  assert.doesNotMatch(caveatLine, /docs-only/, 'no control named here is docs-only, so the caveat must not invent it');
+
+  // Twin: an ordinary-only run keeps the unconditional half and drops the clause.
+  const ordinaryOnly = render([goodRun()]);
+  const ordinaryCaveat = ordinaryOnly.split('\n').find((line) => line.includes('"Unmatched" is not "false positive"'));
+  assert.ok(ordinaryCaveat, 'the unconditional caveat still fires with no control');
+  assert.doesNotMatch(ordinaryCaveat, /false positive by construction/, 'no control, so no precision clause');
+});
+
 
 // The flag is worth nothing to a reader who cannot tell which arm they
 // are holding, so the artifact carries it twice: in the header, where two report

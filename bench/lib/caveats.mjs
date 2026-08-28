@@ -291,10 +291,23 @@ function caveats(rows, runsPerCase, flags) {
       + 'recall; the listed and scoreable counts are printed so the gap is visible rather than implied.',
     );
   }
+  // The control clause names its cases from the rows, never a hard-coded id: a
+  // second control (`hold3-docs-only`) already made the old `docs-only`-only
+  // sentence wrong for every default run, and a third would do it again. Named
+  // only when scored (`row.scored > 0`), since that is exactly when the cell
+  // shows `(false pos)` — an all-failed control shows an em dash, so naming it
+  // here would claim a marking the table does not display. Omitted entirely when
+  // no control was measured: a `--case caps` run has no precision measurement to
+  // caveat, and the old unconditional sentence claimed one anyway.
+  const controls = rows.filter((row) => row.control && row.scored > 0).map((row) => row.id);
   notes.push(
     '**"Unmatched" is not "false positive".** The scorer matches a quoted anchor line or a line range, so '
-    + 'it undercounts a finding that describes a known defect in different words. Only `docs-only` — which '
-    + 'contains no code — turns unmatched into false-positive by construction.',
+    + 'it undercounts a finding that describes a known defect in different words.'
+    + (controls.length > 0
+      ? ` The control case(s) — ${controls.map((id) => `\`${id}\``).join(', ')} — are clean targets with `
+        + 'no defects to find, so every unmatched finding there is a false positive by construction; the '
+        + 'table marks their `unmatched` cell `(false pos)`.'
+      : ''),
   );
   return notes;
 }

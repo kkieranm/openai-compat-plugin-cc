@@ -280,6 +280,12 @@ export function caseRows(results, { cold = false } = {}) {
     return {
       id: caseDef.id,
       listed,
+      // The manifest's own control flag, carried onto the row so every sink that
+      // asks "is this a clean control?" reads one propagated boolean rather than
+      // re-deriving it from a `listed === 0` proxy. The corpus makes the two
+      // equivalent (a zero-defect case must set control, and a control cannot
+      // list defects), but the flag is what the case actually declared.
+      control: caseDef.control === true,
       dropped: caseDef.dropped.length,
       opportunities: listed * scored.length,
       found,

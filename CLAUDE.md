@@ -460,7 +460,18 @@ the real CLI via `--json` and matched on a quoted anchor line. `bench/lib/report
 carries a `lens` column — `bench/lib/case-rows.mjs`'s `lensSamples` aggregates each case's distinct
 `<rung>@<window>` labels (`whole@154624`, `hunks@61696`, `hunks@unsized`, `diff`) over `measurable`
 runs and joins them, so two per-model reports compared on one case reveal when they reviewed it at
-different depths rather than silently equating a hunks-only review with a whole-file one.
+different depths rather than silently equating a hunks-only review with a whole-file one. A case's
+manifest `control: true` flag (a clean target with no defects to find, so every unmatched finding is a
+false positive by construction) is propagated onto the row by `caseRows` and read by that one predicate
+everywhere — `recallCell`'s `— (control)`, `unmatchedCell` marking a measured control's `unmatched` cell
+`N (false pos)` (an em dash when no run scored it, since a precision figure over zero observations is a
+measurement nobody made) so the control's precision measurement is named where it is printed rather than
+in a caveat a reader must carry over, and `caveats.mjs`'s control clause naming its **scored** cases
+structurally from the rows (an all-failed control shows the em dash, so naming it would claim a marking
+the table does not display) — while `corpus.mjs`'s `validateDefects` enforces the invariant both ways (a
+zero-defect case must set the flag; the flag forbids any defect claim, `defects` or `dropped`, since a
+dropped claim is a real-but-unlocated defect an unmatched finding could be catching), which is what makes
+`row.control` sound at every sink.
 
 `bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it,
 against **this** repo by default or `--repo <path>` for another one — which requires an explicit

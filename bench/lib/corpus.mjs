@@ -61,6 +61,23 @@ function validateDefects(manifest, id) {
       hint: 'If that is deliberate — a clean target measuring false positives — set "control": true.',
     });
   }
+  // The other half of the same either/or. A control is a clean target: its whole
+  // point is that every finding is a false positive by construction, which the
+  // report now says in the case's own `unmatched` cell. That holds only with NO
+  // defect claim of EITHER kind — a `defects` entry would be scored for recall,
+  // and a `dropped` entry (a historical defect that could not be located in the
+  // snapshot) means an unmatched finding there may be a real catch of it, not a
+  // false positive. Either makes the precision claim a contradiction, so the flag
+  // forbids both — otherwise the zero-defect hint above would steer a case with
+  // only dropped claims straight into a control it does not qualify as.
+  const claimed = defects.length + manifest.dropped.length;
+  if (manifest.control === true && claimed > 0) {
+    throw new UserError(
+      `Case "${id}" is marked "control": true but lists ${defects.length} defect(s) and `
+      + `${manifest.dropped.length} dropped claim(s).`,
+      { hint: 'A control measures precision on a clean target with no defect claims at all — located or dropped. Remove every claim to keep it a control, or drop the "control" flag AND catalogue the located defects in "defects" as a scored case (dropping the flag alone leaves a zero-defect case the loader also refuses).' },
+    );
+  }
   for (const defect of defects) {
     for (const field of ['id', 'file']) {
       if (typeof defect[field] !== 'string' || !defect[field]) {
