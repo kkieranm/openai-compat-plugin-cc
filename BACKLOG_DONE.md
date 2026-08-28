@@ -1,3 +1,35 @@
+## 2026-08-28 — OAI-213 shipped: the sweep report escapes untrusted text at every render sink (`96d31d6`)
+
+New `bench/lib/markdown-safe.mjs` (`safeInline`/`safeBlockquoteLines`/`displayReason`, one
+Markdown-metacharacter escape → `.`, no options — a fallback is a caller's trailing `|| 'literal'`)
+now wraps every untrusted value the overnight sweep report interpolates, across the three files
+`renderSweep` composes. A default-deny structural test in `tests/structure.test.js` enforces the
+boundary: every `${…}` in those files must be exactly one balanced wrapper call (optionally
+`.slice`/`|| 'literal'`) or a file-bound `SWEEP_SAFE_EXPRESSIONS` exception — so a new sink added
+unwrapped fails the test, closing the "found a fourth after fixing three" recurrence structurally.
+
+Dual-approved unattended (Codex steer + fable + an independent Claude verdict subagent) over SIX
+plan-gate rounds — the test shape converged monotonically namespace-scoped → pure default-deny →
+anchored whole-expression → anchored no-options, each step forced by a proven counterexample
+(`abortAfter` laundered through a parameter; a `slice`-named glue token; a `whenAbsent: '' + entry.x`
+option). Code review of the IMPLEMENTED diff (Codex plain + adversarial + a Claude audit) then found
+two HIGH throw paths the plan missed — `[finding.file, finding.line].join(':')` coerces via
+`toString` BEFORE the wrapper (a throwing `toString` aborted the report), and `Array.isArray` throws
+on a REVOKED proxy — plus a guard false-negative (`/* */` inside a template) and an empty-element
+unbounded traversal; all four fixed and pinned with regression tests, Codex re-review clean.
+
+The original three-sink framing understated it: the amended item had already found the header fields
+and the cross-build ledger route, and the fix generalised to all three `renderSweep` files
+(`sweep-report.mjs`, `sweep-health.mjs`, `sweep-notes.mjs`). Record JSON stays raw; escaping is
+display-only. Disclosed residue: the file-bound bare-identifier exceptions (`severity`, `evidence`,
+`line`, `note`, `explanation`, `why`, `cause`) are trusted by NAME — a future rebind to untrusted
+data passes silently — irreducible in a textual scanner without a JS parser (disproportionate); a
+`KNOWN WEAK EDGE` comment marks it. And `bench/lib/report.mjs:204-205` (the benchmark report, a
+SIBLING artifact) interpolates server-reported model ids unescaped, the same class — latent
+(model ids are clean in practice), noted not filed, `markdown-safe.mjs` now available to fix it.
+
+---
+
 ## 2026-08-27 — OAI-216 shipped: the --max-seconds doc corrected for review salvage (`d4e8db5`)
 
 `CLAUDE.md` and `commands/review.md` claimed `--max-seconds` "caps a whole model call in wall clock,

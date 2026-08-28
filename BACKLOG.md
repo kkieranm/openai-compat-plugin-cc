@@ -11,41 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-213** — **The sweep report interpolates untrusted text into Markdown at three sinks, and the
-  worst is reached by every ordinary run.** OAI-209 closed one of them (`entry.reason`, via
-  `displayReason`) after a `token-reserve-cutoff` row corrupted its own line; the focused
-  trust-boundary sweep run at that item's review then traced every other value reaching rendered
-  Markdown and found three more, all pre-existing and all by routes that change did not touch.
-  **`finding.summary` is the worst**: model-authored prose about code, arriving through the
-  unconstrained parser `bench/review-sweep.mjs` always uses — it never passes `--structured-output`,
-  and `normalizeFinding` applies no cap and no filtering there, the schema's `maxLength` being prompt
-  text a grammar engine may honour rather than anything this client enforces. It renders as plain
-  text with **no code span and no newline handling**, so a triple backtick opens an unterminated
-  fenced block and swallows the rest of the report, and a blank line breaks the list. Findings that
-  quote source are the ordinary shape of a review reply, not an edge case. `finding.file` and
-  `finding.evidence` share the route; `evidence` at least converts newlines to blockquote
-  continuations. **`entry.model`** is a server-reported id echoed into a code span at two sites
-  (`answeredBy`, and again inside `findingsBlock`), unbounded and unescaped — structurally the same
-  shape as the defect OAI-209 fixed, and adjacent to the OAI-185 residue about a server-reported
-  model id reaching a `UserError` message, though this is a different sink that note does not cover.
-  **`entry.subject`** is a git commit subject, foreign under `--repo`. Dated instance 2026-08-25: the
-  `entry.reason` case was reproduced by executing the renderer, and the enumeration above was
-  verified the same way. Filed rather than fixed in OAI-209 because the routes are independent of
-  that item's subject and predate it — a judgement `codex-adversarial` was asked to argue against and
-  upheld ("different input route, different rendering contract, no causal overlap").
-  **Amended 2026-08-25, same day, before the sweep's own enumeration was lost**: the three sinks
-  above are not the whole boundary. The report's HEADER interpolates `record.repo`,
-  `record.requestedModel` and `record.include` — operator-supplied strings, two of them inside code
-  spans — unescaped and unbounded. And `bench/lib/sweep-ledger.mjs`'s `envelopeOrNull` (`:204-207`)
-  validates only that `envelope.commits` is an array, so every other header field is unchecked: a
-  ledger written by a different build can deliver any of them as an unexpected type or shape
-  straight to those sites, which is the same cross-build route that made the `entry.reason` case
-  reachable rather than theoretical. Whoever takes this should treat the corrective decision as one
-  question — which values reaching this renderer are trusted, and what bounds the rest — rather than
-  patching the sinks one at a time, since patching one at a time is exactly how OAI-209 found a
-  fourth after fixing three.
-
-
 - **OAI-221** — **Whether a local model can review at all is decided by a setting this repo cannot
   reach, and every benchmark figure it has published was taken on the wrong side of it.** A reasoning
   model's thinking channel is controlled by the chat template's `enable_thinking` variable. It is not
