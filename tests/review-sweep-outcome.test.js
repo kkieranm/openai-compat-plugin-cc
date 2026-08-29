@@ -256,7 +256,7 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
 // `skippedUnsizedWindow` is the CAUSE `hunksOnly`
 // cannot carry, so a path keeping one and losing the other reports a diff-only
 // review with no way to tell a deliberate shed from an unmeasurable window.
-const CARRIED = ['model', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];
+const CARRIED = ['model', 'modelReported', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];
 
 test('a substituted model keeps the findings it produced, and every caveat', () => {
   const entry = classify(ok([{ file: 'a.mjs', line: 3, summary: 'a real defect' }], {

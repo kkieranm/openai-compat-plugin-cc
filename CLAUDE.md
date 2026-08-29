@@ -533,6 +533,25 @@ crashing the run; `isReviewRecord` refuses a sweep or task record (a top-level `
 `runsPerCase`) at parse. `bench/lib/compare-report.mjs` joins `tests/structure.test.js`'s
 markdown-safe render set.
 
+`bench/sweep-reproduction.mjs` reads N sweep ledgers together and prints a per-commit reproduction
+rate across runs — the number that decides whether any sweep A/B means anything, since a single run's
+per-commit output is unstable enough that a large fraction of finding-bearing commits do not reproduce
+on identical inputs. `bench/lib/sweep-reproduction.mjs` is the compute: cross-run identity is the
+commit SHA plus each run's **observed** model — `entry.model`, trusted as an identity only where the
+server CONFIRMED it (`modelReported`, persisted by `review-report.mjs` beside `model` since a reply the
+server does not name carries the requested id echoed back, no proof which model answered). The
+reproduction denominator is `REVIEWED` runs only — a commit that starved, failed or was skipped is a
+non-observation, not a non-reproduction, so counting it as one would understate agreement. A run whose
+observed model cannot be pinned to one confirmed id (an unconfirmed, missing or two-answerer model), or
+any of whose records was lost (a gap, a discarded line, or a commit recorded twice), is ungroupable —
+fail-closed; `signatureOf`'s `observedModel`/`integrityAxis` are the authority on which causes qualify. A
+ledger written before `modelReported` (every existing one) is grouped on its bare `entry.model` but
+DISCLOSED as provenance-unverifiable, the same legacy policy the soft axes take. `diffOnly`,
+`maxAttempts` and `provider` (recorded in the header envelope going forward; `unknown` on ledgers
+written before) are soft axes: two distinct known values suppress the group as a confound, an unknown
+compares but discloses. `bench/lib/sweep-reproduction-report.mjs` joins the markdown-safe render set;
+a lost record is named in a per-run gap section, never collapsed into the matrix's not-reviewed cell.
+
 `bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it,
 against **this** repo by default or `--repo <path>` for another one — which requires an explicit
 `--include`, since `DEFAULTS.include` is this repo's own layout and would silently review almost
@@ -591,6 +610,13 @@ string a query-embedded credential could still be sitting inside.
   ledger path** (`parseArgs` stops reading flags at the first positional; the other order is refused
   rather than silently ignored), it takes exactly one ledger, and it refuses a run whose own record is
   already written and parses — `--force` overrides that.
+- Compare sweeps for reproduction: `node bench/sweep-reproduction.mjs <ledger-a> <ledger-b> [<ledger-c> ...]`
+  — reads two or more sweep ledgers and prints a per-commit reproduction matrix, an aggregate rate and
+  the per-run finding-bearing spread to stdout. Stateless (no persistence — the ledgers ARE the
+  history). Ledger paths are positionals (no flags today); a path passed twice de-dupes to one, and
+  fewer than two distinct ledgers is refused. Runs are grouped by observed model + repo + include +
+  window; a mode/attempts/provider difference the header records suppresses a group, and one it does
+  not record is disclosed rather than assumed away.
 - TTL challenge: `node bench/ttl-challenge.mjs` (opt-in, ~45 min, needs LM Studio with **nothing**
   resident — `lms ps` empty — and nothing else connected). Every flag except `--out-dir` makes the run
   non-canonical, which the record states as `protocol.canonical: false`.

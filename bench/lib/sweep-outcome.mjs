@@ -214,6 +214,12 @@ function reported(report) {
   const findings = report?.findings;
   const caveats = {
     model: report?.model ?? null,
+    // Whether `model` above was NAMED by the server or is the requested id echoed
+    // back (review-report.mjs). Carried so a cross-run reader can refuse to prove
+    // one model answered two runs on an id neither server confirmed. `null` when
+    // the report predates the field — a legacy record a reader discloses rather
+    // than trusts, kept distinct from the boolean `false` a silent server writes.
+    modelReported: report?.modelReported ?? null,
     analysisCut: report?.analysisCut ?? null,
     atCap: report?.atCap ?? null,
     hunksOnly: report?.hunksOnly ?? null,

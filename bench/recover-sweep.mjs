@@ -32,7 +32,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
-import { readLedger } from './lib/sweep-ledger.mjs';
+import { readLedger, ledgerStampFrom } from './lib/sweep-ledger.mjs';
 import { writeSweep } from './lib/sweep-report.mjs';
 
 const SPEC = { valueFlags: ['out-dir'], booleanFlags: ['force'] };
@@ -53,9 +53,9 @@ const isMissing = (entry) => MISSING.has(entry.outcome);
  * appearing to be a separate night's work.
  */
 export function stampFrom(path) {
-  const match = /^review-sweep-(.+)\.ledger\.jsonl$/.exec(basename(path));
-  if (!match) throw new UserError(`Not a sweep ledger filename: "${basename(path)}".`);
-  return match[1];
+  const stamp = ledgerStampFrom(path);
+  if (stamp === null) throw new UserError(`Not a sweep ledger filename: "${basename(path)}".`);
+  return stamp;
 }
 
 /**

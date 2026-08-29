@@ -24,7 +24,7 @@
 // `SIGKILL` gives no chance to drain. Each line is one `appendFileSync`: a fresh
 // descriptor, `O_APPEND`, returning only once the write has been made.
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { UserError } from '../../scripts/lib/errors.mjs';
 
 /**
@@ -36,6 +36,16 @@ import { UserError } from '../../scripts/lib/errors.mjs';
  */
 export function ledgerPathFor(outDir, stamp) {
   return join(outDir, `review-sweep-${stamp}.ledger.jsonl`);
+}
+
+// The inverse of the name `ledgerPathFor` mints — the ONE place the ledger-filename
+// grammar is parsed, so a reader cannot drift from the writer. Returns the stamp, or
+// null for a name this pattern does not produce; each caller chooses its own policy
+// for the null (recover-sweep throws, the reproduction reader falls back to the
+// basename), which is why this returns rather than throws.
+export function ledgerStampFrom(path) {
+  const match = /^review-sweep-(.+)\.ledger\.jsonl$/.exec(basename(path));
+  return match ? match[1] : null;
 }
 
 /**
@@ -161,6 +171,19 @@ export function envelopeFor(options, commits, startMs) {
     // The threshold the health section states. Without it a reader is told a
     // streak reached two and has no idea whether that was nearly an abort.
     abortAfter: options.abortAfter,
+    // The review-request knobs that change what the model was actually asked,
+    // recorded so one sweep can be told apart from another: `diffOnly` is whether
+    // whole files rode alongside the diff, `maxAttempts` the retry ceiling, and
+    // `provider` the server profile (a label, never the URL — a `base-url` can
+    // carry a credential and is deliberately kept out of the header). A ledger
+    // written before these existed simply omits them. **`provider` is null when a
+    // `--base-url` override is in force**: the override wins over the profile's
+    // endpoint, so the label no longer identifies the server, and recording it
+    // would let two runs on different overridden endpoints read as the same one —
+    // null instead reads as a disclosed "unverifiable endpoint" caveat downstream.
+    diffOnly: options.diffOnly,
+    maxAttempts: options.maxAttempts,
+    provider: options['base-url'] ? null : (options.provider ?? null),
     // The repo actually swept — `null` when the caller didn't record one (e.g.
     // `recover-sweep.mjs`'s own synthesized envelope), never assumed to be this
     // tool's own — without it, a foreign --repo run's ledger, record and

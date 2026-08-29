@@ -25,6 +25,31 @@ test('a ledger round-trips its header and every entry', () => {
   assert.equal(read.discarded, 0);
 });
 
+test('the header records the review-request knobs a cross-sweep comparison needs', () => {
+  const envelope = envelopeFor(
+    { include: [], abortAfter: 3, maxSeconds: 900, diffOnly: true, maxAttempts: 5, provider: 'lmstudio' },
+    [{ sha: 'a', eligible: true }],
+    0,
+  );
+  assert.equal(envelope.diffOnly, true);
+  assert.equal(envelope.maxAttempts, 5);
+  assert.equal(envelope.provider, 'lmstudio');
+});
+
+test('an unset provider is recorded as null, never left undefined', () => {
+  const envelope = envelopeFor({ include: [], abortAfter: 3, maxSeconds: 900, diffOnly: false, maxAttempts: 3 }, [], 0);
+  assert.equal(envelope.provider, null);
+  assert.equal(envelope.diffOnly, false);
+});
+
+test('a --base-url override nulls the provider label, since it no longer names the endpoint', () => {
+  const overridden = envelopeFor({ include: [], abortAfter: 3, maxSeconds: 900, diffOnly: false, maxAttempts: 3, provider: 'lmstudio', 'base-url': 'http://other:1234' }, [], 0);
+  assert.equal(overridden.provider, null);
+  // Without an override the named profile is recorded as-is.
+  const named = envelopeFor({ include: [], abortAfter: 3, maxSeconds: 900, diffOnly: false, maxAttempts: 3, provider: 'lmstudio' }, [], 0);
+  assert.equal(named.provider, 'lmstudio');
+});
+
 test('a torn final line is discarded and counted, never thrown on', () => {
   const dir = tempDir();
   const ledger = openLedger(dir, 'stamp');

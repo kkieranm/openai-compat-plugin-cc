@@ -183,6 +183,14 @@ export function jsonReport(parsed, context) {
     // that way: were it ever taken, both fields would collapse and a reader
     // would see "checked, they matched" where nothing was determined.
     requestedModel: result.requestedModel ?? model,
+    // Whether the SERVER named the model above, or it is the requested id echoed
+    // back by `result.model`'s own `?? requestedModel` fallback (completion.mjs).
+    // Mirrors task-report.mjs, and for the same reason: once the fallback has
+    // happened the distinction is unrecoverable, and a cross-run reader grouping
+    // runs by observed model needs it — an echoed id is not proof the same model
+    // answered. `?? false` so a new record always carries the fact; a record
+    // written before this field simply omits it, which a reader reads as legacy.
+    modelReported: result.modelReported ?? false,
     ...parseFields(parsed, result, context),
     hunksOnly,
     // The CAUSE `hunksOnly` cannot carry — it is equally true of `--diff-only`.

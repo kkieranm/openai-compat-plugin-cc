@@ -39,6 +39,17 @@ const context = (result, structured = true) => ({
 // `--json` carries it under this name. Pinning it here pins both.
 const rawFor = (result, structured) => jsonReport(null, context(result, structured)).raw;
 
+test('a review report records whether the server CONFIRMED its model', () => {
+  // The cross-run reproduction reader groups runs by observed model, and an echoed
+  // requested id is not proof that model answered — so the fact must reach the
+  // record. Silent server → false; named → true; positive control so `false` is
+  // not simply hard-coded.
+  const silent = jsonReport(null, context({ content: 'x', reasoning: '', modelReported: false }));
+  assert.equal(silent.modelReported, false, 'the server named nothing, and the record must say so');
+  const named = jsonReport(null, context({ content: 'x', reasoning: '', modelReported: true }));
+  assert.equal(named.modelReported, true);
+});
+
 test('an unreadable structured reply shows BOTH channels, each labelled', () => {
   // The case the parser exists to refuse, and the case preferring `content` got
   // wrong: stray prose in one channel and the rejected payload in the other.

@@ -132,6 +132,8 @@ const CLI_ENTRYPOINTS = [
   'bench/recover-sweep.mjs', // process.argv[1] self-invocation guard
   'bench/task-run.mjs', // process.argv[1] self-invocation guard
   'bench/ttl-challenge.mjs', // process.argv[1] self-invocation guard
+  'bench/compare.mjs', // process.argv[1] self-invocation guard
+  'bench/sweep-reproduction.mjs', // process.argv[1] self-invocation guard
 ];
 test('CLI entrypoints use process.exitCode, never process.exit()', () => {
   // Comments are stripped first: this defect class's own explanatory comments
@@ -545,6 +547,7 @@ const SWEEP_RENDER_FILES = [
   'bench/lib/sweep-health.mjs',
   'bench/lib/sweep-notes.mjs',
   'bench/lib/compare-report.mjs',
+  'bench/lib/sweep-reproduction-report.mjs',
   // markdown-safe.mjs itself is NOT scanned — its interpolations ARE the sanitiser.
 ];
 
@@ -584,6 +587,11 @@ const SWEEP_SAFE_EXPRESSIONS = {
   // it needs no formatting exceptions — but the entry must exist, or the test's
   // `SWEEP_SAFE_EXPRESSIONS[rel].has(...)` throws on undefined.
   'bench/lib/compare-report.mjs': new Set([]),
+  // sweep-reproduction-report.mjs emits every untrusted scalar through a safeInline/
+  // displayReason ${…} interpolation (scanned here); the one residual is the matrix
+  // column header (run stamps via runs.map, wrapped but no ${…}) — no formatting
+  // exception, so the set is empty — but the entry must exist, or the `.has(...)` throws.
+  'bench/lib/sweep-reproduction-report.mjs': new Set([]),
 };
 
 // String-aware comment stripping — a deliberate fork of the shared `withoutComments`
