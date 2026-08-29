@@ -544,6 +544,7 @@ const SWEEP_RENDER_FILES = [
   'bench/lib/sweep-report.mjs',
   'bench/lib/sweep-health.mjs',
   'bench/lib/sweep-notes.mjs',
+  'bench/lib/compare-report.mjs',
   // markdown-safe.mjs itself is NOT scanned — its interpolations ARE the sanitiser.
 ];
 
@@ -578,6 +579,11 @@ const SWEEP_SAFE_EXPRESSIONS = {
     "outages.map(outageLabel).join(', ')", // composition of the wrapped outageLabel
   ]),
   'bench/lib/sweep-notes.mjs': new Set([]),
+  // compare-report.mjs wraps every interpolation in safeInline/displayReason and
+  // composes its table rows by concatenating already-wrapped cells (no ${…}), so
+  // it needs no formatting exceptions — but the entry must exist, or the test's
+  // `SWEEP_SAFE_EXPRESSIONS[rel].has(...)` throws on undefined.
+  'bench/lib/compare-report.mjs': new Set([]),
 };
 
 // String-aware comment stripping — a deliberate fork of the shared `withoutComments`

@@ -496,6 +496,35 @@ zero-defect case must set the flag; the flag forbids any defect claim, `defects`
 dropped claim is a real-but-unlocated defect an unmatched finding could be catching), which is what makes
 `row.control` sound at every sink.
 
+`bench/compare.mjs` reads N of those review records together — the cross-record reader `bench/`
+otherwise lacks, so every ranking was assembled by hand — and prints a ranking summary plus a
+per-case recall matrix to stdout, reusing each record's own `caseRows` numbers rather than re-tallying.
+`bench/lib/compare-model.mjs`'s `buildComparison` **withholds the ranking when the records are not
+like-for-like**: `normalizeReviewRecord` reduces each record to a per-axis `known`/`unknown` map over
+the exact `options` keys `renderReport` threads (booleans coerced as the writer reads them, values
+compared numerically, the wall-clock cap three-state since `row.capped` is an outcome not the config),
+plus a whole-`caseDef` canonical signature (object keys sorted, **array order preserved** — `files`
+order is a real input difference) and three per-case axes: coverage (a case scored in one record but
+failed in another), degradation class (`none`/`partial`/`all` from `row.degraded`/`row.reported`, so
+the same requested `--structured-output` flag that actually degraded differently across records is
+caught), and a lens gated on the raw report fields `lensLabel` reads; any divergent or unknown axis
+suppresses the rank and names the case, since ranking incomparable records is the mis-comparison the
+reader exists to prevent. **Divergence is not the only withhold reason**: a like-for-like set in which
+no record scored a non-control case *and* no control case scored is withheld too, under its own
+`no record produced a scoreable run` header — the records ARE comparable, there is simply nothing to
+rank, and printing an empty divergence list under the incomparable header would be a false claim. The
+rank orders by recall, then the **per-scored-run** false-positive rates (never the raw counts, which
+scale with sample size), then the row label — but a **control-only** comparison (every recall `—`,
+rankable via a scored control) has no recall to order by, so it ranks by that control false-positive
+rate directly and the disclosure line says so. Two record-shape guards precede all of this:
+`normalizeReviewRecord` rejects a `caseDef.id` that is neither string nor number, and a duplicate id
+within one record, before it trusts the case set; `labelRecords` makes each `<model> @ <stamp>` row
+label globally unique by an input-order `(#i)` suffix so two identical labels never collide in the
+table. A record whose nested shape `caseRows` cannot read is `incompatible` and excluded rather than
+crashing the run; `isReviewRecord` refuses a sweep or task record (a top-level `kind`, no numeric
+`runsPerCase`) at parse. `bench/lib/compare-report.mjs` joins `tests/structure.test.js`'s
+markdown-safe render set.
+
 `bench/review-sweep.mjs` reviews commits newest-first from `--from` until a wall clock stops it,
 against **this** repo by default or `--repo <path>` for another one — which requires an explicit
 `--include`, since `DEFAULTS.include` is this repo's own layout and would silently review almost

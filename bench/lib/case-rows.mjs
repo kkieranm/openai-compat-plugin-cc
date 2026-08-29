@@ -21,7 +21,7 @@ import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mj
  * tok/s into a row whose failed cell disowned it, so the table could print
  * throughput for a model it also said had not run.
  */
-function measurable(runs) {
+export function measurable(runs) {
   return runs.filter((run) => run.report && !run.error);
 }
 
@@ -150,7 +150,7 @@ function rateSamples(runs) {
  * is not a positive finite number, rather than a bare `hunks@0` that reads as a
  * real ceiling.
  */
-function lensLabel(run) {
+export function lensLabel(run) {
   if (run.diffOnly) return 'diff';
   const rung = run.report.hunksOnly ? 'hunks' : 'whole';
   const { contextWindow } = run.report;
