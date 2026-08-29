@@ -11,22 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
-  it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
-  SQLite", and deliberately not built there.
-  **Its justification is OAI-141**, which measured run-to-run spread (17 vs 22 finding-bearing commits
-  on identical inputs; 5 of 17 not reproducing) *above* the difference between the configurations being
-  compared. A per-commit reproduction rate across runs is the number that decides whether any sweep A/B
-  means anything, and nothing can currently compute it.
-  **What was settled and need not be re-derived** (ADR 022): SQLite is not more crash-durable than a
-  synchronous append for the *within-run* job, and ADR 018 gates `node:sqlite` as a **capability**, so a
-  hard dependency there would have made an unattended run's crash protection conditional on precisely
-  what the job store kept optional. **Neither argument applies to a cross-run index**, which is not on
-  the crash path and may reasonably be optional.
-  **Feedstock already exists**: every run leaves `review-sweep-<stamp>.ledger.jsonl` carrying per-commit
-  `startedAt`/`endedAt` and the full enumerated manifest in its header. A history would consume ledgers,
-  not replace them.
-
 - **OAI-49** — A matched-budget arm, so a cross-model comparison measures the model rather than the
   model plus its window. **Filed 2026-08-04 from OAI-19's gate grill; it is the reason that run
   publishes a deployed-systems comparison and reports the clean decomposition as NOT OBTAINED.** The

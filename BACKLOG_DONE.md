@@ -1,3 +1,37 @@
+## 2026-08-29 — OAI-151 shipped: a cross-run sweep reproduction reader (`f85578e`)
+
+`bench/sweep-reproduction.mjs` reads N `review-sweep-<stamp>.ledger.jsonl` files and prints a per-commit
+reproduction rate across runs — the number OAI-141 showed decides whether any sweep A/B means anything
+(run-to-run spread exceeds the config differences people compare). Stateless: the ledgers on disk are the
+history, consumed not replaced. `bench/lib/sweep-reproduction.mjs` computes; `sweep-reproduction-report.mjs`
+renders. Runs group by a comparability signature — hard axes (repo, include [deduped], maxSeconds, observed
+model) must match, integrity (gaps/discarded/dup-sha/sha-less) fails closed, soft axes
+(diffOnly/maxAttempts/provider) disclose-or-suppress. Reproduction is over a REVIEWED-only denominator;
+n<2 rows flagged; leads listed apart. The envelope grows the three soft fields going forward.
+
+**Model provenance was the ladder's deepest thread.** `entry.model` is the requested id echoed back when
+the server does not name itself (`completion.mjs`), so it is trusted as an identity only where
+`modelReported === true`; **`scripts/lib/review-report.mjs` now persists that flag on the production review
+path** (mirroring `task-report.mjs`), and a legacy ledger (field absent — every existing one) groups on the
+bare id but is DISCLOSED as provenance-unverifiable — the same grow-forward/disclose-legacy policy the soft
+axes take. **OWNER-VETO surfaced at commit:** this rests on the owner's soft-axis precedent, decided during
+the ladder on Codex+Claude agreement (the AskUserQuestion was guard-blocked), NOT separately re-put to the
+owner; a codex-adversarial dissent held legacy data should be shown but never grouped/ranked, overruled
+because the corpus's models were demonstrably server-reported. Owner may veto (revert `review-report.mjs`'s
+persist + the legacy-grouping stance). `task-report.mjs` shares the identical `modelReported ?? false` line
+as latent residue.
+
+The CLI de-dupes path aliases and byte-identical copies and refuses two distinct-content ledgers sharing a
+`startedAt` — ambiguous between a diverged copy and two same-millisecond runs, refused loudly (OAI-227
+principle: a loud over-suppression beats the silent fabricated reproduction a diverged copy would produce).
+The render module's markdown-safety guard was found (full pass, mutation-proven) STRUCTURALLY INERT — it
+used `+` concatenation with no scanned `${…}` sinks — and was fixed by emitting every untrusted scalar
+through a scanned `safeInline`/`displayReason` interpolation (matching `compare-report.mjs`); the matrix
+column-header stamps are the one wrapped-but-unscanned residual. Verified: 1430 tests green; real 3-ledger
+e2e (14/22 agreed, 2/10 finding-bearing reproduced); REVIEWED-denominator + guard mutations proven;
+live `/oai:task` round-trip healthy. Review ladder ran to dual approval (Codex APPROVE + verdict-signer,
+digest `d5fab6b0b74a`).
+
 ## 2026-08-29 — OAI-227 shipped: a reasoning-state comparability axis for `bench/compare.mjs` (`506d8a7`)
 
 `divergencesOf` (`bench/lib/compare-model.mjs`) gains a per-case `reasoning` axis so two review records
