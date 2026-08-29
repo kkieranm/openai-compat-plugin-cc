@@ -10,7 +10,9 @@
 //
 // Pure: no I/O, no markdown. The split is `compare.mjs` reads files and
 // `compare-report.mjs` renders; this decides what the comparison IS.
-import { caseRows, lensLabel, measurable } from './case-rows.mjs';
+import { caseRows, lensLabel } from './case-rows.mjs';
+import { scoredRuns } from './run-buckets.mjs';
+import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
 import { reportIdentity } from './record.mjs';
 
 // A review record is `{ runsPerCase, options, warmed, results }` — never a sweep
@@ -142,15 +144,20 @@ function lensLabelStrict(run) {
   return lensLabel(run);
 }
 
-// Per case: the set of strict lens labels, or unknown if any measurable run's
-// lens cannot be proven. Over `measurable` runs, the population the derived lens
-// is built from.
+// Per case: the set of strict lens labels, or unknown if any SCORED run's lens
+// cannot be proven. Over `scoredRuns` — the runs that produced recall — not
+// `measurable`: comparability must be judged over the same population the ranked
+// measurement is, or a truncated (measurable, non-scored) run can make two records'
+// lens sets equal while their scored runs' depths differ, concealing a real
+// difference. A scored run with no report (the defensive-reader shape) yields a
+// null strict label → unknown, caught by the `lensUnknown` arm; and an empty known
+// set therefore means `scored === 0`, which the coverage axis owns.
 function lensByCase(results) {
   const map = new Map();
   for (const { caseDef, runs } of results) {
     const labels = new Set();
     let isUnknown = false;
-    for (const run of measurable(runs)) {
+    for (const run of scoredRuns(runs)) {
       const label = lensLabelStrict(run);
       if (label === null) {
         isUnknown = true;
@@ -164,6 +171,22 @@ function lensByCase(results) {
         ? unknown('a run lacks a field needed to prove its lens (diffOnly, hunksOnly/skippedUnsizedWindow, or contextWindow)')
         : known([...labels].sort()),
     );
+  }
+  return map;
+}
+
+// Per case: the deduped, sort-canonicalised set of observed reasoning states over
+// the SCORED runs — the comparability counterpart to the displayed `row.reasoning`
+// (which stays over `measurable` in `case-rows.mjs`). Derived here, not read off the
+// row, precisely so the comparison uses the scored population while the display keeps
+// the wider one. `run.report?.usage` is optional-chained: a scored run with no report
+// classifies as `unknown` (no usage to witness) rather than throwing — so an empty set
+// means `scored === 0` (coverage's job), never a scored-but-unwitnessed record.
+function reasoningByCase(results) {
+  const map = new Map();
+  for (const { caseDef, runs } of results) {
+    const states = new Set(scoredRuns(runs).map((run) => reasoningWitness(run.report?.usage).state));
+    map.set(caseDef.id, [...states].sort());
   }
   return map;
 }
@@ -223,6 +246,7 @@ export function normalizeReviewRecord(entry) {
       caseIds: new Set(record.results.map((r) => r.caseDef.id)),
       caseSig,
       lens: lensByCase(record.results),
+      reasoningScored: reasoningByCase(record.results),
     };
   } catch (error) {
     return { ...base, incompatible: true, reason: `this record could not be read: ${error.message}` };
@@ -274,7 +298,7 @@ function aggregate(rows) {
   // scale with how many runs SUCCEEDED — so a record that failed more runs has a
   // smaller total and would unfairly rank ahead of a more reliable one. The
   // per-scored-run rate removes that (Pass 2).
-  const scoredRuns = nonControl.reduce((t, row) => t + row.scored, 0);
+  const scoredRunCount = nonControl.reduce((t, row) => t + row.scored, 0);
   const controlScored = control.reduce((t, row) => t + row.scored, 0);
   const throughput = median(rows.flatMap((row) => row.rate?.values ?? []));
   return {
@@ -282,9 +306,9 @@ function aggregate(rows) {
     found,
     unmatched,
     controlFP,
-    scoredRuns,
+    scoredRuns: scoredRunCount,
     controlScored,
-    unmatchedRate: scoredRuns > 0 ? unmatched / scoredRuns : 0,
+    unmatchedRate: scoredRunCount > 0 ? unmatched / scoredRunCount : 0,
     controlFPRate: controlScored > 0 ? controlFP / controlScored : 0,
     recall: opportunities > 0 ? found / opportunities : null,
     throughput,
@@ -304,7 +328,7 @@ function degradationClass(row) {
 // Why the compatible records cannot be ranked, one entry per divergent axis.
 // Empty ⇒ rankable. A scalar axis diverges if any record is unknown, or the
 // known values disagree; the per-case axes (case definition, coverage,
-// effective degradation, lens) diverge on the first offending case.
+// effective degradation, lens, reasoning) diverge on the first offending case.
 function divergencesOf(compatible) {
   const out = [];
   if (compatible.length < 2) return out; // nothing to rank against; handled by the caller
@@ -335,8 +359,10 @@ function divergencesOf(compatible) {
     }
     // Coverage: a case scored in one record but not another (all its runs failed)
     // gives the two aggregates different denominators — they cover different
-    // ground and cannot be ranked. This owns the empty-lens case the lens axis
-    // used to swallow.
+    // ground and cannot be ranked. This owns the scored-presence mismatch; because
+    // the lens and reasoning axes below derive their sets over the SAME scored
+    // population, an empty set there means exactly `scored === 0`, which is this
+    // axis's case, so neither needs an empty-set arm of its own.
     for (const id of first.caseIds) {
       const scored = rowsById.map((m) => (m.get(id)?.scored ?? 0) > 0);
       if (scored.some((s) => s !== scored[0])) {
@@ -353,8 +379,11 @@ function divergencesOf(compatible) {
         break;
       }
     }
-    // Lens: among the records that scored the case (coverage above guarantees
-    // they agree on which those are), a depth difference — or an unprovable lens.
+    // Lens: among the records that scored the case, a depth difference or an
+    // unprovable lens. `n.lens` is derived over the SCORED runs (see `lensByCase`),
+    // so an empty known set means `scored === 0` (coverage's case above), and a
+    // scored run that cannot prove its depth is the `unknown` state the first arm
+    // catches — no separate empty-set arm is needed.
     for (const id of first.caseIds) {
       const lenses = compatible.map((n) => n.lens.get(id)).filter(Boolean);
       const lensUnknown = lenses.find((l) => l.state === 'unknown');
@@ -365,6 +394,29 @@ function divergencesOf(compatible) {
       const observed = lenses.filter((l) => l.value.length > 0).map((l) => JSON.stringify(l.value));
       if (observed.length >= 2 && observed.some((s) => s !== observed[0])) {
         out.push({ axis: 'lens', detail: `case "${id}" reviewed at different depths` });
+        break;
+      }
+    }
+    // Reasoning: the observed thinking-channel state the SCORED runs ran under — a
+    // server-controlled input (`enable_thinking`, unreachable over the wire, OAI-221),
+    // the same class as lens. Compared over `n.reasoningScored` (the scored-run set),
+    // NOT the displayed `row.reasoning` (which spans `measurable` runs): a truncated
+    // run's reasoning state would otherwise inflate the set and could conceal a real
+    // scored-run difference. Fail-closed Option A: among records that scored the case
+    // (a non-empty set — an empty one means `scored === 0`, coverage's job), a
+    // differing set suppresses, INCLUDING known-vs-unknown; two records both witnessing
+    // only `unknown` agree and rank through (suppressing that would make every provider
+    // that omits the reasoning detail unrankable). A scored run with no report classifies
+    // `unknown`, so it suppresses against a known state and ranks through only against
+    // another unknown. `n.reasoningScored` is sorted at derivation, so a bare
+    // `JSON.stringify` is canonical.
+    for (const id of first.caseIds) {
+      const observed = compatible
+        .map((n) => n.reasoningScored.get(id))
+        .filter((r) => r && r.length > 0)
+        .map((r) => JSON.stringify(r));
+      if (observed.length >= 2 && observed.some((s) => s !== observed[0])) {
+        out.push({ axis: 'reasoning', detail: `case "${id}" reviewed under different reasoning states` });
         break;
       }
     }

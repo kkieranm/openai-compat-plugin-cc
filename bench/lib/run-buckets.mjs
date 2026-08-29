@@ -37,6 +37,19 @@ export function truncatedRuns(runs) {
 }
 
 /**
+ * The runs that produced the case's ranked measurement (recall): scored, not a
+ * transport failure, and not truncated. This is the single definition of the
+ * scored population — `case-rows.mjs` `buckets()` reads it for the row, and
+ * `compare-model.mjs` reads it so comparability is judged over the SAME runs
+ * recall is, never the broader `measurable` set (which includes truncated and
+ * unreadable runs and can conceal a real per-run difference).
+ */
+export function scoredRuns(runs) {
+  const truncated = new Set(truncatedRuns(runs));
+  return runs.filter((run) => run.score && !run.error && !truncated.has(run));
+}
+
+/**
  * Runs that answered, exited 0, and still produced nothing scoreable — a reply
  * that never parsed, without being truncated.
  *

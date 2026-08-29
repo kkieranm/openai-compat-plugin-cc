@@ -10,7 +10,7 @@
 import { tokensPerSecond } from '../../scripts/lib/throughput.mjs';
 import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
 import { answeringAttempt } from './attempt-rows.mjs';
-import { analysisCutRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
+import { analysisCutRuns, scoredRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 
 /**
  * Runs whose figures describe what this row claims to measure.
@@ -246,16 +246,12 @@ function buckets(runs) {
   // observations and its silence is not, so the silence is counted once, as
   // `unresolved`, and reported beside the figure instead of inside it.
   const truncated = new Set(truncatedRuns(runs));
-  // `!run.error` here, not only in `run.mjs`. The other three buckets each
-  // begin with that filter (`run-buckets.mjs`), and this one used to hold the
-  // partition together by relying on `run.mjs` declining to attach a score to a
-  // failed run — an invariant living in a different file, which is exactly the
-  // fragility `unreadableRuns` documents about itself: "the assumption holds
-  // only while run.mjs attaches a score to every parsed reply, and nothing here
-  // would notice if it stopped". A substituted run is the first that can carry
-  // a report, a score-worthy reply and a failure at once, so the guard moves
-  // here where the sum is computed.
-  const scored = runs.filter((run) => run.score && !run.error && !truncated.has(run));
+  // `scoredRuns` is the shared definition of this population (`run-buckets.mjs`),
+  // used here for the row and by `compare-model.mjs` for comparability, so the two
+  // cannot drift. It carries the same `!run.error` guard the other buckets do:
+  // a substituted run can carry a report, a score-worthy reply and a failure at
+  // once, and must not be counted scored.
+  const scored = scoredRuns(runs);
   // Intersected with `scored`, not merely collected — the whole table rests on
   // cut runs being a *subset* of the scored ones. A cut run that somehow
   // carried no score would otherwise report unresolved opportunities against a

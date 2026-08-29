@@ -24,6 +24,10 @@ function scoredRun({
   completion_tokens = 200,
   generationMs = 1000,
   prompt_tokens = 5000,
+  // Feeds `reasoningWitness`: a finite number classifies as reasoning-observed
+  // (>0) / no-reasoning-observed (0); `null` omits the detail entirely so the
+  // witness reads `unknown`.
+  reasoningTokens = 0,
 } = {}) {
   return {
     diffOnly,
@@ -41,7 +45,7 @@ function scoredRun({
         prompt_tokens,
         completion_tokens,
         total_tokens: prompt_tokens + completion_tokens,
-        completion_tokens_details: { reasoning_tokens: 0 },
+        ...(reasoningTokens === null ? {} : { completion_tokens_details: { reasoning_tokens: reasoningTokens } }),
       },
       generationMs,
       prefillMs: 200,
@@ -62,6 +66,26 @@ const failedRun = (reason = 'deadline-timeout') => ({ error: new Error('x'), rea
 const unreadableRun = () => {
   const run = scoredRun();
   delete run.score;
+  return run;
+};
+
+// A run counted as SCORED (has a score, no error, not truncated) but carrying NO
+// report — so `measurable()`/`reasoningSamples`/`lensByCase` all drop it, leaving
+// an empty reasoning AND lens set on a scored row. The real writer couples a score
+// to a parsed report, but `normalizeReviewRecord` is a defensive reader that
+// accepts this shape, so both axes must fail closed on it rather than rank through.
+const scoredNoReportRun = ({ found = 1, anchored = 1 } = {}) => ({
+  diffOnly: false,
+  score: { recall: { found, anchored }, unmatched: [], byDefect: [] },
+});
+
+// A run cut off by the token budget: a real report (finishReason 'length') so it is
+// MEASURABLE, but excluded from the SCORED population (`run-buckets.mjs`). Used to
+// prove the comparison reads the scored population, not measurable — a truncated run
+// carrying a different reasoning/lens state must NOT inflate the compared set.
+const truncatedRun = (over = {}) => {
+  const run = scoredRun(over);
+  run.report.finishReason = 'length';
   return run;
 };
 
@@ -162,6 +186,119 @@ test('a per-case lens difference suppresses ranking, naming lens', () => {
   ] }), 'a.json', 'a');
   const b = norm(record({ runsPerCase: 1, options: {}, results: [
     { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ hunksOnly: true, contextWindow: 61696 })] },
+  ] }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('lens'), JSON.stringify(comp.divergences));
+});
+
+// A record covering one case at the given reasoning-token counts (one run each).
+const reasoningRecord = (counts, path, stamp) =>
+  norm(record({ runsPerCase: counts.length, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: counts.map((n) => scoredRun({ found: 1, reasoningTokens: n })) },
+  ] }), path, stamp);
+
+test('a per-case reasoning difference (observed vs none) suppresses ranking, naming reasoning', () => {
+  const a = reasoningRecord([12], 'a.json', 'a'); // reasoning-observed
+  const b = reasoningRecord([0], 'b.json', 'b'); // no-reasoning-observed
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('a known-vs-unknown reasoning difference suppresses ranking (fail-closed)', () => {
+  const a = reasoningRecord([12], 'a.json', 'a'); // reasoning-observed
+  const b = reasoningRecord([null], 'b.json', 'b'); // usage carries no detail -> unknown
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('records agreeing on reasoning state stay rankable (both unknown)', () => {
+  const a = reasoningRecord([null], 'a.json', 'a');
+  const b = reasoningRecord([null], 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
+  assert.ok(!axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('the same multi-state reasoning set in different run order stays rankable (sort guard)', () => {
+  // Both records observe {reasoning-observed, no-reasoning-observed} for the case,
+  // in opposite first-seen order — the dedup preserves that order, so without the
+  // canonicalising sort the two signatures would false-diverge.
+  const a = reasoningRecord([12, 0], 'a.json', 'a');
+  const b = reasoningRecord([0, 12], 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
+  assert.ok(!axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('a scored record with no report classifies unknown and suppresses vs a known reasoning state', () => {
+  // A scored run with no report is IN the scored population; `reasoningWitness`
+  // reads no usage -> `unknown`. So it suppresses against B's known state via the
+  // value arm (unknown vs observed), fail-closed.
+  const a = norm(record({ runsPerCase: 1, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredNoReportRun({ found: 1 })] },
+  ] }), 'a.json', 'a');
+  const b = reasoningRecord([12], 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('two records both scored-without-report rank through on reasoning (both unknown) but lens suppresses', () => {
+  // Both scored runs classify reasoning `unknown` -> shared witnessed state, ranks
+  // through on reasoning (Option A). Lens is the fail-closed catch: a scored run with
+  // no report has an unprovable strict lens (`unknown`), so the lens axis suppresses.
+  const noReport = (stamp) => norm(record({ runsPerCase: 1, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredNoReportRun({ found: 1 })] },
+  ] }), `${stamp}.json`, stamp);
+  const comp = buildComparison([noReport('a'), noReport('b')]);
+  assert.equal(comp.rankable, false);
+  assert.ok(!axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+  assert.ok(axisNames(comp).includes('lens'), JSON.stringify(comp.divergences));
+});
+
+test('a scored record with an unprovable lens suppresses ranking (lens fail-closed)', () => {
+  // The score-without-report shape on lens: A's scored run has no report -> its strict
+  // lens is `unknown`; B has a normal lens. A must not rank through.
+  const a = norm(record({ runsPerCase: 1, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredNoReportRun({ found: 1 })] },
+  ] }), 'a.json', 'a');
+  const b = norm(record({ runsPerCase: 1, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ found: 1, hunksOnly: false, contextWindow: 154624 })] },
+  ] }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('lens'), JSON.stringify(comp.divergences));
+});
+
+test('a truncated run cannot conceal a real scored-run reasoning difference', () => {
+  // The concealment regression (the whole reason the comparison reads the SCORED
+  // population, not measurable). A's SCORED run reasoned; B's SCORED run did not; each
+  // has a TRUNCATED run carrying the opposite state. The measurable sets are equal
+  // ({observed, no-observed}) — under the old measurable population this ranked
+  // through — but the scored sets differ, so it must suppress.
+  const a = norm(record({ runsPerCase: 2, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ found: 1, reasoningTokens: 12 }), truncatedRun({ reasoningTokens: 0 })] },
+  ] }), 'a.json', 'a');
+  const b = norm(record({ runsPerCase: 2, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ found: 1, reasoningTokens: 0 }), truncatedRun({ reasoningTokens: 12 })] },
+  ] }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('reasoning'), JSON.stringify(comp.divergences));
+});
+
+test('a truncated run cannot conceal a real scored-run lens difference', () => {
+  // The same concealment on the lens axis: A's scored run is whole@154624, B's is
+  // hunks@61696; each has a truncated run at the other depth, so the measurable lens
+  // sets are equal but the scored ones differ -> suppress.
+  const a = norm(record({ runsPerCase: 2, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ found: 1, hunksOnly: false, contextWindow: 154624 }), truncatedRun({ hunksOnly: true, contextWindow: 61696 })] },
+  ] }), 'a.json', 'a');
+  const b = norm(record({ runsPerCase: 2, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ found: 1, hunksOnly: true, contextWindow: 61696 }), truncatedRun({ hunksOnly: false, contextWindow: 154624 })] },
   ] }), 'b.json', 'b');
   const comp = buildComparison([a, b]);
   assert.equal(comp.rankable, false);

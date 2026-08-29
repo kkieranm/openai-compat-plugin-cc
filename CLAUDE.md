@@ -504,10 +504,18 @@ like-for-like**: `normalizeReviewRecord` reduces each record to a per-axis `know
 the exact `options` keys `renderReport` threads (booleans coerced as the writer reads them, values
 compared numerically, the wall-clock cap three-state since `row.capped` is an outcome not the config),
 plus a whole-`caseDef` canonical signature (object keys sorted, **array order preserved** — `files`
-order is a real input difference) and three per-case axes: coverage (a case scored in one record but
+order is a real input difference) and four per-case axes: coverage (a case scored in one record but
 failed in another), degradation class (`none`/`partial`/`all` from `row.degraded`/`row.reported`, so
 the same requested `--structured-output` flag that actually degraded differently across records is
-caught), and a lens gated on the raw report fields `lensLabel` reads; any divergent or unknown axis
+caught), and a lens and observed `reasoning` state that both compare over the **scored-run population**
+(`run-buckets.mjs`'s shared `scoredRuns` — the runs that produce recall, never the wider `measurable`
+set, so a truncated run cannot make two records' sets equal while their scored runs differ and thus
+conceal a real per-run difference): lens over `lensByCase`'s strict labels, reasoning over
+`reasoningByCase`'s deduped sort-canonicalised state set (`reasoning-observed`/`no-reasoning-observed`/
+`unknown`, server-controlled via the chat template and unreachable over the wire, OAI-221), each
+fail-closed so a differing set suppresses (known vs unknown included) while two records both witnessing
+only `unknown` on reasoning rank through; the displayed `row.lens`/`row.reasoning` stay over
+`measurable`. Any divergent or unknown axis
 suppresses the rank and names the case, since ranking incomparable records is the mis-comparison the
 reader exists to prevent. **Divergence is not the only withhold reason**: a like-for-like set in which
 no record scored a non-control case *and* no control case scored is withheld too, under its own
