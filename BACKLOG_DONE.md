@@ -1,3 +1,28 @@
+## 2026-08-29 — OAI-220 shipped: a cross-run comparison reader for `bench/` records (`04333d9`)
+
+`bench/compare.mjs` reads N review-record JSONs and emits a ranking summary plus a per-case recall
+matrix built entirely from each record's own `caseRows` numbers — never re-tallying, which is what
+re-introduced the unit-mixing error the dated hand-built ranking (2026-08-25/26) suffered.
+`bench/lib/compare-model.mjs` is the pure core; `bench/lib/compare-report.mjs` renders and joins the
+markdown-safety enforced set. It **withholds the ranking when the records are not like-for-like**,
+naming the divergent axes across 15 comparability axes (the exact set `renderReport` threads, absence
+read the way the writer reads it — a not-passed boolean is `false`, not unknown), and, under a distinct
+reason, when no record produced a scoreable run; a control-only set ranks by control false-positive
+rate.
+
+Shipped through `/feature`; the review ladder ran to a clean terminal full pass over four discovery
+passes (11 full, 12 diff, 13 full, 14 full) plus the verdict point, with plan re-gates at rounds 14
+and 15. The last three passes each surfaced one instance of a single class — **a render that displays
+the absence of a measurement as a concrete value**: an all-failed cell that collapsed mixed failure
+kinds to one label (fixed to a disjoint per-kind decomposition, `— 2 failed, 1 substituted`); a
+failed **control** case that read `— control` like a clean one (dated on real record
+`2026-07-30T21-51-40-859Z.json`; fixed to `— control, <failures>`); and the aggregate false-positive
+columns printing `0` for a zero-scored-run denominator (fixed to `—`). Pass 14 swept the whole class
+and confirmed all nine render sinks name the absence rather than fabricate a value; the plan carries a
+class rule so a future sink is a rule violation, not a fresh design question. Verification and mutation
+proofs are in `evidence/oai-220-mutation-proof.md`. Residue filed as **OAI-227** (no reasoning-state
+comparability axis). This is the reporting half of what OAI-217/218 describe from the recording side.
+
 ## 2026-08-28 — OAI-225 shipped: the failure envelope's reasoning witness is observable on the failure path (`439761c`)
 
 OAI-221's `reasoning: reasoningWitness(error?.usage)` on `errorReport` was inert — no throw site set

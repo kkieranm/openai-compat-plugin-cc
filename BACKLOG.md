@@ -11,20 +11,19 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-220** — **Nothing compares two benchmark runs, so every comparison is assembled by hand and
-  the assembly is where the errors are.** `bench/` writes one record and one report per invocation
-  and provides no way to read N of them together: no cross-run table, no diff of two records, no
-  ranking across models. **Dated instance 2026-08-25/26**: producing a ranking over fourteen models
-  and roughly 110 review invocations meant reading each report separately and building the table by
-  hand, which introduced three errors that had to be caught and corrected afterwards — a case's lens
-  recorded as whole-file when the record said `hunksOnly: true`, a finding tally that mixed per-finding
-  and per-cluster units, and a "worst performer" attribution drawn from the wrong run. Each was
-  recoverable only by rereading the records the harness had already written correctly. **The records
-  are not the problem — they are complete and machine-readable**; what is absent is any consumer of
-  more than one of them at a time, so the comparison a reader actually wants exists only in whatever
-  they typed into a terminal. Note this is the reporting half of what OAI-217 and OAI-218 describe
-  from the recording side: those items are about fields a record does not carry, this one is about
-  the absence of any reader across records that do.
+- **OAI-227** — **`bench/compare.mjs` compares the per-case `lens` but not the observed reasoning
+  state, so two records that ran with the thinking channel on vs off rank as like-for-like.** OAI-220's
+  reader treats a per-case `lens` divergence as a comparability failure (a case reviewed whole-file in
+  one record and hunks-only in another is not a like-for-like recall comparison — the exact class of
+  the 2026-08-25/26 dated instance). `row.reasoning` (`case-rows.mjs` `reasoningSamples`, the observed
+  `reasoning-observed`/`no-reasoning-observed`/`unknown` set) is the same class of server-controlled
+  input — the thinking channel is set by the server's chat template (`enable_thinking`) and no
+  OpenAI-compatible request field reaches it (OAI-221) — yet the comparison reader has no reasoning
+  axis, so a record whose model reasoned and one whose model did not are ranked as measuring the same
+  thing. **Named mechanism, not yet a dated instance**: the reader would silently mis-attribute a
+  recall gap to whatever axis it does compare rather than to the reasoning difference. Adding it is a
+  comparability-axis change (its own plan gate), and the witness is already on the row — the axis set
+  was dual-approved without it, so this is deliberately deferred residue, not a defect in what shipped.
 
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
