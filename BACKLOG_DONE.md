@@ -1,3 +1,26 @@
+## 2026-08-29 — OAI-227 shipped: a reasoning-state comparability axis for `bench/compare.mjs` (`506d8a7`)
+
+`divergencesOf` (`bench/lib/compare-model.mjs`) gains a per-case `reasoning` axis so two review records
+whose models reasoned vs did not are not ranked as like-for-like — the observed reasoning state is the
+same class of server-controlled input as the `lens` axis (the thinking channel is set by the chat
+template, unreachable over the wire, OAI-221). **The comparison — both the new `reasoning` axis AND the
+pre-existing `lens` axis — derives its per-case sets over the SCORED-run population** (a new shared
+`scoredRuns` in `bench/lib/run-buckets.mjs`, used identically by `case-rows.mjs` `buckets()` and the two
+`*ByCase` derivations), never the wider `measurable` set. Fail-closed Option A: a differing set
+suppresses ranking (known vs unknown included); two records both witnessing only `unknown` on reasoning
+rank through. The displayed `row.reasoning`/`row.lens` stay over `measurable` — comparability and display
+are deliberately different populations.
+
+**The scored-vs-measurable population was the whole story of this item's review.** The first two designs
+(read `row.reasoning` directly; then a two-arm "empty-set is unprovable" guard) both compared over
+`measurable`, and review found that wrong twice: a `score`-without-`report` record ranks through
+(defensive-reader-reachable), and — the ship-blocker that forced the redesign — a **truncated run can make
+two records' measurable sets equal while their scored runs genuinely differ, concealing a real reasoning
+difference** (real-writer-reachable, proven by repro). Fixing the population (compare over scored runs)
+closed the concealment for both axes and collapsed the guard back to a single value arm, because with the
+scored population an empty set means exactly `scored === 0`, which the coverage axis already owns. The
+lens sweep was owner-authorized; the amended (approach B) plan was dual-approved. No residue.
+
 ## 2026-08-29 — OAI-220 shipped: a cross-run comparison reader for `bench/` records (`04333d9`)
 
 `bench/compare.mjs` reads N review-record JSONs and emits a ranking summary plus a per-case recall

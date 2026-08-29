@@ -11,20 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-227** — **`bench/compare.mjs` compares the per-case `lens` but not the observed reasoning
-  state, so two records that ran with the thinking channel on vs off rank as like-for-like.** OAI-220's
-  reader treats a per-case `lens` divergence as a comparability failure (a case reviewed whole-file in
-  one record and hunks-only in another is not a like-for-like recall comparison — the exact class of
-  the 2026-08-25/26 dated instance). `row.reasoning` (`case-rows.mjs` `reasoningSamples`, the observed
-  `reasoning-observed`/`no-reasoning-observed`/`unknown` set) is the same class of server-controlled
-  input — the thinking channel is set by the server's chat template (`enable_thinking`) and no
-  OpenAI-compatible request field reaches it (OAI-221) — yet the comparison reader has no reasoning
-  axis, so a record whose model reasoned and one whose model did not are ranked as measuring the same
-  thing. **Named mechanism, not yet a dated instance**: the reader would silently mis-attribute a
-  recall gap to whatever axis it does compare rather than to the reasoning difference. Adding it is a
-  comparability-axis change (its own plan gate), and the witness is already on the row — the axis set
-  was dual-approved without it, so this is deliberately deferred residue, not a defect in what shipped.
-
 - **OAI-151** — **There is no cross-run history, so no sweep can be compared with the sweeps before
   it.** Raised by the user during OAI-132's grill, 2026-08-13, as "some kind of history log using
   SQLite", and deliberately not built there.
