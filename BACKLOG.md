@@ -24,7 +24,15 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   cause that was never established, before the real error surfaces. Bounded (each rung fires once)
   and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
   the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
-  one — read the server's status or error `type`/`code` field instead of its prose.
+  one — read the server's status or error `type`/`code` field instead of its prose. **The
+  oversized-`max_tokens` rejection that was sub-item (4) folds in here too** — its design half was
+  decided 2026-08-30 (KEEP sending `max_tokens: 16384` on the unknown-window path: the finite budget
+  arms the OAI-115 watchdog on the unconstrained path and sizes `reviewSchemaFor`'s analysis ceiling,
+  and no available server rejects it — LM Studio and omlx both returned HTTP 200 for
+  `max_tokens: 99999999`, omlx even for `-5`; unanimous advisor + codex-rescue consensus, A over
+  drop/lower), leaving only the reactive half: classify-and-degrade a *real* server's oversized-`max_tokens`
+  rejection, which is the same read-the-status/`type`/`code`-not-prose work as (1) and (2) and waits
+  for the same second server that actually rejects it.
   ~~**(7)** The capability negotiation was scoped to one `chatCompletion` call, so a review's
   `response_format` fallback minted a fresh `createNegotiation` and re-offered a capability the schema
   request already had refused — an asymmetry with the attempt ledger, which *was* deliberately
@@ -43,7 +51,7 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   non-streamed fallback — deferred here because no server does, the failure would be loud, and keying
   the set by `response_format` presence would break the `stream_options` case, which is global (built
   on every body regardless of `response_format`). **This closes only (7); the item stays live for
-  (1), (2) and (4).**
+  (1) and (2)** (and (4)'s reactive residue, now folded into them above).
   The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
   wait for one rather than being fixed blind. (1) `isFormatRejection` reads
@@ -55,15 +63,16 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
   matcher fires on *any* 400 whose body echoes the request, asserting "rejected response_format"
   as a cause it only guessed. ~~(3)~~ **and** ~~(5)~~ **left this item on 2026-08-05 — see the split
-  note below.** (4) With the window unknown, `reserveFor` still puts `max_tokens: 16384` on the
+  note below.** ~~(4) With the window unknown, `reserveFor` still puts `max_tokens: 16384` on the
   wire, where `/oai:task` sends none — a server that rejects an oversized `max_tokens` fails for a
-  reason the plugin chose. Fixing (1) and (2) properly probably means the server's status
-  or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
-  the reason this is one item rather than five.
+  reason the plugin chose.~~ **(4)'s design half DECIDED 2026-08-30 (keep — see the fold-in note
+  under the top of this item); its reactive residue merged into (1)/(2).** Fixing (1) and (2)
+  properly probably means the server's status or error `type`/`code` field rather than prose, which
+  is an ADR 002 shape-not-name question and the reason this is one item rather than five.
 
   **(1) and (2) are reachable only when `--structured-output` is passed** (no schema sent by
   default, `review-request.mjs:206`) — narrower than when filed, and one more reason they wait for a
   second server. (3) and (5) went the other way and moved to **OAI-84** 2026-08-05: the default
   prose-parse path runs the same `parseFindings`, so they stopped being vendor questions and became
-  defects on the shipped default. Sub-item (4)'s reach is unchanged.
+  defects on the shipped default.
 

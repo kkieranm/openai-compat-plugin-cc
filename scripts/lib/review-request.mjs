@@ -40,10 +40,15 @@ export const REVIEW_MAX_TOKENS = 32_768;
  * The reply budget where the window is *not* known — deliberately not raised.
  *
  * With no window there is no shrink and no budget check, so this number goes on
- * the wire as `max_tokens` against a server whose capacity is a guess. That is
- * already a known defect (`/oai:task` sends none at all);
- * doubling the guess would deepen it for no gain, since the caps that need the
- * room are derived from the reserve either way.
+ * the wire as `max_tokens` against a server whose capacity is a guess — and it is
+ * sent anyway, on purpose. A finite budget is what arms the reasoning-reserve
+ * watchdog on the unconstrained path (`armedReserve` needs `2 * TOKEN_RESERVE_TOKENS`,
+ * which this clears) and what `reviewSchemaFor` sizes its `analysis` ceiling from,
+ * so omitting it the way `/oai:task` does — a surface with no reserve, watchdog or
+ * schema ceiling to feed — would disarm both for a server-capacity mismatch that is
+ * loud when it happens (a rejected `max_tokens`) rather than silent. Doubling the
+ * guess buys nothing either, since the caps that need the room derive from the
+ * reserve, not from this ceiling.
  */
 export const REVIEW_UNKNOWN_WINDOW_TOKENS = 16_384;
 
