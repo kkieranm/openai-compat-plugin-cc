@@ -48,6 +48,21 @@ Per-case scored/unscored (scored = has a `report` with `parsed !== false`):
   caps 1/3, config-origin 3/3, docs-only 2/3 (control, 0 defects), model-info 0/3, scaffold 0/3,
   structured 3/3.
 
+**Reconciliation, 2026-08-30 (OAI-211):** nothing below is contradictory, only unstated — the
+"8 no-report" set (correction #1) and the 9 unscored runs are DIFFERENT sets that differ by exactly
+one run, `caps` r3. `caps` has two unscored runs of different kinds: r2 is a no-report run (one of the
+8), and r3 has a `report` but with `parsed: false` (`finishReason: stop`, `findings: null`, a 516-char
+`raw`), so it is unscored yet NOT no-report. Hence 9 scored + 8 no-report + 1 report-but-`parsed:false`
+= 18; the "9 + 8 = 17" reading omitted only `caps` r3. Verified by classifying all 18 runs in the
+results record `bench/results/2026-08-24T02-22-35-984Z.json` under this section's own rule: per-case
+scored `1,3,2,0,0,3` matches the table above, the eight no-report runs match correction #1 exactly, and
+`caps` r3 is the sole `parsed:false` report. (`caps` r3's `raw` is a clean whole-document review —
+inline `findings: []` then prose, "No defects found" — the shape `findings-empty.mjs` reads clean
+today but this run's own build discarded as unreadable; under current code it scores as a clean
+0-findings review, moving `caps` to 2/3.) The G-C "17 of 33" below is a DIFFERENT 17 —
+defect-weighted (`caps 1x2 + model-info 2x3 + scaffold 3x3`), coincidentally equal to the 9+8 run
+miscount, and left as-is because G-C is correct.
+
  - **G-B FAIL** (>=2 scored of 3, every case): THREE of six below the floor — `caps` 1/3,
    `model-info` 0/3, `scaffold` 0/3. Worse than Invocation C, which failed only on `scaffold`.
  - **G-C FAIL** (unresolved-from-unscored <=3 of 33): computed by hand, defects-per-case x
