@@ -1,3 +1,45 @@
+## 2026-08-30 — OAI-228 closed: `message` read as a `summary` alias on the unconstrained path (`d3f5d35`)
+
+A capable model (the MoE `qwen/qwen3.6-35b-a3b`) emitted valid review findings keyed
+`{file, line, message}` — the linter/diagnostic convention — and every one was dropped for naming no
+`summary`, so a review that found real defects reported UNREADABLE. Five runs of real findings were
+lost this way in OAI-49's matched arm.
+
+**Direction: widen, not enforce.** The repo's last three parser changes (`findings-yaml`,
+`findings-empty`, bare-array=object) all chose "read what the model actually sent" for larger deviations
+than a key spelling, and discarding real findings over a field name is the silent-work-discard class the
+repo fights. The "next model spells it a third way" worry is answered by a CLOSED alias set (`{summary,
+message}`, single-sourced in `descriptionOf`) extended only on a future dated instance — the worth bar,
+not a slippery slope. `code`, seen beside `message`, is a rule id, not description, and is not a key.
+
+**Binding site settled empirically before coding** (per the bench-coverage-loss-needs-raw-replies
+discipline): replaying `parseFindings` on the actual replies in
+`bench/results/2026-08-29T23-57-00-791Z.json` proved all five are WHOLE-reply JSON selected via
+`findingsShaped`'s `every(record)` branch — so `named` never bound, and the drop was purely in
+`normalizeFinding`. So the fix widened `normalizeFinding` ALONE. `named` (scanned candidate SELECTION)
+stays `summary`-only: a `{file, message}` array quoted in prose is the single most likely embedded decoy,
+and admitting it there would let it win on position over a real payload. The precise boundary is
+SURVIVAL/normalization, not selection — a `message`-only entry survives once its array is already the
+payload (a whole all-object reply, or a scanned array a `summary`-named sibling selected), but a
+`message`-only array is never what gets selected. Both docstrings state the divergence so it is not
+"reconciled" back.
+
+**Scope, stated so the close-out doesn't over-claim:** the `--structured-output` schema path is
+unaffected — `matchesSchema` requires `summary` and runs before normalization, so a `message`-only
+finding is still rejected there (under a schema the model was held to the shape it was given). The fix
+lives on the unconstrained/degraded path, which is the default since 2026-08-04 and where the dated
+instance lived.
+
+Verified: the five real replies now parse to exactly 4/1/5/1/1 (were all UNREADABLE); mutation-proven
+(reverting the alias reds exactly the alias-dependent tests, the strictness-preservers stay green); all
+decoy/candidate fixtures still refuse (99 tests); full suite 1443. Consensus: advisor + Codex steer on
+the plan, Codex review of the diff (one Low docstring-precision finding, applied).
+
+**Bench-record implication, recorded not rewritten** (as OAI-211's caps-r3 note did): under current code
+the MoE's five discarded runs re-score to real findings, so the OAI-49 matched-arm comparison's
+coverage/precision picture for that arm would shift — the historical record stands; this is the
+now-would-parse fact beside it.
+
 ## 2026-08-30 — OAI-210 closed: the .message-purity marker tests can now fail (`91027df`)
 
 Three `doesNotMatch` assertions in `tests/answer-channel.test.js` claimed to pin "a server-controlled

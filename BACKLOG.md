@@ -15,28 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-228** — **A review reply that is valid `{"findings":[{file, line, message}]}` JSON is discarded
-  wholesale because the findings key their description `message` instead of `summary`.** Dated
-  instance 2026-08-30 (OAI-49's matched arm, `bench/2026-08-29-oai49-matched-arm.md`): the MoE
-  `qwen/qwen3.6-35b-a3b` lost **5 runs of real findings this way** — all 3 `caps` runs (4, 1 and 5
-  findings) and 2 `hold2-hostile-coercion` runs — each a syntactically valid JSON object with a
-  populated `findings` array whose items carry `file`, `line` and `message`, which `JSON.parse`
-  accepts and `parseFindings` then returns `null` on. The mechanism is `findings-candidate.mjs`'s
-  `named` predicate (via `structured.mjs` `parseFindings` → `findingsShaped`): a finding is admitted
-  only when it names both a `file` **and** a `summary`, so an array where every item uses `message`
-  (or `code`+`message`) as the description names no element and the whole reply reads UNREADABLE —
-  the same "real model work discarded" class as OAI-156, exercised live, not latent. The schema
-  requests `file, line, severity, summary, evidence` (`review-schema.mjs:157`), so `message` is a
-  model deviation from the asked shape — **the fork this item is: is accepting `message`/`description`
-  as a `summary` alias the plugin's job (its whole lenient-parse philosophy — `findings-yaml`,
-  `findings-empty` — says maybe yes, since the work is real and the deviation reasonable), or is the
-  discipline that a reviewer must emit the requested field worth keeping (accept the alias and the
-  next model spells it a third way)?** Note it discriminated the models here: the dense arm lost 0
-  runs to this (its 7 non-scored runs were reasoning **prose**, a different, model-attributable
-  cause), so the gap silently penalised whichever model happened to choose `message`. Any fix that
-  widens `named` must be mutation-proved and must not re-admit the decoy shapes `findings-candidate.mjs`'s
-  own comments document as hard-won. Raw replies: the two per-run records named in the doc.
-
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
   five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
