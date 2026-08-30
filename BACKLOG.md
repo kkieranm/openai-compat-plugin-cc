@@ -15,38 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
-  matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
-  scenario crossing the real entry point", with one *stated* exemption (G8, structurally impossible to
-  produce from a fake server). Measured after it shipped, there are two unstated ones:
-  **(1)** `no-exposure` is the only episode verdict of the seven with no e2e scenario — every harness
-  scenario uses a 500ms reply against a 300ms bar, so nothing ever produces a request that fails to
-  clear the margin. It is the verdict that catches a wasted episode, so a break in it would show up
-  as the sweep silently banking runs that tested nothing. A scenario needs only a reply delay below
-  the bar. **Refined by the 2026-08-27 consolidation sweep**: `no-exposure` IS exercised today, but
-  only by direct unit calls against the pure verdict function (`tests/ttl-vocabulary.test.js`,
-  `tests/ttl-verdict.test.js`) — never through the real end-to-end driver/stub matrix, which is what
-  this item is actually about. The gap is narrower than "untested" but the claim stands: nothing
-  proves the verdict is *reachable through the real entry point*, which is OAI-34's own stated rule.
-  **(2)** `tests/ttl-stub-lms.mjs` documents five scenario knobs; **three are used by no test** —
-  `unreadableFromMs`, `lastUsedAdvances`, `failLoad`. Unused affordances in a fixture are worse than
-  absent ones: they read as coverage. Either exercise them (the first two map to real recorded
-  fields — polling continuity and the `lastUsedTime` evidence ADR 013 requires be recorded and never
-  branched on) or delete them and the doc lines that advertise them.
-  **Sharpened by OAI-34's real run, 2026-08-04: `lastUsedAdvances` models a state that does not
-  occur.** LM Studio reports `lastUsedTime: null` for the whole time it is serving a request, so
-  `activityObserved` returned `null` in every episode and the "advancing timestamp" the knob
-  simulates was never observed against the real server. A fixture knob that produces a shape the
-  vendor does not is worse than an unused one — a test built on it would pin the instrument against
-  fiction. So for this knob the choice is narrower than for the other two: **delete it, or keep it
-  explicitly as a not-observed-in-the-wild case and say so in the doc line.** `unreadableFromMs`
-  is untouched by this and remains a genuine shape (the run recorded `unreadableSamples: 0`, so it
-  is real but did not occur).
-  Note the mechanical check that found both is worth keeping as a guard rather than a one-off: the
-  set of episode verdicts reachable through the e2e matrix should be compared against
-  `EPISODE_VERDICTS` minus the stated exemption, so the next hole fails the suite instead of waiting
-  for a review.
-
 - **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
   feature shipped, from reading the plan's verification section back against the tests that exist,
   so that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. **Consolidation sweep,

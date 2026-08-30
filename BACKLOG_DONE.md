@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-45 closed: the two holes in the TTL e2e matrix (`deb4611`)
+
+`no-exposure` was the only one of seven `EPISODE_VERDICTS` never produced through the real
+driver+stub matrix — only by direct unit calls against the pure verdict function. It is unreachable
+with one fixed reply delay because calibration clearance and the `no-exposure` verdict share the
+exposure bar (`challengeTtlMs × EXPOSURE_MARGIN`): calibration must CLEAR it to license the sweep,
+the challenge episode must NOT. The e2e harness gained a per-call reply-delay override
+(`replyDelayMs`/`replyDelayFromCall`, default off so every existing scenario is byte-unchanged), and
+the new scenario keeps the calibration reply slow (clears) while dropping the challenge reply below
+the bar — yielding an episode `no-exposure`, a sweep `no-exposure`, and a non-zero exit (the wasted
+sweep the verdict exists to stop being banked silently).
+
+A mechanical **reachability guard** now proves the verdict set the e2e scenarios declare equals
+`EPISODE_VERDICTS`, so the next missing scenario fails the suite instead of waiting for a review —
+the check that found this hole, kept as the tracker asked. No subtraction: the stated G8 exemption is
+the *mechanism* by which `instrument-invalid` arises (an `answered` attempt with
+`serverResponded: false`, unproducible by a fake server), not a verdict left uncovered —
+`instrument-invalid` is still reached e2e by the competing-model scenario. The guard's bound (it
+catches a missing verdict, not a fiction entry paired with a fictional `EPISODE_VERDICTS` member) is
+disclosed in a comment rather than closed with execution-order-coupled cross-test state, which would
+break a filtered `--test-name-pattern` run.
+
+Fixture knobs resolved: `unreadableFromMs` is now **exercised** (a garbage `lms ps` poll counts as
+`unreadableSamples > 0`, not as an unload — a real recorded shape); `lastUsedAdvances` **deleted** (it
+modelled an advancing `lastUsedTime` the real LM Studio never produces — it reports `null` while
+serving, per the 2026-08-04 run — so a test on it would pin the instrument to vendor fiction);
+`failLoad` **deleted** (it mapped only to an uncaught crash — `lms` is `execFileSync` which throws and
+`loadWithTtl` has no catch — not a verdict or designed handling; the ungraceful-crash-on-load-failure
+is a latent observation, unfiled, no dated instance). Both new tests mutation-proven (removing the
+`no-exposure` mapping entry reds the guard naming it; neutralizing the stub garbage path reds the
+unreadable test). Resolved via the fable-advisor + Codex consensus; Codex reviewed the implemented
+diff (4 clean, 1 non-blocking — the disclosed guard bound). 1511 tests green.
+
 ## 2026-08-30 — OAI-11 closed (lens slice): diverse review passes by lens (`779eb59`)
 
 `/oai:review --lens correctness,security[,edge-cases]` runs one pass per named lens from a closed
