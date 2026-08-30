@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-9 closed: multi-pass review with a deduplicated union (`7108d8c`)
+
+`/oai:review --passes N` (default 1) runs N independent passes and unions the findings by LOCATION
+(`file`+exact-line, paraphrase-proof) with a per-finding agreement count K — a single pass measured
+20% hit-rate-per-run on a two-defect file, and agreement across independent passes is the closest thing
+to a free verifier. N=1 stays byte-identical to the single-pass path (gated on `passCount > 1`). K
+counts readable passes (a Set of indices) at a location, a disclosed lower bound; distinct summaries are
+retained, severity is max, null-line findings unmerged; the denominator is readable passes (an empty
+`{findings:[]}` is an observed no-finding vote), non-observations named but uncounted.
+
+**Fail-closed throughout.** An all-unreadable run never renders `findings:[]` at exit 0; the served model
+must be confirmed (`modelReported`) and agree across passes or the run refuses (stricter than the
+single-pass path, which only notices a substitution). The merged `--json` envelope is additive-equivalent
+to the single-pass `jsonReport` — usage/reasoning summed over readable passes, `durationMs` over all,
+caveats the fail-closed OR, run-context/`sampling`/`degraded` at top level — enforced by a graduation
+test that default-denies any unconditional single-pass top-level key silently missing from the union.
+
+**Grilled decisions:** default 1 (not 3 — tripling the flagship's default cost is an owner call); dedup on
+location not `file+line+claim` (a local model paraphrases, so keying on the claim undercounts the very
+agreement the feature produces); each pass its own `reviewPlan`+ledger over one shared target (so OAI-11's
+per-pass `{provider, model, lens}` is a config change, not a rewrite).
+
+Shipped after a **six-pass review ladder** (probe/grill/plan gate dual-approved; then Pass 1 full, Passes
+2–5 diff, Pass 6 terminal full — dual approval by Codex + verdict-signer on digest `3c271a30…`). The
+passes narrowed from envelope-completeness (Pass 3) through comment/fidelity accuracy (Passes 4–5) to a
+clean terminal read; every rule carries a mutation proof seen RED. Verified 1481/1481 green plus a live
+`--passes 2` run against LM Studio (`qwen/qwen3.8-27b`) catching two seeded defects at agreement 2/2.
+**Deferred residue** (recorded in `plans/oai-9-multi-pass-review-union.md`, latent under the worth bar
+since bench cannot yet produce a multi-pass record): bench `--passes` wiring (the axis, a top-level
+`attempts` aggregate and truncation signal for `attempt-rows`/`truncatedRuns`, and axis-from-envelope);
+a substituted-and-FAILED pass's served model unread (findings provenance unaffected — the union is
+all-confirmed-model); reason-at-source classification for a reasoning-only parse-null all-failed run.
+
 ## 2026-08-30 — OAI-228 closed: `message` read as a `summary` alias on the unconstrained path (`d3f5d35`)
 
 A capable model (the MoE `qwen/qwen3.6-35b-a3b`) emitted valid review findings keyed

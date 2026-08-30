@@ -15,25 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
-  Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
-  five runs of the same command produced 1 real defect, 3 false positives, 2 empty results and 1
-  budget failure — a **20% hit rate per run**, with output varying 1,709→5,450 tokens for identical
-  input and quality tracking that spend. Independent passes are the lever: each costs ~40–90s and
-  nothing else, and unioning three or four would have caught both real defects instead of gambling on
-  one. Same shape as the loop-until-dry pattern. Needs: N passes (default 3?), dedupe on
-  file+line+claim, and a count of how many passes reported each finding — agreement across
-  independent passes is itself a confidence signal worth showing, since it is the closest thing to a
-  free verifier. Decide whether passes run concurrently (one local model, so probably not) and how
-  this interacts with OAI-8's progress reporting, which it makes far more necessary.
-  **The "~40–90s each" estimate is wrong for passes 2..N, and now measurably so.** Every pass after
-  the first sends the same prompt, so it is a prompt-cache hit: measured on a 56,805-token request,
-  first token at 421.7s cold against 11.5s warm. The marginal pass is therefore *much* cheaper than
-  the first — good for the feature, and an argument for more passes rather than fewer — but it makes
-  a per-pass average meaningless, and any timing quoted for "a review" must say whether it is the
-  cold one. OAI-18 landed `prefillMs`/`generationMs`, so this is now visible per pass rather than
-  hidden inside a total; use them when costing this.
-
 - **OAI-11** — Diverse passes: different models, and different lenses.
   **Check the rate metric before comparing across *servers*.** OAI-17's `gen tok/s` divides
   provider-reported `completion_tokens` by a window running from the first text frame to the end of
