@@ -11,24 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-50** — Decide whether a run whose context probe failed should be scored at all. **Filed
-  2026-08-04 from OAI-19's gate work, where the July records answered the question by accident.**
-  When `model-info.mjs` cannot detect a served window, the run proceeds with `contextChecked: false`
-  and the reply budget falls back to a fixed value. **The 44,405 figure below is the July arms'
-  observed `analysisCap` (a derived, character-based figure); re-checked 2026-08-24 against disk, the
-  fallback constant itself is now `REVIEW_UNKNOWN_WINDOW_TOKENS = 16_384` (tokens, in
-  `scripts/lib/review-request.mjs`) — the mechanism (fixed, unconditional, silent on probe failure)
-  is unchanged, only the literal number is not directly comparable across the two.** Every off-pattern `analysisCap` in the
-  2026-07-30 arms is exactly such a run — `config-origin` dense at 44,405 beside 74,000, `caps` MoE
-  at 44,405 beside 74,000, `scaffold` MoE at 44,405 beside 65,499 — and they cluster immediately
-  after a failed run, which suggests the probe fails in whatever server state a drop leaves behind.
-  Those runs were **scored in July as if they were the same instrument as their siblings**, and the
-  fallback is not uniformly conservative: dense `scaffold` derives 30,683, *below* the fallback, so a
-  probe failure there *raises* the ceiling. OAI-19's gate (G-L) excludes them from scoring, which
-  handles the benchmark. The open question is the product one: should `/oai:review` refuse, warn
-  louder, or retry the probe, rather than quietly reviewing under a budget nobody chose? The size
-  guard is disarmed on exactly that path, which is when an oversized request goes out unrefused.
-
 - **OAI-159** — **Citations in this file point at an `adr/` corpus that no longer exists.** Filed
   2026-08-14 by the backlog sweep at 78 citations across 37 of that day's 99 live items, counted
   rather than estimated; re-counted 2026-08-24 by this sweep against the *current* file — the backlog

@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-50 closed: `/oai:review` warns up front when it cannot size the window (`4ecd2fe`)
+
+The open product question was what `/oai:review` should do when the context-window probe returns
+nothing (or none is configured): the run proceeded silently under a fixed reply reserve
+(`REVIEW_UNKNOWN_WINDOW_TOKENS`) with the input-size guard disarmed (`checkContextBudget` returns
+`checked:false` and never throws), so an oversized request went out unrefused and failed at the server
+minutes later — and the operator's only signal was the footer note, printed *after* that wait.
+
+Consensus — two advisor votes plus a Codex steer — picked **warn louder** over the two alternatives.
+**Refuse** was rejected: it contradicts `reserveFor`'s own documented reasoning ("refusing every review
+would deny work that usually succeeds", measured good runs at 1,333–5,450 output tokens) and would
+permanently break the steady-state server that never reports a window. **Retry the probe** was rejected
+under the repo's worth bar: no dated instance shows a retry succeeding where the first probe failed.
+The verified residual exposure justified disclosure, not refusal: the whole-file rung is already skipped
+on the unsized path (`review-ladder.mjs` gates on `windowKnown`), so only the diff plus pinned
+`--file`/untracked files still go out unchecked.
+
+Shipped: an up-front stderr warning gated on `!contextLength`, emitted **after** `reviewPlan` (whose
+`reserveFor` refuses a too-small `--max-tokens`, so "Proceeding" never precedes an immediate local
+refusal) and **before** the "Reviewing…" line. It is **ad-hoc-aware** — the endpoint label and remedy
+were factored out of `unsizedWindowNote` into shared `windowSource`/`windowRemedy` (review.mjs) and used
+by both the report note and the warning, since an ad-hoc `--base-url` run has no config entry to set
+"contextLength" on. Codex's implementation review drove both the ad-hoc-awareness and the
+after-`reviewPlan` placement; each new behaviour was mutation-proven RED (`windowSource`, `windowRemedy`,
+and the placement independently) before the clean Codex re-pass. Verified live: 1435 tests green, plugin
+loads, a real LM Studio task round-trip returned an answer with the single-sourced footer note.
+
+**Known residue, not filed** (same mechanism, no separate dated instance — this close-out is the citable
+artifact): `checkContextBudget`'s footer note (context-guard.mjs) is still *not* ad-hoc-aware — it says
+`set "contextLength" for provider "<name>"` even for an ad-hoc run — left untouched deliberately because
+it is shared with `/oai:task` and OAI-50 is scoped to `/oai:review`. `/oai:task` reaches the same
+`checked:false` silent path and gets no up-front warning at all, for the same scope reason.
+
 ## 2026-08-30 — OAI-49 closed: the matched-budget review arm is a config recipe, not a flag (`b7c0d4d`)
 
 A cross-model `/oai:review` comparison is matched from configuration alone. `profile.contextLength` (a
