@@ -150,6 +150,72 @@ SSE, while the first-token and idle budgets that mean "the model is working" liv
 `reviewSchemaFor(reserve)` — and a run its `analysis` ceiling truncates has its findings scored while
 its silence widens the benchmark's recall into a band.
 
+`scripts/lib/review-passes.mjs` is `/oai:review --passes N` (default 1): N independent passes of the
+same request, unioned with a per-finding agreement count, because a single pass is a lottery (one
+135-line file with two known defects produced 1 real defect, 3 false positives, 2 empty results and 1
+budget failure across five identical runs). `passes === 1` is BYTE-IDENTICAL to the single-pass path —
+`cmd-review.mjs`'s `runMultiPass` is reached only when `passCount > 1`, each pass a full
+`requestFindings`+`parseFindings` with its OWN fresh `reviewPlan` and ledger (the target is shared,
+which makes the union comparable; the attempt bookkeeping is not, so `attempts`/`retried` never span
+passes), structured to take its target as a parameter so OAI-11's per-pass `{provider, model, lens}` is
+a config change not a rewrite. The module is PURE — `review-report.mjs`'s `reportPasses` owns the one
+`stdout` write. `mergePasses` keys the union on `[file, exact-line]` (`JSON.stringify`, so no separator
+is assumed absent from a path), NOT on the claim: a local model paraphrases, so keying on the summary
+would UNDERCOUNT agreement — the very signal the feature produces; distinct summaries are retained in
+`summaries[]`, `severity` is the max, and agreement K is the count of READABLE passes that flagged the
+key's LOCATION (`passes` is a Set of pass INDICES, so a pass naming a line twice is one vote) — a
+LOCATION-agreement count, not a defect-identity claim, bounded in both directions: it UNDER-counts (an
+off-by-a-line or paraphrased duplicate does not merge) and can OVER-state defect agreement (two
+different defects at one line count K=2), which is why a merged finding with more than one distinct
+summary is marked `— summaries differ` and shows them all, so K is never read as proof the passes found
+the same defect. A `line === null` finding is kept
+UNMERGED (its own entry, agreement 1): with no location to anchor on, keying it on file+summary would
+reintroduce the paraphrase problem for exactly the subset with no line. The denominator is READABLE
+passes, where an EMPTY `{findings:[]}` is readable (`parseFindings` distinguishes it from an unreadable
+`null`) — an observed no-finding vote, kept in the denominator; only a thrown or unreadable pass is a
+non-observation, named but counted in no denominator, its reason preserved (`passReason` runs
+`unparsedReply`, which THROWS `token-exhaustion`/`reasoning-only` — so the dominant overnight failure
+mode is not flattened to a generic "unreadable"). Two fail-closed guards run before any render:
+`servedModelFailure` refuses a union whose passes were not all served ONE CONFIRMED model —
+`result.model` falls back to the requested id when the server did not name what it served
+(`modelReported === false`), so an unconfirmed served model is not agreement (stricter than the
+single-pass path, which only NOTICES a substitution, and accepted as over-suppression on the safe side);
+`allFailedError` refuses an all-unreadable run rather than rendering `findings: []` at exit 0, taking its
+top-level reason from the FIRST pass in order (`passes[0]`, reclassified through `unparsedReply` so a
+leading `token-exhaustion` is preserved for the sweep's `starved` bucket, never skipped for a later
+thrown pass) and aggregating every pass's ledger entries by explicit assignment — deliberately not
+`withLedger`, which fills only an absent field, so the whole-run superset replaces a thrown pass's
+one-pass records — so `errorReport`'s `attempts` is not the OAI-116 null and carries the mixed-failure
+evidence; the served-model refusal gets the same aggregate attached at its throw site. The `--json`
+envelope is ONE merged object (`bench/lib/outcome.mjs`'s single `JSON.parse(stdout)` still parses it,
+`findings` still matchable on `{file, line, summary}`, and a top-level `parsed: true` so a scoring
+consumer gates the same as on a single-pass record) carrying `kind: 'multi-pass-review'`, a per-pass
+`passes[]` (each readable pass its own `jsonReport`; each non-observation keeps `ok: false` yet preserves
+its `durationMs`, `attempts`, and — for an unreadable-not-thrown pass — its reply facts, `raw`, and its
+own `salvaged`/`salvageTrim`/`degraded`; a thrown pass also carries its reply's `usage`/`reasoning` off
+`error.usage`/`error.answer.usage`, but NOT its served model — a substituted-and-FAILED pass's model is
+unread, a disclosed gap, so "nothing is concealed" holds for the parse-null subset only), the
+confirmed shared `model`/`requestedModel` pair for `outcomeFor`'s substitution check, and every caveat as
+the fail-closed OR (`caveatUnion` — `salvaged`, `analysisCut`, `atCap`, `hunksOnly`, `degraded`,
+`skippedUnsizedWindow` true if ANY readable pass set it) with `contextChecked` the AND. The envelope is
+ADDITIVE-EQUIVALENT to the single-pass `jsonReport`, carrying the shared run context at top level
+(`reasoning` = `reasoningWitness` over the merged usage, `sampling`,
+`contextWindow`/`contextSource`/`detectedWindow`/`serverConfig`) so a `--json` reader of the union is not
+handed a less honest object than its own per-pass records; a graduation test
+(`tests/review-multi-pass.test.js`) default-denies any UNCONDITIONAL single-pass top-level key silently
+missing from the merged envelope, past an explicit `PER_PASS_ONLY` allowlist. The two aggregate
+measurements sum over DIFFERENT populations by design: `usage` is a fail-closed sum over READABLE passes
+(a non-observation's tokens — a thrown OR a parse-null pass can carry a `usage`, surfaced in its
+`passes[]` entry — are deliberately excluded from the top-level sum; null unless every readable pass
+carried finite, non-negative counts; `completion_tokens_details.reasoning_tokens` sums through only when
+every readable pass reports one, else the detail key is omitted so `reasoningWitness` reads unknown),
+while `durationMs` sums ALL passes (a failed pass still consumed wall clock; null if any pass lacks a
+finite duration). `bench/lib/compare-model.mjs`'s `scalarAxes` carries a `passes` axis (absent normalised
+to 1, so a legacy/no-flag record compares equal to an explicit `--passes 1`) so a multi-pass record is
+flagged incomparable against a single-pass one rather than mis-ranked — inert until `bench/run.mjs`
+forwards `--passes`, at which point the merged SUCCESS envelope also needs a top-level `attempts`
+aggregate and a truncation signal (see the OAI-9 plan's bench-wiring residue).
+
 `scripts/lib/stream-collect.mjs` times each attempt on both sides of its first token — `prefillMs` and
 `generationMs` — because a server-side prompt cache moves the first by tens of times and leaves the
 second alone; `/oai:review --cache-buster <token>` defeats that cache for a measurement, and the

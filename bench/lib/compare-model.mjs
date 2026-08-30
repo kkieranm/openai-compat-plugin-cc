@@ -114,6 +114,15 @@ function scalarAxes(record, rows) {
     'max-tokens': numericAxis(o['max-tokens']),
     temperature: numericAxis(o.temperature),
     'max-attempts': numericAxis(o['max-attempts']),
+    // `/oai:review --passes`: a multi-pass record's findings are a deduplicated
+    // union across N passes, not one pass's output, so ranking it against a
+    // single-pass record would compare unlike things. An ABSENT `passes` is the
+    // byte-identical single-pass code path (`--passes 1` is `cmd-review.mjs`'s own
+    // no-op branch), and every legacy record predates the flag and was single-pass —
+    // so `?? 1` normalises both to `known(1)`, comparing EQUAL to an explicit
+    // `--passes 1` and diverging only from a genuine `--passes 2+`. Normalising
+    // absent to 1 is TRUE of those records, not a papered-over confound.
+    passes: numericAxis(o.passes ?? 1),
     'max-seconds': capAxis(o, rows),
     'runs-per-case': known(record.runsPerCase),
   };

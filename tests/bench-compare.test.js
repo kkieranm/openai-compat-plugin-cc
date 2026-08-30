@@ -161,11 +161,23 @@ test('flipping warm-up, timeout, temperature, max-attempts, max-seconds each sup
     [{ temperature: 0.7 }, 'temperature'],
     [{ 'max-attempts': 3 }, 'max-attempts'],
     [{ 'max-seconds': 300 }, 'max-seconds'],
+    // A multi-pass record's findings are a deduplicated union across N passes,
+    // not one pass's output, so it must not rank against a single-pass record.
+    [{ passes: 3 }, 'passes'],
   ]) {
     const comp = flip(opt);
     assert.equal(comp.rankable, false, `${axis} should suppress`);
     assert.ok(axisNames(comp).includes(axis), `${axis}: ${JSON.stringify(comp.divergences)}`);
   }
+});
+
+test('an explicit --passes 1 does not diverge from a no-flag record (both single-pass)', () => {
+  // Mutation proof for the `?? 1` normalize: an absent `passes` is the
+  // byte-identical single-pass code path, so it must compare EQUAL to an explicit
+  // `--passes 1`, never suppress. Reverting `?? 1` makes absent `known(null)` vs
+  // `known(1)`, which would put `passes` in the divergence list.
+  const comp = flip({ passes: 1 });
+  assert.ok(!axisNames(comp).includes('passes'), `passes must not diverge: ${JSON.stringify(comp.divergences)}`);
 });
 
 test('flipping runsPerCase suppresses ranking', () => {

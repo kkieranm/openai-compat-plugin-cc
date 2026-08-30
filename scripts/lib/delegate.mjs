@@ -25,6 +25,15 @@ export { parseNumber };
 export const MAX_ATTEMPTS_CEILING = 10;
 
 /**
+ * A ceiling on `/oai:review --passes`, the multi-pass count. Bounded above for
+ * the same reason as `--max-attempts`: each pass is a full model call, so
+ * `--passes 1e9` is a typo whose honest response is a refusal in milliseconds,
+ * not a run nobody can stop. `--passes` is a `/oai:review`-only flag; `/oai:task`
+ * never reads it, and an undefined value here means single-pass.
+ */
+export const PASSES_CEILING = 10;
+
+/**
  * Validate every numeric flag before any network work, so a bad flag fails in
  * milliseconds instead of after a round trip that was never going to be used.
  * The window covers prompt + completion, so --max-tokens is also the headroom
@@ -72,6 +81,12 @@ export function parseNumericOptions(options) {
       options['max-attempts'] === undefined
         ? undefined
         : parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING }),
+    // `/oai:review` only; undefined means single-pass. Each pass is a full model
+    // call, so this is bounded above like `--max-attempts`.
+    passes:
+      options.passes === undefined
+        ? undefined
+        : parseNumber(options.passes, 'passes', { integer: true, min: 1, max: PASSES_CEILING }),
   };
 }
 

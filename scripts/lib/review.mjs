@@ -82,7 +82,7 @@ export function buildReviewPrompt({ label, diff, instructions, wholeFiles }) {
   return parts.join('\n\n');
 }
 
-const SEVERITY_ORDER = ['high', 'medium', 'low'];
+export const SEVERITY_ORDER = ['high', 'medium', 'low'];
 
 function renderFinding(finding) {
   const place = `${finding.file}${finding.line ? `:${finding.line}` : ''}`;

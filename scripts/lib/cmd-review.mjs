@@ -10,7 +10,8 @@ import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
-import { errorReport, report } from './review-report.mjs';
+import { aggregateAttempts, allFailedError, partitionPasses, servedModelFailure } from './review-passes.mjs';
+import { errorReport, report, reportPasses } from './review-report.mjs';
 import { windowRemedy, windowSource } from './review.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
 import { attachRunContext, buildRunContext } from './run-context.mjs';
@@ -23,7 +24,7 @@ import { parseFindings } from './structured.mjs';
 export const REVIEW_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'cache-buster', 'max-attempts', ...SAMPLING_FLAGS,
+    'cache-buster', 'max-attempts', 'passes', ...SAMPLING_FLAGS,
   ],
   booleanFlags: ['staged', 'diff-only', 'json', 'structured-output'],
   repeatableFlags: ['file'],
@@ -166,6 +167,15 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   // reasoning-only runaway thrown by the report stage — after the model call
   // returned — carries it too, not just a failure from `requestFindings`.
   try {
+    // Opt-in multi-pass: N independent passes unioned with an agreement count.
+    // `passes === 1` (the default, and no flag) is byte-identical to the block
+    // below — this branch is the whole extent of the feature's footprint on the
+    // flagship path.
+    const passCount = numeric.passes ?? 1;
+    if (passCount > 1) {
+      await runMultiPass({ passCount, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext });
+      return;
+    }
     const ledger = createLedger();
     const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
     // Up front, before the multi-minute run — not only in the after-the-fact
@@ -228,4 +238,98 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   } catch (error) {
     throw named(error);
   }
+}
+
+/**
+ * N independent passes of the same request, unioned into one report with an
+ * agreement count per finding. Each pass is a full `requestFindings` +
+ * `parseFindings` with its OWN fresh `reviewPlan` and ledger: the target is
+ * shared (what makes the union comparable and the agreement count meaningful),
+ * the attempt bookkeeping is not, so a pass's `attempts`/`retried` never spans
+ * passes. A pass is structured to take its target as a parameter even though all
+ * N are identical today, so OAI-11 (per-pass `{provider, model, lens}`) is a
+ * config change, not a rewrite. Sequential: one local model, so concurrency buys
+ * nothing here — the concurrent case is cross-provider (OAI-11). Called inside
+ * `reviewFlow`'s post-resolution `try`, so its fail-closed throws carry the run
+ * context like every other failure on this path.
+ */
+async function runMultiPass({ passCount, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext }) {
+  const outcomes = [];
+  for (let index = 0; index < passCount; index += 1) {
+    const ledger = createLedger();
+    const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
+    // After the FIRST plan, for the same reason the single-pass path emits it
+    // after `reviewPlan`: `reserveFor` refuses a too-small --max-tokens, so
+    // "Proceeding" must never precede an immediate local refusal.
+    if (index === 0 && !contextLength) {
+      process.stderr.write(
+        `WARNING: the context window for ${windowSource(profile)} could not be determined, so the ` +
+          `input size cannot be checked and an oversized request may be rejected by the server. ` +
+          `${windowRemedy(profile)} to enable the check. Proceeding.\n`,
+      );
+    }
+    const startedAt = Date.now();
+    process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name} (pass ${index + 1}/${passCount})...\n`);
+    try {
+      const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress(
+        (onProgress) => requestFindings(profile, { ...plan, onProgress }),
+      );
+      // No per-pass substitution notice here, unlike the single-pass path: a
+      // substitution makes `servedModelFailure` refuse the whole run below, so a
+      // notice saying "results belong to the model that ran" would contradict the
+      // refusal it precedes. A substituted pass that was ALSO a non-observation
+      // escapes that guard (it is never in the readable set), but only the
+      // parse-null subset (a reply arrived, so `pass.result` exists) has its served
+      // model on its `passes[]` record, and only a CONFIRMED substitution there
+      // (`modelReported === true`) gets the per-pass-line note — `reportPasses`
+      // reads both off `pass.result`. A THROWN substituted pass carries no
+      // `pass.result`, so its substitution is not disclosed — a known gap. The id is
+      // not always gone: a stream drop AFTER a model-bearing frame leaves it on the
+      // raw accumulator at `error.answer.model` (server-named — the accumulator's
+      // default is null, only a frame sets it), but that accumulator never reached
+      // `finishAnswer`, so it has no `modelReported`/`requestedModel` beside it, and
+      // the thrown branch does not read it yet.
+      outcomes.push({
+        ok: true,
+        parsed: parseFindings(result, { structured, schema }),
+        result,
+        structured,
+        budget,
+        estimatedTokens,
+        hunksOnly,
+        skipped,
+        salvaged: Boolean(salvaged),
+        salvageTrim: salvageTrim ?? null,
+        durationMs: Date.now() - startedAt,
+        ledger,
+      });
+    } catch (error) {
+      outcomes.push({ ok: false, error, ledger, durationMs: Date.now() - startedAt });
+    }
+  }
+
+  const { readable } = partitionPasses(outcomes);
+  // Fail closed before any render: an all-unreadable run must not print
+  // `findings: []` at exit 0, and a union across unconfirmed or disagreeing
+  // models is not a measurement of one model. Both post-hoc failures carry the
+  // completed passes' attempt records so their `--json` envelope reads
+  // `attempts` like every other — `allFailedError` aggregates its own; the
+  // served-model refusal is a bare `UserError`, so attach them here.
+  if (readable.length === 0) throw allFailedError(outcomes, profile);
+  const servedFailure = servedModelFailure(readable);
+  if (servedFailure) {
+    const attemptRecords = aggregateAttempts(outcomes);
+    if (attemptRecords.length) servedFailure.attemptRecords = attemptRecords;
+    throw servedFailure;
+  }
+
+  reportPasses(outcomes, {
+    profile,
+    model,
+    target,
+    structuredOutput: Boolean(options['structured-output']),
+    sampling,
+    json: Boolean(options.json),
+    ...runContext,
+  });
 }

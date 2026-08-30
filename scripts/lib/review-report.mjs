@@ -7,8 +7,10 @@
 // file no longer owns them and this line no longer claims it does.
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
+import { caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
+import { substitution } from './model-identity.mjs';
 import { reasoningWitness } from './reasoning-witness.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
@@ -375,6 +377,217 @@ export function report(parsed, context) {
       generationMs: result.generationMs,
       contextNote: budget.checked ? `~${estimatedTokens} tokens sent.` : budget.note,
       finishReason: result.finishReason,
+    })}\n`,
+  );
+}
+
+// Per-pass context for `jsonReport`: the pass's own request/reply facts, over the
+// run's shared model/target/sampling/serverConfig.
+function perPassContext(pass, shared) {
+  return {
+    result: pass.result,
+    structured: pass.structured,
+    profile: shared.profile,
+    model: shared.model,
+    target: shared.target,
+    hunksOnly: pass.hunksOnly,
+    skipped: pass.skipped,
+    budget: pass.budget,
+    estimatedTokens: pass.estimatedTokens,
+    durationMs: pass.durationMs,
+    ledger: pass.ledger,
+    salvaged: Boolean(pass.salvaged),
+    salvageTrim: pass.salvageTrim ?? null,
+    structuredOutput: shared.structuredOutput,
+    sampling: shared.sampling,
+    contextWindow: shared.contextWindow,
+    contextSource: shared.contextSource,
+    detectedWindow: shared.detectedWindow,
+    serverConfig: shared.serverConfig,
+  };
+}
+
+// Top-level `usage` for the union, fail-closed: the sum over readable passes only
+// when every one carries finite, non-negative token counts. A partial sum
+// presented as a total is the concealment class this repo bans — so a single pass
+// with a null usage makes the top-level `usage` null while the per-pass values
+// stay in `passes[]`. Exported for the unit tests that pin the guard, since the
+// fake server's `completionFrames` hardcodes one usage shape and cannot deliver a
+// negative or a partial one end to end.
+//
+// PRECONDITION: at least one readable pass. On an EMPTY list both `every` guards are
+// vacuously true and the reductions seed 0 — a fabricated all-zero usage, and worse
+// a fabricated `completion_tokens_details.reasoning_tokens: 0` that `reasoningWitness`
+// would read as a real provider-reported "no reasoning". The sole production caller
+// is `reportPasses`, which `runMultiPass` reaches only PAST the `allFailedError`
+// throw (raised when no pass is readable), so it never supplies an empty list; this
+// function follows `reportPasses`'s own deliberately-not-defensive posture rather
+// than adding a guard that would diverge from it.
+//
+// The two guards fail closed DIFFERENTLY, by design: a corrupt BASE field (below)
+// nulls the whole usage, because the three base counts are the measurement itself;
+// a corrupt REASONING detail (further down) omits only `completion_tokens_details`
+// and lets the base sum stand, because the detail is optional and its honest
+// absence reads `unknown`. Same corruption class, two postures — stated so a later
+// pass does not "harmonize" the detail up to nulling the whole record.
+export function sumUsage(readable) {
+  const fields = ['prompt_tokens', 'completion_tokens', 'total_tokens'];
+  const usages = readable.map((pass) => pass.result.usage);
+  // `>= 0` as well as finite, matching the reasoning guard below and
+  // `reasoningWitness`: a negative token count is corruption, not a measurement.
+  if (!usages.every((usage) => usage && fields.every((field) => Number.isFinite(usage[field]) && usage[field] >= 0))) return null;
+  const out = {};
+  for (const field of fields) out[field] = usages.reduce((sum, usage) => sum + usage[field], 0);
+  // `reasoning_tokens` rides in `completion_tokens_details`, and `reasoningWitness`
+  // reads it off THIS merged usage — so dropping it makes every merged record
+  // classify `unknown`. Sum it only when EVERY readable pass reports a finite,
+  // NON-NEGATIVE one: 0 is a provider-reported "no reasoning" and must sum through
+  // (never read as "off"), while a negative sentinel would corrupt an otherwise-real
+  // total, so it is rejected exactly as `reasoningWitness` rejects it. When any pass
+  // lacks it, OMIT the key rather than inventing a zero — an absent detail reads
+  // honestly as `unknown` through the witness's own missing-field path. The rebuilt
+  // object carries `reasoning_tokens` ALONE (a fresh object, not a spread): no other
+  // detail field was ever summed, so nothing should imply one travelled.
+  const reasonings = usages.map((usage) => usage.completion_tokens_details?.reasoning_tokens);
+  if (reasonings.every((n) => Number.isFinite(n) && n >= 0)) {
+    out.completion_tokens_details = { reasoning_tokens: reasonings.reduce((sum, n) => sum + n, 0) };
+  }
+  return out;
+}
+
+// One pass's `passes[]` record. A readable pass is its own `jsonReport`. A
+// non-observation keeps `ok: false` EXACTLY — the `readableReports` filter below
+// gates on `ok !== false`, so a mis-set flag would ingest a failed pass as a
+// readable one and read its absent caveat fields as clean — but is NOT reduced to
+// a bare reason: a failed pass is data, so its `durationMs` and `attempts` ride
+// here always, and a pass that produced an unreadable reply (rather than throwing)
+// also carries its own reply facts, named exactly as `jsonReport` names them so a
+// parse-null entry's `model`/`usage` mean the same as a readable pass's. The `raw`
+// reply is kept for the shape-unreadable class — the evidence a parser-gap
+// coverage loss is diagnosed from (OAI-49/OAI-228).
+export function passEnvelope(pass, index, context) {
+  if (isReadable(pass)) return jsonReport(pass.parsed, perPassContext(pass, context));
+  const { reason, raw } = passReason(pass, { structured: pass.structured, profile: context.profile, ledger: pass.ledger });
+  const entry = {
+    ok: false,
+    index,
+    reason,
+    durationMs: pass.durationMs ?? null,
+    attempts: pass.ledger ? pass.ledger.entries() : null,
+  };
+  if (pass.result) {
+    entry.model = pass.result.model || context.model;
+    entry.requestedModel = pass.result.requestedModel ?? context.model;
+    entry.modelReported = pass.result.modelReported ?? false;
+    entry.usage = pass.result.usage ?? null;
+    entry.reasoning = reasoningWitness(pass.result.usage);
+    entry.finishReason = pass.result.finishReason ?? null;
+    entry.prefillMs = pass.result.prefillMs ?? null;
+    entry.generationMs = pass.result.generationMs ?? null;
+    entry.raw = raw;
+    // A parse-null pass (a reply arrived, `parseFindings` could not read it) is a
+    // non-observation, so `caveatUnion` (readable-only) never counts its caveats —
+    // which left a salvaged-but-unparseable or degraded pass's rescue/degradation
+    // INVISIBLE, contradicting "nothing is concealed". Surface them on the pass's
+    // own `passes[]` entry (never the top-level OR). `degraded` derives from the
+    // same formula `runTimings` uses, `Boolean()`-wrapped to stay identical. The
+    // thrown branch below cannot carry these — an `ok: false` outcome holds only
+    // `{error, ledger, durationMs}`, so fabricating them there would assert a fact
+    // nothing recorded; a thrown pass's salvage attempt survives only in `attempts`.
+    entry.salvaged = Boolean(pass.salvaged);
+    entry.salvageTrim = pass.salvageTrim ?? null;
+    entry.degraded = Boolean(context.structuredOutput) && !pass.structured;
+  } else if (pass.error) {
+    // A THROWN pass (no `pass.result`) may still carry the reply's usage on its
+    // error — `error.usage` for a failure with no reply envelope (token-exhaustion),
+    // `error.answer.usage` for one that built a reply envelope (reasoning-only /
+    // salvage, a stream drop). The two carriers are disjoint by site; read both,
+    // exactly as `errorReport` does, or a thrown reasoning-only pass reads
+    // `usage: null` here while `errorReport` recovers it. Surfacing it keeps the
+    // pass's token burn and observed reasoning visible in `passes[]`.
+    const usage = pass.error.usage ?? pass.error.answer?.usage ?? null;
+    entry.usage = usage;
+    entry.reasoning = reasoningWitness(usage);
+  }
+  return entry;
+}
+
+// The one-line-per-pass summary the text report renders: finding count for a
+// readable pass, the failure reason for a non-observation, and a note when a
+// non-observation ran on a confirmed different model — the substitution
+// disclosure the multi-pass loop no longer prints inline (the id itself is on the
+// JSON `passes[]` entry, so the text stays free of server-controlled values).
+function passSummary(pass, index, report) {
+  if (report.ok !== false) {
+    return { index, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
+  }
+  const substituted = pass.result?.modelReported === true && substitution(pass.result.requestedModel, pass.result.model);
+  return { index, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
+}
+
+/**
+ * A multi-pass run, as text or one merged JSON object. The single-pass path
+ * (`report` above) is untouched; `cmd-review.mjs` calls this only when
+ * `passes > 1`, and only after the fail-closed guards (all-unreadable,
+ * served-model disagreement) have already thrown. Every caveat is the fail-closed
+ * OR across readable passes so an incomplete or salvaged union can never read as
+ * a clean complete one; `contextChecked` is the AND. Per-pass originals are kept
+ * in `passes[]`, so nothing is concealed.
+ *
+ * PRECONDITION: at least one readable pass. `runMultiPass` throws
+ * `allFailedError` before calling this when none is readable, so `readable[0]`
+ * below is safe; this function is deliberately not defensive about it, since its
+ * only caller guarantees it.
+ */
+export function reportPasses(passes, context) {
+  const readable = passes.filter(isReadable);
+  const merged = mergePasses(readable);
+  const perPassReports = passes.map((pass, index) => passEnvelope(pass, index, context));
+  const readableReports = perPassReports.filter((report) => report.ok !== false);
+  const caveatFlags = caveatUnion(readableReports, { unreadable: context.target.unreadable });
+  const contextChecked = contextCheckedAll(readableReports);
+  const usage = sumUsage(readable);
+  const reasoning = reasoningWitness(usage);
+  const durationMs = totalDuration(passes);
+  const model = readable[0].result.model;
+
+  if (context.json) {
+    process.stdout.write(
+      `${JSON.stringify(
+        passesEnvelope(merged, {
+          label: context.target.label,
+          provider: context.profile.name,
+          requestedModel: readable[0].result.requestedModel,
+          model,
+          modelReported: readable[0].result.modelReported,
+          perPassReports,
+          usage,
+          reasoning,
+          sampling: context.sampling,
+          contextWindow: context.contextWindow,
+          contextSource: context.contextSource,
+          detectedWindow: context.detectedWindow,
+          serverConfig: context.serverConfig,
+          durationMs,
+          caveatFlags,
+          contextChecked,
+        }),
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  const passSummaries = passes.map((pass, index) => passSummary(pass, index, perPassReports[index]));
+  process.stdout.write(
+    `${passesText(merged, {
+      passCount: passes.length,
+      passSummaries,
+      caveatFlags,
+      label: context.target.label,
+      profile: context.profile,
+      model,
     })}\n`,
   );
 }
