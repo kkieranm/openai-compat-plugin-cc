@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-210 closed: the .message-purity marker tests can now fail (`91027df`)
+
+Three `doesNotMatch` assertions in `tests/answer-channel.test.js` claimed to pin "a server-controlled
+`finish_reason` marker is not fused into a `UserError` `.message`", but read `result.stderr.split('\n')[0]`
+— always the `Checking...` progress line, never the error line — so they could not fire. Confirmed by the
+item's exact mutation (interpolate `finishReason` into `.message` at the three throw sites, delete the
+separate `.finishReason` assignment): all 8 tests stayed green while `structure.test.js`'s source scan
+went red.
+
+The fix decision took a detour worth recording: the obvious repair — repoint the assertion at the real
+error line and `split(' (')[0]` to isolate `.message` — is **also dead**. Under correct behaviour the line
+is `…no message content. (MARKER)`; under the fusion mutation it is `…no message content (MARKER).`; the
+marker sits after the first ` (` either way, so the split excludes it and the assertion passes regardless.
+`.message` purity is a property of the error OBJECT (`message` vs `finishReason` as separate fields), not
+of the composed stderr line the renderer exists to join — no text heuristic on the joined output has a
+single route to it (the repo's own negative-fixtures-need-one-route discipline). The advisor caught this
+before it was built.
+
+Where the property IS observable: the surface that serializes `.message` on its own. The `--json` refusal
+envelope carries `message` as its own field (marker-free under correct behaviour) and — verified — carries
+no `finishReason` field at all, so `envelope.message` is the serialized `.message` alone, a single route.
+Each test now runs its scenario a second time under `--json --max-attempts 1` (the flag skips the retry
+backoff; the final message is identical) and asserts the marker is absent from `envelope.message`. All
+three shapes were verified to carry a distinct message field (empty-completion / entirely-empty / empty-answer).
+
+Mutation-proven, both ways: fusing the marker at all three throw sites reds exactly the three tests (other
+5 green); an isolated `client.mjs` mutation reds ONLY the requireAnswer test, preserving the per-throw-site
+granularity the file's comments emphasize. The dead stderr assertions were deleted; the live halves
+(`status === 1`, marker visible in stderr) were kept. `structure.test.js` still pins the same property at
+the source repo-wide, so this is behavioral coverage at the serialized-object boundary complementing the
+source scan, not a duplicate of it. Consensus: advisor (who caught the still-dead repoint) + Codex steer.
+Test machinery, so direct edit + guards, not `/feature`.
+
 ## 2026-08-30 — OAI-208 closed: one shared tracked temp-dir helper for the whole suite (`f6e506e`)
 
 `mkdtempSync` was called at ~75 sites across ~27 test files with no cleanup — one leaked dir per call on

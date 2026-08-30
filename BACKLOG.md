@@ -15,24 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
-  three marker tests (`:75`, `:95`, `:115`) each read `const messageLine = result.stderr.split('\n')[0]`
-  and assert the server-controlled `finish_reason` marker is not fused into it. Line 0 of stderr is
-  always `scripts/lib/delegate.mjs:145`'s `Checking <profile> for available models and context
-  window...` progress line, never the error line the message lands on — so `messageLine` cannot
-  contain the marker whatever the code under test does. A second, independent defeat: every guarded
-  message ends in a period before `oai-companion.mjs:71`'s ` (${detail})` parenthetical, so the
-  patterns `content \(`, `completion \(` and `answer \(` cannot match a period-preserving fusion
-  either. Dated instance 2026-08-25: interpolating `finishReason` into `.message` at the three throw
-  sites (`scripts/lib/completion.mjs:140`, `:161`, `client.mjs`'s empty-answer throw) and deleting the
-  separate `.finishReason` assignment left all 8 tests in the file passing. The paired
-  `assert.match(result.stderr, marker)` halves do work. **Not an open hole in the property itself**:
-  `tests/structure.test.js:438`'s source-level scan catches that same mutation, so "no
-  server-controlled value reaches a `UserError` message" stays pinned repo-wide — these three
-  assertions are dead weight claiming to pin it. Whoever takes it should decide between repointing
-  them at the real error line and deleting them as redundant with the structural scan; a fix that
-  keeps them must be mutation-proved, since that is the property they failed.
-
 - **OAI-228** — **A review reply that is valid `{"findings":[{file, line, message}]}` JSON is discarded
   wholesale because the findings key their description `message` instead of `summary`.** Dated
   instance 2026-08-30 (OAI-49's matched arm, `bench/2026-08-29-oai49-matched-arm.md`): the MoE
