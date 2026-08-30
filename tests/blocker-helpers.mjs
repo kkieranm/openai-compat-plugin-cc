@@ -4,10 +4,9 @@
 // had become two questions wearing one name — WHICH row the display names, and
 // WHAT it says about it. They are split rather than allowlisted, so neither
 // suite has to be read whole to change the other.
-import { mkdtempSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { statusView } from '../scripts/lib/job-view.mjs';
+import { tempDir } from './helpers.mjs';
 import { insertSynthetic, withStore } from './job-helpers.mjs';
 
 export const HERE = '/tmp/oai-ws-here';
@@ -20,7 +19,7 @@ export const TEN_MINUTES = 600_000;
 // Resolved, because a child's `process.cwd()` is: on macOS the temp directory is
 // reached through a symlink, so the workspace a row records is the real path and
 // never the one handed to `spawn`.
-export const realWorkspace = (tag) => realpathSync(mkdtempSync(join(tmpdir(), `oai-ws-${tag}-`)));
+export const realWorkspace = (tag) => realpathSync(tempDir(`oai-ws-${tag}-`));
 
 /**
  * The two stamps `livenessOf` reads, corrupted.

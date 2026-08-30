@@ -5,10 +5,9 @@
 // anything real is built on it. Everything else here is mechanical; this is not.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, readJob, stateDir, waitForState } from './job-helpers.mjs';
 
 /** Answers the probe, then one non-streaming completion. */
@@ -110,7 +109,7 @@ test('what the model sees is frozen at submission, not read when the worker runs
   // guaranteed to run after the snapshot and before the chat request. No
   // sleeping, no racing — the ordering is a property of the command.
   const state = stateDir();
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-src-'));
+  const dir = tempDir('oai-plugin-src-');
   const file = join(dir, 'subject.txt');
   writeFileSync(file, 'ORIGINAL CONTENT');
 

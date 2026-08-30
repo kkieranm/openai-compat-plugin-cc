@@ -1,10 +1,9 @@
 // How the context window is detected, reported, and used to arm the guard.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from "./helpers.mjs";
+import { completion, modelList, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from "./helpers.mjs";
 
 test('setup reports the window of the model a task would use, not any loaded model', async () => {
   // defaultModel names an unloaded model while a different one is loaded.
@@ -154,7 +153,7 @@ test('a fully configured profile lists models anyway, so setup and task agree', 
 });
 
 test('the detected window arms the guard with no contextLength configured', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-detect-'));
+  const dir = tempDir('oai-plugin-detect-');
   const file = join(dir, 'big.txt');
   writeFileSync(file, 'x'.repeat(40_000)); // ~10k tokens, over an 8k window
 

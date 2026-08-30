@@ -7,13 +7,13 @@
 // This file pins the repair that closes it.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chmodSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { UserError } from '../scripts/lib/errors.mjs';
 import { DEFAULT_CONFIG, configPath, loadConfig } from '../scripts/lib/config.mjs';
+import { tempDir } from './helpers.mjs';
 
 function modeOf(path) {
   return statSync(path).mode & 0o777;
@@ -32,7 +32,7 @@ function tryLoad(path) {
 }
 
 test('a fresh config is created at 0600 immediately, not repaired later', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'nested', 'providers.json');
 
   tryLoad(path);
@@ -41,7 +41,7 @@ test('a fresh config is created at 0600 immediately, not repaired later', () => 
 });
 
 test('a pre-existing config looser than 0600 is repaired on load', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   // `chmodSync` after the write, not `writeFileSync`'s own `mode` option —
   // that option is masked by the process umask like any real `open(2)`
@@ -61,7 +61,7 @@ test('a pre-existing config looser than 0600 is repaired on load', () => {
 // JSON in the wrong shape) must still be repaired the moment it's read,
 // rather than staying loose until someone happens to fix its content too.
 test('a loose config that is invalid JSON is still repaired before the parse error is thrown', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   writeFileSync(path, 'not valid json');
   chmodSync(path, 0o644);
@@ -73,7 +73,7 @@ test('a loose config that is invalid JSON is still repaired before the parse err
 });
 
 test('a loose config with a valid-JSON but wrong-shaped body is still repaired before validation refuses it', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   writeFileSync(path, '{"no providers key at all": true}');
   chmodSync(path, 0o644);
@@ -94,7 +94,7 @@ test('a loose config with a valid-JSON but wrong-shaped body is still repaired b
 // (confirmed empirically: `doesNotMatch(..., /LEAKED-FRAGMENT/)` against a
 // 20-char marker never actually matched the truncated leak either way).
 test('a JSON syntax error never echoes a fragment of the file\'s own content', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   writeFileSync(path, '{"apiKey": sk-LEAKEDSECRET9999}');
 
@@ -122,7 +122,7 @@ test('a JSON syntax error never echoes a fragment of the file\'s own content', (
 // `created: false`, its pre-existing content preserved rather than clobbered
 // with defaults.
 test('a pre-existing config at the target path is read and repaired, not treated as a fresh creation', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   const winnerConfig = { defaultProvider: 'winner', providers: { winner: { baseUrl: 'http://winner.test/v1' } } };
   writeFileSync(path, JSON.stringify(winnerConfig));
@@ -217,7 +217,7 @@ test('the read-path chmod repair fails loud on anything but ENOSYS/EINVAL', () =
 // above, this really does drive the retry-and-give-up path end to end, not
 // just one iteration of it.
 test('a dangling symlink at the config path throws a clear error instead of recursing forever', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-config-'));
+  const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
   symlinkSync(join(dir, 'nowhere'), path);
 

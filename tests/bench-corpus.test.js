@@ -3,11 +3,10 @@
 // so these tests pin the loader's contract and not the corpus's current shape.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { CASE_COMMIT_DATE, cleanup, loadCases, materialize } from '../bench/lib/corpus.mjs';
-import { git } from './helpers.mjs';
+import { git, tempDir } from './helpers.mjs';
 
 const MANIFEST = {
   id: 'sample',
@@ -42,7 +41,7 @@ const TREE = {
 
 /** A corpus root holding exactly one case. */
 function writeCorpus(manifest, tree = {}, dirName = manifest.id) {
-  const root = mkdtempSync(join(tmpdir(), 'oai-bench-corpus-'));
+  const root = tempDir('oai-bench-corpus-');
   const dir = join(root, 'bench', 'cases', dirName);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'case.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -167,7 +166,7 @@ test('a case whose id disagrees with its directory fails rather than building th
 });
 
 test('an absent corpus is a loud failure, not zero cases', () => {
-  const root = mkdtempSync(join(tmpdir(), 'oai-bench-empty-'));
+  const root = tempDir('oai-bench-empty-');
 
   assert.throws(() => loadCases(root), (error) => {
     assert.equal(error.name, 'UserError');

@@ -11,6 +11,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { ARMS, attachmentArgs, loadTaskCases } from '../bench/lib/task-corpus.mjs';
+import { tempDir } from './helpers.mjs';
 
 const run = promisify(execFile);
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -75,9 +76,8 @@ test('a case attaches only files that exist in before/, by absolute path', async
 test('the loader refuses a case missing an arm, a witness or a fixture tree', async () => {
   // Driven against the real loader with a scratch corpus, so the refusals are
   // observed rather than asserted from reading.
-  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const base = mkdtempSync(join(tmpdir(), 'oai-taskcorpus-'));
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const base = tempDir('oai-taskcorpus-');
   const dir = join(base, 'bench/task-cases/broken');
   mkdirSync(dir, { recursive: true });
 

@@ -3,13 +3,10 @@
 // A separate file from `helpers.mjs` because that one is at its size ceiling,
 // and because these are only useful to the background tests.
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
 import { databasePath, openStore } from '../scripts/lib/job-store.mjs';
 import { jobById, listJobs } from '../scripts/lib/job-record.mjs';
-import { COMPANION, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { COMPANION, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 // `node:sqlite` is a capability, not a given: it is absent on Node 18.18–22.12,
 // on builds compiled without SQLite, and under `--no-experimental-sqlite`. A
@@ -50,7 +47,7 @@ function sqliteModule() {
 
 /** A state directory of its own, so no test ever touches the real one. */
 export function stateDir() {
-  return mkdtempSync(join(tmpdir(), 'oai-plugin-state-'));
+  return tempDir('oai-plugin-state-');
 }
 
 /**

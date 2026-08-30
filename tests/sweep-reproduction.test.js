@@ -3,13 +3,11 @@
 // control proves it is not inert.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { openLedger, envelopeFor } from '../bench/lib/sweep-ledger.mjs';
 import { signatureOf, readRuns, groupRuns, reproductionOf } from '../bench/lib/sweep-reproduction.mjs';
 import { renderReproduction } from '../bench/lib/sweep-reproduction-report.mjs';
 import { reproduce } from '../bench/sweep-reproduction.mjs';
+import { tempDir } from './helpers.mjs';
 
 // A ledger in the `readLedger` shape (header + entries + integrity counts), for
 // signatureOf and for the run-shaped helpers below.
@@ -252,7 +250,7 @@ test('an unknown soft axis discloses a caveat naming the runs, but still compare
 });
 
 test('readRuns reads real ledgers and refuses one with no usable header', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repro-'));
+  const dir = tempDir('sweep-repro-');
   const led = openLedger(dir, 'stamp-a');
   led.header(envelopeFor({ include: ['scripts'], abortAfter: 3, maxSeconds: 3600, diffOnly: false, maxAttempts: 3, provider: 'lmstudio' }, [{ sha: 'a', eligible: true }], 0));
   led.entry({ sha: 'a', outcome: 'findings', findings: [{ summary: 'x' }], model: 'qwen' });
@@ -266,7 +264,7 @@ test('readRuns reads real ledgers and refuses one with no usable header', () => 
 });
 
 test('leads carry truncated/substituted findings but never enter the rate', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repro-'));
+  const dir = tempDir('sweep-repro-');
   const led = openLedger(dir, 'stamp-c');
   led.header(envelopeFor({ include: ['scripts'], abortAfter: 3, maxSeconds: 3600, diffOnly: false, maxAttempts: 3 }, [], 0));
   led.entry({ sha: 'a', outcome: 'truncated', findings: [{ summary: 'lead' }], model: 'qwen' });
@@ -375,7 +373,7 @@ test('RENDER: a legacy (unverified-provenance) group discloses the model-provena
 });
 
 test('the CLI collapses a copied ledger (same startedAt) to one distinct run', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repro-copy-'));
+  const dir = tempDir('sweep-repro-copy-');
   const env = envelopeFor({ include: ['scripts'], abortAfter: 3, maxSeconds: 3600, diffOnly: false, maxAttempts: 3 }, [], 0);
   const a = openLedger(dir, 'stamp-e1'); a.header(env); a.entry({ sha: 'a', outcome: 'findings', findings: [{ summary: 'x' }], model: 'qwen' });
   const b = openLedger(dir, 'stamp-e2'); b.header(env); b.entry({ sha: 'a', outcome: 'findings', findings: [{ summary: 'x' }], model: 'qwen' });
@@ -383,7 +381,7 @@ test('the CLI collapses a copied ledger (same startedAt) to one distinct run', (
 });
 
 test('the CLI REFUSES two ledgers that claim the same run but differ in content', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repro-clash-'));
+  const dir = tempDir('sweep-repro-clash-');
   const env = envelopeFor({ include: ['scripts'], abortAfter: 3, maxSeconds: 3600, diffOnly: false, maxAttempts: 3 }, [], 0);
   // Same startedAt (same env) but DIFFERENT content → contradictory, not a copy.
   const a = openLedger(dir, 'stamp-f1'); a.header(env); a.entry({ sha: 'a', outcome: 'findings', findings: [{ summary: 'x' }], model: 'qwen' });
@@ -392,7 +390,7 @@ test('the CLI REFUSES two ledgers that claim the same run but differ in content'
 });
 
 test('the CLI needs at least two distinct ledgers and de-dupes a repeated path', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repro-cli-'));
+  const dir = tempDir('sweep-repro-cli-');
   const led = openLedger(dir, 'stamp-d');
   led.header(envelopeFor({ include: ['scripts'], abortAfter: 3, maxSeconds: 3600, diffOnly: false, maxAttempts: 3 }, [], 0));
   led.entry({ sha: 'a', outcome: 'findings', findings: [{ summary: 'x' }], model: 'qwen' });

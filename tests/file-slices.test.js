@@ -7,14 +7,14 @@
 // what the request SAYS, not about the slicing arithmetic.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildMessages, parseFileArg, readFileBlocks } from '../scripts/lib/prompt.mjs';
 import { excerptOf } from '../scripts/lib/job-render.mjs';
+import { tempDir } from './helpers.mjs';
 
 function fileWith(lines) {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-slice-'));
+  const dir = tempDir('oai-slice-');
   const path = join(dir, 'a.txt');
   // WITH a trailing newline, like every real source file. The first version of
   // this helper omitted it, which is why the phantom-line defect survived: the

@@ -13,19 +13,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { envelopeFor, openLedger } from '../bench/lib/sweep-ledger.mjs';
 import { writeSweep } from '../bench/lib/sweep-report.mjs';
+import { tempDir as sharedTempDir } from './helpers.mjs';
 
 const run = promisify(execFile);
 const ROOT = new URL('..', import.meta.url).pathname;
 const CLI = join(ROOT, 'bench/recover-sweep.mjs');
 const SHA = 'abc123def';
 
-const tempDir = () => mkdtempSync(join(tmpdir(), 'recover-cli-'));
+const tempDir = () => sharedTempDir('recover-cli-');
 const recover = (args) => run('node', [CLI, ...args], { cwd: ROOT });
 const commits = [{ sha: SHA, subject: 'the subject', eligible: true }];
 const envelope = () => envelopeFor({ from: 'abc', include: ['**/*.mjs'], abortAfter: 3, maxSeconds: 900 }, commits, 0);

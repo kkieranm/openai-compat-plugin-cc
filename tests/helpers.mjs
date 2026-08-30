@@ -1,10 +1,46 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 export const COMPANION = new URL('../scripts/oai-companion.mjs', import.meta.url).pathname;
+
+const TRACKED_TEMP_DIRS = [];
+let exitCleanupRegistered = false;
+
+/**
+ * Create a tracked temp dir under os.tmpdir() and register (once, lazily) a
+ * process-exit handler that removes every tracked dir. Deliberately
+ * `process.on('exit')` rather than a top-level `after()`: an import-time
+ * `after()` here would run BEFORE a test file's own file-local `after()`
+ * hooks (e.g. delegate-containment's leftover assertions), deleting dirs
+ * before those hooks can inspect them. `process.on('exit')` runs strictly
+ * after all file-local hooks.
+ *
+ * An absolute `prefix` is used as-is rather than joined onto os.tmpdir() —
+ * the one caller that needs this (delegate-containment's `/tmp/oai-delegate.`)
+ * is exercising a real recipe check hardcoded to that literal path, which is
+ * not the same directory os.tmpdir() reports on macOS.
+ */
+export function tempDir(prefix = 'oai-plugin-') {
+  const target = isAbsolute(prefix) ? prefix : join(tmpdir(), prefix);
+  const dir = mkdtempSync(target);
+  TRACKED_TEMP_DIRS.push(dir);
+  if (!exitCleanupRegistered) {
+    exitCleanupRegistered = true;
+    process.on('exit', () => {
+      for (const trackedDir of TRACKED_TEMP_DIRS) {
+        try {
+          rmSync(trackedDir, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup at process exit
+        }
+      }
+    });
+  }
+  return dir;
+}
 
 /**
  * An in-process OpenAI-compatible server. `handler(request, response)` decides
@@ -189,7 +225,7 @@ export function git(args, cwd) {
 
 /** A throwaway repository with one commit, so HEAD exists. */
 export async function createRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-repo-'));
+  const dir = tempDir('oai-plugin-repo-');
   await git(['init', '--quiet', '--initial-branch=main'], dir);
   await git(['config', 'user.email', 'test@example.com'], dir);
   await git(['config', 'user.name', 'Test'], dir);
@@ -210,7 +246,7 @@ export async function closedPort() {
 
 /** Write a throwaway config and return its path. */
 export function writeConfig(config) {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-test-'));
+  const dir = tempDir('oai-plugin-test-');
   const path = join(dir, 'providers.json');
   writeFileSync(path, JSON.stringify(config, null, 2));
   return { dir, path };

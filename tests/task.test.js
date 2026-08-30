@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { completion, completionFrames, modelList, respondJson, respondStream, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { completion, completionFrames, modelList, respondJson, respondStream, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 // Chat streams, everything else does not: that is what a real server does, and
 // the fallback is covered deliberately by its own test below.
@@ -112,7 +111,7 @@ test('a flag written after the request text is reported, not absorbed', async ()
 });
 
 test('--prompt-file alongside request text is refused, not silently halved', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-both-'));
+  const dir = tempDir('oai-plugin-both-');
   const promptFile = join(dir, 'p.txt');
   writeFileSync(promptFile, 'summarize the file');
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:1/v1' } } });
@@ -148,7 +147,7 @@ test('task rejects a temperature outside the valid range', async () => {
 
 test('task attaches files with delimiters and sends an api key', async () => {
   const server = await startFakeServer(route());
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-files-'));
+  const dir = tempDir('oai-plugin-files-');
   const file = join(dir, 'sample.js');
   writeFileSync(file, 'export const answer = 42;\n');
   const { path } = writeConfig({
@@ -168,7 +167,7 @@ test('task attaches files with delimiters and sends an api key', async () => {
 
 test('task reads a multi-line prompt verbatim from --prompt-file', async () => {
   const server = await startFakeServer(route());
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-prompt-'));
+  const dir = tempDir('oai-plugin-prompt-');
   const promptFile = join(dir, 'prompt.txt');
   writeFileSync(promptFile, 'line one\nline "two"\nline three');
   const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
@@ -182,7 +181,7 @@ test('task reads a multi-line prompt verbatim from --prompt-file', async () => {
 });
 
 test('task refuses input that cannot fit the context window', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-big-'));
+  const dir = tempDir('oai-plugin-big-');
   const file = join(dir, 'big.txt');
   writeFileSync(file, 'x'.repeat(5000));
   const { path } = writeConfig({
@@ -202,7 +201,7 @@ test('task refuses input that cannot fit the context window', async () => {
 test('a requested --max-tokens counts against the window, not the default reserve', async () => {
   // 8k window, ~1.3k of input: fine with the default 1k reserve, but not when
   // the caller explicitly asks for a 7k reply.
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-reserve-'));
+  const dir = tempDir('oai-plugin-reserve-');
   const file = join(dir, 'input.txt');
   writeFileSync(file, 'x'.repeat(5000));
   const { path } = writeConfig({
@@ -299,7 +298,7 @@ test('a command named after an inherited Object property is still unknown', asyn
 });
 
 test('a broken config file fails loudly and names the path', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-broken-'));
+  const dir = tempDir('oai-plugin-broken-');
   const path = join(dir, 'providers.json');
   writeFileSync(path, '{ this is not json');
 

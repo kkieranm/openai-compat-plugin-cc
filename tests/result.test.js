@@ -6,13 +6,11 @@
 // command is read by a caller far more often than by a person.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
 import { RENDER_CONSUMED_FIELDS } from '../scripts/lib/cmd-result.mjs';
+import { tempDir } from './helpers.mjs';
 
-const workspace = (tag) => mkdtempSync(join(tmpdir(), `oai-res-${tag}-`));
+const workspace = (tag) => tempDir(`oai-res-${tag}-`);
 const HOSTILE = { toString: null, valueOf: null };
 
 test('a completed job hands back its answer and footer, from another directory', { skip: NEEDS_SQLITE }, async () => {

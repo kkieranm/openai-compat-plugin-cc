@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { closedPort, completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { closedPort, completion, modelList, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 function route({ models = () => modelList('test-model'), chat = () => completion('local model says hi') } = {}) {
   return (request, response) => {
@@ -146,7 +145,7 @@ test('setup still reports healthy providers when another profile is unusable', a
 });
 
 test('setup seeds a config file when none exists', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-fresh-'));
+  const dir = tempDir('oai-plugin-fresh-');
   const path = join(dir, 'nested', 'providers.json');
 
   const result = await runCompanion(['setup'], { configPath: path });

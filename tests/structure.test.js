@@ -93,6 +93,25 @@ test('tests never spawn a child synchronously', () => {
   assert.deepEqual(offenders, [], 'use the async runCompanion helper instead');
 });
 
+// Confirmed defect class: `mkdtempSync` called across the suite with no
+// cleanup leaked temp dirs, and three files each hand-rolled their own
+// independent cleanup copy that could drift from the other two. `tempDir` in
+// tests/helpers.mjs is now the single place a scratch dir is created and
+// tracked for cleanup — a bare `mkdtempSync` call anywhere else in tests/ is
+// the same defect reappearing.
+test('no test creates a temp dir except through tests/helpers.mjs\'s tempDir', () => {
+  const ALLOWED = ['tests/helpers.mjs'];
+  const offenders = [];
+  for (const file of sourceFiles(join(ROOT, 'tests'))) {
+    const rel = relative(ROOT, file);
+    if (ALLOWED.includes(rel)) continue;
+    if (/\bmkdtempSync\s*\(/.test(readFileSync(file, 'utf8'))) {
+      offenders.push(rel);
+    }
+  }
+  assert.deepEqual(offenders, [], 'use the shared tempDir helper (tests/helpers.mjs) instead of a bare mkdtempSync');
+});
+
 // Confirmed defect class, promoted from "a reviewer should catch it" to a guard.
 // The global fetch is undici, and undici applies its own headersTimeout and
 // bodyTimeout — 300s each, configurable by nothing at the call site. A

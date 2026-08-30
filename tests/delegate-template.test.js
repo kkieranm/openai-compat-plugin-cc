@@ -17,12 +17,12 @@
 // reason it claimed to guard.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync, existsSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { TEMPLATES } from '../scripts/lib/task-template.mjs';
+import { tempDir } from './helpers.mjs';
 
 // Async, like every other child in this suite. A synchronous spawn blocks the
 // event loop, and `tests/structure.test.js` refuses one outright rather than
@@ -71,7 +71,7 @@ function recipeBlock() {
  * so a test that drops empties cannot see the bug it exists to catch.
  */
 async function argv(shell, template, files, model) {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+  const dir = tempDir('oai-delegate-test-');
   writeFileSync(join(dir, 'files'), files.map((f) => `${f}\n`).join(''));
   // Written only when given, matching the recipe's own "omit the file entirely
   // when no model was named" rule — a real file, never a shell-interpolated
@@ -311,7 +311,7 @@ test('a model id with an invalid UTF-8 byte sequence is refused, not silently re
   // control-character ranges the guard checks, so malformed bytes passed
   // through as a garbled-but-accepted id. Fixed with a fatal `TextDecoder`.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), Buffer.from([0x71, 0x77, 0x65, 0x6e, 0xff, 0xfe]));
     const script = `dir='${dir}'
@@ -342,7 +342,7 @@ test('a model id file starting with a UTF-8 byte-order mark is refused, not sile
   // gone, and a BOM-only file decoded to "", mislabeled as empty rather than
   // reported as a BOM. Checked on the raw bytes before decoding.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), Buffer.from([0xef, 0xbb, 0xbf, 0x71, 0x77, 0x65, 0x6e]));
     const script = `dir='${dir}'
@@ -374,7 +374,7 @@ test('a model id with a BOM embedded after the start is refused, not silently pa
   // part of --model. Checked on the decoded string as its own case, distinct
   // from both the leading-BOM and the control-character refusals.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(
       join(dir, 'model'),
@@ -416,10 +416,10 @@ test('an unexpected validator failure is reported as such, not mislabeled as a c
   // for the wrong reason, or not test what it claims at all. A decoy ahead
   // in PATH is unaffected by where the real binary happens to live.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const decoyDir = mkdtempSync(join(tmpdir(), 'oai-delegate-decoy-node-'));
+    const decoyDir = tempDir('oai-delegate-decoy-node-');
     writeFileSync(join(decoyDir, 'node'), '#!/bin/sh\nexit 42\n');
     chmodSync(join(decoyDir, 'node'), 0o755);
     const script = `dir='${dir}'
@@ -466,10 +466,10 @@ test('a Node exit matching the code 1 uses (uncaught exception) is reported as u
   // test exists for: exit 1 specifically, not just an arbitrary code, is
   // classified as "failed unexpectedly" and never as a control character.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const decoyDir = mkdtempSync(join(tmpdir(), 'oai-delegate-decoy-node-exit1-'));
+    const decoyDir = tempDir('oai-delegate-decoy-node-exit1-');
     writeFileSync(join(decoyDir, 'node'), '#!/bin/sh\nexit 1\n');
     chmodSync(join(decoyDir, 'node'), 0o755);
     const script = `dir='${dir}'
@@ -508,10 +508,10 @@ test('a Node exit matching the code 7 uses (a throwing exception handler) is rep
   // originally did — simulated instead with a DECOY `node` exiting 7,
   // proving exit 7 specifically still falls to the wildcard.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const decoyDir = mkdtempSync(join(tmpdir(), 'oai-delegate-decoy-node-exit7-'));
+    const decoyDir = tempDir('oai-delegate-decoy-node-exit7-');
     writeFileSync(join(decoyDir, 'node'), '#!/bin/sh\nexit 7\n');
     chmodSync(join(decoyDir, 'node'), 0o755);
     const script = `dir='${dir}'
@@ -548,10 +548,10 @@ test('an inherited NODE_OPTIONS cannot force a false refusal by forging an exit 
   // invocation (`NODE_OPTIONS= node -e …`), which this test proves by
   // confirming the clean id is still accepted despite the hostile preload.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-delegate-exitcode-preload-'));
+    const preloadDir = tempDir('oai-delegate-exitcode-preload-');
     const preload = join(preloadDir, 'preload.js');
     writeFileSync(preload, 'process.exitCode = 25;\n');
     const script = `dir='${dir}'
@@ -591,10 +591,10 @@ test('an inherited NODE_OPTIONS cannot inject bytes into the validated id via a 
   // this one invocation, so nothing it could have written ever reaches the
   // captured value.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-delegate-stdout-preload-'));
+    const preloadDir = tempDir('oai-delegate-stdout-preload-');
     const preload = join(preloadDir, 'preload.js');
     writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
     const script = `dir='${dir}'
@@ -634,10 +634,10 @@ test('an inherited OPENSSL_CONF cannot crash the validator before it ever reads 
   // `env -i PATH="$PATH"`, which still defeats this exact reproduction —
   // this test still passes unchanged under the current fix.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const confDir = mkdtempSync(join(tmpdir(), 'oai-delegate-openssl-conf-'));
+    const confDir = tempDir('oai-delegate-openssl-conf-');
     const conf = join(confDir, 'malformed.cnf');
     writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
     const script = `dir='${dir}'
@@ -690,7 +690,7 @@ test('an inherited Node IPC/cluster channel cannot inject bytes into the validat
   // (which describes how this agent's own tool calls work) with this
   // variable inherited and unfixed.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
     const script = `dir='${dir}'
@@ -725,13 +725,13 @@ test('the model validator runs cleanly under an empty environment with every hos
   // rather than one at a time — the actual property this redesign claims,
   // not just each individual reproduction in isolation.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen3.8-27b');
-    const preloadDir = mkdtempSync(join(tmpdir(), 'oai-delegate-kitchensink-preload-'));
+    const preloadDir = tempDir('oai-delegate-kitchensink-preload-');
     const preload = join(preloadDir, 'preload.js');
     writeFileSync(preload, 'process.stdout.write("prefix\\n");\n');
-    const confDir = mkdtempSync(join(tmpdir(), 'oai-delegate-kitchensink-conf-'));
+    const confDir = tempDir('oai-delegate-kitchensink-conf-');
     const conf = join(confDir, 'malformed.cnf');
     writeFileSync(conf, 'this is not valid openssl config syntax [[[\n');
     const script = `dir='${dir}'
@@ -775,7 +775,7 @@ test('a refused model id still prints its message under set -e, not a silent exi
   // prepends `set -e` to the same script every other test in this file runs
   // without it, specifically to prove the message still reaches stdout.
   for (const shell of SHELLS) {
-    const dir = mkdtempSync(join(tmpdir(), 'oai-delegate-test-'));
+    const dir = tempDir('oai-delegate-test-');
     writeFileSync(join(dir, 'files'), '/tmp/a.mjs\n');
     writeFileSync(join(dir, 'model'), 'qwen\r');
     const script = `set -e

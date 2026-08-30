@@ -17,10 +17,9 @@
 // mistake this note exists to prevent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { statSync } from 'node:fs';
 import { STARVED_WHY, renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
+import { tempDir } from './helpers.mjs';
 // Read from where it is DEFINED, never copied: the totality test below is a
 // consumer of the classifier's own list, so relocating that list changes an
 // import path here and nothing else.
@@ -465,7 +464,7 @@ test('the JSON record is private, because it is the only artifact holding raw ou
   // that material, so a world-readable record made the ledger's privacy
   // decorative. The rendered .md is deliberately NOT included: it emits neither
   // stream, which is what scopes this fix.
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-report-mode-'));
+  const dir = tempDir('sweep-report-mode-');
   const { reportPath, recordPath } = writeSweep(dir, 'stamp', {
     startedAt: '2026-08-13T09:00:00.000Z',
     endedAt: '2026-08-13T10:00:00.000Z',

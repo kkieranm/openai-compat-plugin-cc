@@ -14,11 +14,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { closedPort, writeConfig } from './helpers.mjs';
+import { closedPort, tempDir, writeConfig } from './helpers.mjs';
 import { safeInline } from '../bench/lib/markdown-safe.mjs';
 
 const run = promisify(execFile);
@@ -27,7 +26,7 @@ const CLI = join(ROOT, 'bench/review-sweep.mjs');
 const SUBJECT = 'a commit only the scratch repo has, never this one';
 
 async function scratchRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'sweep-repo-cli-'));
+  const dir = tempDir('sweep-repo-cli-');
   const git = (args) => run('git', args, { cwd: dir });
   await git(['init', '--quiet']);
   await git(['config', 'user.email', 'test@example.com']);
@@ -59,7 +58,7 @@ test('--repo without --include refuses loudly rather than reviewing this repo in
 
 test('--repo + --include enumerates the TARGET repo\'s own history, not this tool\'s', async () => {
   const target = await scratchRepo();
-  const outDir = mkdtempSync(join(tmpdir(), 'sweep-repo-out-'));
+  const outDir = tempDir('sweep-repo-out-');
   await run('node', [CLI, '--repo', target, '--include', 'zzz-nomatch', '--minutes', '1', '--max-commits', '1', '--out-dir', outDir], { cwd: ROOT });
   const record = readRecord(outDir);
   const subjects = record.entries.map((entry) => entry.subject);
@@ -94,7 +93,7 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
 // stops it depending on nothing else on the machine having bound port 1.
 test('--repo + --include roots the COMPANION process too, not just enumeration', async () => {
   const target = await scratchRepo();
-  const outDir = mkdtempSync(join(tmpdir(), 'sweep-repo-out-'));
+  const outDir = tempDir('sweep-repo-out-');
   const { path: configPath } = writeConfig({ defaultProvider: 'test', providers: { test: { baseUrl: 'http://127.0.0.1:1/v1' } } });
   const port = await closedPort();
   await run('node', [

@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { completionFrames, respondStream, startFakeServer, writeConfig } from './helpers.mjs';
+import { completionFrames, respondStream, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 /**
  * Scaffolding for the end-to-end harness: a stub `lms`, the repo's fake
@@ -117,7 +116,7 @@ function runDriver(args, env) {
  * prevent, and the junk would match the glob the done-condition reads.
  */
 async function runScenario(scenario, { episodes = 1, failFromCall = Infinity, destroyFromCall = Infinity, extraArgs = [] } = {}) {
-  const work = mkdtempSync(join(tmpdir(), 'ttl-e2e-'));
+  const work = tempDir('ttl-e2e-');
   const scenarioPath = join(work, 'scenario.json');
   writeFileSync(scenarioPath, JSON.stringify({ model: 'test-model', ...scenario }));
   const server = await startFakeServer(modelsHandler(delayedReply(PREFILL_MS, { failFromCall, destroyFromCall })));

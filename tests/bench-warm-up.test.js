@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { persist } from '../bench/lib/record.mjs';
 import { pairFor, pairKey, runWithWarmUp, warmUpFlags } from '../bench/lib/warm-up.mjs';
+import { tempDir } from './helpers.mjs';
 
 // The harness pays the JIT model load before the first measured case, and
 // keeps the rendered report beside the raw record, so a bench arm doesn't
@@ -124,7 +124,7 @@ test('a pair naming nothing is still a pair — "whatever the config supplies" i
 });
 
 test('the rendered report is written beside the record, under the same stamp', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bench-persist-'));
+  const root = tempDir('bench-persist-');
   try {
     const { recordPath, reportPath } = persist(root, '2026-01-01T00-00-00-000Z', { runsPerCase: 1 }, '# Benchmark\n');
     // The stamp is shared, not minted twice: two files named for different
@@ -140,7 +140,7 @@ test('the rendered report is written beside the record, under the same stamp', (
 });
 
 test('the record states that warm-up ran, rather than only that the flag was passed', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bench-persist-'));
+  const root = tempDir('bench-persist-');
   try {
     // `answered`, never `ok`: a reasoning model spends its budget thinking and
     // exits non-zero on a request that loaded the weights perfectly well, so a

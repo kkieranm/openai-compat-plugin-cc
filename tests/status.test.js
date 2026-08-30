@@ -7,15 +7,14 @@
 // whole design rests on.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
+import { tempDir } from './helpers.mjs';
 
 // Resolved, because a child's `process.cwd()` is: on macOS the temp directory is
 // reached through a symlink, so the workspace a row records is the real path and
 // never the one handed to `spawn`.
-const workspace = (tag) => realpathSync(mkdtempSync(join(tmpdir(), `oai-ws-${tag}-`)));
+const workspace = (tag) => realpathSync(tempDir(`oai-ws-${tag}-`));
 const FIVE_MINUTES = 300_000;
 
 test('a job submitted by one process is retrievable by another, from a different directory', { skip: NEEDS_SQLITE }, async () => {

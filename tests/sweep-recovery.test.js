@@ -10,20 +10,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { readLedger, ledgerPathFor, envelopeFor } from '../bench/lib/sweep-ledger.mjs';
 import { renderSweep } from '../bench/lib/sweep-report.mjs';
 import { mergeManifest, recoveredRecord, stampFrom } from '../bench/recover-sweep.mjs';
 import { runSweep } from '../bench/review-sweep.mjs';
+import { tempDir as sharedTempDir } from './helpers.mjs';
 
 const run = promisify(execFile);
 const ROOT = new URL('..', import.meta.url).pathname;
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'sweep-recovery-'));
+  return sharedTempDir('sweep-recovery-');
 }
 
 const at9 = '2026-08-13T09:00:00.000Z';

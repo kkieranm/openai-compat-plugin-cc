@@ -9,14 +9,13 @@
 // Lives in its own file rather than in `plugin.test.js`: that file guards the
 // markdown command surface, and this guards a runtime capability. They share no
 // fixtures and would only share a size budget.
-import { after, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { completion, modelList, respondJson, startFakeServer } from './helpers.mjs';
+import { completion, modelList, respondJson, startFakeServer, tempDir } from './helpers.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
@@ -71,19 +70,8 @@ const REGISTER_SKIP =
  * against the in-process fake server the rest of this suite uses, and
  * `tests/structure.test.js` forbids it outright.
  */
-const TEMP_STATE = [];
-after(() => {
-  // Left behind for years otherwise: one directory per `companion()` call, eight
-  // per run. Hygiene rather than exposure — they are 0700 — but a submission that
-  // stores a credential is one `insertJob` away from leaving it in an uncleaned
-  // directory, so they go.
-  for (const dir of TEMP_STATE) rmSync(dir, { recursive: true, force: true });
-});
-
 function stateDir(prefix = 'oai-capability-') {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  TEMP_STATE.push(dir);
-  return dir;
+  return tempDir(prefix);
 }
 
 function companion(nodeFlags, args, env = {}) {

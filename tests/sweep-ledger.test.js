@@ -4,13 +4,12 @@
 // size ratchet, the same reason `sweep-cap-default.test.js` exists.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { envelopeFor, openLedger, readLedger } from '../bench/lib/sweep-ledger.mjs';
+import { tempDir as sharedTempDir } from './helpers.mjs';
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), 'sweep-ledger-'));
+  return sharedTempDir('sweep-ledger-');
 }
 
 test('a ledger round-trips its header and every entry', () => {

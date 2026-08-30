@@ -2,11 +2,10 @@
 // committed yet — including files git does not track at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectTarget } from '../scripts/lib/git-diff.mjs';
-import { createRepo, git } from './helpers.mjs';
+import { createRepo, git, tempDir } from './helpers.mjs';
 
 test('the default target is uncommitted work, including untracked files', async () => {
   const dir = await createRepo();
@@ -93,7 +92,7 @@ test('an ignored file is not reviewed', async () => {
 });
 
 test('--file reviews whole files and needs no repository', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-plain-'));
+  const dir = tempDir('oai-plugin-plain-');
   writeFileSync(join(dir, 'lonely.js'), 'export const y = 2;\n');
 
   const target = await collectTarget({ file: [join(dir, 'lonely.js')] }, dir);
@@ -293,6 +292,6 @@ test('an untracked file is never also collected as a changed file', async () => 
 });
 
 test('outside a repository, the default target explains itself', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-plugin-plain-'));
+  const dir = tempDir('oai-plugin-plain-');
   await assert.rejects(() => collectTarget({}, dir), /Not a git repository/);
 });

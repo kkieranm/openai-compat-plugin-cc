@@ -7,10 +7,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { artifactNote, checkDiff, extractDiff } from '../scripts/lib/task-artifact.mjs';
+import { tempDir } from './helpers.mjs';
 
 // Async, because tests/structure.test.js refuses a synchronous spawn outright
 // rather than asking each author whether their case is the safe one.
@@ -18,7 +18,7 @@ const run = promisify(execFile);
 
 /** A throwaway repo with one committed file, so `git apply --check` has a tree. */
 async function repoWith(content) {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-artifact-'));
+  const dir = tempDir('oai-artifact-');
   const git = (...args) => run('git', args, { cwd: dir });
   await git('init', '-q');
   await git('config', 'user.email', 't@example.com');
@@ -116,7 +116,7 @@ test('a cwd that is not a work tree is UNAVAILABLE, and that branch is reachable
   // The pass-1 version matched a stderr string `git apply --check` never emits,
   // so the branch could not fire at all. Driven against a real non-repo dir.
   const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
-  const notARepo = mkdtempSync(join(tmpdir(), 'oai-norepo-'));
+  const notARepo = tempDir('oai-norepo-');
   const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: notARepo });
   assert.equal(verdict.state, 'unavailable');
   assert.match(verdict.detail, /work tree|not installed/);

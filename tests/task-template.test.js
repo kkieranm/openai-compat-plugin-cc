@@ -6,10 +6,9 @@
 // what a task *run* does, and this one tests what a *template* adds to it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chatRequests, completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { chatRequests, completion, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
 import { requestTextOf } from '../scripts/lib/prompt.mjs';
 import { TEMPLATES } from '../scripts/lib/task-template.mjs';
@@ -84,7 +83,7 @@ test('a large templated foreground run prints the size caveat too', async () => 
   // field dropped there is a caveat that silently never fires. The sibling
   // `template` field had a test; this one did not.
   const server = await serverAnswering('STRONGEST OBJECTION: too much at once.');
-  const dir = mkdtempSync(join(tmpdir(), 'oai-big-'));
+  const dir = tempDir('oai-big-');
   const file = join(dir, 'big.txt');
   // Comfortably past the 8000-token ceiling at ~3.4 chars/token.
   writeFileSync(file, 'x'.repeat(40000));

@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildComparison, isReviewRecord, normalizeReviewRecord } from '../bench/lib/compare-model.mjs';
 import { renderComparison } from '../bench/lib/compare-report.mjs';
 import { compare } from '../bench/compare.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
+import { tempDir } from './helpers.mjs';
 
 // ---- fixtures: build real review-record shapes caseRows can read ----
 
@@ -745,7 +745,7 @@ test('isReviewRecord accepts a review record and rejects sweep/task shapes', () 
 });
 
 test('compare() refuses a non-review file at parse, and renders two real records', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-compare-'));
+  const dir = tempDir('oai-compare-');
   try {
     const good = join(dir, 'good.json');
     const task = join(dir, 'task.json');
@@ -764,7 +764,7 @@ test('compare() refuses a non-review file at parse, and renders two real records
 });
 
 test('compare() rejects an unknown --baseline that is not among the records', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oai-compare-'));
+  const dir = tempDir('oai-compare-');
   try {
     const good = join(dir, 'good.json');
     writeFileSync(good, JSON.stringify(record({ runsPerCase: 1, options: {}, results: [{ caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun()] }] })));
