@@ -84,6 +84,11 @@ export async function chatCompletion(profile, options) {
     // One ledger per command where the caller minted one, so a review's two
     // completion calls share indexes instead of each starting from 1.
     ledger: options.ledger,
+    // The shared capability-negotiation state, threaded the same way and for the
+    // same reason: a review's fallback and salvage calls must not re-offer a
+    // capability the schema request already had refused. Named, not spread —
+    // a field left off here is silently dropped, the defect this file warns of.
+    removed: options.removed,
     // The reasoning-reserve watchdog opt-in — undefined for every caller
     // that never asked for it. Named explicitly rather than spread (like
     // every other field here) because this function already builds an

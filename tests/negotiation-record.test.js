@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { completionFrames, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
+import { chatRequests, completionFrames, modelList, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
 
 // The attempt ledger reclassifies a refused request as benign
 // capability negotiation only as a consequence of the replacement request
@@ -74,4 +74,54 @@ test('a stream_options refusal whose degraded request IS sent is recorded as neg
   // — but a refusal is returned at request validation, before any generation, so
   // nothing was prefilled and this prefill is genuinely cold.
   assert.equal(report.attempts[1].warmEligible, false);
+});
+
+// A `--structured-output` review makes up to three calls that must share one
+// capability negotiation: the schema request, its `response_format` fallback,
+// and a salvage follow-up. If the fallback mints a fresh negotiation it re-offers
+// a capability the schema request already had refused — a wasted round trip, a
+// duplicate `refused` entry, and a slice of `--max-seconds` spent on it.
+//
+// The server refuses `stream_options` on ANY body that carries it and
+// `response_format` on the schema request, so the sequence is: schema request
+// (refuse stream_options) → degraded schema request (refuse response_format) →
+// unconstrained fallback. With the shared `removed` state threaded, the fallback
+// starts already-degraded and answers on its first request — three chat requests,
+// one of which ever carried `stream_options`. A conditional server, not a fixed
+// script, because the request COUNT is the thing under test and it differs the
+// moment the fix is reverted.
+test('a review fallback inherits the schema request degrade instead of re-offering it', async () => {
+  const { dir, server, configPath } = await reviewScenario(
+    (request, response) => {
+      if (request.url.includes('/chat/completions')) {
+        const body = request.body ?? {};
+        if (body.stream_options) return respondJson(response, { error: { message: 'stream_options is not supported' } }, 400);
+        if (body.response_format) return respondJson(response, { error: { message: 'response_format is not supported' } }, 400);
+        return respondStream(response, completionFrames(FINDINGS));
+      }
+      if (request.url.endsWith('/models')) return respondJson(response, modelList('test-model'));
+      return respondJson(response, { error: 'not found' }, 404);
+    },
+    { contextLength: 131_072 },
+  );
+  const result = await runCompanion(['review', '--structured-output', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+
+  // The whole point: the fallback did not re-offer `stream_options`, so the run
+  // cost three chat requests, not four. Reverting the `removed` threading makes
+  // this four (the fallback mints a fresh negotiation and re-climbs the ladder).
+  const chats = chatRequests(server);
+  assert.equal(chats.length, 3, 'the fallback answered on its first request, not after a repeat degrade');
+  // Exactly one request ever carried `stream_options` — the schema request. The
+  // degraded schema request and the fallback both omit it. Two here is the
+  // reverted-threading defect stated as a body fact rather than a count.
+  assert.equal(chats.filter((chat) => chat.body?.stream_options).length, 1);
+
+  assert.equal(report.attempts.length, 3);
+  assert.equal(report.attempts[0].outcome, 'refused', 'stream_options refused, degraded request sent');
+  assert.equal(report.attempts[1].outcome, 'refused', 'response_format refused, fallback sent');
+  assert.equal(report.attempts[2].outcome, 'answered');
 });

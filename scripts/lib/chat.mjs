@@ -29,9 +29,28 @@ import { collectStream } from './stream-collect.mjs';
  * collects the same 400, and reclimbs the whole ladder. One wasted round trip
  * per retry, and a stderr line blaming a capability that was settled two
  * requests ago.
+ *
+ * `removed` may also be **passed in** — a Set of rung names an earlier call in
+ * the same logical request already negotiated past. A review makes several model
+ * calls (the schema request, its `response_format` fallback, and one or more
+ * salvage follow-ups), each with its own `body`; sharing one `removed` Set across
+ * them stops a later call re-offering a capability an earlier one already had
+ * refused. The Set is used **directly, not copied**, so a refusal on this call
+ * persists into the shared Set the later calls seed from — the same idiom the
+ * ledger uses.
+ *
+ * Seeding `removed` is not enough on its own: `postWithDegrade` skips any rung
+ * already in `removed`, so if the fresh `body` still carried the refused field
+ * the re-refusal would match no rung and throw hard instead of degrading. So the
+ * seeded rungs are **pre-applied to the payload** here, in `RUNGS` order, so this
+ * call starts already-degraded and never sends the field again. Each rung's
+ * `apply` is a rest-destructure safe on a body that lacks the field, so applying
+ * one that is already absent is a no-op.
  */
-export function createNegotiation(body) {
-  return { removed: new Set(), payload: body, lastRung: null };
+export function createNegotiation(body, removed = new Set()) {
+  let payload = body;
+  for (const rung of RUNGS) if (removed.has(rung.name)) payload = rung.apply(payload);
+  return { removed, payload, lastRung: null };
 }
 
 /**

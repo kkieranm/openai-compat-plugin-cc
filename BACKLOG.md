@@ -25,16 +25,25 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
   the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
   one — read the server's status or error `type`/`code` field instead of its prose.
-  **(7) Added 2026-08-01, moved here from OAI-22 when that item closed.** The capability negotiation
-  is scoped to one `chatCompletion` call, so a review's `response_format` fallback mints a fresh
-  `createNegotiation` and re-offers a capability the schema request already had refused — an
-  asymmetry with the attempt ledger, which *was* deliberately threaded across both calls. Needs a
-  server refusing BOTH `stream_options` and `response_format`, which nothing here has. **The OAI-22
-  review added a consequence beyond the wasted round trip and the duplicate `refused` entry**: that
-  needless refusal can consume what is left of `--max-seconds`, turning an answerable review into a
-  client-imposed deadline failure. When it is fixed, only the capability state (`removed`) may be
-  shared across the two calls — never the whole `{payload, removed, lastRung}`, whose payload is
-  call-specific.
+  ~~**(7)** The capability negotiation was scoped to one `chatCompletion` call, so a review's
+  `response_format` fallback minted a fresh `createNegotiation` and re-offered a capability the schema
+  request already had refused — an asymmetry with the attempt ledger, which *was* deliberately
+  threaded across both calls — consuming a round trip, a duplicate `refused` entry, and a slice of
+  `--max-seconds` (an answerable review turned into a client-imposed deadline failure).~~ **SHIPPED
+  2026-08-30**: the `removed` capability state is now minted once per `requestFindings` and shared
+  across a review's calls (schema request → `response_format` fallback → salvage follow-ups) on the
+  `send` object; `createNegotiation(body, removed)` pre-applies each already-removed rung to the fresh
+  payload in `RUNGS` order, since seeding the set alone would re-refuse and hard-throw. Only the
+  `removed` state is shared, never `{payload, lastRung}`. Mutation-proved in
+  `tests/negotiation-record.test.js` (revert threading → 4 requests not 3; drop the pre-apply →
+  hard-throw). A review-ladder adversarial pass raised, and unanimous consensus dismissed as
+  unobserved and vendor-dependent (this item's own deferred class), the question of whether full
+  streaming (`stream`) can be refused *conditionally on* `response_format`: if a second server ever
+  did, sharing the `stream` rung across the `response_format` boundary could force a needless
+  non-streamed fallback — deferred here because no server does, the failure would be loud, and keying
+  the set by `response_format` presence would break the `stream_options` case, which is global (built
+  on every body regardless of `response_format`). **This closes only (7); the item stays live for
+  (1), (2) and (4).**
   The original five, from the OAI-4/OAI-10 built-in review, all vendor-
   dependent and none reproducible against LM Studio. They need a second server to settle, so they
   wait for one rather than being fixed blind. (1) `isFormatRejection` reads
@@ -52,7 +61,7 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   or error `type`/`code` field rather than prose, which is an ADR 002 shape-not-name question and
   the reason this is one item rather than five.
 
-  **(1), (2) and (7) are reachable only when `--structured-output` is passed** (no schema sent by
+  **(1) and (2) are reachable only when `--structured-output` is passed** (no schema sent by
   default, `review-request.mjs:206`) — narrower than when filed, and one more reason they wait for a
   second server. (3) and (5) went the other way and moved to **OAI-84** 2026-08-05: the default
   prose-parse path runs the same `parseFindings`, so they stopped being vendor questions and became

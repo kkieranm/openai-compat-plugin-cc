@@ -674,7 +674,17 @@ export async function requestFindings(profile, plan) {
   // `sampling` rides on `send` deliberately: it is spread into the salvage
   // follow-up too (unlike `reasoningReserveTokens`), because the user's chosen
   // sampling settings belong to that same logical request.
-  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, sampling, maxAttempts, retryDelayMs, ledger, onProgress };
+  //
+  // `removed` is the shared capability-negotiation state, minted ONCE here and
+  // carried on `send` so every completion call that spreads `...send` — the
+  // schema request, the `response_format` fallback, and its salvage follow-ups
+  // (trimmed then untrimmed) — shares one Set. Without it the fallback mints a
+  // fresh negotiation and re-offers a capability the schema request already had
+  // refused, wasting a round trip and a slice of `--max-seconds`. Scoped to one
+  // `requestFindings`, so each `runMultiPass` pass gets its own Set and stays
+  // independent.
+  const removed = new Set();
+  const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, sampling, maxAttempts, retryDelayMs, ledger, removed, onProgress };
   // `lens` rides the ladder object so every consumer that spreads `...ladder` —
   // `unconstrainedLadder`'s two sizing calls, the structured `first`, and the
   // schema-rejection fallback — carries it through; `prepareLadder` composes it

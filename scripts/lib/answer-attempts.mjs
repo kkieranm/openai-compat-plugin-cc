@@ -113,7 +113,11 @@ export async function answerWithRetry(profile, body, options) {
   // keeps `retried` honest for a degrade ladder that sent three requests inside
   // a single answer attempt — the count this field was added to stop losing.
   const ledger = options.ledger ?? createLedger();
-  const negotiation = createNegotiation(body);
+  // `removed` rides in like the ledger: a review's schema request, its
+  // `response_format` fallback and any salvage follow-up share one Set, so a
+  // capability refused on an earlier call is not re-offered here. Absent for
+  // every caller that brings none — a fresh Set, and the payload untouched.
+  const negotiation = createNegotiation(body, options.removed);
   // Where this answer's own requests start in the shared ledger. `requestCount`
   // means "how many requests THIS answer cost", and a review shares one ledger
   // across two completion calls — so the raw total would charge the degraded
