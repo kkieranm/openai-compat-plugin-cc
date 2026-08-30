@@ -12,7 +12,7 @@ import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { aggregateAttempts, allFailedError, partitionPasses, servedModelFailure } from './review-passes.mjs';
 import { errorReport, report, reportPasses } from './review-report.mjs';
-import { windowRemedy, windowSource } from './review.mjs';
+import { parseReviewLenses, windowRemedy, windowSource } from './review.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
 import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
@@ -24,7 +24,7 @@ import { parseFindings } from './structured.mjs';
 export const REVIEW_SPEC = {
   valueFlags: [
     'provider', 'base-url', 'model', 'base', 'commit', 'timeout', 'max-seconds', 'max-tokens', 'temperature',
-    'cache-buster', 'max-attempts', 'passes', ...SAMPLING_FLAGS,
+    'cache-buster', 'max-attempts', 'passes', 'lens', ...SAMPLING_FLAGS,
   ],
   booleanFlags: ['staged', 'diff-only', 'json', 'structured-output'],
   repeatableFlags: ['file'],
@@ -91,13 +91,17 @@ function assertAskable(options, instructions, terminated) {
  * Lifted out of `reviewFlow` at the function size budget. The seam: this decides
  * *what to ask for*, while the caller runs it and renders what comes back.
  */
-function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger }) {
+function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger, lens }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
   return {
     model,
     contextLength,
     target,
     instructions,
+    // The lens for THIS pass (a name, or undefined on the lens-less path). Rides
+    // into `requestFindings`'s ladder object; `prepareLadder` composes it at the
+    // prompt tail. Undefined leaves the request byte-identical to a lens-less run.
+    lens,
     reserve: reserveFor(contextLength, maxTokens),
     temperature,
     // The validated vendor sampling params, threaded onto `send` in
@@ -133,7 +137,22 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
 
 async function reviewFlow(options, instructions, terminated, sampling) {
   assertAskable(options, instructions, terminated);
+  // The collision is checked BEFORE the numeric parse below, so `--lens x --passes
+  // nope` surfaces the more fundamental "cannot be combined" rather than a numeric
+  // error about a value that was never going to be used. `--lens` and `--passes`
+  // are different pass strategies with different agreement semantics, so combining
+  // them is refused loudly rather than one silently winning.
+  if (options.lens !== undefined && options.passes !== undefined) {
+    throw new UserError('--lens and --passes cannot be combined.', {
+      hint: 'Use --passes N for N plain passes, or --lens a,b,c for one pass per named lens.',
+    });
+  }
   const numeric = parseNumericOptions(options);
+  // Named lenses, one pass each. Validated up front (unknown, empty or duplicate
+  // names throw here, before any I/O). A lens run routes through the multi-pass
+  // machinery even at a single lens, because the envelope must carry the lens
+  // identity — the byte-identical single-pass promise is scoped to lens-LESS runs.
+  const lenses = parseReviewLenses(options.lens);
 
   const { config } = loadConfig();
   const profile = resolveProfile(config, { provider: options.provider, baseUrl: options['base-url'] });
@@ -171,9 +190,12 @@ async function reviewFlow(options, instructions, terminated, sampling) {
     // `passes === 1` (the default, and no flag) is byte-identical to the block
     // below — this branch is the whole extent of the feature's footprint on the
     // flagship path.
-    const passCount = numeric.passes ?? 1;
-    if (passCount > 1) {
-      await runMultiPass({ passCount, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext });
+    const passCount = lenses.length || (numeric.passes ?? 1);
+    // Multi-pass on either axis: more than one plain pass, OR one-or-more lenses
+    // (a lens run always routes here so the envelope carries lens identity). A
+    // lens-less `passCount === 1` never enters here — byte-identical as before.
+    if (passCount > 1 || lenses.length) {
+      await runMultiPass({ passCount, lenses, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext });
       return;
     }
     const ledger = createLedger();
@@ -253,11 +275,16 @@ async function reviewFlow(options, instructions, terminated, sampling) {
  * `reviewFlow`'s post-resolution `try`, so its fail-closed throws carry the run
  * context like every other failure on this path.
  */
-async function runMultiPass({ passCount, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext }) {
+async function runMultiPass({ passCount, lenses = [], profile, options, instructions, target, model, contextLength, numeric, sampling, runContext }) {
   const outcomes = [];
   for (let index = 0; index < passCount; index += 1) {
+    // The lens for THIS pass, or undefined on the plain `--passes` path. Carried
+    // BY VALUE onto the outcome below so `mergePasses` can attribute each finding
+    // to the lens that produced it — never by pass index, which shifts when a
+    // middle pass fails and `reportPasses` compacts the readable outcomes.
+    const lens = lenses[index];
     const ledger = createLedger();
-    const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
+    const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger, lens });
     // After the FIRST plan, for the same reason the single-pass path emits it
     // after `reviewPlan`: `reserveFor` refuses a too-small --max-tokens, so
     // "Proceeding" must never precede an immediate local refusal.
@@ -291,6 +318,7 @@ async function runMultiPass({ passCount, profile, options, instructions, target,
       // the thrown branch does not read it yet.
       outcomes.push({
         ok: true,
+        lens: lens ?? null,
         parsed: parseFindings(result, { structured, schema }),
         result,
         structured,
@@ -304,7 +332,7 @@ async function runMultiPass({ passCount, profile, options, instructions, target,
         ledger,
       });
     } catch (error) {
-      outcomes.push({ ok: false, error, ledger, durationMs: Date.now() - startedAt });
+      outcomes.push({ ok: false, lens: lens ?? null, error, ledger, durationMs: Date.now() - startedAt });
     }
   }
 
@@ -330,6 +358,10 @@ async function runMultiPass({ passCount, profile, options, instructions, target,
     structuredOutput: Boolean(options['structured-output']),
     sampling,
     json: Boolean(options.json),
+    // The run's pass strategy and, on the lens path, the ordered lens list — the
+    // envelope's identity for what varied across passes.
+    strategy: lenses.length ? 'lenses' : 'passes',
+    lenses,
     ...runContext,
   });
 }

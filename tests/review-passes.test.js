@@ -5,7 +5,8 @@
 // pass would corrupt the one signal the feature exists to produce.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allFailedError, caveatUnion, contextCheckedAll, mergePasses, partitionPasses, passesText, servedModelFailure, totalDuration } from '../scripts/lib/review-passes.mjs';
+import { allFailedError, caveatUnion, contextCheckedAll, mergePasses, partitionPasses, passesEnvelope, passesText, servedModelFailure, totalDuration } from '../scripts/lib/review-passes.mjs';
+import { lensDirective, parseReviewLenses } from '../scripts/lib/review.mjs';
 
 const finding = (over = {}) => ({ file: 'a.js', line: 10, severity: 'medium', summary: 'a bug', evidence: '', ...over });
 const readablePass = (findings) => ({ ok: true, parsed: { findings } });
@@ -252,4 +253,143 @@ test('allFailedError synthesizes the whole-run claim for a shape-unreadable firs
   // errorReport reads `error.attemptRecords` for its `attempts` field — the
   // OAI-116 regression is a null there on the dominant failure mode.
   assert.deepEqual(synth.attemptRecords, [{ ok: true }], 'the ledger entries ride the error so errorReport.attempts is not null');
+});
+
+// ---------------------------------------------------------------------------
+// LENS PROVENANCE (OAI-11): each finding is attributed to the lens that produced
+// it, BY VALUE off the pass, never by an index into the compacted readable array.
+
+const lensPass = (lens, findings) => ({ ok: true, lens, parsed: { findings } });
+
+test('a merged finding carries the lenses of every pass that flagged it, by value', () => {
+  const merged = mergePasses([
+    lensPass('correctness', [finding({ summary: 'off-by-one' })]),
+    lensPass('security', [finding({ summary: 'unsanitised input reaches the same line' })]),
+  ]);
+  assert.equal(merged.findings.length, 1);
+  assert.deepEqual(merged.findings[0].lenses, ['correctness', 'security']);
+});
+
+test('lens provenance survives a failed MIDDLE pass — attribution is by value, not compacted index', () => {
+  // The discriminating test named in the plan. `reportPasses` compacts the
+  // readable passes before `mergePasses`, so the array here is the two SURVIVORS
+  // of a three-lens run whose middle (security) pass failed: correctness (orig
+  // index 0) and edge-cases (orig index 2). A by-value read off `pass.lens` gives
+  // the right answer; an index-into-[correctness,security,edge-cases] map would
+  // read compacted index 1 as 'security' and MIS-ATTRIBUTE. The all-readable
+  // 0-and-2 case cannot expose this, since with no gap compacted index == orig.
+  const merged = mergePasses([
+    lensPass('correctness', [finding({ summary: 'off-by-one' })]),
+    lensPass('edge-cases', [finding({ summary: 'no bound check on the same line' })]),
+  ]);
+  assert.deepEqual(merged.findings[0].lenses, ['correctness', 'edge-cases']);
+  assert.ok(!merged.findings[0].lenses.includes('security'), 'the failed middle lens is never attributed');
+});
+
+test('a null-line single carries its originating pass lens, bypassing the keyed Set', () => {
+  const merged = mergePasses([lensPass('security', [finding({ line: null, summary: 'a leak somewhere' })])]);
+  assert.equal(merged.findings.length, 1);
+  assert.deepEqual(merged.findings[0].lenses, ['security']);
+});
+
+test('a plain --passes run (no lens) leaves lenses empty on every finding', () => {
+  // Mutation proof that `pass.lens` gates the push: a lens-less pass contributes
+  // no lens, so the array is empty rather than carrying a stray null.
+  const merged = mergePasses([readablePass([finding()]), readablePass([finding({ line: null })])]);
+  assert.deepEqual(merged.findings.map((f) => f.lenses), [[], []]);
+});
+
+test('passesEnvelope carries the strategy and lens list at the top level', () => {
+  const merged = mergePasses([lensPass('correctness', [finding()])]);
+  const envelope = passesEnvelope(merged, {
+    label: '1 file(s)', provider: 'lmstudio', requestedModel: 'm', model: 'm', modelReported: true,
+    perPassReports: [], usage: null, reasoning: { label: 'unknown' }, caveatFlags: {}, contextChecked: true,
+    strategy: 'lenses', lenses: ['correctness', 'security'],
+  });
+  assert.equal(envelope.strategy, 'lenses');
+  assert.deepEqual(envelope.lenses, ['correctness', 'security']);
+});
+
+const lensTextFor = (over = {}) =>
+  passesText(
+    { readablePasses: 2, findings: [{ file: 'a.js', line: 10, severity: 'high', evidence: '', agreement: 1, readablePasses: 2, summary: 'a defect', summaries: ['a defect'], lenses: ['security'], ...over }] },
+    {
+      passCount: 2,
+      passSummaries: [
+        { index: 0, durationMs: 1000, findings: 1, reason: null, servedNote: null },
+        { index: 1, durationMs: 1000, findings: 0, reason: null, servedNote: null },
+      ],
+      caveatFlags: { salvaged: false, analysisCut: false, atCap: false, hunksOnly: false, skippedUnsizedWindow: false, dropped: 0, unreadable: false },
+      label: '1 file(s)', profile: { name: 'lmstudio' }, model: 'test-model',
+      strategy: 'lenses', lenses: ['correctness', 'security'],
+    },
+  );
+
+test('the lens-path text tags a finding by lens and DROPS the confidence framing', () => {
+  // Two-sided control with the passes path below: the confidence paragraph the
+  // `--passes` path prints ("LOWER BOUND on true agreement") must be ABSENT on the
+  // lens path, replaced by lens provenance, or K reads as confidence across
+  // deliberately disjoint focuses.
+  const text = lensTextFor();
+  assert.match(text, /\[flagged by: security\]/);
+  assert.match(text, /COVERAGE across focuses, not confidence/);
+  assert.doesNotMatch(text, /LOWER BOUND on true agreement/);
+});
+
+test('the passes-path text KEEPS the LOWER BOUND framing (control for the lens path)', () => {
+  // The other half of the control: the plain `--passes` rendering is unchanged, so
+  // the confidence paragraph is present there. If the branch leaked, this reds.
+  const text = passesText(
+    { readablePasses: 2, findings: [{ file: 'a.js', line: 10, severity: 'high', evidence: '', agreement: 2, readablePasses: 2, summary: 's', summaries: ['s'], lenses: [] }] },
+    {
+      passCount: 2,
+      passSummaries: [{ index: 0, durationMs: 1000, findings: 1, reason: null, servedNote: null }, { index: 1, durationMs: 1000, findings: 1, reason: null, servedNote: null }],
+      caveatFlags: { salvaged: false, analysisCut: false, atCap: false, hunksOnly: false, skippedUnsizedWindow: false, dropped: 0, unreadable: false },
+      label: '1 file(s)', profile: { name: 'lmstudio' }, model: 'test-model',
+    },
+  );
+  assert.match(text, /LOWER BOUND on true agreement/);
+  assert.doesNotMatch(text, /flagged by:/);
+});
+
+test('lensDirective returns a focus clause for a known lens and throws naming the set for an unknown one', () => {
+  assert.match(lensDirective('security'), /SECURITY/);
+  assert.throws(() => lensDirective('nonsense'), /Unknown --lens "nonsense"/);
+});
+
+test('parseReviewLenses validates the list, refusing empty, unknown, duplicate, and non-string', () => {
+  assert.deepEqual(parseReviewLenses(undefined), []);
+  assert.deepEqual(parseReviewLenses('correctness,security'), ['correctness', 'security']);
+  assert.throws(() => parseReviewLenses('correctness,,security'), /empty entry/);
+  assert.throws(() => parseReviewLenses('correctness,bogus'), /Unknown --lens "bogus"/);
+  // Duplicate rejection: a repeated focus would run twice while mergePasses dedups
+  // its provenance to one lens, and is what makes agreement === lenses.length hold.
+  assert.throws(() => parseReviewLenses('security,security'), /repeated/);
+  // A non-string yields a controlled UserError, never a leaked toString throw.
+  assert.throws(() => parseReviewLenses(['security']), /comma-separated list of lens names/);
+  assert.throws(() => parseReviewLenses({ toString() { throw new Error('hostile'); } }), /comma-separated list of lens names/);
+});
+
+test('the lens-path envelope OMITS per-finding agreement/readablePasses; the --passes path KEEPS them', () => {
+  // Two-sided control for the §5 drop: after duplicate-rejection agreement equals
+  // the lens count, so a confidence-shaped number over redundant data is stripped
+  // at the envelope seam — but ONLY on the lens path. mergePasses stays neutral
+  // (still computes agreement); the omission is passesEnvelope's alone.
+  const baseEnv = {
+    label: '1 file(s)', provider: 'lmstudio', requestedModel: 'm', model: 'm', modelReported: true,
+    perPassReports: [], usage: null, reasoning: { state: 'unknown' }, caveatFlags: {}, contextChecked: true,
+  };
+  const lensEnv = passesEnvelope(
+    mergePasses([lensPass('correctness', [finding()]), lensPass('security', [finding()])]),
+    { ...baseEnv, strategy: 'lenses', lenses: ['correctness', 'security'] },
+  );
+  assert.equal(lensEnv.findings[0].agreement, undefined, 'no agreement on a lens finding');
+  assert.equal(lensEnv.findings[0].readablePasses, undefined, 'no readablePasses on a lens finding');
+  assert.deepEqual(lensEnv.findings[0].lenses, ['correctness', 'security'], 'lenses[] is the sole signal');
+  const passesEnv = passesEnvelope(
+    mergePasses([readablePass([finding()]), readablePass([finding()])]),
+    { ...baseEnv, strategy: 'passes', lenses: [] },
+  );
+  assert.equal(passesEnv.findings[0].agreement, 2, 'the --passes path keeps agreement');
+  assert.equal(passesEnv.findings[0].readablePasses, 2, 'the --passes path keeps readablePasses');
 });

@@ -8,7 +8,10 @@ import { outcomeFor } from '../bench/lib/outcome.mjs';
 import { scoreRun } from '../bench/lib/score.mjs';
 import { passEnvelope, sumUsage } from '../scripts/lib/review-report.mjs';
 import { caveatUnion } from '../scripts/lib/review-passes.mjs';
-import { completionFrames, modelList, reasoningFrames, respondJson, respondStream, reviewScenario as scenario, runCompanion } from './helpers.mjs';
+import { truncatedRuns } from '../bench/lib/run-buckets.mjs';
+import { attemptRows } from '../bench/lib/attempt-rows.mjs';
+import { LENSES } from '../scripts/lib/review.mjs';
+import { completionFrames, modelList, reasoningFrames, respondJson, respondStream, reviewScenario as scenario, runCompanion, scriptOf } from './helpers.mjs';
 
 const clean = JSON.stringify({
   analysis: 'read each changed file in full',
@@ -184,21 +187,82 @@ test('the merged --json envelope carries every single-pass top-level key a consu
 
   // Genuinely per-pass or per-reply facts a union does not carry at top level; each
   // rides every entry of passes[] instead. `summary` — mergePasses has no union
-  // summary by design. `attempts`/`retried`/`finishReason` are per-pass diagnostics
-  // on each passes[] entry: a multi-pass bench record's WHOLE-RUN reliability
-  // (bench/lib/attempt-rows.mjs) and truncation (run-buckets.mjs truncatedRuns) read
-  // TOP-LEVEL attempts/finishReason, which the merged SUCCESS envelope does not carry
-  // — a known gap tracked in the plan's bench-wiring residue and unreachable today
-  // (bench cannot forward --passes). The FAILURE path's own top-level attempts is a
-  // separate, cheap aggregate (allFailedError). The rest —
+  // summary by design. `attempts` and `finishReason` are NO LONGER here: the merged
+  // SUCCESS envelope carries both at top level (attempts = the whole-run aggregate
+  // over all passes; finishReason = the union truncation signal), because a
+  // multi-pass bench record's WHOLE-RUN reliability (bench/lib/attempt-rows.mjs
+  // everyAttempt) and truncation (run-buckets.mjs truncatedRuns) read TOP-LEVEL
+  // report.attempts/report.finishReason — reachable now that bench forwards
+  // --passes. `retried` STAYS per-pass-only: no bench/ code reads report.retried
+  // (single-pass retried is a per-pass request-count derivation). The rest —
   // `raw`/`analysisLength`/`analysisCap`/`estimatedTokens`/`contextNote`/`prefillMs`/
   // `generationMs`/`salvageTrim` — are per-reply diagnostics.
   const PER_PASS_ONLY = new Set([
-    'summary', 'finishReason', 'analysisLength', 'analysisCap', 'estimatedTokens',
-    'contextNote', 'prefillMs', 'generationMs', 'retried', 'raw', 'salvageTrim', 'attempts',
+    'summary', 'analysisLength', 'analysisCap', 'estimatedTokens',
+    'contextNote', 'prefillMs', 'generationMs', 'retried', 'raw', 'salvageTrim',
   ]);
   const missing = Object.keys(single).filter((key) => !(key in merged) && !PER_PASS_ONLY.has(key));
   assert.deepEqual(missing, [], `merged envelope drops consumer key(s): ${missing.join(', ')}`);
+});
+
+test('the merged SUCCESS envelope carries a whole-run attempts aggregate the bench reliability reader consumes', async () => {
+  // The OAI-9 bench-wiring residue, landing with OAI-11's --passes forwarding: a
+  // multi-pass success record's whole-run reliability reads TOP-LEVEL
+  // `report.attempts` (bench/lib/attempt-rows.mjs everyAttempt). Aggregate over ALL
+  // passes, so two clean passes contribute two answered attempts. Mutation: dropping
+  // the aggregate (or scoping it to one pass) reds `report.attempts.length` and the
+  // consumer's `total`.
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  const result = await runCompanion(['review', '--passes', '2', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.finishReason, null, 'two clean stop passes are not truncated');
+  assert.ok(Array.isArray(report.attempts), 'attempts is a top-level array on the merged success envelope');
+  assert.equal(report.attempts.length, 2, 'one answered attempt per pass, aggregated over both');
+  assert.ok(report.attempts.every((a) => a.outcome === 'answered'));
+  // The bench consumer reads it end to end: two answered attempts, none failed.
+  const rows = attemptRows([{ caseDef: { id: 'seed' }, runs: [{ report }] }]);
+  assert.equal(rows.total, 2);
+  assert.equal(rows.answered, 2);
+  assert.equal(rows.failed, 0);
+  // And it is not truncated for the bench truncation reader.
+  assert.deepEqual(truncatedRuns([{ report }]), []);
+});
+
+test('a PARSE-NULL truncated pass flips the union finishReason — over every result-bearing pass, not just readable', async () => {
+  // The round-7 correction (found by codex-adversarial): the union truncation signal
+  // ranges over EVERY pass carrying a `result`, not the readable subset. A parse-null
+  // pass (a reply arrived that parseFindings could not read) is a non-observation
+  // EXCLUDED from `readable`, yet still carries its `finishReason` — and
+  // token-exhaustion (finish_reason 'length') is a leading cause of unreadability. So
+  // a run with one clean readable pass and one parse-null 'length' pass is truncated,
+  // and reading `readable` only would blind the signal on exactly the truncated pass.
+  //
+  // Mutation proof: change reportPasses's `passes.some(...)` to `readable.some(...)`
+  // and this reds — the truncated pass is not in `readable`, so finishReason reads
+  // null and the bench misclassifies the record as scored rather than truncated.
+  let seen = 0;
+  const handler = (request, response) => {
+    if (!request.url.endsWith('/chat/completions')) return respondJson(response, modelList('test-model'));
+    seen += 1;
+    // Pass 1: a clean, parseable reply that finished normally (readable).
+    // Pass 2: prose with no findings shape at all, cut off mid-reply (parse-null,
+    // finish_reason 'length') — ok:true, result set, parsed null.
+    if (seen === 1) return respondStream(response, completionFrames(clean, { finishReason: 'stop' }));
+    return respondStream(response, completionFrames('ran out of tokens before I could write the', { finishReason: 'length' }));
+  };
+  const { dir, server, configPath } = await scenario(handler, { contextLength: 131_072 });
+  const result = await runCompanion(['review', '--passes', '2', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.kind, 'multi-pass-review');
+  assert.equal(report.readablePasses, 1, 'the truncated parse-null pass is NOT readable');
+  assert.equal(report.finishReason, 'length', 'a result-bearing parse-null length pass flips the union');
+  // The bench truncation reader now classifies the whole multi-pass record as
+  // truncated off the top-level signal — the consumer proof.
+  assert.equal(truncatedRuns([{ report }]).length, 1);
 });
 
 test('the merged usage preserves reasoning_tokens and the top-level reasoning witness reads it', async () => {
@@ -345,4 +409,106 @@ test('a served model the server never confirmed fails closed', async () => {
   // PC2-2: the served-model refusal carries the completed passes' attempts, like
   // every other post-hoc failure — not attempts:null.
   assert.ok(Array.isArray(report.attempts) && report.attempts.length >= 1, 'the served-model failure carries its passes\' attempts');
+});
+
+// ---------------------------------------------------------------------------
+// LENSES (OAI-11): one pass per named lens, tagged by lens, the lens riding the
+// prompt tail so the passes share a cached prefix.
+
+test('--lens correctness,security runs one pass per lens and tags findings by lens', async () => {
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  const result = await runCompanion(['review', '--lens', 'correctness,security', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.kind, 'multi-pass-review');
+  assert.equal(report.strategy, 'lenses');
+  assert.deepEqual(report.lenses, ['correctness', 'security']);
+  assert.equal(report.passCount, 2);
+  assert.deepEqual(report.passes.map((pass) => pass.lens), ['correctness', 'security']);
+  // Both passes flag the one seed defect at seed.txt:2, so it is flagged by both lenses.
+  assert.equal(report.findings.length, 1);
+  assert.deepEqual(report.findings[0].lenses, ['correctness', 'security']);
+});
+
+test('--lens and --passes together are refused loudly, before any request', async () => {
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  const result = await runCompanion(['review', '--lens', 'security', '--passes', '2'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--lens and --passes cannot be combined/);
+  assert.equal(server.requests.filter((r) => r.url.includes('chat/completions')).length, 0, 'refused before any model request');
+});
+
+test('an unknown lens is refused, naming the valid set', async () => {
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  const result = await runCompanion(['review', '--lens', 'bogus'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unknown --lens "bogus"/);
+  assert.match(result.stderr, /correctness/);
+});
+
+test('the lens directive reaches the sent user message on the unconstrained AND structured paths', async () => {
+  // The two paths where a suffix-smuggled lens would have been dropped
+  // (`unconstrainedLadder` overwrites `suffix` on both). The dedicated `lens` param
+  // rides the tail on both, after the diff and any schema instruction.
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  await runCompanion(['review', '--lens', 'security'], { configPath, cwd: dir });
+  await runCompanion(['review', '--lens', 'security', '--structured-output'], { configPath, cwd: dir });
+  await server.close();
+
+  const chats = server.requests.filter((r) => r.url.includes('chat/completions'));
+  assert.ok(chats.length >= 2, 'both runs sent a chat completion');
+  for (const chat of chats) {
+    const user = chat.body.messages.at(-1).content;
+    assert.ok(user.includes(LENSES.security), 'the lens directive is present in the user message');
+    assert.ok(user.trimEnd().endsWith(LENSES.security), 'the lens rides the tail, after the diff and any schema suffix');
+  }
+});
+
+test('the lens directive reaches the structured schema-rejection FALLBACK request (path c)', async () => {
+  // The third prompt path §2 names: a server that rejects response_format forces
+  // the structured request to fall back to unconstrained, which reuses the same
+  // closed-over ladder — so the fallback must still carry the lens. The earlier
+  // test covers (a) unconstrained and (b) structured success; this covers (c).
+  const { dir, server, configPath } = await scenario(
+    scriptOf([
+      (response) => respondJson(response, { error: { message: 'response_format is not supported' } }, 400),
+      (response) => respondStream(response, completionFrames(clean)),
+    ]),
+    { contextLength: 131_072 },
+  );
+  const result = await runCompanion(['review', '--lens', 'security', '--structured-output', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const chats = server.requests.filter((r) => r.url.includes('chat/completions'));
+  const fallback = chats.find((chat) => !chat.body.response_format);
+  assert.ok(fallback, 'a fallback request without response_format was sent');
+  assert.ok(fallback.body.messages.at(-1).content.includes(LENSES.security), 'the fallback request carries the lens directive');
+});
+
+test('the passes of one lens run share a byte-identical prefix up to the lens tail (cache invariant)', async () => {
+  // The mechanical proof of the warm-pass economics claim: only the trailing lens
+  // directive differs between two lens passes; system prompt, diff and schema
+  // suffix are byte-identical, so the server's prefix cache is not busted.
+  const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
+  await runCompanion(['review', '--lens', 'correctness,security', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  const chats = server.requests.filter((r) => r.url.includes('chat/completions'));
+  assert.equal(chats.length, 2);
+  const [u0, u1] = chats.map((chat) => chat.body.messages.at(-1).content);
+  assert.equal(chats[0].body.messages[0].content, chats[1].body.messages[0].content, 'system prompt is lens-invariant');
+  assert.ok(u0.endsWith(LENSES.correctness));
+  assert.ok(u1.endsWith(LENSES.security));
+  assert.equal(
+    u0.slice(0, -LENSES.correctness.length),
+    u1.slice(0, -LENSES.security.length),
+    'everything before the lens tail is byte-identical across the two passes',
+  );
 });

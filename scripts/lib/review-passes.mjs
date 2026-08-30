@@ -115,19 +115,29 @@ export function mergePasses(readable) {
           evidence: finding.evidence ?? '',
           agreement: 1,
           readablePasses: S,
+          // The lens that produced this single, BY VALUE off the pass — a null-line
+          // finding never enters the keyed Set, so an index-based scheme could not
+          // attribute it at all. Empty on the plain `--passes` path (lens null).
+          lenses: pass.lens ? [pass.lens] : [],
         });
         continue;
       }
       const key = locationKey(finding);
       let entry = keyed.get(key);
       if (!entry) {
-        entry = { file: finding.file, line: finding.line, summaries: [], severities: [], evidences: [], passes: new Set() };
+        entry = { file: finding.file, line: finding.line, summaries: [], severities: [], evidences: [], passes: new Set(), lenses: [] };
         keyed.set(key, entry);
       }
       // K counts passes, not findings: `passes` is a Set of pass INDICES, so a
       // pass that names the same line twice adds its one index once — one vote
       // however many times it names the line.
       entry.passes.add(index);
+      // Lens provenance BY VALUE (`pass.lens`), never by `index`: `reportPasses`
+      // compacts to the readable passes before calling this, so `index` is a
+      // position in that compacted array — a failed middle pass shifts it and an
+      // index→lens map would mis-attribute. Deduped, order-preserving; empty on the
+      // plain `--passes` path where every `pass.lens` is null.
+      if (pass.lens && !entry.lenses.includes(pass.lens)) entry.lenses.push(pass.lens);
       if (finding.summary && !entry.summaries.includes(finding.summary)) entry.summaries.push(finding.summary);
       entry.severities.push(finding.severity);
       if (finding.evidence && !entry.evidences.includes(finding.evidence)) entry.evidences.push(finding.evidence);
@@ -145,6 +155,7 @@ export function mergePasses(readable) {
     evidence: entry.evidences[0] ?? '',
     agreement: entry.passes.size,
     readablePasses: S,
+    lenses: entry.lenses,
   }));
   return { findings: [...merged, ...singles], readablePasses: S };
 }
@@ -325,12 +336,15 @@ export function totalDuration(passes) {
 // single-pass `substitutionNotice` used to carry, now that the multi-pass loop
 // drops it; the model id itself rides the JSON `passes[]` entry, so the text
 // stays generic and prints no server-controlled value.
-function formatPassLine({ index, durationMs, findings, reason, servedNote }) {
+function formatPassLine({ index, lens, durationMs, findings, reason, servedNote }) {
   const secs = Number.isFinite(durationMs) ? `${(durationMs / 1000).toFixed(1)}s` : 'unknown time';
   const state = reason
     ? `${reason}${servedNote ? ` — ${servedNote}` : ''}`
     : `${findings} finding(s)`;
-  return `  pass ${index + 1}: ${secs} · ${state}`;
+  // The lens (when a lens run) names which focus this pass ran, so a failed pass is
+  // diagnosable from the text; omitted on the plain `--passes` path (lens null).
+  const focus = lens ? ` [${lens}]` : '';
+  return `  pass ${index + 1}${focus}: ${secs} · ${state}`;
 }
 
 /**
@@ -347,21 +361,36 @@ function formatPassLine({ index, durationMs, findings, reason, servedNote }) {
  * own `\n        ` continuation lines). K is thus never read as proof the passes
  * found the same defect.
  */
-export function passesText(merged, { passCount, passSummaries, caveatFlags, label, profile, model }) {
+export function passesText(merged, { passCount, passSummaries, caveatFlags, label, profile, model, strategy = 'passes', lenses = [] }) {
+  // On the lens path a finding is tagged with the LENS(es) that flagged it, not an
+  // agreement count: across deliberately disjoint focuses K is coverage, not
+  // confidence, and "flagged by: security" makes that self-evident where a bare
+  // count invites the confidence misread. The plain `--passes` path is unchanged —
+  // K there IS a decorrelation signal (repeated samples of one prompt), and its
+  // "LOWER BOUND on true agreement" paragraph stays exactly as written.
+  const lensPath = strategy === 'lenses';
   const annotated = merged.findings.map((finding) => {
     const divergent = finding.summaries.length > 1;
-    const tag = `[${finding.agreement}/${merged.readablePasses} passes${divergent ? ' — summaries differ' : ''}]`;
+    const tag = lensPath
+      ? `[flagged by: ${finding.lenses.join(', ') || 'unknown'}${divergent ? ' — summaries differ' : ''}]`
+      : `[${finding.agreement}/${merged.readablePasses} passes${divergent ? ' — summaries differ' : ''}]`;
     const extras = divergent ? finding.summaries.slice(1).map((s) => `\n        · ${s}`).join('') : '';
     return { ...finding, summary: `${finding.summary} ${tag}${extras}` };
   });
-  const header = [
-    `Multi-pass review: ${merged.readablePasses} of ${passCount} passes readable.`,
-    passSummaries.map(formatPassLine).join('\n'),
-    'The agreement count is how many passes flagged that LOCATION: a LOWER BOUND on true agreement ' +
+  const openingLine = lensPath
+    ? `Lens review across ${lenses.join(', ')}: ${merged.readablePasses} of ${passCount} lens passes readable.`
+    : `Multi-pass review: ${merged.readablePasses} of ${passCount} passes readable.`;
+  const explanation = lensPath
+    ? 'Each finding is tagged with the lens(es) that flagged it. A lens run reports COVERAGE across ' +
+      'focuses, not confidence: a finding flagged by only one lens is a blind spot that lens was ' +
+      'looking for, not a low-confidence result, so being flagged by fewer lenses is not a demotion. ' +
+      'Where the summaries differ, different lenses reported different defects at one line — the ' +
+      'differing summaries are shown.'
+    : 'The agreement count is how many passes flagged that LOCATION: a LOWER BOUND on true agreement ' +
       '(paraphrased or off-by-a-line duplicates do not merge), and where the summaries differ it may ' +
       'join DIFFERENT defects reported at one line — the differing summaries are shown so it is never ' +
-      'read as proof the passes found the same defect.',
-  ]
+      'read as proof the passes found the same defect.';
+  const header = [openingLine, passSummaries.map(formatPassLine).join('\n'), explanation]
     .filter(Boolean)
     .join('\n');
   const body = renderFindings(
@@ -385,19 +414,41 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
  * and a scoring consumer that gates on `report.parsed` (the single-pass shape's
  * own field) reads the merged record the same way.
  */
-export function passesEnvelope(merged, { label, provider, requestedModel, model, modelReported, perPassReports, usage, reasoning, sampling, contextWindow, contextSource, detectedWindow, serverConfig, durationMs, caveatFlags, contextChecked }) {
+// A merged finding without its `agreement`/`readablePasses` pair — the lens-path
+// projection. Everything else (file, line, severity, summary, summaries, evidence,
+// lenses) is kept. A fresh object, so the shared merged finding is untouched.
+function withoutAgreement(finding) {
+  const { agreement, readablePasses, ...rest } = finding;
+  return rest;
+}
+
+export function passesEnvelope(merged, { label, provider, requestedModel, model, modelReported, perPassReports, usage, reasoning, sampling, contextWindow, contextSource, detectedWindow, serverConfig, durationMs, attempts, finishReason, caveatFlags, contextChecked, strategy = 'passes', lenses = [] }) {
   return {
     kind: 'multi-pass-review',
     label,
     provider,
     parsed: true,
+    // What varied across the passes: 'passes' (N plain passes of one prompt) or
+    // 'lenses' (one pass per named lens). On the lens path `lenses` is the ordered
+    // run list; each merged finding carries the lens(es) that flagged it in its own
+    // `lenses[]`. A comparison reads `strategy` to refuse ranking a lens record
+    // against a plain-passes one.
+    strategy,
+    lenses,
     passes: perPassReports,
     passCount: perPassReports.length,
     readablePasses: merged.readablePasses,
     requestedModel,
     model,
     modelReported,
-    findings: merged.findings,
+    // On the lens path each finding's per-finding `agreement`/`readablePasses` are
+    // OMITTED: duplicate lenses are refused, so `agreement === lenses.length` for
+    // every finding, making the pair redundant with `lenses[]` while wearing a
+    // confidence-shaped name a diverse-focus run must not invite a reader to rank
+    // on. `lenses[]` is the sole per-finding signal there. The plain `--passes`
+    // path is byte-unchanged. `mergePasses` stays strategy-neutral (it still
+    // computes both); the omission is here, at the one seam that knows the strategy.
+    findings: strategy === 'lenses' ? merged.findings.map(withoutAgreement) : merged.findings,
     ...caveatFlags,
     contextChecked,
     usage,
@@ -418,5 +469,15 @@ export function passesEnvelope(merged, { label, provider, requestedModel, model,
     detectedWindow: detectedWindow ?? null,
     serverConfig: serverConfig ?? null,
     durationMs,
+    // Bench-consumed, additive-equivalent to the single-pass `jsonReport`'s own
+    // top-level pair. `attempts` is the whole-run reliability aggregate over ALL
+    // passes (`bench/lib/attempt-rows.mjs` everyAttempt), null when nothing was
+    // recorded. `finishReason` is the union's truncation signal
+    // (`bench/lib/run-buckets.mjs` truncatedRuns): `'length'` iff ANY pass carrying
+    // a result finished `'length'`, else `null` — a UNION CLASSIFICATION, never a
+    // synthesized `'stop'`. Both are computed in `reportPasses`; see there for the
+    // population rationale (all-passes vs the parse-null/thrown split).
+    attempts,
+    finishReason,
   };
 }

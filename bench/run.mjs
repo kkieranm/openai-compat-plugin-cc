@@ -16,9 +16,10 @@ import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../scripts/lib/args.mjs';
-import { MAX_ATTEMPTS_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
+import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
+import { parseReviewLenses } from '../scripts/lib/review.mjs';
 import { UserError } from '../scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
 import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
@@ -32,7 +33,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note', 'passes', 'lens'],
   booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
   repeatableFlags: ['case'],
 };
@@ -99,6 +100,14 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   // The control arm: `--max-attempts 1` reproduces the pre-retry behaviour, so
   // one corpus run can measure the failure rate with retry and another without.
   if (options['max-attempts']) flags.push('--max-attempts', options['max-attempts']);
+  // The pass strategy, forwarded EXACTLY as the operator gave it — never a derived
+  // value. `--passes` and `--lens` are mutually exclusive (validateOptions refuses
+  // both), so at most one fires; forwarding a synthesised `--passes` for a lens run
+  // would send both and the review CLI would refuse every case. The effective pass
+  // count a comparison needs is derived from `--lens` where it applies, in
+  // `compare-model.mjs`, not written back here.
+  if (options.passes) flags.push('--passes', options.passes);
+  if (options.lens) flags.push('--lens', options.lens);
   return flags;
 }
 
@@ -270,6 +279,23 @@ function validateOptions(options) {
   if (options['max-attempts'] !== undefined) {
     parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING });
   }
+  // The pass strategy, refused up front for the same reason as every budget above:
+  // an over-ceiling `--passes`, an unknown or empty `--lens`, or the two together
+  // would otherwise materialize every repo, spawn every child, and record each
+  // child's own CLI refusal as a *reviewer* failure with all-zero recall —
+  // contaminating the reliability data with a mistake the operator could have been
+  // told about in milliseconds. Same domains the review CLI enforces.
+  // Collision first — before the individual value checks — so `--lens x --passes
+  // nope` reports the fundamental "cannot be combined", not the numeric error.
+  if (options.lens !== undefined && options.passes !== undefined) {
+    throw new UserError('--lens and --passes cannot be combined.', {
+      hint: 'Use --passes N for N plain passes, or --lens a,b,c for one pass per named lens.',
+    });
+  }
+  if (options.passes !== undefined) {
+    parseNumber(options.passes, 'passes', { integer: true, min: 1, max: PASSES_CEILING });
+  }
+  if (options.lens !== undefined) parseReviewLenses(options.lens); // Throws on empty/unknown/duplicate, naming the set.
   return runsPerCase;
 }
 
@@ -307,6 +333,10 @@ async function main() {
     // anyway and credits the gap to the wrong cause.
     maxTokens: options['max-tokens'],
     temperature: options.temperature,
+    // The pass strategy in the report title — a lens arm and a plain arm produce
+    // incomparable measurements and must be tellable apart in the artifact.
+    passes: options.passes,
+    lens: options.lens,
   });
   const { recordPath, reportPath } = persist(ROOT, stamp, { runsPerCase, options, warmed, results }, markdown);
 

@@ -157,11 +157,15 @@ function table(rows) {
   return lines;
 }
 
-export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature }) {
+export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, passes, lens }) {
   const rows = caseRows(results, { cold });
   const lines = [
     `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`
-    + `${structuredOutput ? ' (--structured-output)' : ''}`,
+    + `${structuredOutput ? ' (--structured-output)' : ''}`
+    // The pass strategy in the title, for the same reason as the flags above: two
+    // arms differing only in --passes/--lens produce incomparable measurements, so
+    // a reader must be able to tell them apart in the artifact, not only the JSON.
+    + `${lens ? ` (--lens ${lens})` : ''}${passes ? ` (--passes ${passes})` : ''}`,
     '',
     `${results.length} case(s), ${runsPerCase} run(s) each.`,
     '',

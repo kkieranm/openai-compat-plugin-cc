@@ -180,6 +180,76 @@ test('an explicit --passes 1 does not diverge from a no-flag record (both single
   assert.ok(!axisNames(comp).includes('passes'), `passes must not diverge: ${JSON.stringify(comp.divergences)}`);
 });
 
+// ---- OAI-11 pass-strategy axes (derived from raw persisted options.lens) ----
+
+test('a --lens record is incomparable to a plain-pass record (strategy + effective count derived)', () => {
+  const comp = flip({ lens: 'correctness,security' });
+  assert.equal(comp.rankable, false);
+  const axes = axisNames(comp);
+  assert.ok(axes.includes('strategy'), `strategy: ${JSON.stringify(comp.divergences)}`);
+  // The effective pass count (2) is derived from the lens list, so the `passes`
+  // axis (2 vs the plain record's 1) diverges too — proving the derivation.
+  assert.ok(axes.includes('passes'), `passes: ${JSON.stringify(comp.divergences)}`);
+});
+
+test('two lens runs differing only in ORDER are incomparable (the lens-set axis is UNSORTED)', () => {
+  // Mutation proof for the unsort: execution order is material (the first lens pays
+  // cold prefill, later lenses warm), so `correctness,security` and
+  // `security,correctness` must NOT rank as like-for-like. Sorting the axis (the
+  // reverted code) makes them equal and wrongly rankable.
+  const a = norm(baseRecord({ lens: 'correctness,security' }), 'a.json', 'a');
+  const b = norm(baseRecord({ lens: 'security,correctness' }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false);
+  assert.ok(axisNames(comp).includes('lenses'), JSON.stringify(comp.divergences));
+});
+
+test('a malformed persisted options.lens fails closed — no real run could persist it', () => {
+  // Every shape the CLI/bench refuse at write time: a non-string, an explicit null,
+  // an unknown name, a duplicate, an empty string. Each must read `malformed` and
+  // suppress on all three derived axes.
+  const bads = [['security'], null, 'bogus', 'security,security', ''];
+  // The DISCRIMINATING assertion (Group C): a malformed-vs-plain pair diverges under
+  // BOTH the correct fix AND a buggy `null → present with names []` impl, so it
+  // cannot pin the fix. Two IDENTICAL malformed records CAN: the correct fix makes
+  // both `unknown` (suppressed even for a matched pair), while a buggy zero-pass
+  // "present" reading makes them equal and wrongly rankable.
+  for (const bad of bads) {
+    const a = norm(baseRecord({ lens: bad }), 'a.json', 'a');
+    const b = norm(baseRecord({ lens: bad }), 'b.json', 'b');
+    const comp = buildComparison([a, b]);
+    assert.equal(comp.rankable, false, `two identical malformed-lens records must not rank: lens=${JSON.stringify(bad)} → ${JSON.stringify(comp.divergences)}`);
+    // The non-rank must be caused by the fail-closed AXES, not by the records
+    // bailing `incompatible` (which also yields rankable:false, but with EMPTY
+    // divergences — a test that checked only `rankable` would pass for the wrong
+    // reason if a value ever threw outside lensAxisState's catch). A matched pair of
+    // unknown-axis records lists all three axes in `divergences`; an incompatible
+    // bail lists none, so this assertion discriminates the two — for EVERY bad value,
+    // not just one.
+    for (const axis of ['passes', 'strategy', 'lenses']) {
+      assert.ok(axisNames(comp).includes(axis), `lens=${JSON.stringify(bad)} must fail closed on ${axis} (not bail incompatible): ${JSON.stringify(comp.divergences)}`);
+    }
+  }
+  // A record carrying BOTH --lens and --passes is impossible (the CLI and bench
+  // refuse the combination at write time), so it must fail closed too — even though
+  // the lens value is itself valid. Without this, a `{lens, passes}` record would
+  // read as an ordinary lens run with the passes silently ignored.
+  const bothA = norm(baseRecord({ lens: 'security', passes: 3 }), 'a.json', 'a');
+  const bothB = norm(baseRecord({ lens: 'security', passes: 3 }), 'b.json', 'b');
+  const both = buildComparison([bothA, bothB]);
+  assert.equal(both.rankable, false, 'two identical lens+passes records must not rank');
+  for (const axis of ['passes', 'strategy', 'lenses']) {
+    assert.ok(axisNames(both).includes(axis), `lens+passes must fail closed on ${axis}: ${JSON.stringify(both.divergences)}`);
+  }
+  // ...and it must NOT rank against a legit lens-only record (it reads malformed,
+  // the legit one reads present — known vs unknown suppresses).
+  const vsLegit = buildComparison([
+    norm(baseRecord({ lens: 'security', passes: 3 }), 'a.json', 'a'),
+    norm(baseRecord({ lens: 'security' }), 'b.json', 'b'),
+  ]);
+  assert.equal(vsLegit.rankable, false, 'a lens+passes record must not rank against a legit lens-only record');
+});
+
 test('flipping runsPerCase suppresses ranking', () => {
   const a = norm(record({ runsPerCase: 1, options: {}, results: [baseCase()] }), 'a.json', 'a');
   // runsPerCase 2 = one case with two runs, NOT two case entries sharing an id

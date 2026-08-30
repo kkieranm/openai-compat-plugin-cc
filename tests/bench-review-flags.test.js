@@ -150,3 +150,66 @@ test('bench refuses --max-tokens below the review reserve floor BEFORE materiali
   // No case was materialized: the refusal is a validation message, not a per-run failure record.
   assert.doesNotMatch(err, /run \d+\/\d+/, 'must refuse before running any case');
 });
+
+// ---------------------------------------------------------------------------
+// LENSES / pass strategy (OAI-11). The load-bearing property is no double-forward:
+// `--passes` and `--lens` are mutually exclusive at the review CLI, so a lens run
+// must forward `--lens` and NOT a synthesised `--passes`, or every case is refused.
+
+test('--lens is forwarded with its value, and --passes is NOT synthesised for a lens run', () => {
+  const flags = build({ lens: 'correctness,security' });
+  const at = flags.indexOf('--lens');
+  assert.ok(at !== -1 && flags[at + 1] === 'correctness,security', '--lens rides with its verbatim value');
+  // The negative twin: a lens run forwarding --passes too would make the review CLI
+  // refuse the mutual-exclusion and fail every case. compare-model derives the
+  // effective pass count from --lens, so no --passes is needed on the wire.
+  assert.ok(!flags.includes('--passes'), 'a lens run must NOT also forward --passes');
+});
+
+test('--passes is forwarded for a plain multi-pass run, and --lens is not', () => {
+  const flags = build({ passes: '3' });
+  const at = flags.indexOf('--passes');
+  assert.ok(at !== -1 && flags[at + 1] === '3');
+  assert.ok(!flags.includes('--lens'));
+});
+
+test('neither --passes nor --lens by default', () => {
+  const flags = build({});
+  assert.ok(!flags.includes('--passes'));
+  assert.ok(!flags.includes('--lens'));
+});
+
+const spawnBench = async (args) => {
+  const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
+  const child = spawn(process.execPath, [runPath, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { out += d; });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
+  clearTimeout(timer);
+  return { code, signal, out };
+};
+
+test('bench refuses --lens + --passes together BEFORE materializing any case', async () => {
+  const { code, signal, out } = await spawnBench(['--lens', 'security', '--passes', '2']);
+  assert.equal(signal, null, out.slice(0, 300));
+  assert.notEqual(code, 0, `the collision must be refused up front: ${out.slice(0, 300)}`);
+  assert.match(out, /--lens and --passes cannot be combined/);
+  assert.doesNotMatch(out, /run \d+\/\d+/, 'refused before running any case');
+});
+
+test('bench refuses an unknown --lens BEFORE materializing any case', async () => {
+  const { code, signal, out } = await spawnBench(['--lens', 'bogus']);
+  assert.equal(signal, null, out.slice(0, 300));
+  assert.notEqual(code, 0, out.slice(0, 300));
+  assert.match(out, /Unknown --lens "bogus"/);
+  assert.doesNotMatch(out, /run \d+\/\d+/, 'refused before running any case');
+});
+
+test('bench refuses an over-ceiling --passes BEFORE materializing any case', async () => {
+  const { code, signal, out } = await spawnBench(['--passes', '99']);
+  assert.equal(signal, null, out.slice(0, 300));
+  assert.notEqual(code, 0, out.slice(0, 300));
+  assert.doesNotMatch(out, /run \d+\/\d+/, 'refused before running any case');
+});

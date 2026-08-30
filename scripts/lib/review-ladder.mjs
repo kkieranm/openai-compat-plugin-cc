@@ -8,7 +8,7 @@
 // what the model is SHOWN, while `review-request.mjs` decides how much budget
 // there is to show it in and what to do when a request comes back refused.
 import { prepareRequest } from './delegate.mjs';
-import { buildReviewPrompt } from './review.mjs';
+import { buildReviewPrompt, lensDirective } from './review.mjs';
 import { REVIEW_SCHEMA, reviewSchemaFor } from './review-schema.mjs';
 import { findingsFirst, schemaInstruction } from './structured.mjs';
 
@@ -35,13 +35,24 @@ import { findingsFirst, schemaInstruction } from './structured.mjs';
  * that would have fitted is narrowed, and
  * `review.mjs` says so and names `contextLength` as the remedy.
  */
-export function prepareLadder(shared, { target, instructions, windowKnown, suffix = '' }) {
+export function prepareLadder(shared, { target, instructions, windowKnown, suffix = '', lens }) {
   const hasDiff = Boolean(target.diff.trim());
   // Every condition the claim "you hold the complete content of every changed
   // file" depends on. `unreadable` is the one that is easy to forget: a path git
   // listed whose body would not load is absent from `changed` and leaves no
   // other trace, so without this the prompt would vouch for a file that never
   // arrived — this feature's own defect, asserted rather than merely risked.
+  //
+  // The lens rides the TAIL, after the diff and after any `suffix` (the schema
+  // instruction on the structured paths): the server prefix-caches, so keeping
+  // everything up to the diff byte-identical across the passes of a `--lens a,b`
+  // run is what makes the extra passes warm rather than each a cold prefill. It
+  // is a dedicated parameter, never smuggled through `suffix`, because
+  // `unconstrainedLadder` overwrites `suffix` on its sizing calls — a lens hidden
+  // there would be dropped on the default path. The `lens ?` guard is
+  // load-bearing: `lensDirective` throws on an unknown name, and a lens-less run
+  // reaches here with `lens` undefined, so an unguarded call would break every
+  // ordinary review.
   const build = (whole) => {
     const prompt = buildReviewPrompt({
       label: target.label,
@@ -50,7 +61,7 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
       wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0,
     });
     return {
-      prompt: suffix ? `${prompt}\n\n${suffix}` : prompt,
+      prompt: [prompt, suffix, lens ? lensDirective(lens) : null].filter(Boolean).join('\n\n'),
       files: whole ? [...target.files, ...target.changed] : target.files,
     };
   };

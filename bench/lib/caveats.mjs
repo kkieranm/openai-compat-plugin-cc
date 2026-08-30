@@ -37,8 +37,8 @@ function censorshipNotes(rows) {
   const truncated = rows.reduce((total, row) => total + row.truncated, 0);
   if (truncated > 0) {
     notes.push(
-      `**${truncated} run(s) ran out of tokens before finishing their reply** — the JSON never parsed, so `
-      + 'there is nothing in them to score and they are excluded from the figures above. This is a '
+      `**${truncated} run(s) ran out of tokens before finishing their reply** — the reply was cut off `
+      + 'short, so they are excluded from the figures above. This is a '
       + 'harness limit, not a reviewer result: raise the reply budget or review a smaller target.',
     );
   }

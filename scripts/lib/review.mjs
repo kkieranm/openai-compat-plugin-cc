@@ -1,4 +1,5 @@
 // What the model is asked to do, and how its answer is shown.
+import { UserError } from './errors.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
 
 // Terse and negative: a small model follows a short list of prohibitions far
@@ -40,6 +41,86 @@ const FINDINGS_FIRST =
  */
 export function reviewSystemPrompt({ structuredOutput = false } = {}) {
   return REVIEW_RULES + (structuredOutput ? ANALYSIS_FIRST : FINDINGS_FIRST);
+}
+
+// A lens narrows WHAT to look for on one pass, so several passes on one model can
+// decorrelate blind spots instead of only sampling noise. A closed named set, not
+// free-form text: the run records which lens produced each finding, and a
+// comparison can only rank two runs as like-for-like if the lens is drawn from a
+// bounded vocabulary. Each directive is a short focus clause in the same
+// terse-and-negative register as the rules above — it re-weights attention and
+// never restages the reply: the findings-JSON contract is lens-blind.
+export const LENSES = {
+  correctness:
+    'Focus this pass on CORRECTNESS: logic errors, wrong results, off-by-one and boundary mistakes, ' +
+    'broken or violated contracts between caller and callee, state left inconsistent on an error path.',
+  security:
+    'Focus this pass on SECURITY: injection, missing authentication or authorization, unsafe handling ' +
+    'of untrusted input, leaked secrets or credentials, unsafe deserialization, and unchecked resource access.',
+  'edge-cases':
+    'Focus this pass on EDGE CASES: empty, null, zero and maximum inputs, concurrency and ordering, ' +
+    'resource exhaustion, partial failure, and the error paths a happy-path reading skips.',
+};
+
+/**
+ * The focus clause for a named lens, or a refusal naming the set — the one place
+ * a lens name is turned into text, so an unknown name cannot reach a request. The
+ * caller guards the call on a lens being set (a lens-less run must never invoke
+ * this), because an unknown name is a mistake worth a loud stop, not a silent
+ * default.
+ */
+export function lensDirective(name) {
+  const directive = Object.hasOwn(LENSES, name) ? LENSES[name] : undefined;
+  if (!directive) {
+    throw new UserError(`Unknown --lens "${name}".`, {
+      hint: `Valid lenses: ${Object.keys(LENSES).join(', ')}.`,
+    });
+  }
+  return directive;
+}
+
+/**
+ * The `--lens a,b,c` value as a validated list of names, or `[]` when the flag is
+ * absent. Every name is checked here — an empty entry (`a,,b`, a trailing comma)
+ * is refused rather than silently dropped, and an unknown name throws through
+ * `lensDirective` — so a bad list fails before any request, the same up-front
+ * posture the numeric flags take. The order is the run order: one pass per name,
+ * in the order given.
+ */
+export function parseReviewLenses(raw) {
+  if (raw === undefined || raw === null) return [];
+  // Only a string is a lens list. A non-string (a hostile object whose `toString`
+  // throws, a symbol) would otherwise leak an uncontrolled error out of `String()`
+  // or the error formatting; refuse it as the malformed input it is. The CLI only
+  // ever passes a string, so this guards a future caller, not today's path.
+  if (typeof raw !== 'string') {
+    throw new UserError('--lens must be a comma-separated list of lens names.', {
+      hint: `Valid lenses: ${Object.keys(LENSES).join(', ')}.`,
+    });
+  }
+  const names = raw.split(',').map((name) => name.trim());
+  const seen = new Set();
+  for (const name of names) {
+    if (name === '') {
+      throw new UserError('--lens has an empty entry.', {
+        hint: `Give a comma-separated list of: ${Object.keys(LENSES).join(', ')}.`,
+      });
+    }
+    lensDirective(name); // Throws on an unknown name, naming the valid set.
+    // A repeated lens is refused, not silently run twice: one pass per DISTINCT
+    // focus is the whole "coverage across focuses" premise — a duplicate would run
+    // a focus twice while `mergePasses` dedups its provenance to one lens (so the
+    // envelope would under-report the passes), and unbounded repetition would
+    // bypass the pass ceiling. Rejecting duplicates is also what makes every merged
+    // finding's agreement equal its lens count, which the envelope relies on.
+    if (seen.has(name)) {
+      throw new UserError(`--lens "${name}" is repeated.`, {
+        hint: 'Each lens runs one pass; name each at most once.',
+      });
+    }
+    seen.add(name);
+  }
+  return names;
 }
 
 /**

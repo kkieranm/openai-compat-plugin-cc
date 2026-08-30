@@ -13,6 +13,7 @@
 import { caseRows, lensLabel } from './case-rows.mjs';
 import { scoredRuns } from './run-buckets.mjs';
 import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
+import { parseReviewLenses } from '../../scripts/lib/review.mjs';
 import { reportIdentity } from './record.mjs';
 
 // A review record is `{ runsPerCase, options, warmed, results }` — never a sweep
@@ -102,6 +103,15 @@ function capAxis(options, rows) {
 // the writer reads them); values coerce numerically; the cap is three-state.
 function scalarAxes(record, rows) {
   const o = record.options;
+  // Computed once and shared by the three pass-strategy axes below, so they cannot
+  // drift: a `malformed` state fail-closes ALL THREE together (never one `unknown`
+  // beside two that still ranked), and a valid `present` state feeds the same names
+  // to the count and the set.
+  const lens = lensAxisState(o);
+  // Built only when malformed, and carrying the state's OWN reason (a bad lens
+  // value vs the impossible lens+passes combination name their faults apart). The
+  // three pass-strategy axes share this one object so they fail closed together.
+  const lensMalformed = lens.kind === 'malformed' ? unknown(lens.reason) : null;
   return {
     'diff-only': known(Boolean(o['diff-only'])),
     cold: known(Boolean(o.cold)),
@@ -114,18 +124,65 @@ function scalarAxes(record, rows) {
     'max-tokens': numericAxis(o['max-tokens']),
     temperature: numericAxis(o.temperature),
     'max-attempts': numericAxis(o['max-attempts']),
-    // `/oai:review --passes`: a multi-pass record's findings are a deduplicated
-    // union across N passes, not one pass's output, so ranking it against a
-    // single-pass record would compare unlike things. An ABSENT `passes` is the
-    // byte-identical single-pass code path (`--passes 1` is `cmd-review.mjs`'s own
-    // no-op branch), and every legacy record predates the flag and was single-pass —
-    // so `?? 1` normalises both to `known(1)`, comparing EQUAL to an explicit
-    // `--passes 1` and diverging only from a genuine `--passes 2+`. Normalising
-    // absent to 1 is TRUE of those records, not a papered-over confound.
-    passes: numericAxis(o.passes ?? 1),
+    // `/oai:review --passes`/`--lens`: a multi-pass record's findings are a
+    // deduplicated union across N passes, not one pass's output, so ranking it
+    // against a single-pass record would compare unlike things. The EFFECTIVE pass
+    // count and the strategy are derived from the raw persisted options here — never
+    // from a value the writer stamped back onto `options`, because a `--lens` run
+    // forwards `--lens` and NOT `--passes`, and synthesising a `passes` there would
+    // have made the bench forward both mutually-exclusive flags. A `--lens a,b,c`
+    // run is c passes; an ABSENT `passes` (and no lens) is the byte-identical
+    // single-pass code path, and every legacy record predates both flags — so `?? 1`
+    // normalises both to `known(1)`, comparing EQUAL to an explicit `--passes 1` and
+    // diverging only from a genuine multi-pass run. The strategy and lens-set axes
+    // keep a lens record from ranking as a plain-passes one, and two lens runs with
+    // different focuses from ranking as like-for-like. The lens-set is NOT sorted:
+    // execution order is material (the first lens pays cold prefill, later lenses
+    // may be warm), the same reason `files` order is a real input difference — so
+    // `correctness,security` and `security,correctness` are correctly incomparable.
+    passes: lens.kind === 'malformed' ? lensMalformed : numericAxis(lens.kind === 'present' ? lens.names.length : (o.passes ?? 1)),
+    strategy: lens.kind === 'malformed' ? lensMalformed : known(lens.kind === 'present' ? 'lenses' : 'passes'),
+    lenses: lens.kind === 'malformed' ? lensMalformed : known(lens.kind === 'present' ? lens.names.join(',') : null),
     'max-seconds': capAxis(o, rows),
     'runs-per-case': known(record.runsPerCase),
   };
+}
+
+// The pass-strategy a record's raw options describe, as a three-state so the axes
+// above can fail closed. `absent` (no `lens` key) is the ordinary plain-pass record
+// — every legacy record, and every `--passes` run — normalised to the single-pass
+// strategy. `present` carries the ordered lens names. `malformed` is any other
+// value: a `lens` no real run could have persisted, so ranking on it would rank on
+// something nothing produced, and all three derived axes read `unknown` instead.
+//
+// The membership test is the SAME `parseReviewLenses` the CLI and bench write
+// through, so "a value a real run could persist" has one definition, not a second
+// copy here that could drift: it throws on a non-string, an empty entry, an unknown
+// name, or a duplicate — every one of which becomes `malformed`. The one shape it
+// does NOT throw on is `null` (it returns `[]`, its absent-alias), so a zero-length
+// result is folded into `malformed` too: with `undefined` already handled above,
+// `[]` is reachable only via an explicit `null`, which is a corrupt value, not the
+// absent case. Registry drift is the accepted cost — a record naming a lens later
+// removed from the registry reads `malformed` and over-suppresses, which is the
+// fail-closed-safe side.
+function lensAxisState(o) {
+  if (o.lens === undefined) return { kind: 'absent', names: [] };
+  // A record carrying BOTH `lens` and `passes` is impossible — the CLI and bench
+  // both refuse the combination at write time — so it fails closed too. Named
+  // distinctly from a bad lens VALUE, because here the lens is valid and only the
+  // combination is not, and a reason must name its own fault.
+  if (o.passes !== undefined) {
+    return { kind: 'malformed', names: [], reason: 'both --lens and --passes are recorded — no real run produces this combination' };
+  }
+  try {
+    const names = parseReviewLenses(o.lens);
+    if (names.length === 0) {
+      return { kind: 'malformed', names: [], reason: 'options.lens is null or empty — not a lens list a real run produces' };
+    }
+    return { kind: 'present', names };
+  } catch {
+    return { kind: 'malformed', names: [], reason: 'options.lens is not a valid lens list a real run produces' };
+  }
 }
 
 // The lens a run reviewed at for COMPARABILITY: `lensLabel`'s own label when it

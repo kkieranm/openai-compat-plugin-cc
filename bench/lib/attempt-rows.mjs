@@ -157,10 +157,14 @@ export function attemptRows(results) {
 /**
  * The attempt that supplied a run's headline timings, or null.
  *
- * Exactly one attempt per logical run ends `answered` — the loop returns as soon
- * as one does — so this is unambiguous. It exists because `warmEligible` on
- * *that* attempt is what decides whether the run's prefill may be quoted as a
- * cold measurement.
+ * For a single-pass record exactly one attempt ends `answered` — the loop returns
+ * as soon as one does — so this is unambiguous. A merged multi-pass record's
+ * top-level `attempts` aggregates every pass, so it can hold several `answered`
+ * entries; `.find` then returns the FIRST, which is harmless because the only
+ * consumer (`answeredWarm` → `timingSamples`) reads a top-level prefill the merged
+ * envelope does not carry, so no multi-pass run ever reaches it. It exists because
+ * `warmEligible` on that attempt is what decides whether the run's prefill may be
+ * quoted as a cold measurement.
  */
 export function answeringAttempt(run) {
   return (run.report?.attempts ?? []).find((attempt) => attempt.outcome === 'answered') ?? null;

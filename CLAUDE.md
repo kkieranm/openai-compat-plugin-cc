@@ -153,11 +153,14 @@ its silence widens the benchmark's recall into a band.
 `scripts/lib/review-passes.mjs` is `/oai:review --passes N` (default 1): N independent passes of the
 same request, unioned with a per-finding agreement count, because a single pass is a lottery (one
 135-line file with two known defects produced 1 real defect, 3 false positives, 2 empty results and 1
-budget failure across five identical runs). `passes === 1` is BYTE-IDENTICAL to the single-pass path —
-`cmd-review.mjs`'s `runMultiPass` is reached only when `passCount > 1`, each pass a full
+budget failure across five identical runs). A lens-LESS `passes === 1` run is BYTE-IDENTICAL to the single-pass path —
+`cmd-review.mjs`'s `runMultiPass` is reached when `passCount > 1` OR a `--lens` list is present
+(OAI-11 routes a lens run through the machinery even at one lens, so the envelope carries the lens
+identity; the byte-identical promise is scoped to lens-less runs), each pass a full
 `requestFindings`+`parseFindings` with its OWN fresh `reviewPlan` and ledger (the target is shared,
-which makes the union comparable; the attempt bookkeeping is not, so `attempts`/`retried` never span
-passes), structured to take its target as a parameter so OAI-11's per-pass `{provider, model, lens}` is
+which makes the union comparable; each pass's ledger is independent, so `retried` stays per-pass —
+though the top-level `attempts` aggregate DOES span every pass, by concatenating those independent
+ledgers), structured to take its target as a parameter so OAI-11's per-pass `lens` (shipped; per-pass `{provider, model}` still) is
 a config change not a rewrite. The module is PURE — `review-report.mjs`'s `reportPasses` owns the one
 `stdout` write. `mergePasses` keys the union on `[file, exact-line]` (`JSON.stringify`, so no separator
 is assumed absent from a path), NOT on the claim: a local model paraphrases, so keying on the summary
@@ -212,9 +215,28 @@ every readable pass reports one, else the detail key is omitted so `reasoningWit
 while `durationMs` sums ALL passes (a failed pass still consumed wall clock; null if any pass lacks a
 finite duration). `bench/lib/compare-model.mjs`'s `scalarAxes` carries a `passes` axis (absent normalised
 to 1, so a legacy/no-flag record compares equal to an explicit `--passes 1`) so a multi-pass record is
-flagged incomparable against a single-pass one rather than mis-ranked — inert until `bench/run.mjs`
-forwards `--passes`, at which point the merged SUCCESS envelope also needs a top-level `attempts`
-aggregate and a truncation signal (see the OAI-9 plan's bench-wiring residue).
+flagged incomparable against a single-pass one rather than mis-ranked. `bench/run.mjs` forwards
+`--passes` (and `--lens`) as of OAI-11, so the axis is now live and three-way — `passes` (the effective
+count, derived from the `--lens` list where present via the shared `parseReviewLenses`), `strategy`
+(`passes` vs `lenses`), and the ordered `lenses` set — all three failing closed to `unknown` together
+on a persisted `options.lens` no real run could produce (a non-string, `null`, an unknown or duplicate
+name, or a record carrying both `--lens` and `--passes`). The merged SUCCESS envelope ALSO carries a
+top-level `attempts` aggregate and a `finishReason` truncation signal, because bench consumers read
+BOTH off `report` on the success path — `bench/lib/attempt-rows.mjs`'s `everyAttempt` reads
+`report.attempts` for whole-run reliability, and `bench/lib/run-buckets.mjs`'s `truncatedRuns` reads
+`report.finishReason === 'length'` — reachable once OAI-11 makes `bench/run.mjs` forward `--passes`
+(the OAI-9 scope check that concluded otherwise had reasoned only about `bench/lib/outcome.mjs`'s
+SCORING parse, missing these two success consumers). `reportPasses` computes them: `attempts` is
+`aggregateAttempts` over ALL passes (the `allFailedError` population; null when empty), `finishReason`
+is `'length'` iff ANY pass carrying a `result` finished `'length'` — a UNION CLASSIFICATION over
+every result-bearing pass, NOT the readable subset, since a parse-null pass excluded from `readable`
+still carries its `finishReason` (`passEnvelope`'s result branch) and token-exhaustion is a leading cause of
+unreadability, while a thrown pass (no `result`) is excluded to match single-pass `truncatedRuns`
+requiring `!run.error`. `retried` stays per-pass-only (no bench path reads `report.retried`).
+`answeringAttempt`'s single-answered-attempt invariant is loosened by the all-passes aggregate but its
+one consumer chain (`answeredWarm` → `timingSamples`) reads a top-level timing the merged envelope
+does not carry, so the loosening is inert on multi-pass records; a future change adding merged timing
+owns redefining it.
 
 `scripts/lib/stream-collect.mjs` times each attempt on both sides of its first token — `prefillMs` and
 `generationMs` — because a server-side prompt cache moves the first by tens of times and leaves the

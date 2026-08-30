@@ -655,7 +655,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
-  const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling } = plan;
+  const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling, lens } = plan;
   const shared = sharedRequest(profile, plan);
   // Minted once, here, because this function is the outermost layer that can
   // retry a model call: the `response_format` catch below sends a *second*
@@ -675,7 +675,11 @@ export async function requestFindings(profile, plan) {
   // follow-up too (unlike `reasoningReserveTokens`), because the user's chosen
   // sampling settings belong to that same logical request.
   const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, sampling, maxAttempts, retryDelayMs, ledger, onProgress };
-  const ladder = { target, instructions, windowKnown: Boolean(contextLength) };
+  // `lens` rides the ladder object so every consumer that spreads `...ladder` —
+  // `unconstrainedLadder`'s two sizing calls, the structured `first`, and the
+  // schema-rejection fallback — carries it through; `prepareLadder` composes it
+  // at the tail. Only `suffix` is ever overridden downstream, never `lens`.
+  const ladder = { target, instructions, windowKnown: Boolean(contextLength), lens };
 
   // No grammar unless one was asked for. Not a fallback here and not an error
   // path: it is what an ordinary review does now.

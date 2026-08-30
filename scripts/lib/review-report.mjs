@@ -7,7 +7,7 @@
 // file no longer owns them and this line no longer claims it does.
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
-import { caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
+import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
 import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
 import { substitution } from './model-identity.mjs';
@@ -466,11 +466,20 @@ export function sumUsage(readable) {
 // reply is kept for the shape-unreadable class — the evidence a parser-gap
 // coverage loss is diagnosed from (OAI-49/OAI-228).
 export function passEnvelope(pass, index, context) {
-  if (isReadable(pass)) return jsonReport(pass.parsed, perPassContext(pass, context));
+  // The lens this pass ran under (a name, or null on the plain `--passes` path),
+  // stamped on EVERY branch — readable, parse-null, and thrown — so a diverse run
+  // proves each declared lens actually ran, and BY VALUE off the outcome, never
+  // recovered from a pass index the readable-compaction would shift.
+  if (isReadable(pass)) {
+    const report = jsonReport(pass.parsed, perPassContext(pass, context));
+    report.lens = pass.lens ?? null;
+    return report;
+  }
   const { reason, raw } = passReason(pass, { structured: pass.structured, profile: context.profile, ledger: pass.ledger });
   const entry = {
     ok: false,
     index,
+    lens: pass.lens ?? null,
     reason,
     durationMs: pass.durationMs ?? null,
     attempts: pass.ledger ? pass.ledger.entries() : null,
@@ -518,11 +527,14 @@ export function passEnvelope(pass, index, context) {
 // disclosure the multi-pass loop no longer prints inline (the id itself is on the
 // JSON `passes[]` entry, so the text stays free of server-controlled values).
 function passSummary(pass, index, report) {
+  // `lens` rides the summary so a lens run's text report names which focus each
+  // pass ran — a failed lens pass is then diagnosable from the text, not only the
+  // JSON `passes[]`. Null on the plain `--passes` path (formatPassLine omits it).
   if (report.ok !== false) {
-    return { index, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
+    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
   }
   const substituted = pass.result?.modelReported === true && substitution(pass.result.requestedModel, pass.result.model);
-  return { index, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
+  return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
 }
 
 /**
@@ -550,6 +562,24 @@ export function reportPasses(passes, context) {
   const reasoning = reasoningWitness(usage);
   const durationMs = totalDuration(passes);
   const model = readable[0].result.model;
+  // Whole-run reliability aggregate for the bench (`attempt-rows.mjs` everyAttempt
+  // reads `report.attempts`). Over ALL passes — the same population and helper the
+  // failure path's `allFailedError` uses — since a failed pass still issued real
+  // requests; `null` when empty, never `[]` (an observed empty set). Mirrors
+  // `durationMs`, which also sums over all passes; `usage` stays readable-only.
+  const attemptRecords = aggregateAttempts(passes);
+  const attempts = attemptRecords.length ? attemptRecords : null;
+  // The union's truncation signal for the bench (`run-buckets.mjs` truncatedRuns
+  // reads `report.finishReason === 'length'`). ANY pass carrying a `result` that
+  // finished `'length'` marks the union truncated — a UNION CLASSIFICATION, never a
+  // synthesized server value: a PARSE-NULL pass is a non-observation excluded from
+  // `readable` yet still carries its `finishReason` (token-exhaustion is a leading
+  // cause of a reply being unreadable), so ranging over `readable` would blind the
+  // signal on exactly the passes most likely truncated. A THROWN pass has no
+  // `result`, so it is excluded — matching single-pass semantics, where a thrown
+  // run is `run.error` and `truncatedRuns` requires `!run.error`. The per-pass
+  // literals stay in `passes[]`.
+  const finishReason = passes.some((pass) => pass.result?.finishReason === 'length') ? 'length' : null;
 
   if (context.json) {
     process.stdout.write(
@@ -569,8 +599,12 @@ export function reportPasses(passes, context) {
           detectedWindow: context.detectedWindow,
           serverConfig: context.serverConfig,
           durationMs,
+          attempts,
+          finishReason,
           caveatFlags,
           contextChecked,
+          strategy: context.strategy,
+          lenses: context.lenses,
         }),
         null,
         2,
@@ -588,6 +622,8 @@ export function reportPasses(passes, context) {
       label: context.target.label,
       profile: context.profile,
       model,
+      strategy: context.strategy,
+      lenses: context.lenses,
     })}\n`,
   );
 }
