@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { EPISODE_VERDICTS } from '../bench/lib/ttl-verdict.mjs';
 import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
 
 /**
@@ -11,6 +12,34 @@ import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
  * must be asynchronous.
  */
 
+/**
+ * Every episode verdict the e2e matrix reaches, declared once. Each verdict-bearing
+ * test below asserts the REAL run produced its entry (so a scenario that stops
+ * producing its verdict fails that test), and the reachability guard at the foot of
+ * the file proves this set is exactly `EPISODE_VERDICTS` (so a verdict left with no
+ * e2e scenario fails the guard). The declared value is what the tests check against
+ * reality, so the two cannot drift the way a hand-maintained second list would —
+ * the class of drift OAI-34's matrix already lost a row to.
+ *
+ * The guard's reach is bounded, and the bound is disclosed rather than closed with
+ * cross-test state: it proves no `EPISODE_VERDICTS` member is MISSING a scenario,
+ * but not that every entry here is genuinely exercised — a fiction entry added
+ * alongside an equally fictional `EPISODE_VERDICTS` member would pass. Each entry's
+ * reality rests on its own asserting test above, by convention. Accumulating the
+ * verdicts a run actually observed would close that, but couples the guard to every
+ * test having run (a filtered `--test-name-pattern` would fail it), which is the
+ * worse trade for a fixture whose whole value is running end to end.
+ */
+const E2E_VERDICTS = {
+  survived: 'survived-past-expiry',
+  noExposure: 'no-exposure',
+  survivedDespiteUnload: 'survived-despite-unload',
+  failureWithUnload: 'failure-with-unload-observed',
+  failureWithoutUnload: 'failure-without-unload-observed',
+  notDispatched: 'not-dispatched',
+  instrumentInvalid: 'instrument-invalid',
+};
+
 test('the instrument runs end to end and refutes when every episode survives', async () => {
   const { result, manifest } = await runScenario({}, { episodes: 2 });
 
@@ -18,7 +47,7 @@ test('the instrument runs end to end and refutes when every episode survives', a
   assert.ok(manifest, 'a manifest was written to the injected out-dir');
   assert.equal(manifest.outcome.verdict, 'deterministic-form-refuted', JSON.stringify(manifest.outcome));
   assert.equal(manifest.episodes.length, 2);
-  for (const episode of manifest.episodes) assert.equal(episode.verdict, 'survived-past-expiry');
+  for (const episode of manifest.episodes) assert.equal(episode.verdict, E2E_VERDICTS.survived);
   // The condition the refutation rests on travels WITH it rather than living in
   // a doc nobody reads beside the number.
   assert.match(manifest.outcome.says, /provided request serialization and server admission/);
@@ -47,7 +76,7 @@ test('observation quality is RECORDED and decides nothing', async () => {
 
   assert.equal(manifest.outcome.verdict, 'contradictory-evidence');
   const [episode] = manifest.episodes;
-  assert.equal(episode.verdict, 'survived-despite-unload');
+  assert.equal(episode.verdict, E2E_VERDICTS.survivedDespiteUnload);
   // Present in the record...
   assert.equal(typeof episode.unloadAt, 'number');
   assert.ok('bracketMs' in episode && 'lastPresentAt' in episode);
@@ -64,7 +93,7 @@ test('a failure with an unload observed is inconclusive, never a mechanism claim
   const { manifest } = await runScenario({ unloadAtMs: 300 }, { failFromCall: 2 });
 
   assert.equal(manifest.outcome.verdict, 'inconclusive-failure');
-  assert.equal(manifest.episodes[0].verdict, 'failure-with-unload-observed');
+  assert.equal(manifest.episodes[0].verdict, E2E_VERDICTS.failureWithUnload);
   assert.match(manifest.outcome.says, /NOT attributed/);
   assert.match(manifest.outcome.says, /JIT-TTL may not be named/);
   assert.doesNotMatch(manifest.outcome.says, /reproduced|confirm/i);
@@ -73,7 +102,7 @@ test('a failure with an unload observed is inconclusive, never a mechanism claim
 test('a failure with no unload observed is distinguished from one with', async () => {
   const { manifest } = await runScenario({}, { failFromCall: 2 });
 
-  assert.equal(manifest.episodes[0].verdict, 'failure-without-unload-observed');
+  assert.equal(manifest.episodes[0].verdict, E2E_VERDICTS.failureWithoutUnload);
   assert.equal(manifest.episodes[0].unloadAt, null);
   assert.equal(manifest.outcome.verdict, 'inconclusive-failure');
 });
@@ -83,7 +112,7 @@ test('a competing model voids the sweep rather than becoming a finding', async (
   // protocol REQUIRES sole tenancy. A violation is an instrument failure.
   const { result, manifest } = await runScenario({ competingModel: { key: 'other/model', fromMs: 50 }, fromLoad: 2 });
 
-  assert.equal(manifest.episodes[0].verdict, 'instrument-invalid');
+  assert.equal(manifest.episodes[0].verdict, E2E_VERDICTS.instrumentInvalid);
   assert.deepEqual(manifest.episodes[0].validityFailures, ['sole-tenancy']);
   assert.equal(manifest.outcome.verdict, 'instrument-failed');
   assert.match(manifest.outcome.says, /says\s+NOTHING about the server/);
@@ -128,7 +157,7 @@ test('an episode that never got a response says NOTHING about the server', async
   const { result, manifest } = await runScenario({}, { destroyFromCall: 2 });
 
   assert.equal(manifest.episodes[0].obtainedResponse, false);
-  assert.equal(manifest.episodes[0].verdict, 'not-dispatched');
+  assert.equal(manifest.episodes[0].verdict, E2E_VERDICTS.notDispatched);
   assert.equal(manifest.outcome.verdict, 'instrument-failed');
   assert.match(manifest.outcome.says, /never obtained a response/);
   assert.doesNotMatch(manifest.outcome.says, /refut|inconclusive/i);
@@ -153,6 +182,38 @@ test('a calibration run under broken preconditions does not license the sweep', 
   assert.match(manifest.outcome.says, /sole-tenancy/);
   assert.doesNotMatch(manifest.outcome.says, /prefill clearing the shortened TTL/);
   assert.equal(result.status, 1);
+});
+
+test('an episode whose prefill never cleared the bar is no-exposure, not a survival', async () => {
+  // The wasted-episode verdict, driven end to end for the first time. It cannot be
+  // reached with a single fixed reply delay: calibration must CLEAR the exposure
+  // bar to license the sweep, and the challenge episode must NOT clear the SAME bar
+  // (both use `challengeTtlMs × EXPOSURE_MARGIN`). So the calibration reply (call 1)
+  // stays at the clearing 500ms while the challenge reply (call 2) drops to 100ms,
+  // below the 300ms bar.
+  const { result, manifest } = await runScenario({}, { replyDelayMs: 100, replyDelayFromCall: 2 });
+
+  assert.equal(manifest.calibration.cleared, true, 'the slow calibration reply still licenses the sweep');
+  assert.equal(manifest.episodes[0].verdict, E2E_VERDICTS.noExposure);
+  // The SWEEP consequence, not just the episode: an all-no-exposure sweep must read
+  // as tested-nothing, which is what this verdict exists to stop being banked as a
+  // silent success. It is not a conclusive outcome, so the driver exits non-zero.
+  assert.equal(manifest.outcome.verdict, 'no-exposure');
+  assert.match(manifest.outcome.says, /too few to refute anything/);
+  assert.equal(result.status, 1, 'a sweep that tested nothing must not exit 0');
+});
+
+test('a residency poll that returns garbage is recorded as unreadable, not as an unload', async () => {
+  // `unreadableFromMs` makes `lms ps` emit non-JSON once the episode is under way.
+  // The instrument must count that as "could not read residency" (`unreadableSamples`)
+  // and NOT as "the model is gone" — an unreadable poll is not an unload, so the
+  // episode still survives past expiry rather than reading as an absence.
+  const { manifest } = await runScenario({ unreadableFromMs: 100 });
+
+  const [episode] = manifest.episodes;
+  assert.ok(episode.unreadableSamples > 0, 'the garbage polls were counted as unreadable');
+  assert.equal(episode.unloadAt, null, 'an unreadable poll is not read as an unload');
+  assert.equal(episode.verdict, E2E_VERDICTS.survived);
 });
 
 test('the driver reads and forwards the attempt record the rules consume', async () => {
@@ -184,4 +245,23 @@ test('--episodes must be a positive integer', async () => {
     assert.equal(result.status, 1, `--episodes ${bad} must be refused`);
     assert.match(result.stderr, /--episodes must be a positive integer/);
   }
+});
+
+test('every episode verdict is reachable through the real e2e matrix', () => {
+  // OAI-34's rule: every verdict-bearing check gets a scenario crossing the real
+  // entry point. This is the mechanical guard the tracker asked be kept, so the
+  // next hole fails the suite instead of waiting for a review to find it — a
+  // `no-exposure` scenario went missing until one did.
+  //
+  // Nothing is subtracted from `EPISODE_VERDICTS`. The one STATED exemption (G8) is
+  // not a verdict left uncovered: it is the MECHANISM by which `instrument-invalid`
+  // can arise — an `answered` attempt with `serverResponded: false`, which a fake
+  // server cannot produce (see the attempt-record test above) — so that verdict is
+  // still reached e2e by the competing-model scenario, and only the G8 SHAPE of it
+  // is pinned by a unit test on the pure rule. The reachable set is therefore all
+  // seven, and `E2E_VERDICTS` is proven complete against the source of truth.
+  assert.deepEqual(
+    [...new Set(Object.values(E2E_VERDICTS))].sort(),
+    [...EPISODE_VERDICTS].sort(),
+  );
 });

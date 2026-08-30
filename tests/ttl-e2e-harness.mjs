@@ -57,8 +57,17 @@ const PREFILL_MS = 500;
  * run of this harness got that wrong — a handler that failed every request failed
  * the calibration too, and the sweep was (correctly) disqualified before a single
  * challenge episode ran.
+ *
+ * `replyDelayMs`/`replyDelayFromCall` change the reply delay from a given call, on
+ * the same call-2-is-the-first-challenge convention as `failFromCall`. It exists
+ * for the `no-exposure` verdict, which cannot be reached with one fixed delay:
+ * calibration must CLEAR the exposure bar (prefill > challengeTtlMs × margin) to
+ * license the sweep, while a `no-exposure` challenge episode must NOT clear the
+ * SAME bar — so the calibration reply must be slow and the challenge reply fast.
  */
-function delayedReply(delayMs, { failFromCall = Infinity, destroyFromCall = Infinity } = {}) {
+function delayedReply(delayMs, {
+  failFromCall = Infinity, destroyFromCall = Infinity, replyDelayMs = null, replyDelayFromCall = Infinity,
+} = {}) {
   let chatCalls = 0;
   return (request, response) => {
     if (!request.url.includes('/chat/completions')) {
@@ -73,12 +82,13 @@ function delayedReply(delayMs, { failFromCall = Infinity, destroyFromCall = Infi
     // undefined and reaching for it hangs the client until its 60s timeout.
     if (chatCalls >= destroyFromCall) return response.destroy();
     const shouldFail = chatCalls >= failFromCall;
+    const thisDelay = replyDelayMs != null && chatCalls >= replyDelayFromCall ? replyDelayMs : delayMs;
     setTimeout(() => {
       // An empty completion — the shape that dominated the July failures, and one
       // the client judges unusable AFTER a response was obtained.
       if (shouldFail) respondStream(response, completionFrames('', { finishReason: 'unknown' }));
       else respondStream(response, completionFrames(FINDINGS));
-    }, delayMs);
+    }, thisDelay);
     return undefined;
   };
 }
@@ -115,11 +125,16 @@ function runDriver(args, env) {
  * would recreate the junk-record incident the driver's own guard test exists to
  * prevent, and the junk would match the glob the done-condition reads.
  */
-async function runScenario(scenario, { episodes = 1, failFromCall = Infinity, destroyFromCall = Infinity, extraArgs = [] } = {}) {
+async function runScenario(scenario, {
+  episodes = 1, failFromCall = Infinity, destroyFromCall = Infinity,
+  replyDelayMs = null, replyDelayFromCall = Infinity, extraArgs = [],
+} = {}) {
   const work = tempDir('ttl-e2e-');
   const scenarioPath = join(work, 'scenario.json');
   writeFileSync(scenarioPath, JSON.stringify({ model: 'test-model', ...scenario }));
-  const server = await startFakeServer(modelsHandler(delayedReply(PREFILL_MS, { failFromCall, destroyFromCall })));
+  const server = await startFakeServer(modelsHandler(delayedReply(PREFILL_MS, {
+    failFromCall, destroyFromCall, replyDelayMs, replyDelayFromCall,
+  })));
   const { path: configPath } = writeConfig({
     defaultProvider: 'local',
     providers: { local: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192 } },

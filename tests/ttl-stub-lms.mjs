@@ -29,8 +29,6 @@
  *                    disqualifies the sweep before any challenge episode exists —
  *                    which is correct, and would otherwise erase the coverage of
  *                    the per-episode path.
- *   lastUsedAdvances whether lastUsedTime moves on each poll
- *   failLoad         `load` exits non-zero
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -59,9 +57,12 @@ function residency() {
       modelKey: scenario.model,
       identifier: scenario.model,
       ttlMs: (faultActive(state) ? scenario.appliedTtlMs : null) ?? state.requestedTtlMs,
-      // Advances only when the scenario says so, so a test can pin that the
-      // instrument RECORDS this and never branches on it.
-      lastUsedTime: 1_785_775_000_000 + (scenario.lastUsedAdvances ? state.polls * 1000 : 0),
+      // A fixed placeholder. The instrument RECORDS lastUsedTime and never branches
+      // on it (ADR 013), so nothing here needs it to move. A real LM Studio reports
+      // `null` for the whole time it is serving a request — so an ADVANCING
+      // timestamp is a shape never observed in the wild (2026-08-04), and the knob
+      // that used to simulate it was removed rather than pin the instrument to it.
+      lastUsedTime: 1_785_775_000_000,
       status: 'idle',
       contextLength: 61_696,
       maxContextLength: 262_144,
@@ -87,10 +88,6 @@ if (command === 'ps') {
     process.stdout.write(`${JSON.stringify(residency())}\n`);
   }
 } else if (command === 'load') {
-  if (scenario.failLoad) {
-    process.stderr.write('stub: load failed\n');
-    process.exit(1);
-  }
   const ttlIndex = process.argv.indexOf('--ttl');
   const requestedTtlMs = ttlIndex === -1 ? null : Number(process.argv[ttlIndex + 1]) * 1000;
   const previous = readState();
