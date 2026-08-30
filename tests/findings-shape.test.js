@@ -175,3 +175,98 @@ test('an array wrapped in prose is the same reply as an object wrapped in prose'
   assert.deepEqual(asArray, asObject, 'prose wrapping must not make one spelling unreadable');
 });
 
+
+test('a whole reply keyed `message` instead of `summary` is real findings, not unreadable', () => {
+  // OAI-228: a capable model emitted valid findings as `{file, line, message}`
+  // (the linter/diagnostic spelling) and every one was dropped for naming no
+  // `summary`, reporting a review that found real defects as unreadable. Five
+  // runs of real work were lost this way in one measured arm. `message` is now
+  // read as the description on this whole-reply survival path.
+  const findings = [
+    { file: 'scripts/lib/cmd-review.mjs', line: 103, message: 'the size guard is disarmed here' },
+    { file: 'scripts/lib/cmd-review.mjs', line: 105, message: 'and again here' },
+  ];
+  const parsed = parseFindings({ content: JSON.stringify({ findings, analysis: 'a' }), reasoning: '' }, { structured: false });
+  assert.equal(parsed?.findings.length, 2, 'both message-keyed findings survive');
+  assert.equal(parsed.findings[0].summary, 'the size guard is disarmed here', 'message became the summary');
+  assert.equal(parsed.dropped, 0);
+});
+
+test('`code` beside `message` is a rule id, not the description — `message` wins', () => {
+  // The observed `{file, line, code, message}` shape. `code` is dropped; the
+  // human-readable `message` is the description.
+  const findings = [{ file: 'a.js', line: 7, code: 'RULE-1', message: 'the actual problem' }];
+  const parsed = parseFindings({ content: JSON.stringify({ findings }), reasoning: '' }, { structured: false });
+  assert.equal(parsed?.findings.length, 1);
+  assert.equal(parsed.findings[0].summary, 'the actual problem');
+  assert.ok(!('code' in parsed.findings[0]), 'code is not a finding field');
+});
+
+test('the `message` alias does not weaken the file requirement', () => {
+  // A description alone is not a finding — the place still has to be named, or a
+  // decoy carrying a message and an empty file would pass. `file: ""` + message
+  // still drops, exactly as `file: ""` + summary always did.
+  const findings = [{ file: '', line: 1, message: 'no place named' }];
+  assert.equal(
+    parseFindings({ content: JSON.stringify({ findings }), reasoning: '' }, { structured: false }),
+    null,
+    'all dropped — unreadable, not a finding',
+  );
+});
+
+test('a finding naming neither summary nor message is still dropped', () => {
+  // The alias is closed to `{summary, message}`; a third spelling has no dated
+  // instance and is not admitted, so it drops the same as before.
+  const findings = [{ file: 'a.js', line: 1, note: 'a third spelling nobody asked for' }];
+  assert.equal(
+    parseFindings({ content: JSON.stringify({ findings }), reasoning: '' }, { structured: false }),
+    null,
+  );
+});
+
+test('a scanned array keyed only `message` stays unreadable — selection strictness unchanged', () => {
+  // The alias lives on the survival path (`normalizeFinding`), never on scanned
+  // SELECTION (`named`): a prose-wrapped `[{file, message}]` is the linter shape
+  // most likely to be quoted as a decoy, so it must not be selected on content.
+  // `some(named)` still requires a `summary`, so this reads unreadable — the
+  // deliberate whole-vs-scanned asymmetry, no new decoy surface.
+  const findings = [{ file: 'a.js', line: 1, message: 'quoted linter output, maybe a decoy' }];
+  assert.equal(
+    parseFindings({ content: `Here is some output:\n${JSON.stringify(findings)}`, reasoning: '' }, { structured: false }),
+    null,
+  );
+});
+
+test('a scanned array selected by a summary-named finding also keeps its message-keyed siblings', () => {
+  // Once `some(named)` has SELECTED a scanned array (because a real
+  // summary-named finding is in it), normalization runs over every element and
+  // the `message` alias retains the siblings too. Bounded and consistent: the
+  // array was already accepted as the payload; keeping a real sibling finding in
+  // it is the same "keep what the model sent" the whole change is about.
+  const findings = [
+    { file: 'a.js', line: 1, summary: 'the summary-named one that selects the array' },
+    { file: 'b.js', line: 2, message: 'the message-keyed sibling' },
+  ];
+  const parsed = parseFindings({ content: `Findings:\n${JSON.stringify(findings)}`, reasoning: '' }, { structured: false });
+  assert.equal(parsed?.findings.length, 2, 'both the summary and the message sibling survive');
+  assert.equal(parsed.dropped, 0);
+});
+
+test('the `message` alias does not leak into the --structured-output schema path', () => {
+  // Under a schema the model was explicitly held to the shape, and conformance
+  // runs BEFORE normalization — so a `message`-only finding is rejected by
+  // `matchesSchema` (which requires `summary`) and never reaches the alias. The
+  // widening is scoped to the unconstrained/degraded path, which is where the
+  // dated instance lived; keep it there.
+  const reply = JSON.stringify({ analysis: 'a', findings: [{ file: 'x.js', line: 1, message: 'm' }], summary: 's' });
+  assert.equal(
+    parseFindings({ content: reply, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }),
+    null,
+    'schema conformance still requires summary',
+  );
+  // The identical reply on the unconstrained path is real findings.
+  assert.equal(
+    parseFindings({ content: reply, reasoning: '' }, { structured: false })?.findings.length,
+    1,
+  );
+});

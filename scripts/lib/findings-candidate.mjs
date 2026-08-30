@@ -129,6 +129,20 @@ export function findingsShaped(value, whole = false) {
   // `record(item)` gates first, by short-circuit — `named` no longer assumes
   // every list element is already an object before it runs, which `usable`
   // (below) stopped guaranteeing once a non-object sibling became admissible.
+  //
+  // `summary` ONLY here, deliberately narrower than `normalizeFinding`'s
+  // description identity, which since OAI-228 also accepts a `message` alias.
+  // This gate decides whether to SELECT a scanned candidate dug out of prose,
+  // where `[{file, line, message}]` — the linter/diagnostic shape — is the most
+  // likely quoted decoy; admitting it here would let such a decoy win on
+  // position over a real payload. The `message` alias is a SURVIVAL concern
+  // (`normalizeFinding`), not a selection one: a `message`-only entry can be
+  // KEPT once its array is already the payload (a whole all-object reply reaches
+  // normalization via `every(record)` without this gate; a scanned array reaches
+  // it only after a `summary`-named sibling selected it HERE), but a
+  // `message`-only array can never be what this gate selects. So the two are
+  // intentionally NOT identical on the description field — do not "reconcile"
+  // them back.
   const named = (item) =>
     record(item) &&
     typeof item.file === 'string' &&

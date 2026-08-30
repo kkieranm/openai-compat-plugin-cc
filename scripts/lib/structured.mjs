@@ -106,10 +106,36 @@ export function matchesSchema(value, schema) {
   return true;
 }
 
+// The description field a finding must carry. The schema asks for `summary`;
+// `message` is accepted as its one alias — the compiler/linter-diagnostic
+// spelling a capable model naturally reaches for, and the field a whole reply
+// keyed `{file, line, message}` was silently discarded for (OAI-228: five runs
+// of real findings lost this way in one measured arm). A CLOSED set, extended
+// only on a future dated instance, never on a plausible one — which is what
+// answers the "the next model spells it differently" worry rather than a
+// slippery slope. `code`, seen beside `message`, is a rule id, not descriptive
+// content, so it is not a description key. Deliberately NOT used by `named` in
+// findings-candidate.mjs: that gate SELECTS a scanned candidate dug out of
+// prose, where a `{file, message}` array is the single most likely quoted
+// decoy. The alias lives only here, on SURVIVAL/normalization, never on
+// candidate selection — so a `message`-only entry is kept once its array is
+// already the payload (a whole all-object reply, or a scanned array a
+// `summary`-named sibling selected), but a `message`-only array can never be
+// what GETS selected in the first place.
+const DESCRIPTION_KEYS = ['summary', 'message'];
+
+function descriptionOf(raw) {
+  for (const key of DESCRIPTION_KEYS) {
+    const value = typeof raw[key] === 'string' ? raw[key].trim() : '';
+    if (value) return value;
+  }
+  return '';
+}
+
 function normalizeFinding(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const file = typeof raw.file === 'string' ? raw.file.trim() : '';
-  const summary = typeof raw.summary === 'string' ? raw.summary.trim() : '';
+  const summary = descriptionOf(raw);
   // A finding that names neither a place nor a problem cannot be verified, and
   // an unverifiable finding is worse than no finding.
   if (!file || !summary) return null;
