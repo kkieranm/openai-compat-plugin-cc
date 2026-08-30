@@ -64,15 +64,21 @@ test('a marker-bearing finish_reason is shown in full, but never baked into .mes
   // this is `task` (interactive), so the marker should still be VISIBLE,
   // just not as part of the raw .message string a persisted record would keep.
   const marker = 'SECRET_MARKER_finishreason';
-  const result = await runWith(
-    () => [deltaFrame({}), { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] }],
-    ['task', 'explain this'],
-  );
+  const chat = () => [deltaFrame({}), { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] }];
+  const result = await runWith(chat, ['task', 'explain this']);
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
-  const messageLine = result.stderr.split('\n')[0];
-  assert.doesNotMatch(messageLine, new RegExp(`content \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+  // The purity being pinned is a property of the error OBJECT — `.message`
+  // separate from `.finishReason` — not of the composed stderr line, whose
+  // renderer's whole job is to join the two: `…content. (MARKER)` and a fused
+  // `…content (MARKER).` are indistinguishable by any text heuristic. It is
+  // observable only where `.message` serializes ALONE, so this asserts against
+  // the `--json` envelope's own `message` field. A finishReason fused into
+  // `.message` surfaces there; the field carries no `finishReason` to confuse
+  // it. (`tests/structure.test.js` pins the same property at the source, repo-wide.)
+  const envelope = JSON.parse((await runWith(chat, ['task', '--json', '--max-attempts', '1', 'explain this'])).stdout);
+  assert.doesNotMatch(envelope.message, new RegExp(marker), 'the marker must not be fused into the raw .message field');
 });
 
 test('a marker-bearing finish_reason on the blank-completion refusal is shown, but not fused into .message', async () => {
@@ -81,18 +87,18 @@ test('a marker-bearing finish_reason on the blank-completion refusal is shown, b
   // pinned separately since it is a distinct throw site with its own
   // .finishReason assignment.
   const marker = 'SECRET_MARKER_blankcompletion';
-  const result = await runWith(
-    () => [
-      deltaFrame({ role: 'assistant', content: '' }),
-      { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
-    ],
-    ['task', 'explain this'],
-  );
+  const chat = () => [
+    deltaFrame({ role: 'assistant', content: '' }),
+    { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
+  ];
+  const result = await runWith(chat, ['task', 'explain this']);
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
-  const messageLine = result.stderr.split('\n')[0];
-  assert.doesNotMatch(messageLine, new RegExp(`completion \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+  // Envelope `message` field, not the joined stderr line — see the first marker
+  // test above for why the composed line cannot pin this.
+  const envelope = JSON.parse((await runWith(chat, ['task', '--json', '--max-attempts', '1', 'explain this'])).stdout);
+  assert.doesNotMatch(envelope.message, new RegExp(marker), 'the marker must not be fused into the raw .message field');
 });
 
 test('a marker-bearing finish_reason on requireAnswer\'s empty-answer refusal is shown, not fused', async () => {
@@ -101,18 +107,18 @@ test('a marker-bearing finish_reason on requireAnswer\'s empty-answer refusal is
   // it through) but trims to empty, so requireAnswer's own final refusal
   // fires — a third, distinct .finishReason assignment.
   const marker = 'SECRET_MARKER_requireanswer';
-  const result = await runWith(
-    () => [
-      deltaFrame({ role: 'assistant', content: ' ' }),
-      { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
-    ],
-    ['task', 'explain this'],
-  );
+  const chat = () => [
+    deltaFrame({ role: 'assistant', content: ' ' }),
+    { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] },
+  ];
+  const result = await runWith(chat, ['task', 'explain this']);
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, new RegExp(marker), 'the interactive operator still sees it');
-  const messageLine = result.stderr.split('\n')[0];
-  assert.doesNotMatch(messageLine, new RegExp(`answer \\(.*${marker}`), 'the marker must not be fused into the raw message text');
+  // Envelope `message` field, not the joined stderr line — see the first marker
+  // test above for why the composed line cannot pin this.
+  const envelope = JSON.parse((await runWith(chat, ['task', '--json', '--max-attempts', '1', 'explain this'])).stdout);
+  assert.doesNotMatch(envelope.message, new RegExp(marker), 'the marker must not be fused into the raw .message field');
 });
 
 test('the same guard holds on the non-streaming path, where the choice has no message', async () => {
