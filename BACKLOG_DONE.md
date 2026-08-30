@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-211 closed: the Invocation D run accounting reconciles; neither account is wrong (`e495188`)
+
+OAI-211 alleged `bench/2026-08-23-oai19-run-notes.md` "does not add up" and that OAI-19's conclusions
+rest on it: the per-case table (`caps 1/3`), G-C (`caps 1x2=2`), correction #1 ("8 no-report runs") and
+G-L ("9 scored") never appeared to sum to the 18 that six-cases-by-three-runs produces (9 + 8 = 17).
+The item correctly said resolution needed the raw Invocation D run data, not a wording edit, and
+correctly hypothesized the missing shape — "a run could hold a report with `parsed:false`, unscored yet
+not no-report" — but said no such run was named in the file.
+
+Resolved by classifying all 18 runs in the results record
+`bench/results/2026-08-24T02-22-35-984Z.json` (runsPerCase 3, model `qwen/qwen3.6-27b` — Invocation D)
+under the file's own rule, scored = a `report` with `parsed !== false`: scored `1,3,2,0,0,3` (=9,
+matching the table byte-for-byte), 8 no-report (matching correction #1's explicit list exactly), and
+**exactly one** report with `parsed:false` — `caps` r3 (`finishReason: stop`, `findings: null`, 516-char
+`raw`). The 8-no-report set and the 9-unscored set differ by precisely that run, so 9 + 8 + 1 = 18 and
+nothing is contradictory — the "9 + 8 = 17" reading conflated "no-report" (8) with "unscored" (9). Every
+account in the file is correct; the item's stronger prediction ("one of the two accounts is wrong about
+`caps`") is **refuted**. No OAI-19 gate outcome is undermined. A dated reconciliation note was added
+beside the per-case table; no historical number changed. (G-C's separate "17 of 33" is a
+defect-weighted figure — `caps 1x2 + model-info 2x3 + scaffold 3x3` — coincidentally equal to the run
+miscount, and correct.)
+
+Characterization of `caps` r3 (advisor sharpener, no new scope): its `raw` is a clean whole-document
+review — inline `findings: []` then prose, "No defects found" — the shape `findings-empty.mjs`
+`emptyFindingsDocument` reads clean **today** (verified: returns `{findings:[]}`), but this run's own
+build discarded it as unreadable. Under current code it would score as a clean 0-findings review,
+moving `caps` to 2/3. Not OAI-228-shaped (that is a `message`-keyed findings array); no item filed —
+`findings-empty.mjs` already shipped, so this is confirmation, not a live gap.
+
+Consensus: a Codex claim-check and an advisor vote both confirmed the arithmetic airtight from the raw
+record; Codex corrected one provenance-wording slip (the JSON is the results record, not the
+`state-AFTER` `.log`). Forensic resolution, so a note edit + close, not `/feature`.
+
 ## 2026-08-30 — OAI-159 closed: retired `adr/` citations declared historical in the header (tracker edit, no code change)
 
 The `adr/` ADR corpus was deleted whole in `d1ad2aa` (2026-08-13), leaving dangling citations in the

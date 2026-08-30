@@ -15,18 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-211** — **`bench/2026-08-23-oai19-run-notes.md` does not add up, and OAI-19's conclusions rest
-  on it.** The per-case table (`:48`, `caps 1/3 ... structured 3/3`) and gate criterion G-C (`:53`,
-  `caps 1x2=2`) both imply `caps` has 2 unscored runs; Codex correction #1 (`:152`) enumerates 8 runs
-  with no report and names only one of them (`caps` run 2). With G-L's "all 9 scored runs" that gives
-  9 + 8 = 17, not the 18 the six-cases-by-three-runs design produces. The file never states that
-  "no-report" and "unscored" are the same set — a run could hold a report with `parsed: false`, which
-  would be unscored yet not no-report — so the file is **ambiguous rather than provably
-  self-contradictory**, and no such run is named anywhere in it. Resolving which reading is right
-  needs the raw invocation-D run data, not a wording edit. Filed because this is published evidence a
-  concluded item's numbers were drawn from: whichever way it resolves, one of the two accounts in the
-  file is currently wrong about `caps`.
-
 - **OAI-208** — The temp-dir leak OAI-203 fixed in one file is the suite's normal state: `mkdtempSync`
   appears in 27 files under `tests/` — recount 2026-08-27 matches the original 2026-08-24 count
   exactly — and cleanup by literal `mkdtempSync`+`rmSync` pairing exists in only 3 of them today
