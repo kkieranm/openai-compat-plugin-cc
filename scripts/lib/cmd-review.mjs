@@ -11,6 +11,7 @@ import { collectTarget } from './git-diff.mjs';
 import { substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
 import { errorReport, report } from './review-report.mjs';
+import { windowRemedy, windowSource } from './review.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
 import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
@@ -167,6 +168,23 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   try {
     const ledger = createLedger();
     const plan = reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger });
+    // Up front, before the multi-minute run — not only in the after-the-fact
+    // footer note. Without a window the size guard cannot be armed, so an
+    // oversized request goes out unrefused and fails at the server minutes
+    // later; saying so now lets the operator abort and configure the window
+    // instead of waiting. The review still proceeds: a small or unreported
+    // window usually succeeds, and refusing every one would deny work
+    // `reserveFor` deliberately keeps. Emitted AFTER `reviewPlan`, whose
+    // `reserveFor` refuses a too-small `--max-tokens` — so "Proceeding" never
+    // precedes an immediate local refusal — and ad-hoc-aware, since an
+    // ad-hoc `--base-url` run has no config entry to set "contextLength" on.
+    if (!contextLength) {
+      process.stderr.write(
+        `WARNING: the context window for ${windowSource(profile)} could not be determined, so the ` +
+          `input size cannot be checked and an oversized request may be rejected by the server. ` +
+          `${windowRemedy(profile)} to enable the check. Proceeding.\n`,
+      );
+    }
     const startedAt = Date.now();
     process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
     // A review is the long silent run this exists for: whole-file passes measured

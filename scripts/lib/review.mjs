@@ -108,6 +108,26 @@ export function unreadableNote(unreadable) {
 }
 
 /**
+ * How to name the endpoint whose window is unknown, and how to fix it — the two
+ * clauses every "window could not be determined" message needs. Shared so the
+ * findings-report note and `/oai:review`'s up-front stderr warning cannot drift
+ * on the one part that must be correct: an ad-hoc `--base-url` run has NO config
+ * entry, so "set contextLength for X" would name a key the user does not have.
+ * Read from the profile, never compared against its NAME — a user may
+ * legitimately configure a provider called "custom", which is also the name an
+ * ad-hoc run is given.
+ */
+export function windowSource(profile) {
+  return profile.adHoc ? 'the server given with --base-url' : `"${profile.name}"`;
+}
+
+export function windowRemedy(profile) {
+  return profile.adHoc
+    ? 'Add a provider entry with "contextLength" to the config, or pass --provider to name one,'
+    : `Set "contextLength" for "${profile.name}" in the config`;
+}
+
+/**
  * The whole-file rung was not attempted because the window could not be sized.
  *
  * Exported and shared for the same reason `unreadableNote` above is: the parsed
@@ -130,17 +150,9 @@ export function unreadableNote(unreadable) {
  */
 export function unsizedWindowNote(skipped, profile) {
   if (!skipped) return null;
-  // Named for what it is on each path. An ad-hoc `--base-url` run has no config
-  // entry, so "set contextLength for X" would name one the user does not have.
-  // Read from the profile rather than compared against its NAME: a user may
-  // legitimately configure a provider called "custom".
-  const server = profile.adHoc ? 'the server given with --base-url' : `"${profile.name}"`;
-  const remedy = profile.adHoc
-    ? 'Add a provider entry with "contextLength" to the config, or pass --provider to name one,'
-    : `Set "contextLength" for "${profile.name}" in the config`;
   return (
-    `NOTE: the context window for ${server} could not be determined, so the diff-covered changed ` +
-    `files were not sent whole — the model saw only their hunks. ${remedy} to send them whole.`
+    `NOTE: the context window for ${windowSource(profile)} could not be determined, so the diff-covered changed ` +
+    `files were not sent whole — the model saw only their hunks. ${windowRemedy(profile)} to send them whole.`
   );
 }
 

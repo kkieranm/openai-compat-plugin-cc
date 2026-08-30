@@ -217,3 +217,91 @@ test('a provider legitimately named "custom" gets the config remedy, not the ad-
   assert.match(result.stdout, /Set "contextLength" for "custom" in the config/, 'the entry exists — name it');
   assert.doesNotMatch(result.stdout, /--base-url/, 'this run named a configured provider');
 });
+
+// The size guard is disarmed whenever the window is unknown, so an oversized
+// request goes out unrefused and fails at the server minutes later. The footer
+// note discloses it only AFTER that wait; these tests pin the up-front stderr
+// warning that lets an operator abort and configure the window instead.
+const UPFRONT_WARNING = /WARNING: the context window for .* could not be determined.* to enable the check\. Proceeding/;
+
+test('an unsized window warns up front, before the long run', async () => {
+  const dir = await repoWithDistantMarker();
+  const server = await reviewServer();
+  const configPath = configFor(server, null);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, UPFRONT_WARNING);
+  // Before the run, not the footer: the warning must precede the "Reviewing..."
+  // line on stderr, or it is no earlier than the after-the-fact note it exists
+  // to beat.
+  const warnAt = result.stderr.search(UPFRONT_WARNING);
+  const reviewingAt = result.stderr.indexOf('Reviewing ');
+  assert.ok(reviewingAt >= 0, 'the run announced itself');
+  assert.ok(warnAt >= 0 && warnAt < reviewingAt, 'the warning came first');
+});
+
+test('a known window emits no up-front warning', async () => {
+  // Negative control. The guard was armed, so there is nothing to warn about —
+  // and a warning here would be false about a review whose size was checked.
+  const dir = await repoWithDistantMarker();
+  const server = await reviewServer();
+  const configPath = configFor(server, 131_072);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, UPFRONT_WARNING);
+});
+
+test('an explicit --max-tokens does not silence the unsized-window warning', async () => {
+  // --max-tokens sets the reply reserve; it does not let the input be sized. The
+  // guard is still disarmed, so the warning must still fire.
+  const dir = await repoWithDistantMarker();
+  const server = await reviewServer();
+  const configPath = configFor(server, null);
+
+  const result = await runCompanion(['review', '--max-tokens', '4096'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, UPFRONT_WARNING);
+});
+
+test('the up-front warning is ad-hoc-aware: no config key to name on a --base-url run', async () => {
+  // The remedy has to be doable by whoever just read it. An ad-hoc --base-url
+  // run has no provider entry, so "set contextLength for X" would name a key the
+  // user does not have — the up-front warning must give the ad-hoc remedy, the
+  // same way the footer/report note already does.
+  const dir = await repoWithDistantMarker();
+  const server = await reviewServer();
+  const configPath = configFor(server, null);
+
+  const result = await runCompanion(['review', '--base-url', `${server.baseUrl}/v1`], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, UPFRONT_WARNING);
+  assert.match(result.stderr, /the server given with --base-url/, 'no config entry to name');
+  assert.match(result.stderr, /Add a provider entry/, 'so the remedy is to create one');
+  assert.doesNotMatch(result.stderr, /Set "contextLength" for "custom"/, 'never a key the user lacks');
+});
+
+test('a too-small --max-tokens refuses before the warning claims it will proceed', async () => {
+  // The warning is emitted only AFTER reviewPlan, whose reserveFor refuses a
+  // --max-tokens below the reply floor. So an unknown-window run that will be
+  // refused locally must never first announce that it is proceeding.
+  const dir = await repoWithDistantMarker();
+  const server = await reviewServer();
+  const configPath = configFor(server, null);
+
+  const result = await runCompanion(['review', '--max-tokens', '100'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.notEqual(result.status, 0, 'the too-small reserve is refused');
+  assert.match(result.stderr, /below the \d+ a review reply needs/, 'and says why');
+  assert.doesNotMatch(result.stderr, UPFRONT_WARNING, 'without first claiming it would proceed');
+});
