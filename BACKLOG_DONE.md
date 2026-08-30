@@ -1,3 +1,30 @@
+## 2026-08-30 — OAI-159 closed: retired `adr/` citations declared historical in the header (tracker edit, no code change)
+
+The `adr/` ADR corpus was deleted whole in `d1ad2aa` (2026-08-13), leaving dangling citations in the
+tracker. The fix the item proposed and this close-out took: option (a) — one header statement declaring
+`adr/NNN` references historical provenance (carrying **no counts and no item names**, per the
+prose-goes-stale discipline that made the item's own headline figures rot repeatedly) — plus de-linking
+the single broken markdown link. **No option-(b) quoted-sentence replacement**, because on inspection
+all four surviving references are provenance, not load-bearing evidence.
+
+Two-sided reconciliation, both directions checked: the item's 2026-08-27 recount predicted survivors
+OAI-11/13/45/52 once OAI-151 (which carried two) closed 2026-08-29 → exactly 4; a `grep` of the live
+file found exactly 4, on the four predicted items. The formerly load-bearing citations the item worried
+about — where an ADR **quote was the argument** (OAI-63/69/138) — had all departed with their own items'
+closures, so no evidence-class citation survived to need (b). That is a dated observation about the
+2026-08-30 survivors, not a retroactive claim that (b) was never warranted.
+
+The four survivors, each with its claim stated inline beside the reference (so the reference is
+provenance a reader can ignore): OAI-11 (ADR 001 "providers-as-data"), OAI-45 (ADR 013 `lastUsedTime`
+record-never-branch rule), OAI-52 (ADR 014 — the broken markdown link, now plain `ADR 014`), OAI-13
+(ADR 002 "shape-not-name"). The three prose mentions (ADR 001/002/013) are left **byte-untouched by
+decision** — rewriting each one is the per-citation rebasing this repo's sweep discipline forbids
+(it re-rots within hours), which is the whole reason option (a) exists.
+
+Consensus: an advisor vote and a Codex steer both agreed with (a)-plus-de-link and with the
+all-provenance judgement; each independently surfaced the two-sided reconciliation as the strongest
+validation. Tracker maintenance, so direct edits + `backlog-structure` test, not `/feature`.
+
 ## 2026-08-30 — OAI-50 closed: `/oai:review` warns up front when it cannot size the window (`4ecd2fe`)
 
 The open product question was what `/oai:review` should do when the context-window probe returns

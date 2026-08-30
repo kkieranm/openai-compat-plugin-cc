@@ -9,47 +9,11 @@ cannot assert priority order, which is a judgement call. Project direction and p
 narrative are in `CLAUDE.md`'s Work tracker section; the standing N=1-per-arm methodology note is in
 its Session footguns section — not here.
 
-## Items
+References to a numbered `adr/NNN` ADR name the retired ADR corpus, deleted whole in `d1ad2aa`
+(2026-08-13); they are historical provenance beside a claim stated inline, not live links, and are
+deliberately not rebased (rewriting each one re-rots within hours — this repo's sweep discipline).
 
-- **OAI-159** — **Citations in this file point at an `adr/` corpus that no longer exists.** Filed
-  2026-08-14 by the backlog sweep at 78 citations across 37 of that day's 99 live items, counted
-  rather than estimated; re-counted 2026-08-24 by this sweep against the *current* file — the backlog
-  has shrunk since filing (many carrier items closed and took their citations with them, and this
-  file's own header narrative, which used to carry a few, was retired entirely to
-  `evidence/backlog-header-history.md`) — to **7 dangling citations, all in live item bodies (OAI-11,
-  OAI-13, OAI-45, OAI-52, OAI-56, OAI-151 — one item, OAI-151, carries two)**, out of 15 live items
-  that day. **Re-counted a third time 2026-08-27 by this same consolidation sweep, after it parked
-  OAI-56: 6 dangling citations across 5 live items (OAI-11, OAI-13, OAI-45, OAI-52, OAI-151 — OAI-151
-  still carries two), out of 28 live items** — the newest items (OAI-207 onward, minus OAI-207 and
-  OAI-56/57 themselves, now parked) carry none. The mechanism and every load-bearing example below
-  are unchanged; only the headline counts were stale.
-  `adr/` was deleted whole in `d1ad2aa` (2026-08-13, 23 files, owner's decision).
-  **This is a decision that was deferred, not an oversight** — and the deletion commit says so in its
-  own words: *"agents/oai-delegate.md and BACKLOG*.md are pinned by tests and were deliberately not
-  touched"*, while comment-only references elsewhere were *"left dangling as history, matching the
-  convention used for the deleted routing log"*. So the convention was chosen for code comments and
-  **never applied to the tracker**, which is the file where a citation is doing different work.
-  **Why the tracker is not the same case.** In a comment an `adr/020` reference is provenance a reader
-  can ignore. Here it is frequently the EVIDENCE: OAI-63 argues *"Against the ADR, precisely:
-  `adr/014:147-152` states the rule as three origins"*; OAI-69's urgency rests on ADR 014 accepting a
-  wedge *"on the stated condition"*; OAI-138's whole cap argument turns on what `adr/021` assigns the
-  deadline. Those claims are now **unverifiable by a reader**, and the ones with line numbers were
-  already citations into a mutable file.
-  **Distinct from the two items about counts** (OAI-110, OAI-146): those are about a figure stated in
-  two places drifting. This is about the referent being gone.
-  **The options, and none is "rewrite 78 citations by hand"** — that is the rebasing this repo's sweep
-  discipline forbids, since it re-rots within hours: (a) declare tracker ADR references historical,
-  the same convention the deletion used elsewhere, and say so once in this file's header rather than
-  78 times; (b) for the handful that are load-bearing evidence, replace the reference with the
-  **quoted sentence** it was standing in for, which survives the file it came from; (c) restore the
-  corpus. **(a) plus (b) for the load-bearing few is the cheap combination**, and (b) is the only part
-  that needs judgement — it means deciding which citations are evidence rather than provenance.
-  The full list of affected items, so the judgement pass has a worklist: OAI-11, OAI-13,
-  OAI-27, OAI-39, OAI-42, OAI-45, OAI-52, OAI-53, OAI-54, OAI-55, OAI-56, OAI-63, OAI-64,
-  OAI-69, OAI-74, OAI-87, OAI-91, OAI-93, OAI-95, OAI-101, OAI-103, OAI-105, OAI-110, OAI-114,
-  OAI-127, OAI-135, OAI-136, OAI-138, OAI-141, OAI-143, OAI-146, OAI-148, OAI-149, OAI-151, OAI-153.
-  (OAI-59 dropped 2026-08-23, OAI-19 dropped 2026-08-24, each when it shipped/concluded and its body
-  left this file.)
+## Items
 
 - **OAI-211** — **`bench/2026-08-23-oai19-run-notes.md` does not add up, and OAI-19's conclusions rest
   on it.** The per-case table (`:48`, `caps 1/3 ... structured 3/3`) and gate criterion G-C (`:53`,
@@ -223,7 +187,7 @@ its Session footguns section — not here.
   instance would only ever be observed by someone reading raw job rows by hand, which is the absence
   this check exists to make unnecessary. It is the property that distinguishes this design from the
   reference plugin's, whose `SessionEnd` sweep depends on exactly the field this schema omits. Noted
-  in [ADR 014](adr/014-async-jobs.md) where the claim is made. Reconfirmed STILL TRUE against disk,
+  in ADR 014 where the claim is made. Reconfirmed STILL TRUE against disk,
   2026-08-27 sweep: no positive control has been added since filing.
 
 - **OAI-13** — Vendor-dependent findings that need a second server to settle. ~~**Now seven.**~~
