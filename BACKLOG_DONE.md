@@ -1,3 +1,42 @@
+## 2026-08-30 — OAI-11 closed (lens slice): diverse review passes by lens (`779eb59`)
+
+`/oai:review --lens correctness,security[,edge-cases]` runs one pass per named lens from a closed
+registry, mutually exclusive with `--passes` (refused loudly), unioning findings each tagged by the
+lens(es) that flagged it. Lenses decorrelate **blind spots** where OAI-9's repeated samples only
+decorrelate sampling noise, so on the lens path the confidence framing is dropped (disjoint focuses,
+not repeated samples): the text names which lenses flagged each finding, and the `--json` envelope
+omits per-finding `agreement`/`readablePasses` in favour of `lenses[]`, carrying `strategy` and the
+ordered `lenses` set at top level. The lens directive rides the **tail** of the user message (after
+the diff) so the cacheable prefix stays byte-identical across passes — the warm-pass economics that
+make "three lenses free" true. Provenance is carried BY VALUE on each pass outcome, never re-derived
+from a pass index the readable-compaction would shift. Bench forwards `--passes`/`--lens` with
+up-front validation (ceiling, unknown/empty lens, mutual exclusion) and a `strategy`/lens-set
+comparability axis so a lens record is never mis-ranked against a plain-passes one.
+
+**Also landed the OAI-9 deferred bench residue**, made reachable by the lens bench wiring: the merged
+multi-pass SUCCESS envelope now carries a top-level `attempts` aggregate (`aggregateAttempts` over ALL
+passes, null when empty) and a `finishReason` union truncation signal — `'length'` iff ANY pass
+carrying a result truncated, over every result-bearing pass (a parse-null pass is unreadable precisely
+because token-exhaustion cut it off, so readable-only would blind the signal on the passes most likely
+truncated; a thrown pass has no result, matching single-pass `truncatedRuns` requiring `!run.error`).
+Both are what the bench success consumers read (`attempt-rows.mjs` reliability, `run-buckets.mjs`
+truncation); the prior scope check had verified the producer, not the consumers. Shared `finishReason`
+field name across single-pass (server value) and merged (union classification) is deliberate and
+load-bearing — additive-equivalence requires `truncatedRuns` to read the same field — mitigated by
+`kind: 'multi-pass-review'` and a code comment.
+
+**Process:** 8 plan-gate rounds (Codex caught suffix-replacement, index-vs-value provenance, a bench
+validation gap, and the two-consumer residue miss the verdict-signer cleared); resumed review-ladder
+Pass 5 terminal with no blocking findings, dual-approved at the verdict point. Both bench-residue
+tests mutation-proven (readable-only reds the parse-null test; a null aggregate reds the attempts
+test). 1508 tests green.
+
+**Deferred (the item's larger follow-on, NOT closed here):** cross-**model** and cross-**provider**
+diverse passes — collides with `servedModelFailure` (refuses `served.length > 1`) and is gated on the
+post-ship A/B experiment (3 lenses vs 3 plain passes) that decides whether diversity earns a second
+model. A new item gets filed if/when that A/B produces a dated result favouring it. Config-data /
+free-form lenses also deferred (registry-first; waits for a dated need).
+
 ## 2026-08-30 — OAI-9 closed: multi-pass review with a deduplicated union (`7108d8c`)
 
 `/oai:review --passes N` (default 1) runs N independent passes and unions the findings by LOCATION

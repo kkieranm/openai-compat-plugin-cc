@@ -15,31 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-11** — Diverse passes: different models, and different lenses.
-  **Check the rate metric before comparing across *servers*.** OAI-17's `gen tok/s` divides
-  provider-reported `completion_tokens` by a window running from the first text frame to the end of
-  the stream, so a server that delays its `usage`/`[DONE]` frame inflates the divisor by however long
-  it delays — unbounded, and undetectable from here. Within one server (lenses, or JIT-swapped models
-  on LM Studio) the figure is sound and this does not apply. Across two providers it is only sound if
-  both terminate promptly, so a cross-server pass needs that checked first or the comparison measures
-  protocol behaviour rather than throughput. Raised by the OAI-17 adversarial review at 0.96
-  confidence and left stated rather than fixed, because on the measured case the divisor was 81–265s
-  against sub-millisecond terminators. **OAI-9 decorrelates sampling
-  noise; this decorrelates blind spots**, which is the more valuable axis — repeated samples of one
-  model share its failure modes, so agreement between them says much less than agreement between two
-  models trained differently. That makes cross-model agreement a genuinely strong confidence signal
-  where cross-sample agreement is only a weak one.
-  Three ways to get diversity, cheapest first: different **lenses** on the same model (one pass for
-  correctness, one for security, one for edge cases) — free, and available today with one model
-  loaded; different **models on different providers**, which is exactly what ADR 001's
-  providers-as-data buys us, and the case where passes can genuinely run concurrently; different
-  models on **one** provider, which on LM Studio means paying a JIT load between passes and is
-  probably the worst of the three.
-  Build OAI-9 so a pass carries its own `{provider, model, lens}` rather than inheriting one global
-  target — then this is a config change, not a rewrite. Open question worth an experiment before
-  committing: whether three lenses on one model beats three plain passes, since that would deliver
-  most of the value with no second model to install.
-
 - **OAI-45** — Close the two holes in OAI-34's end-to-end matrix. **Small, and filed because the
   matrix reads complete and is not.** OAI-34's own rule is "every verdict-bearing check gets a
   scenario crossing the real entry point", with one *stated* exemption (G8, structurally impossible to
