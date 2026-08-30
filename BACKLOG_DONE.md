@@ -1,3 +1,32 @@
+## 2026-08-30 — OAI-49 closed: the matched-budget review arm is a config recipe, not a flag (`b7c0d4d`)
+
+A cross-model `/oai:review` comparison is matched from configuration alone. `profile.contextLength` (a
+first-class `providers.json` field, `config`-sourced in `effectiveWindow`, outranking detection) drives
+**both** the reply reserve (`reserveFor`) **and** the input-packing rung (`git-diff` whole-file sizing),
+so pinning it equal on both arms and varying only `--model` runs one instrument on both models —
+stronger than OAI-49's option-1 framing, which noted only the reserve. `--max-tokens` already overrode
+the reply reserve; `bench/run.mjs` already forwards `--provider`/`--model`/`--max-tokens`;
+`compare.mjs`'s per-case lens axis (`rung@window`) already fails closed on a window mismatch and
+`provider` is deliberately not a suppressing axis. So both of OAI-49's proposed options were mostly
+already in the code; option 2's `--reserve`/`--analysis-cap` is largely `--max-tokens`, and a new
+`--context-length` flag would only add surface this repo guards. Consensus (Codex claim-check + advisor
++ orchestrator): **Option A, no code** — document the recipe, leave the measured run an operator opt-in.
+No product code changed; the matched profile lives in the operator's `providers.json`.
+
+Measured 2026-08-30 at matched `W=61696` (dense `qwen/qwen3.8-27b` vs MoE `qwen/qwen3.6-35b-a3b`, 10
+cases × 3 runs, whole-file, unconstrained): `compare.mjs` **did not** suppress on the window/lens axis
+(identical `@61696` labels across arms — OAI-49's confound is provably gone) and withheld the recall
+rank on a **coverage** divergence (`caps`: 2/3 scored dense, 0/3 MoE). A review-ladder fable audit
+corrected the first draft's attribution: that coverage loss is **model-attributable, not the LM Studio
+transport drop** — both arms recorded 0 failed physical attempts (30/30 answered), and the MoE's 10
+non-scored runs were all *answered* then unscoreable (6 unreadable, 3 failed-shape, 1 token-exhausted).
+So the binding incomparability, once the window is matched, is the MoE's own output parseability /
+reasoning-budget spend, which sits inside the model comparison rather than being cleanly externalizable.
+Co-scored per-case the MoE has higher recall (strictly better on hold1/hold4/scaffold/structured, tied
+elsewhere) at ~4.5× throughput, but fails to emit scoreable output far more often (10 vs 7) and its
+off-control unmatched-finding volume is much noisier (precision unmeasured). Recipe, provenance and the
+full result: `bench/2026-08-29-oai49-matched-arm.md`.
+
 ## 2026-08-29 — OAI-151 shipped: a cross-run sweep reproduction reader (`f85578e`)
 
 `bench/sweep-reproduction.mjs` reads N `review-sweep-<stamp>.ledger.jsonl` files and prints a per-commit

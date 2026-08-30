@@ -11,21 +11,6 @@ its Session footguns section — not here.
 
 ## Items
 
-- **OAI-49** — A matched-budget arm, so a cross-model comparison measures the model rather than the
-  model plus its window. **Filed 2026-08-04 from OAI-19's gate grill; it is the reason that run
-  publishes a deployed-systems comparison and reports the clean decomposition as NOT OBTAINED.** The
-  reply budget is derived from each model's served window, so the two arms do not run the same
-  instrument on the same case: measured 2026-07-30, `model-info` capped at 47,724 for the dense model
-  against 74,000 for the MoE, and `scaffold` at 30,683 against 65,499 — the dense model reasoning
-  under less than half the space on the corpus's largest case. `structured` differs in *input* rung
-  on top of that. No case in the corpus is currently a clean model-only comparison, which is a
-  stronger statement than the `structured` confound already on file and was not previously noticed.
-  Options: pin an explicit `contextLength` for both profiles so the derived reserve matches; or add a
-  `--reserve`/`--analysis-cap` override to the review command and run a matched arm beside the
-  deployed one. The second is more honest — it leaves the shipped behaviour alone and makes the
-  matched arm a separate, labelled instrument — but it is a new flag on a command whose surface this
-  repo guards deliberately, so it is a decision rather than a fix.
-
 - **OAI-50** — Decide whether a run whose context probe failed should be scored at all. **Filed
   2026-08-04 from OAI-19's gate work, where the July records answered the question by accident.**
   When `model-info.mjs` cannot detect a served window, the run proceeds with `contextChecked: false`
@@ -135,6 +120,28 @@ its Session footguns section — not here.
   assertions are dead weight claiming to pin it. Whoever takes it should decide between repointing
   them at the real error line and deleting them as redundant with the structural scan; a fix that
   keeps them must be mutation-proved, since that is the property they failed.
+
+- **OAI-228** — **A review reply that is valid `{"findings":[{file, line, message}]}` JSON is discarded
+  wholesale because the findings key their description `message` instead of `summary`.** Dated
+  instance 2026-08-30 (OAI-49's matched arm, `bench/2026-08-29-oai49-matched-arm.md`): the MoE
+  `qwen/qwen3.6-35b-a3b` lost **5 runs of real findings this way** — all 3 `caps` runs (4, 1 and 5
+  findings) and 2 `hold2-hostile-coercion` runs — each a syntactically valid JSON object with a
+  populated `findings` array whose items carry `file`, `line` and `message`, which `JSON.parse`
+  accepts and `parseFindings` then returns `null` on. The mechanism is `findings-candidate.mjs`'s
+  `named` predicate (via `structured.mjs` `parseFindings` → `findingsShaped`): a finding is admitted
+  only when it names both a `file` **and** a `summary`, so an array where every item uses `message`
+  (or `code`+`message`) as the description names no element and the whole reply reads UNREADABLE —
+  the same "real model work discarded" class as OAI-156, exercised live, not latent. The schema
+  requests `file, line, severity, summary, evidence` (`review-schema.mjs:157`), so `message` is a
+  model deviation from the asked shape — **the fork this item is: is accepting `message`/`description`
+  as a `summary` alias the plugin's job (its whole lenient-parse philosophy — `findings-yaml`,
+  `findings-empty` — says maybe yes, since the work is real and the deviation reasonable), or is the
+  discipline that a reviewer must emit the requested field worth keeping (accept the alias and the
+  next model spells it a third way)?** Note it discriminated the models here: the dense arm lost 0
+  runs to this (its 7 non-scored runs were reasoning **prose**, a different, model-attributable
+  cause), so the gap silently penalised whichever model happened to choose `message`. Any fix that
+  widens `named` must be mutation-proved and must not re-admit the decoy shapes `findings-candidate.mjs`'s
+  own comments document as hard-won. Raw replies: the two per-run records named in the doc.
 
 - **OAI-9** — Multi-pass review with a deduplicated union, because a single pass is a lottery.
   Measured on one 135-line file with two known defects (`config.mjs` at `8990173`, both fixed later):
