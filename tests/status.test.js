@@ -39,7 +39,19 @@ test('a job submitted by one process is retrievable by another, from a different
     // No session identifier anywhere in the row — which is exactly what the
     // reference plugin's `SessionEnd` sweep keys on, and why its background jobs
     // do not outlive the session that asked for them.
-    assert.doesNotMatch(JSON.stringify(readJob(scenario.state, id)), /session/i);
+    const row = readJob(scenario.state, id);
+    assert.doesNotMatch(JSON.stringify(row), /session/i);
+    // Positive control for the assertion above. Without it a passing `doesNotMatch`
+    // is indistinguishable from a detector that can never match — the unfalsifiable
+    // shape a session-id leak into a persisted row is exactly the kind of defect to
+    // hide behind. The SAME detector (JSON.stringify + /session/i) fires the moment a
+    // session-named field IS present, so the clean result above is a measurement, not
+    // a vacuous truth. Bound, disclosed: the detector catches a field NAMED for the
+    // session — the realistic regression, a `sessionId` column added to the schema —
+    // not a session id smuggled under an unrelated key whose value carries no
+    // "session" substring; that the schema has no session concept at all is what the
+    // real-row assertion establishes, and it is why this word-match suffices.
+    assert.match(JSON.stringify({ ...row, sessionId: 'sess-01XYZ' }), /session/i);
   } finally {
     await scenario.server.close();
   }
