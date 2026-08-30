@@ -1,3 +1,24 @@
+## 2026-08-30 — OAI-52 closed: OAI-3 verification-list residue fully dispositioned (`278e56f`)
+
+The last live sub-item, **(6)**, shipped: `tests/status.test.js`'s session-leak guard —
+`doesNotMatch(JSON.stringify(row), /session/i)`, asserting a persisted background-job row carries no
+session identifier — had no positive control, so a passing `doesNotMatch` was indistinguishable from
+a detector that can never match. That unfalsifiable shape is exactly what a session-id leak into a
+persisted row would hide, which is why it cleared the worth bar via the silence exception rather than
+a dated instance. The same detector applied to a row carrying a session-named field now must MATCH,
+making the clean result a measurement; mutation-proven (a non-session field reds it). The bound is
+disclosed in-test: the word-match catches a `sessionId` column (the realistic regression), not an
+opaque id under an unrelated key — Codex confirmed no cheap general value check exists without a known
+id shape (UUID matching would collide with unrelated persisted identifiers). This is the property that
+distinguishes this design from the reference plugin's, whose `SessionEnd` sweep depends on the field
+this schema omits (ADR 014).
+
+The other five sub-items were already dispositioned by the 2026-08-27 consolidation sweep and are not
+reopened by this close: **(1)** done (`tests/job-auth.test.js`, OAI-58); **(3)** superseded by OAI-62
+(the property is not merely untested but false at two sites); **(2)/(4)/(5)** parked to
+`BACKLOG_PARKED.md` (`not worth doing` — no dated instance and no silent-failure argument). Resolved
+via the fable-advisor + Codex consensus; Codex reviewed the implemented diff (all clean). 1511 green.
+
 ## 2026-08-30 — OAI-45 closed: the two holes in the TTL e2e matrix (`deb4611`)
 
 `no-exposure` was the only one of seven `EPISODE_VERDICTS` never produced through the real

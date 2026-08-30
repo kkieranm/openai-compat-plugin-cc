@@ -15,31 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-52** — **Six items from OAI-3's own verification list did not land.** Filed the day the
-  feature shipped, from reading the plan's verification section back against the tests that exist,
-  so that `BACKLOG_DONE.md`'s OAI-3 entry cannot read as complete coverage. **Consolidation sweep,
-  2026-08-27: verified STILL TRUE against disk, then worth-barred sub-item by sub-item — (2), (4)
-  and (5) had no dated instance of the property they guard actually failing and no silent-failure
-  argument, so they parked to `BACKLOG_PARKED.md` (`not worth doing`); (1) and (3) were already
-  resolved/superseded; (6) is the one sub-item that survives live.**
-  **~~(1) `scripts/lib/job-auth.mjs` has no test at all — neither side of it.~~ DONE 2026-08-05** —
-  `tests/job-auth.test.js`, 8 tests, mutation-proved, shipped with a positive control. Full evidence
-  moved to `BACKLOG_DONE.md`'s OAI-58 entry, 2026-08-24.
-  **(3) is superseded by OAI-62**, which found the property is not merely untested but false at two
-  sites, one of which kills a running worker.
-  **(6) No session identifier appears in a row, and the one guard against it cannot be shown to
-  fail.** `tests/status.test.js:43` asserts `doesNotMatch(JSON.stringify(row), /session/i)` (added in
-  `3e7d429`, predating this filing) with no positive control proving the regex can ever match — a
-  string match on a JSON dump would catch a column *named* with that word but not a session id stored
-  under an unrelated key. **This clears the worth bar via the silence exception, not a dated
-  instance**: the failure mode this guards against is a session identifier leaking into a persisted
-  row, which is exactly the kind of defect an unfalsifiable check would hide rather than catch — an
-  instance would only ever be observed by someone reading raw job rows by hand, which is the absence
-  this check exists to make unnecessary. It is the property that distinguishes this design from the
-  reference plugin's, whose `SessionEnd` sweep depends on exactly the field this schema omits. Noted
-  in ADR 014 where the claim is made. Reconfirmed STILL TRUE against disk,
-  2026-08-27 sweep: no positive control has been added since filing.
-
 - **OAI-13** — Vendor-dependent findings that need a second server to settle. ~~**Now seven.**~~
   **Five, since the 2026-08-05 sweep split two of them out as OAI-84** — they stopped being
   vendor-dependent when OAI-51 made the prose-parse path the default. Added
