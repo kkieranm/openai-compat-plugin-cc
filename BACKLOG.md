@@ -15,28 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-208** — The temp-dir leak OAI-203 fixed in one file is the suite's normal state: `mkdtempSync`
-  appears in 27 files under `tests/` — recount 2026-08-27 matches the original 2026-08-24 count
-  exactly — and cleanup by literal `mkdtempSync`+`rmSync` pairing exists in only 3 of them today
-  (`tests/bench-warm-up.test.js`, `tests/delegate-containment.test.js`, `tests/runtime-capability.test.js`
-  — **this list has drifted from the original filing**, which named `tests/job-busy.test.js` and
-  `tests/job-busy-open.test.js`; those two clean up via the `stateDir()` wrapper in
-  `tests/job-helpers.mjs` rather than a literal `mkdtempSync` call, so a literal grep never counted
-  them as leaking or as clean — the leak count itself, ~22-24 of 27, is unchanged). **Consolidation
-  sweep, 2026-08-27: kept live, not parked** — distinct from a structural-hardening ask with no
-  observed harm, this defect manifests on every single `npm test` invocation, which is itself the
-  dated, recurring instance. Present, deterministic and silent, the same worth-bar shape OAI-203
-  itself cleared. Three related facts for whoever takes it: (1) `tests/runtime-capability.test.js:74-87`
-  carries its own hand-rolled copy of the tracked-array-plus-`after`-hook machinery OAI-203 shipped
-  (`TEMP_STATE`/`stateDir`); (2) **a third independent copy was found during this sweep**:
-  `tests/delegate-containment.test.js:70,74` hand-rolls its own `tracked(prefix)`/`TRACKED`
-  array-plus-`after()` cleanup, unrelated to either of the other two — the drift this item warned
-  about is no longer hypothetical, it has already happened once more since filing, with no shared
-  helper yet consolidating any of the three; (3) OAI-203's plan deliberately declined a structural
-  test ratcheting "every `mkdtempSync` is tracked" while the class had one dated instance — now three
-  independently-drifting copies plus 22-24 untracked files, so graduation to `tests/structure.test.js`
-  should be re-judged here, not assumed either way.
-
 - **OAI-210** — **Three `doesNotMatch` assertions in `tests/answer-channel.test.js` cannot fail.** The
   three marker tests (`:75`, `:95`, `:115`) each read `const messageLine = result.stderr.split('\n')[0]`
   and assert the server-controlled `finish_reason` marker is not fused into it. Line 0 of stderr is

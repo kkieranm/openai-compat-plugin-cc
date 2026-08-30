@@ -1,3 +1,36 @@
+## 2026-08-30 — OAI-208 closed: one shared tracked temp-dir helper for the whole suite (`f6e506e`)
+
+`mkdtempSync` was called at ~75 sites across ~27 test files with no cleanup — one leaked dir per call on
+every `npm test` — and three files had hand-rolled three independent copies of the same tracked-array +
+`after()`-hook cleanup, a pattern already drifting (a third copy appeared after the item was filed). Kept
+live rather than parked because the leak is a dated, recurring instance: it fires on every single suite
+run, the same worth-bar shape OAI-203 (the one-file fix this generalizes) cleared.
+
+Shipped the full package (consensus: advisor vote + Codex steer agreed the retrofit and the ratchet are
+one inseparable unit — a default-deny guard cannot land with 25 violating files, and a helpers-only fix
+leaves the drift mechanism alive): `tempDir(prefix)` in `tests/helpers.mjs` is now the single place a
+scratch dir is created and tracked, cleaned by ONE lazily-registered `process.on('exit')` handler.
+`createRepo`/`writeConfig`/`stateDir` route through it; every direct call site was retrofitted; the four
+special files kept their extra behaviour (delegate-containment's load-bearing containment assertions,
+bench-warm-up's eager per-test `try/finally`). A `structure.test.js` default-deny ratchet (allowlist:
+`tests/helpers.mjs` only) catches a bare `mkdtempSync` reappearing — the recurring drift graduated from a
+reviewer's prompt to a guard, this repo's stated promotion bar.
+
+Two design points that were load-bearing, not incidental: (1) **`process.on('exit')`, not a top-level
+`after()`** — verified empirically that an import-time `after()` in helpers.mjs runs BEFORE a test file's
+own file-local `after()` hooks, so a shared `after()` would delete dirs before delegate-containment's
+leftover assertions could inspect them; process-exit runs strictly after all file-local hooks. (2) an
+**absolute `prefix` is used as-is** (via `isAbsolute`, tightened from `startsWith('/')` on a Codex review
+finding) rather than joined onto `os.tmpdir()`, because delegate-containment's `/tmp/oai-delegate.` callers
+exercise the real delegate recipe's hardcoded `/tmp/oai-delegate.*` check and `os.tmpdir()` is not `/tmp`
+on macOS.
+
+Verified: full suite 1436 green; `grep -rl 'mkdtempSync(' tests/` outside helpers.mjs is empty; the
+ratchet was mutation-proven (a literal bare `mkdtempSync(` appended to a migrated file → ratchet RED
+naming that file; removed → GREEN). The retrofit itself was done by an implementer subagent from an exact
+spec; the diff was reviewed by Codex (one Low finding, applied). The graduation-to-structural-test question
+the item left open is answered YES; no residue.
+
 ## 2026-08-30 — OAI-211 closed: the Invocation D run accounting reconciles; neither account is wrong (`e495188`)
 
 OAI-211 alleged `bench/2026-08-23-oai19-run-notes.md` "does not add up" and that OAI-19's conclusions
