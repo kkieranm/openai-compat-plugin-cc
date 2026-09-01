@@ -15,33 +15,28 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-229** — **LM Studio delivers a request refusal as an HTTP 200 stream frame, and the plugin
-  reads it as an empty completion and retries it.** Dated instance 2026-09-01, through the real CLI
-  (`evidence/013.md`): with `stream: true` — the default — a context overflow or an out-of-range
-  sampling value comes back as `200 text/event-stream` whose only event is `event: error` with
-  `data: {"error":{"message":…},"message":…}` and no `[DONE]`. `sse.mjs` drops `event:` lines by
-  design and yields the data frame; `applyFrame` finds no `choices`; `refuseUnusable` classifies it
-  `empty-completion`, which is on `failure-shape.mjs`'s RETRYABLE whitelist — so the run re-sent a
-  request that refuses identically three times, took 5.6s, and reported "returned a completion with
-  no message content" with the server's own sentence (*The number of tokens to keep from the initial
-  prompt is greater than the context length*) discarded. Reachable today via context overflow:
-  `context-guard.mjs` estimates 3.4 chars/token and CJK text tokenizes near 1, so a 200,308-char
-  prompt estimated at ~58,897 tokens overflowed a 154,624 window. Every out-of-range sampling value
-  LM Studio refused is also refused client-side by `parseNumber`, so those are not reachable; the
-  `response_format` refusals still arrive pre-stream as 400 and are unaffected. Fix (Codex-steered):
-  detect on the frame's SHAPE in `collectStream` (`stream-collect.mjs`; the steer named `readSse`,
-  and it moved at plan-gate round 1 because only `collectStream` holds `firstTextAt`, the
-  classification being confined to a frame arriving before any text) — a top-level `error` object
-  and no `choices` — never on
-  the `event:` line the parser deliberately does not interpret; throw a `UserError` with a new
-  non-retryable reason (`stream-error-frame` — not `*-timeout`, which bench reads as timing),
-  `serverResponded: true`, the server's message bounded on `.responseBody` and never in `.message`;
-  not added to RETRYABLE or `COMPLETION_SHAPES`, not fed to the capability rungs or
-  `isFormatRejection` (both gate on HTTP 400/422), and `bench/lib/sweep-outcome.mjs`'s
-  `serverUnwell` must return false for it (a refusal, not server health). The overflow stays a loud
-  failure — the frame proves a refusal, not an oversize, and routing it into `review-ladder.mjs`'s
-  size degrade would conflate it with the separate chars-per-token estimation defect. Test: replay
-  the observed frame verbatim through the fake server, pin ONE request, the reason, the field
-  placement and the preserved server text; mutation-prove by reverting the detection (three
-  attempts and `empty-completion` return). Whether some of the 2026-07-30 "empty completion" sweep
-  failures were this shape is unknown — no raw body was kept — and is not claimed.
+- **OAI-231** — **A `stream-error-frame` sweep row renders as a bare code beside `stream-unfinished`, with no
+  `REASON_PARAGRAPHS` entry.** Raised twice by the OAI-229 review ladder (pass-1 fork-opener, pass-3
+  closer) and held as a widening beyond that plan, so it is the owner's call: `bench/lib/sweep-report.mjs`'s
+  `reasonSuffix` prints `the review failed (`stream-error-frame`)` and `bench/lib/reason-notes.mjs`
+  has no paragraph for it, so the morning reader sees a stream-named code next to a delivery failure
+  while the reason is deliberately excluded from `serverUnwell` and RESETS the outage streak — the one
+  accepted cost of OAI-229's design, explained nowhere in the report. Both recommendations agree: **add
+  the entry plus its `tests/bench-reason-notes.test.js` row** (Claude: the cost is acceptable only if
+  visible; Codex: an immediate follow-on documenting an already-shipped deterministic classification and
+  its otherwise-hidden streak consequence, consistent with the worth bar's purpose though in tension with
+  its dated-instance letter). Codex's proposed paragraph, current behaviour only: the server refused the
+  request inside an HTTP 200 stream before any content or reasoning text arrived — typically a context
+  overflow or a rejected sampling value on LM Studio; not retried because resending would meet the same
+  refusal; not counted as a server outage, and like any non-outage row it resets a live outage streak;
+  the next commit may still fare better.
+- **OAI-230** — **`context-guard.mjs`'s 3.4 chars/token estimate under-counts CJK-dense input by ~2.6x, so
+  a prompt the guard passes overflows the server.** Dated instance 2026-09-01 (evidence/013.md): a
+  200,308-character prompt of distinct CJK characters was estimated at ~58,897 tokens against a
+  154,624-token window and refused by LM Studio as over its context length — the refusal is now loud
+  (`stream-error-frame`, OAI-229) instead of retried three times, but the guard still let it through.
+  `CHARS_PER_TOKEN` was measured against this repo's code and diffs (a different population), which is
+  the right default for the review flow; the gap is `/oai:task --prompt-file` on dense text. A fix is
+  a design fork, not a constant: a script-aware estimate (count CJK/emoji code points near 1/token), a
+  server-side count where the vendor exposes a tokenizer endpoint, or a documented limit — none is
+  chosen here.

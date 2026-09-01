@@ -1,3 +1,69 @@
+## 2026-09-01 — OAI-229 closed: a refusal streamed as HTTP 200 is a refusal, not an empty completion (`9860a8b`)
+
+Shipped: `collectStream` (`scripts/lib/stream-collect.mjs`) classifies a data frame that is an error
+envelope — `completion.mjs`'s `errorFrame`: an own top-level `error` object or non-empty string, no own
+`choices` — as the new non-retryable reason `stream-error-frame` when it arrives before any text on
+either channel and no budget has expired, with the server's text on `.responseBody` only; after text
+the same frame stays `stream-unfinished` (retryable), disclosed rather than redesigned. The detection
+landed in `collectStream`, not the steer's `readSse`, because only it holds `firstTextAt` (plan-gate
+episode 1 round 1, Codex: an error envelope is not proof of a deterministic refusal, so the boundary
+is "before any text", resting on the code's existing posture that a server-stated error before
+generation — an HTTP error status from `assertOk`, which carries no `reason` — is never retried).
+The dated instance (evidence/013.md) re-run on the final code: one attempt, exit 1, the server's
+sentence on stderr. Verified: 1518/1518; four mutations at the real path (refusal branch no-op → 3
+reds; before-any-text guard dropped → the text-then-error control; own-`error` check removed → the
+shape-control test; the flag write deleted → 3 reds); live plugin load and delegation round trip.
+
+Review: plan dual-approved at episode 1 round 2, then again at episode 2 round 6 after the ladder's
+first full pass dissented on plan CONFORMANCE (two deliberate deviations — the hint clause a verdict
+noted would be false on the background path, a minimal per-site fixture — had been dismissed as
+findings instead of owned by an amendment; five rounds followed, each surfacing one more
+plan-vs-tree mismatch). Ladder: pass 1 full (dissent), pass 2 diff (converged, exempt fixes), pass 3
+full, dual-approved on digest 3d7c6ec7e90c; exempt post-approval batch: two prose imprecisions
+(the CLAUDE.md note's omitted `expired === null` co-guard; a "same 400-character cap" approximation).
+Yield per stage at the terminal pass: acceptance-audit 1 (plan bookkeeping), fork-opener 0,
+codex-adversarial 0 (approve, with fault-injection execution evidence), codex-plain 0, agent-closer 2
+(exempt prose). Dismissed with reasons: the adversarial's transient-envelope finding (twice raised) —
+its remediation (non-retry only on a validated provider code) regresses the dated instance since LM
+Studio's envelope carries no code; no transient pre-text envelope was observed on either probed
+server and none is distinguishable in any prior record; accepted cost stated: an in-stream refusal
+resets the sweep's outage streak (`bench/review-sweep.mjs`), so an every-commit misconfiguration
+would run a night as fast `stream-error-frame` rows rather than aborting after three. Reopening bar:
+an observed pre-text error envelope a resend survived, or a sweep night lost that way. Recorded, not
+filed: the `expired = failure; deadline.clear(); response.dispose(); throw` ordering is pinned by no
+structural test — shared with the pre-existing reserve cutoff. Residue filed: OAI-230, OAI-231.
+
+- **OAI-229** — **LM Studio delivers a request refusal as an HTTP 200 stream frame, and the plugin
+  reads it as an empty completion and retries it.** Dated instance 2026-09-01, through the real CLI
+  (`evidence/013.md`): with `stream: true` — the default — a context overflow or an out-of-range
+  sampling value comes back as `200 text/event-stream` whose only event is `event: error` with
+  `data: {"error":{"message":…},"message":…}` and no `[DONE]`. `sse.mjs` drops `event:` lines by
+  design and yields the data frame; `applyFrame` finds no `choices`; `refuseUnusable` classifies it
+  `empty-completion`, which is on `failure-shape.mjs`'s RETRYABLE whitelist — so the run re-sent a
+  request that refuses identically three times, took 5.6s, and reported "returned a completion with
+  no message content" with the server's own sentence (*The number of tokens to keep from the initial
+  prompt is greater than the context length*) discarded. Reachable today via context overflow:
+  `context-guard.mjs` estimates 3.4 chars/token and CJK text tokenizes near 1, so a 200,308-char
+  prompt estimated at ~58,897 tokens overflowed a 154,624 window. Every out-of-range sampling value
+  LM Studio refused is also refused client-side by `parseNumber`, so those are not reachable; the
+  `response_format` refusals still arrive pre-stream as 400 and are unaffected. Fix (Codex-steered):
+  detect on the frame's SHAPE in `collectStream` (`stream-collect.mjs`; the steer named `readSse`,
+  and it moved at plan-gate round 1 because only `collectStream` holds `firstTextAt`, the
+  classification being confined to a frame arriving before any text) — a top-level `error` object
+  and no `choices` — never on
+  the `event:` line the parser deliberately does not interpret; throw a `UserError` with a new
+  non-retryable reason (`stream-error-frame` — not `*-timeout`, which bench reads as timing),
+  `serverResponded: true`, the server's message bounded on `.responseBody` and never in `.message`;
+  not added to RETRYABLE or `COMPLETION_SHAPES`, not fed to the capability rungs or
+  `isFormatRejection` (both gate on HTTP 400/422), and `bench/lib/sweep-outcome.mjs`'s
+  `serverUnwell` must return false for it (a refusal, not server health). The overflow stays a loud
+  failure — the frame proves a refusal, not an oversize, and routing it into `review-ladder.mjs`'s
+  size degrade would conflate it with the separate chars-per-token estimation defect. Test: replay
+  the observed frame verbatim through the fake server, pin ONE request, the reason, the field
+  placement and the preserved server text; mutation-prove by reverting the detection (three
+  attempts and `empty-completion` return). Whether some of the 2026-07-30 "empty completion" sweep
+  failures were this shape is unknown — no raw body was kept — and is not claimed.
+
 ## 2026-08-30 — OAI-52 closed: OAI-3 verification-list residue fully dispositioned (`278e56f`)
 
 The last live sub-item, **(6)**, shipped: `tests/status.test.js`'s session-leak guard —
