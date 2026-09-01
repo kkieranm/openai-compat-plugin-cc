@@ -21,17 +21,17 @@ import { deltaFrame, reviewScenario, runCompanion, scriptOf } from './helpers.mj
 //
 // These are the families with no second witness, and every fixture below is
 // built to keep it that way. `obtainedResponse` reads a `status`, a completion
-// shape, the flag, or a measured `prefillMs`; a `protocol`, `bad-json` or
-// delivered-body `transport` failure carries no status and is no completion
-// shape, so the flag is the only thing standing between "the server answered and
+// shape, the flag, or a measured `prefillMs`; a `protocol`, `bad-json`,
+// delivered-body `transport` or `stream-error-frame` failure carries no status
+// and is no completion shape, so the flag is the only thing standing between "the server answered and
 // then the reply was unusable" and "nothing ever answered" — PROVIDED no model
 // text arrived, since text would supply the fourth witness and reconstruct the
-// answer without the flag. None of these three sends any, deliberately: the first
+// answer without the flag. None of these four sends any, deliberately: the first
 // version of this file did, and that case passed with its flag write deleted.
 //
 // So the rule for anything added here: a fixture must reach its branch with the
 // flag as the ONLY evidence, and the mutation must be run rather than reasoned
-// about. Three of these have been; the two sites at the end of the file have not,
+// about. Four of these have been; the two sites at the end of the file have not,
 // and say so.
 
 /**
@@ -86,6 +86,13 @@ const badSseFrame = (response) => {
   return undefined;
 };
 
+/** Headers, then a refusal the server streamed as an error frame before any text — `stream-collect.mjs`'s branch. */
+const errorFrameScript = (response) => {
+  response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+  response.end('event: error\ndata: {"error":{"message":"refused"},"message":"refused"}\n\n');
+  return undefined;
+};
+
 /** The single attempt left by one review run against `script`. */
 async function attemptFrom(script) {
   const { dir, server, configPath } = await reviewScenario(scriptOf([script]), { contextLength: 131_072 });
@@ -121,6 +128,7 @@ const SITES = [
   ['http-errors.mjs — transportError on a delivered body', cutAfterRoleOnly, 'transport'],
   ['body.mjs — a whole reply that is not JSON', notJson, 'bad-json'],
   ['sse.mjs — an event that is not JSON', badSseFrame, 'protocol'],
+  ['stream-collect.mjs — an error frame before any text', errorFrameScript, 'stream-error-frame'],
 ];
 
 for (const [name, script, reason] of SITES) {

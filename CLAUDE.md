@@ -144,7 +144,12 @@ witnesses (a blinded array, a bare object) are what pin the behaviour instead.
 `scripts/lib/http.mjs` is the only place this repo speaks HTTP: `send()` on `node:http`/`node:https`
 with an explicit first-byte budget and an optional absolute deadline, streaming chat completions as
 SSE, while the first-token and idle budgets that mean "the model is working" live in
-`scripts/lib/stream-collect.mjs`, which `chat.mjs` calls to read one streamed reply.
+`scripts/lib/stream-collect.mjs`, which `chat.mjs` calls to read one streamed reply. `collectStream`
+also throws `stream-error-frame` (non-retryable, `failure-shape.mjs`) when a data frame carrying a
+top-level `error` and no `choices` (`completion.mjs`'s `errorFrame`) arrives before any text on either
+channel and before any budget has expired — the shape in which LM Studio streams a refusal as HTTP
+200 — with the server's text on `.responseBody`;
+after text, the same frame is still `stream-unfinished`.
 
 `scripts/lib/review-schema.mjs` sizes the reply from the budget each run is granted —
 `reviewSchemaFor(reserve)` — and a run its `analysis` ceiling truncates has its findings scored while

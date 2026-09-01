@@ -100,6 +100,7 @@ test('a stalled stream is the server; a caller cap is not', () => {
   assert.equal(serverUnwell('idle-timeout'), true, 'armed only after generation began, so only a stall emits it');
   assert.equal(serverUnwell('deadline-timeout'), false, "the caller's whole-run cap");
   assert.equal(serverUnwell('first-byte-timeout'), false, 'a large prompt being ingested');
+  assert.equal(serverUnwell('stream-error-frame'), false, 'the server refused this request inside the stream; the next commit may fare better');
 });
 
 // The control: what remains is exactly what the SERVER did.

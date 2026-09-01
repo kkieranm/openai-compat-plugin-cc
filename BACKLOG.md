@@ -29,7 +29,10 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   prompt estimated at ~58,897 tokens overflowed a 154,624 window. Every out-of-range sampling value
   LM Studio refused is also refused client-side by `parseNumber`, so those are not reachable; the
   `response_format` refusals still arrive pre-stream as 400 and are unaffected. Fix (Codex-steered):
-  detect on the frame's SHAPE in `readSse` — a top-level `error` object and no `choices` — never on
+  detect on the frame's SHAPE in `collectStream` (`stream-collect.mjs`; the steer named `readSse`,
+  and it moved at plan-gate round 1 because only `collectStream` holds `firstTextAt`, the
+  classification being confined to a frame arriving before any text) — a top-level `error` object
+  and no `choices` — never on
   the `event:` line the parser deliberately does not interpret; throw a `UserError` with a new
   non-retryable reason (`stream-error-frame` — not `*-timeout`, which bench reads as timing),
   `serverResponded: true`, the server's message bounded on `.responseBody` and never in `.message`;

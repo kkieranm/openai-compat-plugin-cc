@@ -1,5 +1,6 @@
-import { applyFrame, emptyAnswer } from './completion.mjs';
+import { applyFrame, emptyAnswer, errorFrame } from './completion.mjs';
 import { UserError } from './errors.mjs';
+import { STREAM_ERROR_FRAME } from './failure-shape.mjs';
 import { budgetError } from './http-errors.mjs';
 import { readSse } from './sse.mjs';
 
@@ -133,6 +134,35 @@ export async function collectStream(
 
   try {
     for await (const frame of readSse(response, profile.name, outcome)) {
+      // A refusal the server put INSIDE a 200 stream — an error envelope where
+      // a completion chunk should be. Acted on only before any text on either
+      // channel (content or reasoning — `firstTextAt` is set by both): a server
+      // that has not begun generating and says so is refusing the request, the
+      // streaming twin of an HTTP error status, and a resend is refused again.
+      // The same frame after text is left to `refuseUnusable`'s
+      // `stream-unfinished` (retryable) — a mid-generation failure is not a
+      // refusal. `expired === null` for the same reason as the cutoff below:
+      // whoever claimed `expired` first is the cause that gets reported.
+      const refusal = firstTextAt === null && expired === null ? errorFrame(frame) : null;
+      if (refusal !== null) {
+        const failure = new UserError(`${profile.name} refused the request inside the stream.`, {
+          hint: 'The server answered the stream with an error instead of a completion, so the request was not re-sent: a refusal before generation begins is refused again.',
+          reason: STREAM_ERROR_FRAME,
+        });
+        failure.serverResponded = true;
+        // Server-controlled text travels on `.responseBody` and never in
+        // `.message`/`.hint` — the same field, capped at the 400 characters
+        // `provider.mjs`'s `assertOk` reads of a body, so `transportDetail` shows it and
+        // `errorReport` keeps it out of `jobs.db`.
+        failure.responseBody = refusal.slice(0, 400);
+        expired = failure;
+        // The cutoff below documents this sequence: clear the timer so it cannot
+        // race `expired`, dispose, and throw synchronously so no event buffered
+        // from the same chunk is consumed after the refusal.
+        deadline.clear();
+        response.dispose();
+        throw failure;
+      }
       const reasoningBefore = answer.reasoning.length;
       // The same condition the idle budget uses, and deliberately so: a frame
       // that carried text is the only evidence that generation has begun. A

@@ -329,6 +329,9 @@ const RESPONSE_BOUNDARY_FILES = [
   'scripts/lib/provider.mjs',
   'scripts/lib/body.mjs',
   'scripts/lib/sse.mjs',
+  // Builds a UserError from an error frame the server streamed (the refusal
+  // text goes on `.responseBody`), so it sits at the same boundary.
+  'scripts/lib/stream-collect.mjs',
   // Not transport-layer, but the same server-payload risk: `finish_reason`
   // (completion.mjs's applyFrame/applyCompletion) is read off the server's
   // JSON with no validation, and both files construct a UserError from it —

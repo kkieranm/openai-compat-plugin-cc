@@ -73,7 +73,9 @@ export const MAX_RAW = 256_000;
  * **Still excluded, each for its own reason:** `token-exhaustion` and
  * `token-reserve-cutoff` (both the model's own budget, never the server's),
  * `oversize` and other input refusals (another commit may survive
- * them), `output-too-large`, which is THIS HARNESS's own capture ceiling —
+ * them) — `stream-error-frame` among them, a refusal the server put inside
+ * the stream, whose hint says it was not re-sent — `output-too-large`, which
+ * is THIS HARNESS's own capture ceiling —
  * counting it would have the sweep diagnose the server for its own limit —
  * and `reasoning-only`, which fires only after a clean, server-terminated
  * stream: a genuine server-side stream drop is already covered separately by

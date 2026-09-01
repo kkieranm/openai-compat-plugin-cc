@@ -137,7 +137,8 @@ test('the ledger copies a flag the transport set, for the families with no other
   // write in `body.mjs`'s `bad-json` branch and watching all 415 tests stay green.
   // The sites are covered in `attempt-response-sites.test.js`; this is the copy.
   //
-  // Still worth its own test, because these three reasons are the ones with no
+  // Still worth its own test, because these three reasons (and `stream-error-frame`,
+  // whose site is witnessed in `attempt-response-sites.test.js`) are the ones with no
   // second witness: no `.status`, no completion shape, and — where the connection
   // died before any text — no measured prefill either. A `fail()` that stopped
   // reading the flag would lose them silently.

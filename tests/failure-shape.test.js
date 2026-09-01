@@ -4,7 +4,7 @@ import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
 import { SHAPE_REJECTED } from '../scripts/lib/attempt-outcome.mjs';
 import { createNegotiation, postWithDegrade } from '../scripts/lib/chat.mjs';
 import { emptyAnswer, finishAnswer } from '../scripts/lib/completion.mjs';
-import { isRetryable } from '../scripts/lib/failure-shape.mjs';
+import { COMPLETION_SHAPES, STREAM_ERROR_FRAME, isRetryable } from '../scripts/lib/failure-shape.mjs';
 
 // The rules in isolation. `retry.test.js` drives these through the real
 // CLI; these pin the two decisions that a request-count assertion cannot see —
@@ -244,4 +244,17 @@ test('a cap that has ALREADY expired mints no ledger entry at all', () => {
       assert.deepEqual(ledger.entries(), [], 'no request was sent, so no attempt may be recorded');
     },
   );
+});
+
+// A refusal the server put inside a 200 stream, before any text. Neither a
+// delivery failure (a resend is refused again) nor a completion shape (no
+// reply document was produced) — the whitelists say so, and this pins both.
+test('a refusal streamed before any text is neither retried nor a completion shape', () => {
+  assert.equal(
+    STREAM_ERROR_FRAME,
+    'stream-error-frame',
+    'the bench and end-to-end suites match this reason by its bare string; this line is the only link between the two',
+  );
+  assert.equal(isRetryable({ reason: STREAM_ERROR_FRAME }), false, 'the server said no; sending it again asks the same question');
+  assert.equal(COMPLETION_SHAPES.has(STREAM_ERROR_FRAME), false, 'bench reads that set as server-health evidence');
 });

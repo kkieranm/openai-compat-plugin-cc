@@ -87,7 +87,9 @@ function reachedTheModel(error, timings) {
  *   - `serverResponded` — the transport saw headers and said so. This one carries
  *     the post-response transport and protocol family: `sse.mjs`, `body.mjs` and
  *     `http.mjs` mint `protocol`, `bad-json` and `transport` failures with no
- *     `.status` and no completion shape.
+ *     `.status` and no completion shape, and `stream-collect.mjs` mints
+ *     `stream-error-frame` the same way — a refusal the server streamed before
+ *     any text, so no prefill was measured either.
  *   - a measured `prefillMs` — stamped at the first frame carrying actual text,
  *     so model output was served, so headers were. See below: this is the only
  *     witness that survives a site forgetting.

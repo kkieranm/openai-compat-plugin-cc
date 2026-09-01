@@ -1,6 +1,9 @@
 /**
  * The shapes in which a request dies without the model having said no — and
- * which of them are worth sending again.
+ * which of them are worth sending again. One exception is named below,
+ * `STREAM_ERROR_FRAME`: a refusal the server put inside a 200 stream, kept here
+ * because the whitelists that decide retry and completion-shape membership are
+ * here, and a refusal has to be absent from both by construction.
  *
  * Measured, not guessed. Across four full-corpus benchmark invocations,
  * **27 of 72 runs died server-side (37.5%)**, on both a dense 27B
@@ -24,6 +27,24 @@ export const EMPTY_COMPLETION = 'empty-completion';
  * Clean at the HTTP layer, truncated as an answer.
  */
 export const STREAM_UNFINISHED = 'stream-unfinished';
+
+/**
+ * The one shape here in which the server DID say no: an HTTP 200 stream whose
+ * data frame, arriving before any text on either channel, is an error envelope rather than a
+ * completion chunk (LM Studio streams a context overflow or a rejected sampling
+ * value this way, with `event: error` and no `[DONE]`). Tagged by
+ * `stream-collect.mjs`, which owns the before-any-text boundary.
+ *
+ * In neither `RETRYABLE` nor `COMPLETION_SHAPES`, each for its own reason. Not
+ * retryable because a refusal stated before generation begins is not a delivery
+ * failure: it is the streaming twin of an HTTP error status, which `assertOk`
+ * throws with no reason and which is never retried either — a resend is refused
+ * again. Not a completion shape because no reply document was produced, and
+ * bench's `serverUnwell` reads that set as server-health evidence, which a
+ * refusal is not. An error frame after text has streamed is a different case
+ * — a mid-generation failure a resend may survive — and stays `stream-unfinished`.
+ */
+export const STREAM_ERROR_FRAME = 'stream-error-frame';
 
 /**
  * Both channels were present and both were exactly empty.

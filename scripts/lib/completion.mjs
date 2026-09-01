@@ -70,6 +70,30 @@ export function applyFrame(answer, frame) {
   return applyText(answer, choice?.delta);
 }
 
+/**
+ * The server's text when a streamed frame is an error envelope rather than a
+ * completion chunk, else null.
+ *
+ * Shape only, never wording: a non-array object carrying its own `error`
+ * that is a non-null object or a non-empty string, and no own `choices` key. A frame
+ * with `choices` is a completion chunk whatever else it carries. The object
+ * spelling is the one LM Studio streams (`{error: {message}}`); the string
+ * spelling is how it words a non-streamed refusal, which never reaches here
+ * (`assertOk` refuses the non-2xx first) and is accepted only so a server that
+ * streams that spelling under a 200 is read the same way. Streamed frames only:
+ * `applyCompletion`'s whole-body path does not consult this. Whether the text
+ * means anything for the answer is the caller's question, since only it knows
+ * whether generation had begun.
+ */
+export function errorFrame(frame) {
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
+  if (Object.hasOwn(frame, 'choices') || !Object.hasOwn(frame, 'error')) return null;
+  const { error } = frame;
+  if (typeof error === 'string') return error.length > 0 ? error : null;
+  if (!error || typeof error !== 'object') return null;
+  return typeof error.message === 'string' ? error.message : JSON.stringify(error);
+}
+
 /** A whole non-streamed completion, folded through the same accumulator. */
 export function applyCompletion(answer, payload) {
   if (payload?.model) answer.model = payload.model;
