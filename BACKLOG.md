@@ -15,64 +15,30 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-13** — Vendor-dependent findings that need a second server to settle. ~~**Now seven.**~~
-  **Five, since the 2026-08-05 sweep split two of them out as OAI-84** — they stopped being
-  vendor-dependent when OAI-51 made the prose-parse path the default. Added
-  2026-07-28 from the OAI-6 built-in review: `refusedField` accepts 400/422 and pattern-matches the
-  quoted error body, so a validation error that *echoes the request JSON* contains `stream` and
-  `stream_options` and matches both capability rungs — two spurious retries with stderr claiming a
-  cause that was never established, before the real error surfaces. Bounded (each rung fires once)
-  and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
-  the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
-  one — read the server's status or error `type`/`code` field instead of its prose. **The
-  oversized-`max_tokens` rejection that was sub-item (4) folds in here too** — its design half was
-  decided 2026-08-30 (KEEP sending `max_tokens: 16384` on the unknown-window path: the finite budget
-  arms the OAI-115 watchdog on the unconstrained path and sizes `reviewSchemaFor`'s analysis ceiling,
-  and no available server rejects it — LM Studio and omlx both returned HTTP 200 for
-  `max_tokens: 99999999`, omlx even for `-5`; unanimous advisor + codex-rescue consensus, A over
-  drop/lower), leaving only the reactive half: classify-and-degrade a *real* server's oversized-`max_tokens`
-  rejection, which is the same read-the-status/`type`/`code`-not-prose work as (1) and (2) and waits
-  for the same second server that actually rejects it.
-  ~~**(7)** The capability negotiation was scoped to one `chatCompletion` call, so a review's
-  `response_format` fallback minted a fresh `createNegotiation` and re-offered a capability the schema
-  request already had refused — an asymmetry with the attempt ledger, which *was* deliberately
-  threaded across both calls — consuming a round trip, a duplicate `refused` entry, and a slice of
-  `--max-seconds` (an answerable review turned into a client-imposed deadline failure).~~ **SHIPPED
-  2026-08-30**: the `removed` capability state is now minted once per `requestFindings` and shared
-  across a review's calls (schema request → `response_format` fallback → salvage follow-ups) on the
-  `send` object; `createNegotiation(body, removed)` pre-applies each already-removed rung to the fresh
-  payload in `RUNGS` order, since seeding the set alone would re-refuse and hard-throw. Only the
-  `removed` state is shared, never `{payload, lastRung}`. Mutation-proved in
-  `tests/negotiation-record.test.js` (revert threading → 4 requests not 3; drop the pre-apply →
-  hard-throw). A review-ladder adversarial pass raised, and unanimous consensus dismissed as
-  unobserved and vendor-dependent (this item's own deferred class), the question of whether full
-  streaming (`stream`) can be refused *conditionally on* `response_format`: if a second server ever
-  did, sharing the `stream` rung across the `response_format` boundary could force a needless
-  non-streamed fallback — deferred here because no server does, the failure would be loud, and keying
-  the set by `response_format` presence would break the `stream_options` case, which is global (built
-  on every body regardless of `response_format`). **This closes only (7); the item stays live for
-  (1) and (2)** (and (4)'s reactive residue, now folded into them above).
-  The original five, from the OAI-4/OAI-10 built-in review, all vendor-
-  dependent and none reproducible against LM Studio. They need a second server to settle, so they
-  wait for one rather than being fixed blind. (1) `isFormatRejection` reads
-  ~~`error.message`~~ **`error.responseBody` (field attribution corrected 2026-08-24 against disk —
-  OAI-185, 2026-08-20, moved this read off `.message` entirely; the 400-char truncation itself is
-  unchanged, it just lands on `.responseBody` now, per `scripts/lib/provider.mjs:131`)**, which
-  ~~`client.mjs`~~ **`provider.mjs` (file attribution corrected 2026-08-14 against disk; `client.mjs`
-  has no truncation logic at all)** truncates to 400 characters — a server whose validation dump names `response_format`
-  later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
-  matcher fires on *any* 400 whose body echoes the request, asserting "rejected response_format"
-  as a cause it only guessed. ~~(3)~~ **and** ~~(5)~~ **left this item on 2026-08-05 — see the split
-  note below.** ~~(4) With the window unknown, `reserveFor` still puts `max_tokens: 16384` on the
-  wire, where `/oai:task` sends none — a server that rejects an oversized `max_tokens` fails for a
-  reason the plugin chose.~~ **(4)'s design half DECIDED 2026-08-30 (keep — see the fold-in note
-  under the top of this item); its reactive residue merged into (1)/(2).** Fixing (1) and (2)
-  properly probably means the server's status or error `type`/`code` field rather than prose, which
-  is an ADR 002 shape-not-name question and the reason this is one item rather than five.
-
-  **(1) and (2) are reachable only when `--structured-output` is passed** (no schema sent by
-  default, `review-request.mjs:206`) — narrower than when filed, and one more reason they wait for a
-  second server. (3) and (5) went the other way and moved to **OAI-84** 2026-08-05: the default
-  prose-parse path runs the same `parseFindings`, so they stopped being vendor questions and became
-  defects on the shipped default.
-
+- **OAI-229** — **LM Studio delivers a request refusal as an HTTP 200 stream frame, and the plugin
+  reads it as an empty completion and retries it.** Dated instance 2026-09-01, through the real CLI
+  (`evidence/013.md`): with `stream: true` — the default — a context overflow or an out-of-range
+  sampling value comes back as `200 text/event-stream` whose only event is `event: error` with
+  `data: {"error":{"message":…},"message":…}` and no `[DONE]`. `sse.mjs` drops `event:` lines by
+  design and yields the data frame; `applyFrame` finds no `choices`; `refuseUnusable` classifies it
+  `empty-completion`, which is on `failure-shape.mjs`'s RETRYABLE whitelist — so the run re-sent a
+  request that refuses identically three times, took 5.6s, and reported "returned a completion with
+  no message content" with the server's own sentence (*The number of tokens to keep from the initial
+  prompt is greater than the context length*) discarded. Reachable today via context overflow:
+  `context-guard.mjs` estimates 3.4 chars/token and CJK text tokenizes near 1, so a 200,308-char
+  prompt estimated at ~58,897 tokens overflowed a 154,624 window. Every out-of-range sampling value
+  LM Studio refused is also refused client-side by `parseNumber`, so those are not reachable; the
+  `response_format` refusals still arrive pre-stream as 400 and are unaffected. Fix (Codex-steered):
+  detect on the frame's SHAPE in `readSse` — a top-level `error` object and no `choices` — never on
+  the `event:` line the parser deliberately does not interpret; throw a `UserError` with a new
+  non-retryable reason (`stream-error-frame` — not `*-timeout`, which bench reads as timing),
+  `serverResponded: true`, the server's message bounded on `.responseBody` and never in `.message`;
+  not added to RETRYABLE or `COMPLETION_SHAPES`, not fed to the capability rungs or
+  `isFormatRejection` (both gate on HTTP 400/422), and `bench/lib/sweep-outcome.mjs`'s
+  `serverUnwell` must return false for it (a refusal, not server health). The overflow stays a loud
+  failure — the frame proves a refusal, not an oversize, and routing it into `review-ladder.mjs`'s
+  size degrade would conflate it with the separate chars-per-token estimation defect. Test: replay
+  the observed frame verbatim through the fake server, pin ONE request, the reason, the field
+  placement and the preserved server text; mutation-prove by reverting the detection (three
+  attempts and `empty-completion` return). Whether some of the 2026-07-30 "empty completion" sweep
+  failures were this shape is unknown — no raw body was kept — and is not claimed.

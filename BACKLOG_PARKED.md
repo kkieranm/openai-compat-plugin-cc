@@ -1,3 +1,94 @@
+## 2026-09-01 — parked: OAI-13, the second server arrived and produced neither shape
+
+`not worth doing` — the framing holds (`isFormatRejection` and `refusedField` read prose, and a
+prose matcher asserts a cause it only guessed), but the item's own condition for acting, a second
+server, was met on 2026-09-01 and settled nothing in its favour: LM Studio 0.4.21 and oMLX 0.6.4 were
+both probed directly (`evidence/013.md`, every request and verbatim body recorded) and neither
+produced (1) — a refusal naming `response_format` past the 400-character `.responseBody` cap (the
+longest observed is 280 bytes, and it does not grow with the request) — nor (2) — a 400/422 that
+echoes the request JSON (oMLX flattens to `body -> <field>: <message>` and names the field in
+`error.param`; LM Studio names its own `llm.prediction.<key>`). Nor did either server reject an
+oversized `max_tokens` ((4)'s reactive residue: both return 200 for 99,999,999) or refuse `stream`
+conditionally on `response_format` (the (7)-adjacent deferral). Nothing misfires, so there is
+nothing to fix; a shape-not-name read is now *designable* against oMLX's `error.param`, but LM
+Studio's `{error:"<prose>"}` envelope carries no `type`/`param`/`code` at all, so it would be two
+matchers, not one. The probe's one positive finding — LM Studio delivering a refusal as an HTTP 200
+`event: error` stream frame the plugin reads as `empty-completion` — is its own dated defect,
+filed as OAI-229 in `BACKLOG.md`, not this item. Codex-steered (park, with the residual bars below
+added at its objection); the body is reproduced in full below.
+
+**Reopening bar** — any ONE of these observed on a real server, with the request and verbatim body
+recorded:
+- a 400/422 whose body echoes the request JSON (so a refusal of another field carries
+  `response_format`/`stream`/`stream_options`);
+- a 400/422 naming `response_format` only past the 400th byte of its body;
+- a rejection of an oversized `max_tokens` (the unknown-window `16384`);
+- a capability refusal (`stream`, `stream_options`) that is conditional on `response_format` being
+  present.
+
+### OAI-13 — vendor-dependent findings that need a second server to settle
+
+- **OAI-13** — Vendor-dependent findings that need a second server to settle. ~~**Now seven.**~~
+  **Five, since the 2026-08-05 sweep split two of them out as OAI-84** — they stopped being
+  vendor-dependent when OAI-51 made the prose-parse path the default. Added
+  2026-07-28 from the OAI-6 built-in review: `refusedField` accepts 400/422 and pattern-matches the
+  quoted error body, so a validation error that *echoes the request JSON* contains `stream` and
+  `stream_options` and matches both capability rungs — two spurious retries with stderr claiming a
+  cause that was never established, before the real error surfaces. Bounded (each rung fires once)
+  and self-correcting, so it is filed rather than patched: tightening the prose match is exactly
+  the fragile guessing items (1) and (2) below already describe, and the honest fix is the same
+  one — read the server's status or error `type`/`code` field instead of its prose. **The
+  oversized-`max_tokens` rejection that was sub-item (4) folds in here too** — its design half was
+  decided 2026-08-30 (KEEP sending `max_tokens: 16384` on the unknown-window path: the finite budget
+  arms the OAI-115 watchdog on the unconstrained path and sizes `reviewSchemaFor`'s analysis ceiling,
+  and no available server rejects it — LM Studio and omlx both returned HTTP 200 for
+  `max_tokens: 99999999`, omlx even for `-5`; unanimous advisor + codex-rescue consensus, A over
+  drop/lower), leaving only the reactive half: classify-and-degrade a *real* server's oversized-`max_tokens`
+  rejection, which is the same read-the-status/`type`/`code`-not-prose work as (1) and (2) and waits
+  for the same second server that actually rejects it.
+  ~~**(7)** The capability negotiation was scoped to one `chatCompletion` call, so a review's
+  `response_format` fallback minted a fresh `createNegotiation` and re-offered a capability the schema
+  request already had refused — an asymmetry with the attempt ledger, which *was* deliberately
+  threaded across both calls — consuming a round trip, a duplicate `refused` entry, and a slice of
+  `--max-seconds` (an answerable review turned into a client-imposed deadline failure).~~ **SHIPPED
+  2026-08-30**: the `removed` capability state is now minted once per `requestFindings` and shared
+  across a review's calls (schema request → `response_format` fallback → salvage follow-ups) on the
+  `send` object; `createNegotiation(body, removed)` pre-applies each already-removed rung to the fresh
+  payload in `RUNGS` order, since seeding the set alone would re-refuse and hard-throw. Only the
+  `removed` state is shared, never `{payload, lastRung}`. Mutation-proved in
+  `tests/negotiation-record.test.js` (revert threading → 4 requests not 3; drop the pre-apply →
+  hard-throw). A review-ladder adversarial pass raised, and unanimous consensus dismissed as
+  unobserved and vendor-dependent (this item's own deferred class), the question of whether full
+  streaming (`stream`) can be refused *conditionally on* `response_format`: if a second server ever
+  did, sharing the `stream` rung across the `response_format` boundary could force a needless
+  non-streamed fallback — deferred here because no server does, the failure would be loud, and keying
+  the set by `response_format` presence would break the `stream_options` case, which is global (built
+  on every body regardless of `response_format`). **This closes only (7); the item stays live for
+  (1) and (2)** (and (4)'s reactive residue, now folded into them above).
+  The original five, from the OAI-4/OAI-10 built-in review, all vendor-
+  dependent and none reproducible against LM Studio. They need a second server to settle, so they
+  wait for one rather than being fixed blind. (1) `isFormatRejection` reads
+  ~~`error.message`~~ **`error.responseBody` (field attribution corrected 2026-08-24 against disk —
+  OAI-185, 2026-08-20, moved this read off `.message` entirely; the 400-char truncation itself is
+  unchanged, it just lands on `.responseBody` now, per `scripts/lib/provider.mjs:131`)**, which
+  ~~`client.mjs`~~ **`provider.mjs` (file attribution corrected 2026-08-14 against disk; `client.mjs`
+  has no truncation logic at all)** truncates to 400 characters — a server whose validation dump names `response_format`
+  later never triggers the degrade path, and `/oai:review` dies on a raw 400 instead. (2) The same
+  matcher fires on *any* 400 whose body echoes the request, asserting "rejected response_format"
+  as a cause it only guessed. ~~(3)~~ **and** ~~(5)~~ **left this item on 2026-08-05 — see the split
+  note below.** ~~(4) With the window unknown, `reserveFor` still puts `max_tokens: 16384` on the
+  wire, where `/oai:task` sends none — a server that rejects an oversized `max_tokens` fails for a
+  reason the plugin chose.~~ **(4)'s design half DECIDED 2026-08-30 (keep — see the fold-in note
+  under the top of this item); its reactive residue merged into (1)/(2).** Fixing (1) and (2)
+  properly probably means the server's status or error `type`/`code` field rather than prose, which
+  is an ADR 002 shape-not-name question and the reason this is one item rather than five.
+
+  **(1) and (2) are reachable only when `--structured-output` is passed** (no schema sent by
+  default, `review-request.mjs:206`) — narrower than when filed, and one more reason they wait for a
+  second server. (3) and (5) went the other way and moved to **OAI-84** 2026-08-05: the default
+  prose-parse path runs the same `parseFindings`, so they stopped being vendor questions and became
+  defects on the shipped default.
+
 ## 2026-08-28 — parked: four findings blocked on hardware or an unrecorded measurement
 
 Owner-directed park (Codex-steered) so the live top of `BACKLOG.md` distinguishes blocked findings
