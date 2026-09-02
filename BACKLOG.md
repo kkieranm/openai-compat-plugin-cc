@@ -15,21 +15,6 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
 
 ## Items
 
-- **OAI-231** — **A `stream-error-frame` sweep row renders as a bare code beside `stream-unfinished`, with no
-  `REASON_PARAGRAPHS` entry.** Raised twice by the OAI-229 review ladder (pass-1 fork-opener, pass-3
-  closer) and held as a widening beyond that plan, so it is the owner's call: `bench/lib/sweep-report.mjs`'s
-  `reasonSuffix` prints `the review failed (`stream-error-frame`)` and `bench/lib/reason-notes.mjs`
-  has no paragraph for it, so the morning reader sees a stream-named code next to a delivery failure
-  while the reason is deliberately excluded from `serverUnwell` and RESETS the outage streak — the one
-  accepted cost of OAI-229's design, explained nowhere in the report. Both recommendations agree: **add
-  the entry plus its `tests/bench-reason-notes.test.js` row** (Claude: the cost is acceptable only if
-  visible; Codex: an immediate follow-on documenting an already-shipped deterministic classification and
-  its otherwise-hidden streak consequence, consistent with the worth bar's purpose though in tension with
-  its dated-instance letter). Codex's proposed paragraph, current behaviour only: the server refused the
-  request inside an HTTP 200 stream before any content or reasoning text arrived — typically a context
-  overflow or a rejected sampling value on LM Studio; not retried because resending would meet the same
-  refusal; not counted as a server outage, and like any non-outage row it resets a live outage streak;
-  the next commit may still fare better.
 - **OAI-230** — **`context-guard.mjs`'s 3.4 chars/token estimate under-counts CJK-dense input by ~2.6x, so
   a prompt the guard passes overflows the server.** Dated instance 2026-09-01 (evidence/013.md): a
   200,308-character prompt of distinct CJK characters was estimated at ~58,897 tokens against a
@@ -40,3 +25,15 @@ deliberately not rebased (rewriting each one re-rots within hours — this repo'
   a design fork, not a constant: a script-aware estimate (count CJK/emoji code points near 1/token), a
   server-side count where the vendor exposes a tokenizer endpoint, or a documented limit — none is
   chosen here.
+
+- **OAI-232** — **`/oai:setup` says the default provider "cannot run here" while `/oai:task` on that
+  same provider answers.** Dated instance 2026-09-02 (OAI-231 verify step, LM Studio on :1234 with 7
+  models listed): `/oai:setup` reported for `lmstudio` (default) "reachable, but `/oai:task` cannot run
+  here: model `qwen3.8-27b-mlx` (defaultModel) is not served", listing `qwen/qwen3.8-27b` among the
+  available ids; an immediately following `/oai:task --file scripts/lib/errors.mjs …` answered on
+  `provider: lmstudio | model: qwen/qwen3.8-27b` in 27.3s. The two commands reach different
+  conclusions about the same profile and server state — `cmd-setup.mjs`'s served-model check against
+  `defaultModel` versus the path `/oai:task` actually took (a substitution the footer may report, or
+  `planSelection` choosing a loaded model; the verify transcript was tail-truncated, so which is
+  unrecorded). Observed, not diagnosed; no fix proposed here. Worth bar: a dated instance in which the
+  setup command's operator-facing verdict was wrong about whether a task would run.

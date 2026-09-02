@@ -1,3 +1,39 @@
+## 2026-09-02 — OAI-231 closed: a `stream-error-frame` row is explained on both report surfaces (`de3c997`)
+
+Shipped: `bench/lib/sweep-report.mjs` gains a deliberately PARTIAL reason-keyed `FAILED_WHY` table
+(an unlisted reason keeps the generic `WHY.failed`, true of every failed row), selected by
+`failedExplanation` through a shared `ownProse` own-property/non-blank helper, with the outcome
+dispatch in one `explanationFor`; `bench/lib/reason-notes.mjs` gains a `REASON_PARAGRAPHS` entry
+carrying no streak clause; a `.claude/REPO_TRAPS.md` entry records the surrogate-oracle class.
+**The item's own framing was wrong about the surface**: `REASON_PARAGRAPHS` renders only in the bench
+per-case report (`reliability-report.mjs`, per failed attempt), never in the sweep report the item's
+"morning reader" reads, where the row came from `WHY.failed` + `reasonSuffix`; and the outage streak
+it should explain is sweep-only. Codex confirmed all four probe citations; the owner re-scoped to both
+surfaces (Codex steered the same). Verified: 1525/1525; four mutations at the real path (key deleted →
+three named reds; dispatch arm disabled → two; streak wording added to the bench paragraph → the leak
+guard; `replayStreak`'s reset gate mutated both ways → the streak and zero-streak tests); live plugin
+load and a delegation round trip on `qwen/qwen3.8-27b`.
+
+Review: plan dual-approved at ep1 r2 (after a vacuous-test finding), ep2 r3 (post-simplify factoring
+recorded), ep3 r4 (Files paragraph gained REPO_TRAPS.md, found by the pass-6 closer). Ladder: pass 1
+full → passes 2–6 diff → pass 7 full, dual-approved on pass digest `feecc8b5fd50`; five fix batches,
+each narrowing one clause of the same `FAILED_WHY` sentence to what the code backs — the prose had been
+carried verbatim from the tracker's proposed paragraph: "rejected sampling value" (unreachable through
+the client validators), "like any non-outage row" (a skipped row resets nothing), an unconditional
+reset (only a live streak resets), "a resend meets the same refusal" (unproven; OAI-229 disclosed it),
+"typically a context overflow" (one instance; any grounded form self-refutes on a row that IS an
+instance, so deleted), "HTTP 200" (`assertOk` admits any 2xx). Exempt post-approval batch: three
+comment corrections. Yield per stage at the terminal pass: acceptance-audit 0, fork-opener 2 (exempt),
+codex-adversarial 0, codex-plain 0, agent-closer 0 blocking. Dismissed with reasons: an assertion inert
+to a lone `hasOwn→in` mutation (the file's two-guard design makes any single mutation
+output-invisible); a recovery-path integration test (`writeSweep` renders through the same `renderSweep`
+the fixtures drive); a foreign row lacking `startedAt` (raised three times — `startedAt` stamped since
+2026-08-08, the reason exists since 2026-09-01, `command grep -rl "stream-error-frame" bench/results` →
+0, and recovery mints `unrecorded`, never `failed`). Recorded, not filed: the suite's row fixture
+carries no `startedAt`, so the row test exercises the prose while the `replayStreak` tests exercise the
+transition; three settled-but-misreadable clauses ("so it resets", the independence hedge, "says
+nothing about server health"). Residue filed: OAI-232.
+
 ## 2026-09-01 — OAI-229 closed: a refusal streamed as HTTP 200 is a refusal, not an empty completion (`9860a8b`)
 
 Shipped: `collectStream` (`scripts/lib/stream-collect.mjs`) classifies a data frame that is an error
