@@ -335,7 +335,10 @@ reader in prose, and `bench/lib/sweep-report.mjs`'s `STARVED_WHY` is total over 
 for its own reason, while a reason that is unrecognised, blank or not text at all gets a sentence of
 its own; `reasonSuffix` is the one place a row prints the reason itself, and `displayReason` bounds
 and escapes every value it prints, because `unrecorded` carries a filesystem error message rather
-than a code.
+than a code. `sweep-report.mjs`'s `FAILED_WHY` is the partial reason-keyed prose a `failed` sweep row
+consults before `WHY.failed` (an unlisted reason keeps the generic sentence), where `stream-error-frame`'s
+not-an-outage / streak-reset consequence is stated, with `reason-notes.mjs`'s `REASON_PARAGRAPHS` carrying
+that code's attempt-level twin for the bench report without the sweep-only streak clause.
 
 `scripts/lib/review-unparsed.mjs`'s `unparsedReply` is a post-hoc classifier, not a request-failure
 path: `token-exhaustion` (`finish_reason: 'length'`) and the reasoning-only fallthrough to

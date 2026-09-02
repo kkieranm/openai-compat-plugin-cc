@@ -8,9 +8,11 @@
 //
 // WHAT THESE ASSERTIONS DO NOT ESTABLISH. Most match substrings of rendered
 // output, so they pin WHICH sentence a row rendered and whether a forbidden
-// phrase is absent; the totality test also reads the source tables directly.
-// None can tell whether a sentence is TRUE of the row it describes; a false
-// sentence here is caught by review, not by this file. So the truth of
+// phrase is absent; the totality and pairing tests also read the source tables
+// directly. None can tell whether a sentence is TRUE of the row it describes —
+// the streak clause's TRANSITION is driven directly below, but that the prose
+// matches it is still read, not asserted; a false sentence here is caught by
+// review, not by this file. So the truth of
 // rendered prose is checked by a reader, and the
 // sentences are kept to directly observed facts to shrink what a reader has to
 // check; treating a green run as evidence that the report is honest is the
@@ -18,12 +20,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { statSync } from 'node:fs';
-import { STARVED_WHY, renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
+import { FAILED_WHY, STARVED_WHY, renderSweep, writeSweep } from '../bench/lib/sweep-report.mjs';
 import { tempDir } from './helpers.mjs';
 // Read from where it is DEFINED, never copied: the totality test below is a
 // consumer of the classifier's own list, so relocating that list changes an
 // import path here and nothing else.
-import { STARVED_REASONS } from '../bench/lib/sweep-outcome.mjs';
+import { STARVED_REASONS, isOutage } from '../bench/lib/sweep-outcome.mjs';
+import { replayStreak } from '../bench/lib/sweep-health.mjs';
 
 const base = {
   startedAt: '2026-08-08T23:00:00.000Z',
@@ -275,6 +278,93 @@ test('an unrecognised starved reason reads as unrecognised, never as having run 
 test('a starved reason that names an Object.prototype key does not select a function', () => {
   const out = render(commit({ outcome: 'starved', reason: 'toString' }));
   assert.match(out, /no explanation is defined/);
+});
+
+// A `failed` row whose reason a reader would misread gets prose of its own:
+// `stream-error-frame` is a refusal the server put inside a successful response's stream,
+// deliberately not an outage — and so it RESETS any live outage streak, a cost the
+// health section reports only as an aggregate count. The row is where the
+// reader meets the code, so the row is where the sentence is.
+test('a failed stream-error-frame commit is explained as an in-stream refusal, not a generic failure', () => {
+  const out = render(commit({ outcome: 'failed', reason: 'stream-error-frame' }));
+  assert.ok(out.includes(FAILED_WHY['stream-error-frame']), 'the row does not render its own prose');
+  assert.match(out, /\(`stream-error-frame`\)/, 'the code is still appended after the sentence');
+  assert.match(out, /resets any live outage streak/);
+  // The conditional wording is the claim: a reset happens only when a streak is
+  // live, so the unconditional sentence is pinned OUT.
+  assert.doesNotMatch(out, /resets a live outage streak/);
+  assert.doesNotMatch(out, /the review failed/, 'the generic sentence must not print beside the specific one');
+});
+
+test('every FAILED_WHY entry is non-blank prose for a failed-not-starved reason, and renders itself', () => {
+  // The non-vacuity anchor. Deleting the table's sole key would otherwise make
+  // the loop below assert nothing and stay green.
+  assert.ok(Object.hasOwn(FAILED_WHY, 'stream-error-frame'), 'the entry this table was written for is missing — the loop below would assert nothing');
+  for (const [reason, prose] of Object.entries(FAILED_WHY)) {
+    assert.equal(typeof prose, 'string', `failed reason ${reason} has no string prose`);
+    assert.notEqual(prose.trim(), '', `failed reason ${reason} has blank prose`);
+    // A starved reason never reaches this table — `explanationFor` sends it to
+    // `starvedExplanation` first — so an entry for one would be dead prose.
+    assert.ok(!STARVED_REASONS.has(reason), `FAILED_WHY has prose for ${reason}, which is a starved reason and never a failed one`);
+    const out = render(commit({ outcome: 'failed', reason }));
+    assert.ok(out.includes(prose), `failed reason ${reason} does not render its own prose`);
+  }
+});
+
+// The one mechanisable pairing between the prose and the behaviour it
+// describes: a sentence claiming the row resets the outage streak is true only
+// of a reason `isOutage` rejects. Copying it onto a reason that IS an outage
+// would have the report contradict the health section beside it.
+test('a FAILED_WHY entry that claims the row resets the outage streak is one isOutage rejects', () => {
+  let checked = 0;
+  for (const [reason, prose] of Object.entries(FAILED_WHY)) {
+    if (!/outage streak/.test(prose)) continue;
+    checked += 1;
+    assert.equal(isOutage({ outcome: 'failed', reason }), false, `${reason} claims to reset the streak but isOutage counts it`);
+  }
+  assert.ok(checked > 0, 'no entry claims a streak reset — the pairing above was checked against nothing');
+});
+
+// The pairing above is a surrogate: `isOutage` rejecting the reason is necessary
+// for the prose's claim but not the claim itself, which is a state transition in
+// `replayStreak`. This drives that transition directly — an attempted
+// stream-error-frame row between two outages must zero the live streak, so the
+// two outages never read as one consecutive streak.
+test('an attempted stream-error-frame row resets any live outage streak, as its prose says', () => {
+  const at = (n) => `2026-09-02T00:0${n}:00.000Z`;
+  const outage = (n) => ({ outcome: 'failed', reason: 'transport', startedAt: at(n) });
+  const replay = replayStreak([outage(1), { outcome: 'failed', reason: 'stream-error-frame', startedAt: at(2) }, outage(3)]);
+  assert.equal(replay.attempted, 3, 'all three rows carry startedAt, so all three are attempted');
+  assert.equal(replay.resets, 1, 'the refusal row zeroed the live streak');
+  assert.equal(replay.longest, 1, 'the two outages never joined into one streak');
+  assert.deepEqual(replay.outages.map((entry) => entry.reason), ['transport', 'transport']);
+});
+
+// The other half of "any live": with no streak live there is nothing to reset,
+// and the row must not be counted as a reset — the `streak > 0` gate in
+// `replayStreak`. Two orderings, neither preceded by an outage: the refusal as
+// the first attempted row, and the refusal after a clean row.
+test('a stream-error-frame row with no live streak resets nothing', () => {
+  const at = (n) => `2026-09-02T00:0${n}:00.000Z`;
+  const refusal = (n) => ({ outcome: 'failed', reason: 'stream-error-frame', startedAt: at(n) });
+  const first = replayStreak([refusal(1), { outcome: 'clean', startedAt: at(2), findings: [] }]);
+  assert.equal(first.resets, 0, 'a first-row refusal had no streak to reset');
+  assert.equal(first.longest, 0);
+  const afterClean = replayStreak([{ outcome: 'clean', startedAt: at(1), findings: [] }, refusal(2)]);
+  assert.equal(afterClean.resets, 0, 'a refusal after a clean row had no streak to reset');
+  assert.equal(afterClean.longest, 0);
+});
+
+// Partial by design: a failed reason with no entry keeps the generic sentence,
+// which is true of it, plus its code — never an "unrecognised" sentence, and
+// never an Object.prototype value for a reason that names one.
+test('an unlisted failed reason keeps the generic sentence and its code', () => {
+  assert.match(render(commit({ outcome: 'failed', reason: 'some-future-reason' })), /the review failed \(`some-future-reason`\)/);
+  for (const reason of ['constructor', 'toString']) {
+    const out = render(commit({ outcome: 'failed', reason }));
+    assert.match(out, /the review failed/, `${reason} did not fall back to the generic sentence`);
+    assert.doesNotMatch(out, /function|native code/, `${reason} reached Object.prototype`);
+  }
 });
 
 // A ledger written by another build can carry a starved row with no usable

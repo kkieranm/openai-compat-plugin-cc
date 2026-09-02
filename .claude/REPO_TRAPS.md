@@ -1244,3 +1244,21 @@ process.exit()", scanning an explicit `CLI_ENTRYPOINTS` list (rather than a repo
 would have to grow the same allowlist by hand) with comments stripped first — this defect class's own
 explanatory prose, including this entry's own reference implementation
 (`scripts/oai-companion.mjs`), inherently mentions the banned call by name.
+
+## A rendered claim about a state transition, pinned only by a surrogate predicate
+
+Confirmed once (OAI-231, review-ladder pass 1, `codex-adversarial`). `bench/lib/sweep-report.mjs`'s
+`FAILED_WHY` prose for `stream-error-frame` says the row "resets any live outage streak" — a state
+transition in `bench/lib/sweep-health.mjs`'s `replayStreak`. The test written for it asserted only
+`isOutage(row) === false`, which is necessary for the claim but is not the claim: `replayStreak`
+separately filters attempted rows on `startedAt` and owns the `resets` increment, so a change to
+either would leave that test green while the rendered row still promised a reset that never happens.
+The same shape recurs whenever report prose describes what ANOTHER module does with the row rather
+than what the renderer prints.
+
+The rule: when rendered prose asserts a behaviour of a module other than the renderer, the test that
+pins the prose drives THAT module's transition directly on the row shape the prose describes, and the
+classifier/predicate check stays as a second, separate guard — never as the only one.
+**Guarded by** `tests/sweep-report.test.js` — "an attempted stream-error-frame row resets any live outage
+streak, as its prose says" (behavioural, not structural: no guard can tell a surrogate assertion from
+a direct one by reading it, so this stays a review lens).

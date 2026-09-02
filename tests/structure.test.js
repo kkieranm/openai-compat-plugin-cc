@@ -592,7 +592,7 @@ const SWEEP_SAFE_EXPRESSIONS = {
     'evidence',             // built with intentional > and safeBlockquoteLines
     'line',                 // a built finding line (its parts wrapped)
     'note',                 // an incompleteness() sentence — fixed prose / wrapped in sweep-notes
-    'explanation',          // fixed prose (WHY table via Object.hasOwn, or starvedExplanation)
+    'explanation',          // fixed prose — explanationFor: WHY table via Object.hasOwn, starvedExplanation, or failedExplanation
     'why',                  // explanation + reasonSuffix, both safe
     'cause',                // fixed prose composed from wrapped scanLimit/walked
     'indent',               // layout whitespace — MUST NOT be wrapped (safeInline flattens it)

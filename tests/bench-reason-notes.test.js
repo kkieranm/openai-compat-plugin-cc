@@ -292,6 +292,18 @@ test('the shape-rejected paragraph follows the refused one it calls itself the t
   assert.ok(refusedAt < twinAt, 'the twin reference must point BACKWARDS at printed prose');
 });
 
+test('stream-error-frame is explained as a refusal inside a successful response\'s stream, never a transport failure or a drop', () => {
+  const para = paragraphAbout(renderWith('stream-error-frame'), 'stream-error-frame');
+  assert.match(para, /refused inside the stream of a successful HTTP response/);
+  assert.match(para, /before any content or reasoning text/);
+  assert.match(para, /\*\*not retried\*\*/);
+  assert.match(para, /neither a transport failure nor a dropped request/);
+  // The sweep-only clause must not leak into this attempt-level paragraph: the
+  // outage streak is `sweep-health.mjs`'s, and this report has none. The sweep
+  // report's own `FAILED_WHY` entry is where that consequence is stated.
+  assert.doesNotMatch(para, /streak|outage/, 'a sweep-only consequence leaked into the bench paragraph');
+});
+
 test('token-reserve-cutoff is explained as a client-side cutoff, never a server symptom', () => {
   const markdown = renderWith('token-reserve-cutoff');
   const para = paragraphAbout(markdown, 'token-reserve-cutoff');

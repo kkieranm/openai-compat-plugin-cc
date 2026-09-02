@@ -160,6 +160,11 @@ export const REASON_PARAGRAPHS = [
     + ' but also pre-response failures whose code says to try again: `EAI_AGAIN` is a resolver\'s own'
     + ' "ask again", and a pre-response `ECONNRESET` carried no response at all. The axis is'
     + ' retryability, never blame.'],
+  ['stream-error-frame',
+    '`stream-error-frame` below is a request the server **refused inside the stream of a successful HTTP'
+    + ' response**, before any content or reasoning text arrived — so it is neither a transport failure'
+    + ' nor a dropped request, and it is **not retried**: this client classifies such a refusal as'
+    + ' non-retryable. The row counts as a failed attempt and says nothing about server health.'],
   ['token-reserve-cutoff',
     '`token-reserve-cutoff` below is a **client-side** cutoff, not a server symptom: the model was'
     + ' actively generating reasoning and spending the request\'s own `max_tokens` pool on it, so the'

@@ -38,6 +38,21 @@ export const STARVED_WHY = {
 };
 
 /**
+ * Why a FAILED commit produced no review, in the reader's terms, keyed on the
+ * reason — only for the reasons whose bare code a reader would misread.
+ * Deliberately PARTIAL, unlike `STARVED_WHY`: a failed row whose reason has no
+ * entry here keeps `WHY.failed`, so an unlisted or foreign-build reason reads
+ * as a generic failure with its code appended, never as an unrecognised one.
+ */
+export const FAILED_WHY = {
+  // Excluded from `serverUnwell` on purpose (`sweep-outcome.mjs`), so the row
+  // is a non-outage and `replayStreak` zeroes any live streak on it — the reader
+  // is told that here, on the row, because the health section reports only the
+  // aggregate reset count.
+  'stream-error-frame': 'the server refused the request inside the stream of a successful HTTP response, before any content or reasoning text arrived; it was not re-sent — this client treats such a refusal as non-retryable; it is not counted as a server outage, so it resets any live outage streak, and the next commit may still fare better',
+};
+
+/**
  * What a `starved` row says when the table above has no prose for its reason.
  *
  * Not merely defensive: `sweep-ledger.mjs`'s `readLedger` accepts any truthy
@@ -83,15 +98,10 @@ function reasonPresent(reason) {
 }
 
 /**
- * `Object.hasOwn` rather than `in`, so a reason of `toString` cannot reach for
- * `Object.prototype`; the value-shape check below independently rejects
- * everything that route could return, so the two are belt and braces and either
- * alone would give the same output.
- *
- * The value check is not redundant against the table itself: an entry added
- * with an empty or non-string value would otherwise render as blank prose, or
- * as `undefined`, under a reason code — which reads as a report that knows
- * something and declines to say it.
+ * What a `starved` row says: two arms for a reason that is not a usable code
+ * (absent or blank, and not text — the split `reasonSuffix` makes), then the
+ * table's own prose or the unrecognised sentence — never token-exhaustion's,
+ * which used to be inherited.
  */
 function starvedExplanation(reason) {
   if (!reasonPresent(reason)) {
@@ -99,14 +109,56 @@ function starvedExplanation(reason) {
       ? MISSING_STARVED_REASON
       : UNUSABLE_STARVED_REASON;
   }
-  const prose = Object.hasOwn(STARVED_WHY, reason) ? STARVED_WHY[reason] : undefined;
-  return typeof prose === 'string' && prose.trim() !== '' ? prose : UNRECOGNISED_STARVED;
+  return ownProse(STARVED_WHY, reason) ?? UNRECOGNISED_STARVED;
+}
+
+/**
+ * A table's own, non-blank prose for a reason, else `undefined`.
+ *
+ * `Object.hasOwn` rather than `in`, so a reason of `toString` cannot reach for
+ * `Object.prototype`; the value-shape check independently rejects everything
+ * that route could return — belt and braces, and not redundant against the
+ * table itself, since an entry added blank or non-string would otherwise
+ * render as nothing, or as `undefined`, under a reason code. The two
+ * explanation functions differ only in what they say when this returns nothing.
+ */
+function ownProse(table, reason) {
+  const prose = Object.hasOwn(table, reason) ? table[reason] : undefined;
+  return typeof prose === 'string' && prose.trim() !== '' ? prose : undefined;
+}
+
+/**
+ * What a `failed` row says: its reason's own prose where `FAILED_WHY` has one,
+ * else the generic `WHY.failed` — which, unlike `UNRECOGNISED_STARVED`'s role
+ * above, is TRUE of every failed row, so no unrecognised sentence is needed.
+ *
+ * `reasonPresent` before `Object.hasOwn`, so a non-string or blank reason never
+ * indexes the table, and the same own-property discipline as
+ * `starvedExplanation` keeps `constructor`/`toString` off `Object.prototype`.
+ */
+function failedExplanation(reason) {
+  return (reasonPresent(reason) ? ownProse(FAILED_WHY, reason) : undefined) ?? WHY.failed;
+}
+
+/**
+ * The sentence a coverage row opens with, chosen by outcome — and, for the two
+ * outcomes with reason-keyed prose, by reason. `Object.hasOwn` on `WHY`, not
+ * `??`: a foreign-build `entry.outcome` of `constructor`/`__proto__` would
+ * otherwise read an inherited `Object.prototype` value (a function's source,
+ * carrying `{`/`(`) as the explanation. Every branch returns a literal from
+ * this file, which is what keeps the allowlisted `explanation`/`why`
+ * interpolations in `coverageSection` provably fixed prose.
+ */
+function explanationFor(entry) {
+  if (entry.outcome === 'starved') return starvedExplanation(entry.reason);
+  if (entry.outcome === 'failed') return failedExplanation(entry.reason);
+  return Object.hasOwn(WHY, entry.outcome) ? WHY[entry.outcome] : 'no explanation recorded';
 }
 
 const WHY = {
   // No `starved` key, and NOT because nothing could reach it — a foreign-build
   // ledger can carry a starved row with a reason this build never heard of, as
-  // the fallback docstring above sets out. It is because the coverage row sends
+  // the fallback docstring above sets out. It is because `explanationFor` sends
   // every starved row to `starvedExplanation` before this table is consulted,
   // so a key here could only ever be dead — and, written for `token-exhaustion`
   // alone, would be false for the rows that reached it if it ever were not.
@@ -248,15 +300,9 @@ function coverageSection(entries) {
   for (const entry of missed) {
     // `entry.reason` is the code the classifier captured; without it every
     // failure renders identically and a `bad-json` night is indistinguishable
-    // from a `deadline-timeout` one. For `starved` specifically, the reason
-    // also picks WHICH prose applies — see `STARVED_WHY` above.
-    // `Object.hasOwn`, not `??`: a foreign-build `entry.outcome` of `constructor`/`__proto__` would
-    // otherwise read an inherited `Object.prototype` value (a function's source, carrying `{`/`(`) as
-    // the explanation. Matches `starvedExplanation`'s own-property discipline, and is what keeps the
-    // allowlisted `explanation`/`why` provably fixed prose.
-    const explanation = entry.outcome === 'starved'
-      ? starvedExplanation(entry.reason)
-      : (Object.hasOwn(WHY, entry.outcome) ? WHY[entry.outcome] : 'no explanation recorded');
+    // from a `deadline-timeout` one. For `starved` and `failed` the reason
+    // also picks WHICH prose applies — see `STARVED_WHY`/`FAILED_WHY` above.
+    const explanation = explanationFor(entry);
     const why = `${explanation}${reasonSuffix(entry.reason)}`;
     lines.push(`- ${subjectLine(entry)} — **${safeInline(entry.outcome)}**: ${why}${answeredBy(entry)}`);
     if (hasFindings(entry)) {
