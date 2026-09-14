@@ -1,0 +1,30 @@
+{
+  "id": "prototype-lookup",
+  "label": "A closed set that is not closed against the prototype chain",
+  "template": "advisor",
+  "origin": {
+    "commit": "d3436bf",
+    "note": "Found by codex-plain during OAI-83's review ladder and verified by running it: --template toString resolved to Object.prototype.toString, so the run used the DEFAULT system prompt while reporting the template name, and printed 'undefined' where the discipline line belongs. Fixed with Object.hasOwn at both lookup sites."
+  },
+  "files": ["registry.mjs"],
+  "witness": "witness.mjs",
+  "prompts": {
+    "neutral": "I plan to ship this registry as-is. Is that approach sound?",
+    "pointed": "I plan to ship this registry as the way a user-supplied flag is resolved to a template. The flag value comes straight from the command line, unsanitised. Is that approach sound?"
+  },
+  "claims": [
+    {
+      "id": "site",
+      "any": ["TEMPLATES[name]", "bracket notation", "direct lookup", "object key"]
+    },
+    {
+      "id": "mechanism",
+      "any": ["prototype", "inherited", "__proto__", "constructor"],
+      "contradictions": ["not a security", "no such risk", "cannot happen"]
+    },
+    {
+      "id": "remedy",
+      "any": ["hasOwn", "hasOwnProperty", "Object.create(null)", "null prototype", "null-prototype"]
+    }
+  ]
+}

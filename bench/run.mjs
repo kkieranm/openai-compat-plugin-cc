@@ -1,0 +1,362 @@
+#!/usr/bin/env node
+// The benchmark: run the shipped /oai:review against known-defective snapshots
+// of this repo's own history, and score what comes back.
+//
+// It drives the real CLI through `--json`, never a copy of the pipeline. That
+// is the whole design constraint: a harness that reimplemented the request
+// would measure a reimplementation, and report the number as the reviewer's.
+// The corpus straddles the context ladder on purpose — `structured` is large
+// enough to fall to the diff-only rung — so a copy would also have to hold a
+// second version of the fit decision, free to disagree with the first.
+//
+// Deliberately not part of `npm test`: it needs a real model and is
+// non-deterministic.
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from '../scripts/lib/args.mjs';
+import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
+import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
+import { parseReviewLenses } from '../scripts/lib/review.mjs';
+import { UserError } from '../scripts/lib/errors.mjs';
+import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
+import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
+import { boundNote } from './lib/sweep-ledger.mjs';
+import { persist, reportIdentity } from './lib/record.mjs';
+import { renderReport } from './lib/report.mjs';
+import { recall, scoreRun } from './lib/score.mjs';
+import { runWithWarmUp, warmUpPair } from './lib/warm-up.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
+
+const SPEC = {
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note', 'passes', 'lens'],
+  booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
+  repeatableFlags: ['case'],
+};
+
+/**
+ * One value per bench invocation, so `--cold` runs cannot collide with each
+ * other *or* with a run from an hour ago.
+ *
+ * A UUID rather than a timestamp, which was the first draft and is wrong twice:
+ * two invocations launched inside one clock tick would share it, and a wall
+ * clock can step backwards onto a value already used. What has to be true is
+ * that the server has never seen this prefix, and only uniqueness delivers that.
+ */
+const INVOCATION = randomUUID();
+
+/**
+ * The command line for one run of one case.
+ *
+ * Lifted out of `reviewOnce` at the function size budget, and the seam is a
+ * clean one: this decides *what to ask for*, while the caller decides what to do
+ * with the answer — including how to record a failure, which is the half that
+ * kept growing.
+ */
+// EXPORTED for `tests/bench-review-flags.test.js`. `main()` here is unexported and
+// runs only under the `process.argv[1]` guard, so nothing could reach the command
+// line this builds — which is how `--structured-output` came to be missing from
+// SPEC for as long as it was. Exporting the composition is the seam, not another
+// end-to-end test.
+export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
+  const flags = ['review', ...materializedArgs, '--json'];
+  if (diffOnly) flags.push('--diff-only');
+  // Without this the corpus's large cases — the only ones that reliably
+  // starve the model — could not be run under a schema at all, leaving no way
+  // to establish whether the schema causes the transport drops or fixes token
+  // exhaustion. The flag exists to ask that question,
+  // NOT because a schema is a fix: `commands/review.md` records that on this
+  // backend the grammar exhausts its lexer after ~14k generated tokens and takes
+  // the model process with it. An arm run with this on is measuring one failure
+  // class against the other, and its report says so.
+  if (options['structured-output']) flags.push('--structured-output');
+  // Unique per run *and* per invocation. Without the run index every run of a
+  // case would share a prefix and only the first would be cold — the exact
+  // thing --cold exists to prevent, reintroduced by the fix.
+  if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
+  // The manifest may pin its own provider/model, so a case can name the model
+  // it is a fair test of; the command line overrides it. This is what makes
+  // This is what makes a cross-model pass configuration rather than a rewrite.
+  const provider = options.provider ?? caseDef.provider;
+  const model = options.model ?? caseDef.model;
+  if (provider) flags.push('--provider', provider);
+  if (model) flags.push('--model', model);
+  // No manifest fallback for the budgets, unlike provider/model: a case pins
+  // the model it is a fair test of, but how long the harness is willing to
+  // wait is a property of this invocation, not of the case. Command line only.
+  if (options.timeout) flags.push('--timeout', options.timeout);
+  if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
+  // The two sampling budgets `/oai:review` already accepts. `--max-tokens` is the
+  // one that made reviews complete on a starved model (a run that spent its whole
+  // window reasoning and never answered), and `--temperature` is forwarded beside
+  // it; `!== undefined` because `--temperature 0` is a legitimate deterministic
+  // setting that a truthy check would silently drop.
+  if (options['max-tokens'] !== undefined) flags.push('--max-tokens', options['max-tokens']);
+  if (options.temperature !== undefined) flags.push('--temperature', options.temperature);
+  // The control arm: `--max-attempts 1` reproduces the pre-retry behaviour, so
+  // one corpus run can measure the failure rate with retry and another without.
+  if (options['max-attempts']) flags.push('--max-attempts', options['max-attempts']);
+  // The pass strategy, forwarded EXACTLY as the operator gave it — never a derived
+  // value. `--passes` and `--lens` are mutually exclusive (validateOptions refuses
+  // both), so at most one fires; forwarding a synthesised `--passes` for a lens run
+  // would send both and the review CLI would refuse every case. The effective pass
+  // count a comparison needs is derived from `--lens` where it applies, in
+  // `compare-model.mjs`, not written back here.
+  if (options.passes) flags.push('--passes', options.passes);
+  if (options.lens) flags.push('--lens', options.lens);
+  return flags;
+}
+
+/**
+ * One review, through the real command.
+ *
+ * A non-zero exit is recorded rather than thrown: one case failing must not
+ * cancel the rest, and a run that failed is data — "the reviewer refused this
+ * input" is a result about the reviewer, and silently missing rows would make
+ * a partial bench read as a complete one.
+ */
+function reviewOnce(caseDef, options, runIndex) {
+  // --diff-only cannot apply to a `file` case: there is no diff, and the CLI
+  // refuses the combination. So the flag lands on some cases and not others, and
+  // the report has to say which — an A/B switch applied to four cases of six
+  // while reading as applied to all six is not a comparison any more. Declared
+  // out here because the failure path reports it too.
+  const diffOnly = Boolean(options['diff-only']) && caseDef.mode === 'commit';
+  // Materialization is inside the try, not above it. Every git call in
+  // corpus.mjs throws UserError, and building the repo happens per case, after
+  // model time has already been spent on earlier ones — so a throw here used to
+  // escape runCase and cases.map() to the top-level handler, discarding every
+  // completed case's results and leaking the temp repo, against this function's
+  // own promise that one case failing must not cancel the rest.
+  let dir;
+  try {
+    const materialized = materialize(caseDef, ROOT);
+    dir = materialized.dir;
+    const flags = reviewFlags(materialized.args, caseDef, options, { diffOnly, runIndex });
+
+    // stderr is captured rather than inherited: a failed run's reason is the
+    // evidence this harness exists to keep, and letting it scroll past into the
+    // terminal would leave the record saying only "it failed". The per-run
+    // progress line above already supplies the liveness that costs.
+    const stdout = execFileSync(process.execPath, [COMPANION, ...flags], {
+      cwd: dir,
+      encoding: 'utf8',
+      maxBuffer: 64e6,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return outcomeFor(stdout, diffOnly);
+  } catch (error) {
+    return failedRun(error, caseDef, options, diffOnly);
+  } finally {
+    // Only if it got far enough to exist; materialize may be what threw.
+    if (dir) cleanup(dir);
+  }
+}
+
+/**
+ * A run that produced nothing, as the record keeps it. Lifted out of
+ * `reviewOnce` at the function size budget.
+ *
+ * The whole of stderr, not one line of it. Taking the last line returned the
+ * UserError's *hint* — the companion writes the message and the hint as separate
+ * lines — so the record showed "Raise --max-tokens…" as the reason a run failed
+ * while "ran out of tokens" was discarded. Presenting the remedy as the
+ * diagnosis is this repo's signature class, in the very field whose comment
+ * calls itself the evidence the harness exists to keep.
+ *
+ * `reason` is the category beside the prose, read from the command's own
+ * `--json` envelope rather than matched out of stderr.
+ */
+export function failedRun(error, caseDef, options, diffOnly) {
+  const said = String(error.stderr ?? '').trim();
+  return {
+    diffOnly,
+    error: said || error.message,
+    reason: reasonFrom(error.stdout),
+    // Carried here because the failure envelope cannot: a run whose every
+    // attempt died produced no report, so the reliability table would bucket its
+    // attempts under "unknown" — collapsing a two-model sweep whose runs all
+    // failed into one indistinguishable row, which is the sweep this record
+    // exists to describe.
+    // The command's own resolved id first: it knows what providers.json supplied,
+    // which the flags usually do not name at all.
+    requestedModel: requestedModelFrom(error.stdout) ?? options.model ?? caseDef.model ?? null,
+    // Kept even here — see attemptsFrom. Scoring reads logical runs; reliability
+    // reads every physical request, including all of the ones that failed.
+    attempts: attemptsFrom(error.stdout),
+    // The server config the failed run acted on — without this the motivating
+    // review-bench FAILURE record (a reasoning runaway) drops the loaded window
+    // its watchdog threshold was derived from. `record.mjs` persists this reduced
+    // object, not the whole envelope, so the copy has to happen here.
+    ...runContextFrom(error.stdout),
+  };
+}
+
+function runCase(caseDef, options, runsPerCase) {
+  const runs = [];
+  for (let index = 0; index < runsPerCase; index += 1) {
+    process.stderr.write(`${caseDef.id} — run ${index + 1}/${runsPerCase}...\n`);
+    const outcome = reviewOnce(caseDef, options, index);
+    // Only a run that produced readable findings can be scored. `parsed: false`
+    // is not an empty findings list, and scoring it as one would enter a failed
+    // read as a clean review — the distinction --json exists to preserve.
+    //
+    // `!outcome.error` as well, now that a run can carry both a report and a
+    // failure: a substituted run parsed perfectly and is still not a
+    // measurement of the requested model. `case-rows.mjs` enforces the same
+    // exclusion on its own side rather than trusting this line, because an
+    // invariant that lives in one file and is relied on by another is how the
+    // partition quietly stopped being exhaustive last time.
+    if (outcome.report?.parsed && !outcome.error) {
+      const score = scoreRun(outcome.report.findings, caseDef.defects);
+      outcome.score = { ...score, recall: recall(score.byDefect) };
+    }
+    runs.push(outcome);
+  }
+  return { caseDef, runs };
+}
+
+function selectCases(all, wanted) {
+  if (!wanted?.length) return all;
+  const known = new Set(all.map((caseDef) => caseDef.id));
+  const missing = wanted.filter((id) => !known.has(id));
+  if (missing.length > 0) {
+    throw new UserError(`Unknown case(s): ${missing.join(', ')}.`, {
+      hint: `Available: ${[...known].join(', ')}`,
+    });
+  }
+  return all.filter((caseDef) => wanted.includes(caseDef.id));
+}
+
+/**
+ * Every flag checked before any case runs, so a mistyped budget costs a
+ * refusal in milliseconds rather than surfacing after the first model round
+ * trip. Lifted out of `main` at the function size budget.
+ */
+function validateOptions(options) {
+  const runsPerCase = options.runs ? Number(options.runs) : 1;
+  if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
+    throw new UserError(`--runs must be a positive integer, got "${options.runs}".`);
+  }
+  // Validated with the review command's *own* validator, and with exactly its
+  // options — bench only forwards these flags, so any stricter rule here would
+  // give one flag two domains: `--timeout 1.5` rejected by the harness while
+  // `/oai:review --timeout 1.5` accepts it. Hence `{ min: 1 }` and no
+  // `integer: true`; fractional seconds are a legitimate duration. `--runs`
+  // above stays integer-only for the opposite reason — it is a count, not a
+  // duration. Called for the throw alone, before any case runs, so a mistyped
+  // budget costs nothing rather than surfacing after the first model round trip.
+  // `max` included, not just `min` — the comment above says "exactly its
+  // options" and it has to be true. Omitting the ceiling let
+  // `--max-seconds 99999999` clear this guard and be refused by every child
+  // instead: a 6-case N=3 sweep would materialize 18 repos, spawn 18 processes
+  // and record 18 failed runs with `reason: null`, then render a full table of
+  // all-zero recall — in place of one refusal in milliseconds, which is the
+  // entire point of validating here.
+  const budget = { min: 1, max: MAX_BUDGET_SECONDS };
+  if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
+  if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
+  // Same early-refusal reason as the budgets above: a bad value must fail in
+  // milliseconds, not after materializing every repo and recording each child's
+  // refusal as a failed run. The floor is `MIN_REVIEW_RESERVE_TOKENS`, not 1 —
+  // `/oai:review`'s `reserveFor` refuses an explicit `--max-tokens` below it
+  // unconditionally (a reply too small to hold its findings), so a value in
+  // `[1, MIN_REVIEW_RESERVE_TOKENS)` would pass a `min: 1` check here and then be
+  // rejected by every spawned child, which is exactly what this up-front check
+  // exists to prevent. Temperature uses `/oai:review`'s own 0–2 domain.
+  if (options['max-tokens'] !== undefined) {
+    parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: MIN_REVIEW_RESERVE_TOKENS });
+  }
+  if (options.temperature !== undefined) parseNumber(options.temperature, 'temperature', { min: 0, max: 2 });
+  // Same domain as the command it forwards to, for the reason stated above: an
+  // out-of-range value here otherwise materializes every repo, spawns every
+  // child, records each validation refusal as a failed run, and renders a table
+  // of all-zero recall — in place of one refusal in milliseconds.
+  if (options['max-attempts'] !== undefined) {
+    parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING });
+  }
+  // The pass strategy, refused up front for the same reason as every budget above:
+  // an over-ceiling `--passes`, an unknown or empty `--lens`, or the two together
+  // would otherwise materialize every repo, spawn every child, and record each
+  // child's own CLI refusal as a *reviewer* failure with all-zero recall —
+  // contaminating the reliability data with a mistake the operator could have been
+  // told about in milliseconds. Same domains the review CLI enforces.
+  // Collision first — before the individual value checks — so `--lens x --passes
+  // nope` reports the fundamental "cannot be combined", not the numeric error.
+  if (options.lens !== undefined && options.passes !== undefined) {
+    throw new UserError('--lens and --passes cannot be combined.', {
+      hint: 'Use --passes N for N plain passes, or --lens a,b,c for one pass per named lens.',
+    });
+  }
+  if (options.passes !== undefined) {
+    parseNumber(options.passes, 'passes', { integer: true, min: 1, max: PASSES_CEILING });
+  }
+  if (options.lens !== undefined) parseReviewLenses(options.lens); // Throws on empty/unknown/duplicate, naming the set.
+  return runsPerCase;
+}
+
+async function main() {
+  const { options } = parseArgs(process.argv.slice(2), SPEC);
+  // The operator's annotation of what the record cannot probe (a server set to a
+  // reasoning default in the UI). Bounded here so the persisted `options` block
+  // carries a size-capped value; it never leaves the bench record.
+  options.note = boundNote(options.note);
+  const runsPerCase = validateOptions(options);
+
+  const cases = selectCases(loadCases(ROOT), options.case);
+  // Warmed before the first case that needs each target, and again whenever the
+  // target changes — so the JIT model load is charged to nothing, and a later
+  // pair cannot evict an earlier one behind a case's back. See warm-up.mjs.
+  const { results, warmed } = runWithWarmUp(cases, options, {
+    warm: (pair, caseDef) => warmUpPair(pair, options, { companion: COMPANION, cwd: ROOT, beforeCase: caseDef.id }),
+    run: (caseDef) => runCase(caseDef, options, runsPerCase),
+  });
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const markdown = renderReport(results, {
+    runsPerCase,
+    ...reportIdentity(results, options),
+    diffOnly: Boolean(options['diff-only']),
+    cold: Boolean(options.cold),
+    // In the ARTIFACT, not just the command line: two arms differing only in
+    // whether a schema was enforced are not comparable, and a reader who cannot
+    // tell them apart will difference them anyway.
+    structuredOutput: Boolean(options['structured-output']),
+    timeoutSeconds: options.timeout,
+    maxSeconds: options['max-seconds'],
+    // Same reason as the budgets above: two arms differing only in a sampling
+    // knob must be tellable apart in the artifact, or a reader differences them
+    // anyway and credits the gap to the wrong cause.
+    maxTokens: options['max-tokens'],
+    temperature: options.temperature,
+    // The pass strategy in the report title — a lens arm and a plain arm produce
+    // incomparable measurements and must be tellable apart in the artifact.
+    passes: options.passes,
+    lens: options.lens,
+  });
+  const { recordPath, reportPath } = persist(ROOT, stamp, { runsPerCase, options, warmed, results }, markdown);
+
+  process.stdout.write(`${markdown}\n`);
+  process.stderr.write(`\nPer-run records: ${recordPath}\nRendered report: ${reportPath}\n`);
+}
+
+// GUARDED. `main()` ran on IMPORT, so the moment anything in `tests/` imported
+// this file to exercise a
+// pure function, `node --test` launched a full six-case benchmark against whatever
+// server was or was not up and wrote a report and a record into `bench/results/` —
+// artifacts indistinguishable from a real arm. `review-sweep.mjs:357` already had
+// this guard; this file is the one its header says it was written not to imitate.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    if (error instanceof UserError) {
+      process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  });
+}

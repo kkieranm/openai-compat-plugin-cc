@@ -1,0 +1,46 @@
+{
+  "id": "config-origin",
+  "label": "One 135-line file with two credential-handling defects",
+  "mode": "file",
+  "origin": {
+    "commit": "8990173",
+    "note": "The target every earlier measurement used, so it is the only case with continuity back to the pre-benchmark record. Reviewed with --file, exactly as those runs were."
+  },
+  "files": [
+    "scripts/lib/config.mjs"
+  ],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "url-origin-strips-credentials",
+      "file": "scripts/lib/config.mjs",
+      "lines": [
+        88,
+        91
+      ],
+      "fixedIn": "7d3a1a4",
+      "confidence": "high",
+      "description": "normalizeBaseUrl rebuilds the URL from origin + path, silently discarding any credentials embedded in it and any query string. One bug with two symptoms, fixed in one change.",
+      "anchor": "return `${url.origin}${path === '' ? '/v1' : path}`;"
+    },
+    {
+      "id": "credential-inherited-across-origin",
+      "file": "scripts/lib/config.mjs",
+      "lines": [
+        117,
+        120
+      ],
+      "fixedIn": "7d3a1a4",
+      "confidence": "high",
+      "description": "resolveProfile spreads the named profile — including its API key — while overriding baseUrl, so a credential for one host is sent as a Bearer token to an unrelated origin.",
+      "anchor": "return buildProfile(provider || 'custom', { ...(provider ? config.providers[provider] : {}), baseUrl });"
+    }
+  ],
+  "dropped": [
+    {
+      "claim": "A mistyped --provider was accepted when --base-url was also given, disarming the size guard.",
+      "reason": "Sits on line 119, the same line as credential-inherited-across-origin. An anchor match cannot tell the two apart, so listing both would credit one finding twice."
+    }
+  ]
+}

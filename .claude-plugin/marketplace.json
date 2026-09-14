@@ -1,0 +1,19 @@
+{
+  "name": "openai-compat",
+  "description": "A single-plugin marketplace for oai — delegate work from Claude Code to any OpenAI-compatible model server.",
+  "owner": {
+    "name": "kkieranm"
+  },
+  "plugins": [
+    {
+      "name": "oai",
+      "description": "Delegate work from Claude Code to local models on any OpenAI-compatible server (LM Studio, oMLX, Unsloth Studio, ...).",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": {
+        "name": "kkieranm"
+      },
+      "source": "./"
+    }
+  ]
+}

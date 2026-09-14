@@ -1,0 +1,51 @@
+{
+  "id": "structured",
+  "label": "Structured findings: 17 code files, 63k tokens — the case that falls to the diff-only rung",
+  "mode": "commit",
+  "origin": {
+    "commit": "c552bcd",
+    "note": "Estimated at 63,441 tokens against a 54,016 threshold on a 58k window, so this is the one case that exercises the ladder’s second rung rather than whole files."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "key-in-walks-prototype",
+      "file": "scripts/lib/structured.mjs",
+      "lines": [
+        120,
+        124
+      ],
+      "fixedIn": "528faba",
+      "confidence": "high",
+      "description": "`key in properties` walks the prototype chain, so an extra key named constructor, toString or valueOf passes the identity check that is the whole proof a reasoning-channel payload is not a scratchpad draft.",
+      "anchor": "if (schema.additionalProperties === false && Object.keys(value).some((key) => !(key in properties))) return false;"
+    },
+    {
+      "id": "extractjson-first-brace",
+      "file": "scripts/lib/structured.mjs",
+      "lines": [
+        64,
+        68
+      ],
+      "fixedIn": "528faba",
+      "confidence": "high",
+      "description": "extractJson anchors on the first \"{\" in the reply. A degraded reply that quotes source before its JSON has the quoted brace swallow the anchor, and good findings are discarded as a bad shape.",
+      "anchor": "const start = text.indexOf('{');"
+    },
+    {
+      "id": "retry-announced-before-guard",
+      "file": "scripts/lib/cmd-review.mjs",
+      "lines": [
+        47,
+        52
+      ],
+      "fixedIn": "528faba",
+      "confidence": "medium",
+      "description": "The degraded retry is announced before the context guard runs again, so a size refusal arrives right after \"Retrying without it\" and blames the diff for a request that was never sent.",
+      "anchor": "process.stderr.write(`${profile.name} rejected response_format (${error.message}). Retrying without it.\\n`);"
+    }
+  ],
+  "dropped": []
+}

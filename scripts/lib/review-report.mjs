@@ -1,0 +1,629 @@
+// How a finished review run is shown — the text report and the `--json` object.
+//
+// Split from cmd-review.mjs, which orchestrates the request. Kept out of
+// review.mjs deliberately: that module is pure string-building, and this one
+// writes to stdout and throws. The refusals that decide whether a run is
+// REPORTABLE AT ALL left for `review-unparsed.mjs` at the size ratchet, so this
+// file no longer owns them and this line no longer claims it does.
+import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
+import { renderTaskFooter } from './render.mjs';
+import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
+import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
+import { reconstructServerConfig } from './run-context.mjs';
+import { substitution } from './model-identity.mjs';
+import { reasoningWitness } from './reasoning-witness.mjs';
+import { unparsedReply } from './review-unparsed.mjs';
+
+function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged, ledger }) {
+  if (parsed) {
+    process.stdout.write(
+      renderFindings(
+        { ...parsed, hunksOnly, unreadable: target.unreadable, skippedUnsizedWindow: skipped === 'unsized-window', salvaged },
+        // The model that ANSWERED, not the one requested. This block heads the
+        // report and the footer closes it; handing one the requested id and the
+        // other the served id would produce a single report naming two different
+        // models, which is worse than the silence it replaced.
+        { label: target.label, profile, model: result.model || model },
+      ),
+    );
+    return;
+  }
+
+  const text = unparsedReply(result, { structured, profile, ledger });
+  // Every caveat, because a reply that came back as prose did not see more —
+  // `salvaged` FIRST, same ordering as `caveats()` below: without it, a
+  // salvage follow-up's prose reply carries no indication it came from a
+  // conclude-now request rather than the original review, even
+  // though this branch already disclaims completeness on its own terms.
+  const notes = [
+    salvaged
+      ? 'WARNING: this reply came from a SALVAGE follow-up — a conclude-now request sent after the ' +
+        'model ran out of time reasoning, not the original findings-first pass. Treat it as less ' +
+        'reliable than an ordinary review.'
+      : null,
+    unsizedWindowNote(skipped === 'unsized-window', profile),
+    unreadableNote(target.unreadable),
+  ].filter(Boolean);
+  process.stdout.write(
+    `The model did not return findings in the requested shape. Its reply, verbatim:\n\n${text}\n\n` +
+      `Nothing here has been checked against the code.${notes.length ? `\n\n${notes.join('\n\n')}` : ''}`,
+  );
+}
+
+/**
+ * What the run's wall clock was made of, and whether it took more than one try.
+ *
+ * The two halves of `durationMs` that a prompt cache treats differently: prefill
+ * moves by ~37× between a cold and a warm run of the same prompt while
+ * generation does not move at all, so a single total is two measurements welded
+ * together — and the benchmark was averaging across the seam. Both are measured
+ * inside the answering attempt rather than derived from `durationMs`, which
+ * starts earlier and absorbs prompt building and any rejected attempt. Null on a
+ * non-streamed reply, where no boundary was observed.
+ *
+ * `retried` is here because the timings cannot show it. They belong to the
+ * attempt that answered; a refused attempt is rejected at request validation
+ * before any generation, so it neither prefills nor warms a cache — but that is
+ * a property of every server observed, not a guarantee. Against one that
+ * prefilled before refusing, the prefill above would understate the run, and
+ * this flag is what turns an undetectable limit into one a reader can see.
+ *
+ * **It counts both ladders, which the first version did not.** Deriving it from
+ * `structured` alone saw only the `response_format` retry and missed the
+ * `stream`/`stream_options` rungs in `postWithDegrade` — and those are not
+ * hypothetical: `tests/stream-budget.test.js` drives three HTTP attempts for one
+ * answer through the real CLI. A field whose own name promises "more than one
+ * try" reporting `false` for a run that tried three times is the reported-state
+ * class this repo keeps finding, in the field added to prevent it. `degraded` is
+ * kept beside it for the narrower fact it actually names: the schema was refused
+ * and the reply was parsed from prose.
+ *
+ * **Both were rewritten for when the default stopped sending a
+ * schema.** `!structured` used to mean "we fell back", because a schema
+ * was always asked for; now it is true of every ordinary run, so the old
+ * expressions claimed a retry for a run that sent one request and a fallback for
+ * a schema nobody requested. `degraded` therefore needs BOTH facts — asked for,
+ * and not obtained — and `retried` needs none of them: the request count already
+ * says what it means, across every ladder. Exactly the inversion this docstring
+ * warns about, in the field added to prevent it, which is why it is written down
+ * rather than quietly corrected.
+ *
+ * **Read off the shared ledger when one is available, not `result.requestCount`.**
+ * `requestCount` is scoped to the one `answerWithRetry`
+ * call that produced `result` — exactly right for the two ladders this
+ * docstring already describes, both of which run inside a single call. Salvage
+ * is a second, separate call on the same shared ledger: a review that failed
+ * once and then salvaged successfully made at least two physical requests, but
+ * the salvage call's own `requestCount` is 1 (it never retries itself), so
+ * `retried` read `false` for a run that plainly was one. The ledger spans both
+ * calls; `requestCount` only ever spans one.
+ */
+function runTimings(result, { structured, structuredOutput, ledger }) {
+  return {
+    prefillMs: result.prefillMs ?? null,
+    generationMs: result.generationMs ?? null,
+    retried: ledger ? ledger.entries().length > 1 : (result.requestCount ?? 1) > 1,
+    degraded: Boolean(structuredOutput) && !structured,
+  };
+}
+
+/**
+ * What could be read out of the reply, or nulls where nothing was determined.
+ *
+ * Lifted out of `jsonReport` at the function size budget. The parse-derived
+ * fields are `null` rather than `false`/`[]` for a reply that could not be read:
+ * an empty findings list is indistinguishable from a clean review, and one of
+ * those two is a failure.
+ *
+ * `analysisLength`/`analysisCap` are deliberately JSON-only, and that is not the
+ * omission this file exists to prevent: `analysisCut` is the *caveat* and it is
+ * in both renderings. These two are the measurement behind it — a character
+ * count and the ceiling it is counted against — which a harness reads and a
+ * human footer would only be cluttered by. The rule is that a fact changing what
+ * the reader should believe cannot live on one path alone; a diagnostic that
+ * changes nothing is free to.
+ */
+function parseFields(parsed, result, context) {
+  return {
+    parsed: Boolean(parsed),
+    findings: parsed?.findings ?? null,
+    summary: parsed?.summary ?? null,
+    raw: parsed ? null : unparsedReply(result, context),
+    dropped: parsed?.dropped ?? null,
+    atCap: parsed?.atCap ?? null,
+    analysisCut: parsed?.analysisCut ?? null,
+    analysisLength: parsed?.analysisLength ?? null,
+    analysisCap: parsed?.analysisCap ?? null,
+  };
+}
+
+/**
+ * The same run, as one object.
+ *
+ * Every caveat the text report carries appears here too. A caller reading only
+ * `findings` would otherwise score a guillotined review as a clean pass. Where the reply
+ * could not be read, the three parse-derived flags are `null` rather than
+ * `false`: nothing was determined about them, and `false` would assert that a
+ * list nobody could count did not hit its cap.
+ *
+ * Exported for the tests that pin those fields; the command calls `report`.
+ */
+export function jsonReport(parsed, context) {
+  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger, salvaged, salvageTrim } = context;
+  return {
+    label: target.label,
+    provider: profile.name,
+    // A context-derived fact, not something read off the model's own reply —
+    // same shape as `hunksOnly`/`skippedUnsizedWindow` below.
+    // Non-negotiable: a salvaged review must never
+    // read as an ordinary complete one, so this rides beside `findings` on
+    // every path that can set it, never inferred from anything else here.
+    salvaged: Boolean(salvaged),
+    // The trim decision trySalvage made about the OUTGOING follow-up request —
+    // same diagnostic class as budget/estimatedTokens/hunksOnly (a fact about
+    // what WE sent), never the analysisCap class (a fact read off the model's
+    // reply). Deliberately JSON-only, same posture as analysisLength/analysisCap
+    // above. `null` when no salvage happened. `{ applied: false, ... }` when
+    // salvage happened but trimming didn't apply — either the reason
+    // (deadline-timeout) was scoped out, or the reasoning already fit under the
+    // retention budget; this field alone doesn't distinguish the two.
+    salvageTrim: salvageTrim ?? null,
+    // What answered, not what was asked for: a server may serve a different
+    // build than the id requested, and the run belongs to the one that ran.
+    model: result.model || model,
+    // …and what was asked for, beside it, because "the run belongs to the model
+    // that ran" is only half the fact. Recording the served id alone is what let
+    // a benchmark arm spend its whole wall clock on a model it did not claim to
+    // test and leave a record that read as clean. Measured: LM Studio answers a
+    // request for a model it does not have with a normal completion from
+    // whatever IS loaded.
+    //
+    // No `substituted` boolean beside these: it is `model !== requestedModel`,
+    // and a stored copy of a derived fact is the mirror-don't-generate defect.
+    // Consumers call `substitution()`.
+    // The `??` is unreachable — `finishAnswer` always returns it — and must stay
+    // that way: were it ever taken, both fields would collapse and a reader
+    // would see "checked, they matched" where nothing was determined.
+    requestedModel: result.requestedModel ?? model,
+    // Whether the SERVER named the model above, or it is the requested id echoed
+    // back by `result.model`'s own `?? requestedModel` fallback (completion.mjs).
+    // Mirrors task-report.mjs, and for the same reason: once the fallback has
+    // happened the distinction is unrecoverable, and a cross-run reader grouping
+    // runs by observed model needs it — an echoed id is not proof the same model
+    // answered. `?? false` so a new record always carries the fact; a record
+    // written before this field simply omits it, which a reader reads as legacy.
+    modelReported: result.modelReported ?? false,
+    ...parseFields(parsed, result, context),
+    hunksOnly,
+    // The CAUSE `hunksOnly` cannot carry — it is equally true of `--diff-only`.
+    // Read off the rung the ladder actually took, never recomputed from the
+    // inputs that chose it: a second copy of the premise can outlive the branch.
+    skippedUnsizedWindow: skipped === 'unsized-window',
+    unreadable: target.unreadable,
+    usage: result.usage ?? null,
+    // The reasoning state OBSERVED in this reply — `reasoning-observed` /
+    // `no-reasoning-observed` / `unknown`, derived from `usage`'s
+    // `reasoning_tokens`. A fact read off the reply, distinct from
+    // `serverConfig` (what the request carried): the thinking channel is set by
+    // the server's chat template, unreachable over the wire, so the reply is the
+    // only place a run's actual reasoning state is visible.
+    reasoning: reasoningWitness(result.usage),
+    finishReason: result.finishReason ?? null,
+    // The vendor sampling/reasoning params requested for this run, or null — a
+    // fact about the request, same class as `requestedModel`. On this success
+    // path the request went out, so requested and sent coincide; the failure
+    // envelope carries the same field (read off the thrown error), where
+    // "requested" is the honest word since a pre-dispatch failure never sent it.
+    sampling: context.sampling ?? null,
+    // The server configuration this run resolved: the effective
+    // context window and its provenance (`config` = operator-asserted, else the
+    // server-detected source), the detected window when it conflicts with a
+    // configured one, and which server-owned knobs were left at a default no API
+    // exposes. A context-derived fact, same class as `sampling`; the failure
+    // envelope reads the same four off the thrown error.
+    contextWindow: context.contextWindow ?? null,
+    contextSource: context.contextSource ?? null,
+    detectedWindow: context.detectedWindow ?? null,
+    serverConfig: context.serverConfig ?? null,
+    estimatedTokens,
+    // Whether `estimatedTokens` was ever tested against a window, and the note
+    // saying so when it was not. The text footer has always carried this as
+    // `contextNote`; omitting it here left `--json` reporting a bare number a
+    // caller could not tell from a checked one — with the size guard disarmed,
+    // which is exactly when an oversized request goes out unrefused. This file
+    // was created to stop a caveat being true on one path and absent on the
+    // next.
+    contextChecked: budget.checked,
+    contextNote: budget.checked ? null : budget.note,
+    durationMs,
+    ...runTimings(result, { structured, structuredOutput: context.structuredOutput, ledger }),
+    // One entry per PHYSICAL request — the first try, a capability degrade, the
+    // response_format fallback, a retry after the server dropped one. The
+    // timings above belong to the attempt that *answered*; these are how the
+    // benchmark separates recall (a property of logical runs) from reliability
+    // (a property of every request that went on the wire). A failed attempt is
+    // missing data, never an observed miss. See attempt-ledger.mjs.
+    attempts: ledger ? ledger.entries() : null,
+  };
+}
+
+/**
+ * A run that failed, as one object — the other half of the `--json` contract.
+ *
+ * Without it, `--json` was machine-readable on success and prose on failure, so
+ * a harness could tell *that* a run failed but never *why*: `bench/run.mjs`
+ * stored the whole of stderr and could only distinguish a wall-clock cap from a
+ * 500 by pattern-matching the message. This repo has hit that pattern
+ * twice over, and the fix is the same one taken here — read the structured
+ * field, not the prose.
+ *
+ * `reason` is the transport's own vocabulary where there is one
+ * (`deadline-timeout`, `idle-timeout`, `oversize`, `protocol`, …) and `null`
+ * otherwise, including for an internal failure. Null means "nothing was
+ * determined", exactly as it does in `jsonReport` — never a guess, and never a
+ * category invented here to fill the field.
+ *
+ * The prose is carried too rather than replaced: a reason is a category, and the
+ * message is what actually happened.
+ */
+// Snapshot the source ONCE before validating it: a getter could otherwise pass
+// `CONTEXT_SOURCES.has` on the first read and hand a different, foreign value to
+// the second — the same read-twice hazard `reconstructServerConfig` guards.
+function allowedSource(error) {
+  const source = error?.contextSource;
+  return CONTEXT_SOURCES.has(source) ? source : null;
+}
+
+export function errorReport(error) {
+  return {
+    error: true,
+    reason: error?.reason ?? null,
+    message: error?.message ?? String(error),
+    hint: error?.hint ?? null,
+    // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt` /
+    // `error.finishReason` are deliberately never copied here —
+    // this object is what `publishFailure` persists into `jobs.db`, and all
+    // four fields can be secret-shaped. Absence by construction: this is an
+    // explicit field list, not a spread of `error`, so a new field on the
+    // source error never reaches a persisted job by default.
+    // The attempt record survives the failure path, and this is the path where
+    // it matters most: a run whose every attempt died is the run carrying the
+    // most reliability evidence, and the easiest place to lose it. `null` where
+    // the failure happened before any request — nothing was determined, which is
+    // not the same as no attempts having been made.
+    attempts: error?.attemptRecords ?? null,
+    // Which model the run asked for, where the failure happened late enough to
+    // know. A run whose every attempt died produced no report, so this is the
+    // only place the id survives — without it the reliability table cannot
+    // attribute an all-failed sweep to the model that failed.
+    requestedModel: error?.requestedModel ?? null,
+    // The sampling params the run was REQUESTED with, attached to the error by
+    // the command-level catch — so a post-dispatch runaway records what it ran
+    // under, and a pre-dispatch failure records what it would have. Not
+    // "sent": on a pre-dispatch failure no request went out, and this field is
+    // present regardless, earlier than `requestedModel` (which needs the model
+    // resolved). `null` on a background failure (the worker never runs that
+    // catch) and on a parse failure (none were valid) — the same "cannot live on
+    // one path alone" rule as requestedModel above.
+    sampling: error?.sampling ?? null,
+    // The server config the run resolved, reconstructed FAIL-CLOSED
+    // because this object is what `publishFailure` persists into `jobs.db`: a
+    // window only as a positive integer, a source only if it is one
+    // `effectiveWindow` can produce, and `serverConfig` rebuilt as a fresh
+    // three-knob map — a foreign object carrying a custom prototype or `toJSON`
+    // can never reach the serialized output, and `null` where the failure
+    // preceded resolution (the same "cannot live on one path alone" rule).
+    contextWindow: positiveInteger(error?.contextWindow) ?? null,
+    contextSource: allowedSource(error),
+    detectedWindow: positiveInteger(error?.detectedWindow) ?? null,
+    serverConfig: reconstructServerConfig(error?.serverConfig),
+    // The observed reasoning state, on the failure path too so the success and
+    // failure envelopes stay the same shape. The reply's usage is carried onto
+    // the error at each post-hoc throw site — `error.usage` for a failure with no
+    // reply envelope (token-exhaustion in `review-unparsed.mjs`, `requireAnswer`'s
+    // refusals), `error.answer.usage` for one that builds a reply envelope
+    // (`review-request.mjs`'s reasoning-only/salvage failures, and a generic
+    // stream drop, whose `.answer` `stream-collect.mjs` attaches to a failure it
+    // catches). Read post-hoc field first; the two carriers are disjoint by site,
+    // so the order is defensive, not load-bearing. Two carriers rather than folding
+    // usage into `.answer` everywhere: a site with no reply envelope uses the bare
+    // `error.usage` precisely so `partial` below stays absent for it — reusing
+    // `.answer` there would start persisting its non-empty reasoning as a partial,
+    // a behaviour beyond this witness's mandate. `unknown` wherever the error
+    // carries no classifiable reasoning usage: no usage frame reached the reply (a
+    // pre-stream refusal, or a mid-stream cutoff before that frame); a frame
+    // arrived but reported no `reasoning_tokens` detail; or a `completion.mjs`
+    // `refuseUnusable` completion-shape refusal (empty/unfinished/blank) attached
+    // no usage carrier at all — the last a not-yet-covered gap, tracked separately.
+    // Needs no fail-closed reconstruction the way `serverConfig` does:
+    // `reasoningWitness` reads only a number and returns a fresh
+    // constant-and-primitive object, so nothing off a foreign error can reach the
+    // persisted output through it, and it never throws.
+    reasoning: reasoningWitness(error?.usage ?? error?.answer?.usage),
+    // What the model had already produced when the failure cut it off —
+    // `stream-collect.mjs` attaches `.answer` to every
+    // failure it catches, but most carry nothing (a pre-stream refusal, no
+    // frame ever arrived). `null` unless there is real text — reasoning OR
+    // content — to show for it, following the same "cannot live on one path
+    // alone" rule as every other belief-changing field in this file.
+    partial: error?.answer?.reasoning?.trim() || error?.answer?.content?.trim()
+      ? { reasoning: error.answer.reasoning, content: error.answer.content }
+      : null,
+  };
+}
+
+/**
+ * One run, two renderings, kept side by side so a fact present in one cannot
+ * quietly go missing from the other — the rule `jsonRow` already follows in
+ * `cmd-setup.mjs`. Both derive from the same parsed object and the same
+ * refusals; only the shape differs.
+ */
+export function report(parsed, context) {
+  if (context.json) {
+    process.stdout.write(`${JSON.stringify(jsonReport(parsed, context), null, 2)}\n`);
+    return;
+  }
+
+  reportFindings(parsed, context);
+  const { profile, result, budget, estimatedTokens, durationMs } = context;
+  process.stdout.write(
+    `${renderTaskFooter({
+      providerName: profile.name,
+      model: result.model,
+      requestedModel: result.requestedModel,
+      usage: result.usage,
+      durationMs,
+      prefillMs: result.prefillMs,
+      generationMs: result.generationMs,
+      contextNote: budget.checked ? `~${estimatedTokens} tokens sent.` : budget.note,
+      finishReason: result.finishReason,
+    })}\n`,
+  );
+}
+
+// Per-pass context for `jsonReport`: the pass's own request/reply facts, over the
+// run's shared model/target/sampling/serverConfig.
+function perPassContext(pass, shared) {
+  return {
+    result: pass.result,
+    structured: pass.structured,
+    profile: shared.profile,
+    model: shared.model,
+    target: shared.target,
+    hunksOnly: pass.hunksOnly,
+    skipped: pass.skipped,
+    budget: pass.budget,
+    estimatedTokens: pass.estimatedTokens,
+    durationMs: pass.durationMs,
+    ledger: pass.ledger,
+    salvaged: Boolean(pass.salvaged),
+    salvageTrim: pass.salvageTrim ?? null,
+    structuredOutput: shared.structuredOutput,
+    sampling: shared.sampling,
+    contextWindow: shared.contextWindow,
+    contextSource: shared.contextSource,
+    detectedWindow: shared.detectedWindow,
+    serverConfig: shared.serverConfig,
+  };
+}
+
+// Top-level `usage` for the union, fail-closed: the sum over readable passes only
+// when every one carries finite, non-negative token counts. A partial sum
+// presented as a total is the concealment class this repo bans — so a single pass
+// with a null usage makes the top-level `usage` null while the per-pass values
+// stay in `passes[]`. Exported for the unit tests that pin the guard, since the
+// fake server's `completionFrames` hardcodes one usage shape and cannot deliver a
+// negative or a partial one end to end.
+//
+// PRECONDITION: at least one readable pass. On an EMPTY list both `every` guards are
+// vacuously true and the reductions seed 0 — a fabricated all-zero usage, and worse
+// a fabricated `completion_tokens_details.reasoning_tokens: 0` that `reasoningWitness`
+// would read as a real provider-reported "no reasoning". The sole production caller
+// is `reportPasses`, which `runMultiPass` reaches only PAST the `allFailedError`
+// throw (raised when no pass is readable), so it never supplies an empty list; this
+// function follows `reportPasses`'s own deliberately-not-defensive posture rather
+// than adding a guard that would diverge from it.
+//
+// The two guards fail closed DIFFERENTLY, by design: a corrupt BASE field (below)
+// nulls the whole usage, because the three base counts are the measurement itself;
+// a corrupt REASONING detail (further down) omits only `completion_tokens_details`
+// and lets the base sum stand, because the detail is optional and its honest
+// absence reads `unknown`. Same corruption class, two postures — stated so a later
+// pass does not "harmonize" the detail up to nulling the whole record.
+export function sumUsage(readable) {
+  const fields = ['prompt_tokens', 'completion_tokens', 'total_tokens'];
+  const usages = readable.map((pass) => pass.result.usage);
+  // `>= 0` as well as finite, matching the reasoning guard below and
+  // `reasoningWitness`: a negative token count is corruption, not a measurement.
+  if (!usages.every((usage) => usage && fields.every((field) => Number.isFinite(usage[field]) && usage[field] >= 0))) return null;
+  const out = {};
+  for (const field of fields) out[field] = usages.reduce((sum, usage) => sum + usage[field], 0);
+  // `reasoning_tokens` rides in `completion_tokens_details`, and `reasoningWitness`
+  // reads it off THIS merged usage — so dropping it makes every merged record
+  // classify `unknown`. Sum it only when EVERY readable pass reports a finite,
+  // NON-NEGATIVE one: 0 is a provider-reported "no reasoning" and must sum through
+  // (never read as "off"), while a negative sentinel would corrupt an otherwise-real
+  // total, so it is rejected exactly as `reasoningWitness` rejects it. When any pass
+  // lacks it, OMIT the key rather than inventing a zero — an absent detail reads
+  // honestly as `unknown` through the witness's own missing-field path. The rebuilt
+  // object carries `reasoning_tokens` ALONE (a fresh object, not a spread): no other
+  // detail field was ever summed, so nothing should imply one travelled.
+  const reasonings = usages.map((usage) => usage.completion_tokens_details?.reasoning_tokens);
+  if (reasonings.every((n) => Number.isFinite(n) && n >= 0)) {
+    out.completion_tokens_details = { reasoning_tokens: reasonings.reduce((sum, n) => sum + n, 0) };
+  }
+  return out;
+}
+
+// One pass's `passes[]` record. A readable pass is its own `jsonReport`. A
+// non-observation keeps `ok: false` EXACTLY — the `readableReports` filter below
+// gates on `ok !== false`, so a mis-set flag would ingest a failed pass as a
+// readable one and read its absent caveat fields as clean — but is NOT reduced to
+// a bare reason: a failed pass is data, so its `durationMs` and `attempts` ride
+// here always, and a pass that produced an unreadable reply (rather than throwing)
+// also carries its own reply facts, named exactly as `jsonReport` names them so a
+// parse-null entry's `model`/`usage` mean the same as a readable pass's. The `raw`
+// reply is kept for the shape-unreadable class — the evidence a parser-gap
+// coverage loss is diagnosed from (OAI-49/OAI-228).
+export function passEnvelope(pass, index, context) {
+  // The lens this pass ran under (a name, or null on the plain `--passes` path),
+  // stamped on EVERY branch — readable, parse-null, and thrown — so a diverse run
+  // proves each declared lens actually ran, and BY VALUE off the outcome, never
+  // recovered from a pass index the readable-compaction would shift.
+  if (isReadable(pass)) {
+    const report = jsonReport(pass.parsed, perPassContext(pass, context));
+    report.lens = pass.lens ?? null;
+    return report;
+  }
+  const { reason, raw } = passReason(pass, { structured: pass.structured, profile: context.profile, ledger: pass.ledger });
+  const entry = {
+    ok: false,
+    index,
+    lens: pass.lens ?? null,
+    reason,
+    durationMs: pass.durationMs ?? null,
+    attempts: pass.ledger ? pass.ledger.entries() : null,
+  };
+  if (pass.result) {
+    entry.model = pass.result.model || context.model;
+    entry.requestedModel = pass.result.requestedModel ?? context.model;
+    entry.modelReported = pass.result.modelReported ?? false;
+    entry.usage = pass.result.usage ?? null;
+    entry.reasoning = reasoningWitness(pass.result.usage);
+    entry.finishReason = pass.result.finishReason ?? null;
+    entry.prefillMs = pass.result.prefillMs ?? null;
+    entry.generationMs = pass.result.generationMs ?? null;
+    entry.raw = raw;
+    // A parse-null pass (a reply arrived, `parseFindings` could not read it) is a
+    // non-observation, so `caveatUnion` (readable-only) never counts its caveats —
+    // which left a salvaged-but-unparseable or degraded pass's rescue/degradation
+    // INVISIBLE, contradicting "nothing is concealed". Surface them on the pass's
+    // own `passes[]` entry (never the top-level OR). `degraded` derives from the
+    // same formula `runTimings` uses, `Boolean()`-wrapped to stay identical. The
+    // thrown branch below cannot carry these — an `ok: false` outcome holds only
+    // `{error, ledger, durationMs}`, so fabricating them there would assert a fact
+    // nothing recorded; a thrown pass's salvage attempt survives only in `attempts`.
+    entry.salvaged = Boolean(pass.salvaged);
+    entry.salvageTrim = pass.salvageTrim ?? null;
+    entry.degraded = Boolean(context.structuredOutput) && !pass.structured;
+  } else if (pass.error) {
+    // A THROWN pass (no `pass.result`) may still carry the reply's usage on its
+    // error — `error.usage` for a failure with no reply envelope (token-exhaustion),
+    // `error.answer.usage` for one that built a reply envelope (reasoning-only /
+    // salvage, a stream drop). The two carriers are disjoint by site; read both,
+    // exactly as `errorReport` does, or a thrown reasoning-only pass reads
+    // `usage: null` here while `errorReport` recovers it. Surfacing it keeps the
+    // pass's token burn and observed reasoning visible in `passes[]`.
+    const usage = pass.error.usage ?? pass.error.answer?.usage ?? null;
+    entry.usage = usage;
+    entry.reasoning = reasoningWitness(usage);
+  }
+  return entry;
+}
+
+// The one-line-per-pass summary the text report renders: finding count for a
+// readable pass, the failure reason for a non-observation, and a note when a
+// non-observation ran on a confirmed different model — the substitution
+// disclosure the multi-pass loop no longer prints inline (the id itself is on the
+// JSON `passes[]` entry, so the text stays free of server-controlled values).
+function passSummary(pass, index, report) {
+  // `lens` rides the summary so a lens run's text report names which focus each
+  // pass ran — a failed lens pass is then diagnosable from the text, not only the
+  // JSON `passes[]`. Null on the plain `--passes` path (formatPassLine omits it).
+  if (report.ok !== false) {
+    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
+  }
+  const substituted = pass.result?.modelReported === true && substitution(pass.result.requestedModel, pass.result.model);
+  return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
+}
+
+/**
+ * A multi-pass run, as text or one merged JSON object. The single-pass path
+ * (`report` above) is untouched; `cmd-review.mjs` calls this only when
+ * `passes > 1`, and only after the fail-closed guards (all-unreadable,
+ * served-model disagreement) have already thrown. Every caveat is the fail-closed
+ * OR across readable passes so an incomplete or salvaged union can never read as
+ * a clean complete one; `contextChecked` is the AND. Per-pass originals are kept
+ * in `passes[]`, so nothing is concealed.
+ *
+ * PRECONDITION: at least one readable pass. `runMultiPass` throws
+ * `allFailedError` before calling this when none is readable, so `readable[0]`
+ * below is safe; this function is deliberately not defensive about it, since its
+ * only caller guarantees it.
+ */
+export function reportPasses(passes, context) {
+  const readable = passes.filter(isReadable);
+  const merged = mergePasses(readable);
+  const perPassReports = passes.map((pass, index) => passEnvelope(pass, index, context));
+  const readableReports = perPassReports.filter((report) => report.ok !== false);
+  const caveatFlags = caveatUnion(readableReports, { unreadable: context.target.unreadable });
+  const contextChecked = contextCheckedAll(readableReports);
+  const usage = sumUsage(readable);
+  const reasoning = reasoningWitness(usage);
+  const durationMs = totalDuration(passes);
+  const model = readable[0].result.model;
+  // Whole-run reliability aggregate for the bench (`attempt-rows.mjs` everyAttempt
+  // reads `report.attempts`). Over ALL passes — the same population and helper the
+  // failure path's `allFailedError` uses — since a failed pass still issued real
+  // requests; `null` when empty, never `[]` (an observed empty set). Mirrors
+  // `durationMs`, which also sums over all passes; `usage` stays readable-only.
+  const attemptRecords = aggregateAttempts(passes);
+  const attempts = attemptRecords.length ? attemptRecords : null;
+  // The union's truncation signal for the bench (`run-buckets.mjs` truncatedRuns
+  // reads `report.finishReason === 'length'`). ANY pass carrying a `result` that
+  // finished `'length'` marks the union truncated — a UNION CLASSIFICATION, never a
+  // synthesized server value: a PARSE-NULL pass is a non-observation excluded from
+  // `readable` yet still carries its `finishReason` (token-exhaustion is a leading
+  // cause of a reply being unreadable), so ranging over `readable` would blind the
+  // signal on exactly the passes most likely truncated. A THROWN pass has no
+  // `result`, so it is excluded — matching single-pass semantics, where a thrown
+  // run is `run.error` and `truncatedRuns` requires `!run.error`. The per-pass
+  // literals stay in `passes[]`.
+  const finishReason = passes.some((pass) => pass.result?.finishReason === 'length') ? 'length' : null;
+
+  if (context.json) {
+    process.stdout.write(
+      `${JSON.stringify(
+        passesEnvelope(merged, {
+          label: context.target.label,
+          provider: context.profile.name,
+          requestedModel: readable[0].result.requestedModel,
+          model,
+          modelReported: readable[0].result.modelReported,
+          perPassReports,
+          usage,
+          reasoning,
+          sampling: context.sampling,
+          contextWindow: context.contextWindow,
+          contextSource: context.contextSource,
+          detectedWindow: context.detectedWindow,
+          serverConfig: context.serverConfig,
+          durationMs,
+          attempts,
+          finishReason,
+          caveatFlags,
+          contextChecked,
+          strategy: context.strategy,
+          lenses: context.lenses,
+        }),
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  const passSummaries = passes.map((pass, index) => passSummary(pass, index, perPassReports[index]));
+  process.stdout.write(
+    `${passesText(merged, {
+      passCount: passes.length,
+      passSummaries,
+      caveatFlags,
+      label: context.target.label,
+      profile: context.profile,
+      model,
+      strategy: context.strategy,
+      lenses: context.lenses,
+    })}\n`,
+  );
+}

@@ -1,0 +1,27 @@
+{
+  "id": "caps",
+  "label": "Bounding the review reply: a guard that turns an error into a valid-looking result",
+  "mode": "commit",
+  "origin": {
+    "commit": "ac58a35",
+    "note": "Absence-shaped: the defect is a report that is missing, not a line that is wrong. The anchor names the cap that creates the hazard; the range covers the code that should have reported it."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "analysis-cut-unreported",
+      "file": "scripts/lib/structured.mjs",
+      "lines": [
+        240,
+        250
+      ],
+      "fixedIn": "528faba",
+      "confidence": "medium",
+      "description": "Bounding analysis makes a guillotined review valid — complete JSON, finish_reason stop, usually an empty findings list — so it renders identically to a review that looked properly and found nothing. parseFindings reports atCap but has nothing for a cut analysis.",
+      "anchor": "analysis: { type: 'string', maxLength: 28_000 },"
+    }
+  ],
+  "dropped": []
+}

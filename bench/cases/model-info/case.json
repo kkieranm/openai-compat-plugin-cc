@@ -1,0 +1,52 @@
+{
+  "id": "model-info",
+  "label": "Context-window detection: status output promising what the real path refuses",
+  "mode": "commit",
+  "origin": {
+    "commit": "65373a0",
+    "note": "The commit whose review produced this repo’s signature defect class. Its fix (1ea398f) claims 13 confirmed defects but enumerates six, so most of that count is not recoverable as labels."
+  },
+  "files": [],
+  "provider": null,
+  "model": null,
+  "defects": [
+    {
+      "id": "ready-promises-what-a-task-refuses",
+      "file": "scripts/lib/render.mjs",
+      "lines": [
+        47,
+        51
+      ],
+      "fixedIn": "1ea398f",
+      "confidence": "high",
+      "description": "canDelegate takes defaultModel entirely on trust and calls any non-empty candidate list usable, so setup reports \"Ready\" where a task refuses — a named embedder, a configured model absent from the server, or two chat models it will not choose between.",
+      "anchor": "if (profile.defaultModel) return true;"
+    },
+    {
+      "id": "id-mismatch-drops-model-type",
+      "file": "scripts/lib/model-info.mjs",
+      "lines": [
+        146,
+        152
+      ],
+      "fixedIn": "1ea398f",
+      "confidence": "high",
+      "description": "Records from two endpoints are joined on the raw id, so an id spelled differently on one side (a quantization suffix) misses the lookup and spreads undefined, dropping the model’s type. An untyped record passes the embeddings denylist trivially.",
+      "anchor": "const byId = new Map(detected.models.map((model) => [model.id, model]));"
+    }
+  ],
+  "dropped": [
+    {
+      "claim": "A string contextLength (\"8k\") made every comparison in the guard NaN.",
+      "reason": "This commit does not touch config.mjs at all (0 lines changed), so the defect is not in the code under review here. Attributing it to this case would be false."
+    },
+    {
+      "claim": "setup called a provider unreachable when it merely lacked /v1/models.",
+      "reason": "cmd-setup.mjs does not exist at this commit; the defect cannot be located in a file it changed."
+    },
+    {
+      "claim": "Seven further defects of the \"status promises what the path refuses\" class.",
+      "reason": "The fix commit counts ten of one class but names three. The rest survive only as a pattern in REPO_TRAPS.md, scoped there to two features, so they cannot be mapped back to this commit."
+    }
+  ]
+}
