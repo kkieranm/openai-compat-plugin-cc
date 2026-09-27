@@ -106,7 +106,10 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
 ## Notes
 
 - **Oversized input is refused, never truncated.** The plugin refuses work that cannot fit the
-  model's context window, quoting both numbers, rather than silently sending half the input.
+  model's context window, quoting both numbers, rather than silently sending half the input. The
+  size is an estimate. Non-ASCII text (accented Latin, CJK, emoji, …) is counted conservatively —
+  about threefold for Chinese prose — so input dense in it can be refused before the window is
+  actually full; the refusal usually notes when that may be the cause.
 - **The window is detected automatically** on LM Studio, vLLM, llama.cpp and TGI, and `/oai:setup`
   shows where the number came from. Only the window a server is *actually serving* counts — a
   model's theoretical ceiling is ignored, since guarding on it would admit input the server rejects.

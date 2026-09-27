@@ -3,6 +3,17 @@
 All notable changes to this project are documented here, loosely following the
 [Keep a Changelog](https://keepachangelog.com) convention. This is the first public release.
 
+## Unreleased
+
+### Fixed
+
+- The context-size check no longer badly under-counts text in non-Latin scripts and emoji (Chinese,
+  Japanese, Korean, …), which could let a prompt through that the server then rejected for exceeding
+  its window. Non-ASCII text (accented Latin included) is now counted conservatively — about
+  threefold for Chinese prose — so a prompt dense in it may be refused before the window is actually
+  full, and the refusal usually notes when that may be the cause; text that is entirely ASCII is
+  sized exactly as before.
+
 ## 0.1.0
 
 ### Task delegation

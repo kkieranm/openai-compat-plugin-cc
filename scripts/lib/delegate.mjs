@@ -1,7 +1,7 @@
 // The delegation path shared by every command that sends work to a model:
 // which model, how big its window is, and does the request fit.
 import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
-import { checkContextBudget, estimateTokens } from './context-guard.mjs';
+import { checkContextBudget, estimateTokens, typicalTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
 import { describeModels, effectiveWindow } from './model-info.mjs';
@@ -173,7 +173,8 @@ export function prepareRequest({
   oversizeHint,
 }) {
   const messages = buildMessages({ system: system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
-  const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
+  const text = messages.map((message) => message.content).join('\n');
+  const estimatedTokens = estimateTokens(text);
 
   // With a floor set, the reply budget yields to the input rather than the
   // input being refused. A generous fixed reserve otherwise withholds the
@@ -194,6 +195,7 @@ export function prepareRequest({
     providerName: profile.name,
     model,
     oversizeHint,
+    typicalTokens: typicalTokens(text),
   });
 
   return { messages, estimatedTokens, budget, reserve };
