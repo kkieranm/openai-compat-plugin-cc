@@ -21,7 +21,7 @@ test('importing the driver does not RUN the experiment', () => {
   // and wrote a junk record into bench/results. The symptom is slow and quiet
   // rather than red, so the guard is asserted rather than assumed.
   const source = readFileSync(new URL('../bench/ttl-challenge.mjs', import.meta.url), 'utf8');
-  assert.match(source, /process\.argv\[1\] === new URL\(import\.meta\.url\)\.pathname/);
+  assert.match(source, /process\.argv\[1\] === fileURLToPath\(import\.meta\.url\)/);
   assert.doesNotMatch(source, /^main\(/m, 'main must not be called at module scope');
 });
 

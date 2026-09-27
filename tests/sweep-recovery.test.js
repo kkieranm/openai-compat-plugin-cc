@@ -17,10 +17,11 @@ import { readLedger, ledgerPathFor, envelopeFor } from '../bench/lib/sweep-ledge
 import { renderSweep } from '../bench/lib/sweep-report.mjs';
 import { mergeManifest, recoveredRecord, stampFrom } from '../bench/recover-sweep.mjs';
 import { runSweep } from '../bench/review-sweep.mjs';
+import { fileURLToPath } from 'node:url';
 import { tempDir as sharedTempDir } from './helpers.mjs';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 function tempDir() {
   return sharedTempDir('sweep-recovery-');
@@ -182,10 +183,14 @@ test('an absent entry is described as ambiguous, never as never-settled', () => 
 
 // The child driven by both crash cases below. It runs the real `runSweep` with a
 // fake executor against a real ledger, and kills itself partway through the
-// third commit — with no chance to flush, which is the point.
+// third commit — with no chance to flush, which is the point. Its imports are
+// module URLs, not filesystem paths, so a `#` or `%` in the checkout path
+// survives.
+const SWEEP_URL = JSON.stringify(new URL('../bench/review-sweep.mjs', import.meta.url).href);
+const LEDGER_URL = JSON.stringify(new URL('../bench/lib/sweep-ledger.mjs', import.meta.url).href);
 const CRASH_CHILD = `
-import { runSweep } from '${ROOT}bench/review-sweep.mjs';
-import { openLedger, envelopeFor } from '${ROOT}bench/lib/sweep-ledger.mjs';
+import { runSweep } from ${SWEEP_URL};
+import { openLedger, envelopeFor } from ${LEDGER_URL};
 const [outDir, mode] = process.argv.slice(2);
 const commits = [
   { sha: 'aaa', subject: 'one', eligible: true },

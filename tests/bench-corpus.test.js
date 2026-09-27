@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { CASE_COMMIT_DATE, cleanup, loadCases, materialize } from '../bench/lib/corpus.mjs';
 import { git, tempDir } from './helpers.mjs';
+import { fileURLToPath } from 'node:url';
 
 const MANIFEST = {
   id: 'sample',
@@ -247,7 +248,7 @@ test('a control with dropped defect claims is refused — it is not a clean targ
 // nobody filled in would surface as the reviewer missing a defect rather than
 // as the corpus being wrong — which is the harder failure to notice.
 test('the corpus in this repo loads and every anchor is real', () => {
-  const cases = loadCases(new URL('..', import.meta.url).pathname);
+  const cases = loadCases(fileURLToPath(new URL('..', import.meta.url)));
   assert.ok(cases.length > 0);
 
   for (const caseDef of cases) {

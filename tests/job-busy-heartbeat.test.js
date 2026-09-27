@@ -13,9 +13,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 
-const HEARTBEAT = fileURLToPath(new URL('../scripts/lib/job-heartbeat.mjs', import.meta.url));
+// A module URL, not a filesystem path: it is imported by the child below, and a
+// decoded path would break on a `#` or `%` in the checkout path.
+const HEARTBEAT = new URL('../scripts/lib/job-heartbeat.mjs', import.meta.url).href;
 const run = promisify(execFile);
 
 /**

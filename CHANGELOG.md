@@ -13,6 +13,9 @@ All notable changes to this project are documented here, loosely following the
   threefold for Chinese prose — so a prompt dense in it may be refused before the window is actually
   full, and the refusal usually notes when that may be the cause; text that is entirely ASCII is
   sized exactly as before.
+- The test suite and the `bench/task-run.mjs` and `bench/ttl-challenge.mjs` drivers now work from a
+  checkout whose path contains a space, `#` or `%`; `ttl-challenge` previously did nothing when run
+  from such a path.
 
 ## 0.1.0
 

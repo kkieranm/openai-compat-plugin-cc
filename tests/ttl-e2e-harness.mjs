@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { chmodSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { completionFrames, respondStream, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Scaffolding for the end-to-end harness: a stub `lms`, the repo's fake
@@ -25,7 +26,7 @@ import { completionFrames, respondStream, startFakeServer, tempDir, writeConfig 
  * are fine: they block a child's event loop, not this one.
  */
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DRIVER = join(ROOT, 'bench', 'ttl-challenge.mjs');
 const STUB = join(ROOT, 'tests', 'ttl-stub-lms.mjs');
 chmodSync(STUB, 0o755);

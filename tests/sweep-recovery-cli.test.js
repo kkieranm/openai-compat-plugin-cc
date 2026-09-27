@@ -19,9 +19,10 @@ import { promisify } from 'node:util';
 import { envelopeFor, openLedger } from '../bench/lib/sweep-ledger.mjs';
 import { writeSweep } from '../bench/lib/sweep-report.mjs';
 import { tempDir as sharedTempDir } from './helpers.mjs';
+import { fileURLToPath } from 'node:url';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'bench/recover-sweep.mjs');
 const SHA = 'abc123def';
 

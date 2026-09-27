@@ -17,8 +17,9 @@ import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
 import { SETUP_SPEC } from '../scripts/lib/cmd-setup.mjs';
 import { STATUS_SPEC } from '../scripts/lib/cmd-status.mjs';
 import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const COMMANDS_DIR = join(ROOT, 'commands');
 const AGENTS_DIR = join(ROOT, 'agents');
 

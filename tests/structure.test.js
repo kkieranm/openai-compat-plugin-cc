@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.claude']);
 // Skipped by path rather than by bare name, which would skip any directory
@@ -91,6 +92,19 @@ test('tests never spawn a child synchronously', () => {
     }
   }
   assert.deepEqual(offenders, [], 'use the async runCompanion helper instead');
+});
+
+// A URL's pathname is percent-encoded, so a path taken from
+// `new URL(…, import.meta.url).pathname` names a directory that does not exist
+// once the checkout path holds a space, `#` or `%`. `fileURLToPath` decodes it.
+test('no path is derived from import.meta.url through .pathname', () => {
+  const offenders = [];
+  for (const file of sourceFiles(ROOT)) {
+    if (/import\.meta\.url\s*\)\s*\.pathname/.test(withoutComments(readFileSync(file, 'utf8')))) {
+      offenders.push(relative(ROOT, file));
+    }
+  }
+  assert.deepEqual(offenders, [], 'use fileURLToPath(new URL(…, import.meta.url))');
 });
 
 // Confirmed defect class: `mkdtempSync` called across the suite with no

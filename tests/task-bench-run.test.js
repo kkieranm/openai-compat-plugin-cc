@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderReport, requestArgs, runSweep } from '../bench/task-run.mjs';
 import { loadTaskCases } from '../bench/lib/task-corpus.mjs';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CASES = loadTaskCases(ROOT);
 
 /** An executor that answers with whatever text the caller maps per arm. */

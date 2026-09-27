@@ -13,11 +13,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { completion, modelList, respondJson, startFakeServer, tempDir } from './helpers.mjs';
-
-const ROOT = new URL('..', import.meta.url).pathname;
+import { COMPANION, completion, modelList, respondJson, startFakeServer, tempDir } from './helpers.mjs';
 
 // TWO instruments, and the difference is the point.
 //
@@ -47,7 +44,7 @@ try {
   parentHasSqlite = false;
 }
 const REAL_RUNTIME_WITHOUT_SQLITE = parentHasSqlite ? ['--no-experimental-sqlite'] : [];
-const HOOKED = ['--import', join(ROOT, 'tests', 'no-sqlite-register.mjs')];
+const HOOKED = ['--import', new URL('./no-sqlite-register.mjs', import.meta.url).href];
 
 // `register` landed in 18.19 and 20.6, and this package declares `>=18.18`. On
 // 18.18 exactly, and on 20.0–20.5, the fixture cannot link — so the test that
@@ -77,7 +74,7 @@ function stateDir(prefix = 'oai-capability-') {
 function companion(nodeFlags, args, env = {}) {
   const child = promisify(execFile)(
     process.execPath,
-    [...nodeFlags, join(ROOT, 'scripts', 'oai-companion.mjs'), ...args],
+    [...nodeFlags, COMPANION, ...args],
     { env: { ...process.env, OAI_PLUGIN_STATE: stateDir(), ...env } },
   );
   child.child.stdin.end('');

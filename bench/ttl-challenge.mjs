@@ -35,8 +35,9 @@ import { calibrationCauses } from './lib/ttl-calibration.mjs';
 import {
   CONCLUSIVE, EXPOSURE_MARGIN, episodeVerdict, summarize, validityChecks,
 } from './lib/ttl-verdict.mjs';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /**
  * Load the model under a named TTL and return what the server says it applied.
  *
@@ -227,7 +228,7 @@ async function main(argv) {
 // and the suite spent 44 extra seconds driving LM Studio and wrote a junk record
 // into bench/results. A module that does work on import cannot be tested without
 // doing that work.
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

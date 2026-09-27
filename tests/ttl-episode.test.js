@@ -7,11 +7,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { loadCases } from '../bench/lib/corpus.mjs';
 import { runEpisode } from '../bench/lib/ttl-episode.mjs';
+import { fileURLToPath } from 'node:url';
 
 // I/O-level coverage for the one path ttl-verdict.test.js's pure-decision-rule
 // tests cannot reach: what runEpisode itself does when the child never starts.
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 const CONFIG = {
   provider: 'local',

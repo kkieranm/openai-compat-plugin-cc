@@ -3,8 +3,9 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export const COMPANION = new URL('../scripts/oai-companion.mjs', import.meta.url).pathname;
+export const COMPANION = fileURLToPath(new URL('../scripts/oai-companion.mjs', import.meta.url));
 
 const TRACKED_TEMP_DIRS = [];
 let exitCleanupRegistered = false;

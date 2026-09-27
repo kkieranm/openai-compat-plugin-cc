@@ -12,9 +12,10 @@ import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { ARMS, attachmentArgs, loadTaskCases } from '../bench/lib/task-corpus.mjs';
 import { tempDir } from './helpers.mjs';
+import { fileURLToPath } from 'node:url';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 async function witnessExit(caseDef, tree) {
   try {

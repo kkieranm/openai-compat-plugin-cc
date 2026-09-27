@@ -19,9 +19,10 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { closedPort, tempDir, writeConfig } from './helpers.mjs';
 import { safeInline } from '../bench/lib/markdown-safe.mjs';
+import { fileURLToPath } from 'node:url';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'bench/review-sweep.mjs');
 const SUBJECT = 'a commit only the scratch repo has, never this one';
 
