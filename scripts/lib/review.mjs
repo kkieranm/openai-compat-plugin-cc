@@ -22,8 +22,8 @@ const ANALYSIS_FIRST =
 
 // Without one, the model has already reasoned in its own channel before it
 // writes a character of the answer, so asking it to reason again in `analysis`
-// asks twice — and nothing bounds the second ask now that no `maxLength` does.
-// Measured 2026-08-04: 38,956 characters of `analysis` on a 100-line file, the
+// asks twice — and no `maxLength` bounds the second ask.
+// Measured: 38,956 characters of `analysis` on a 100-line file, the
 // whole token budget spent, no findings ever written. The answer goes first, so
 // a reply that runs out of room still carries what it found.
 const FINDINGS_FIRST =

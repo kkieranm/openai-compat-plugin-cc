@@ -20,8 +20,8 @@
 // `dropped` counts findings the model DID
 // emit that normalization discarded. `review-report.mjs` states the rule these
 // serve — "a fact changing what the reader should believe cannot live on one
-// path alone". Reading `findings` and none of them is how the first version of
-// this file reported a truncated analysis as `clean`.
+// path alone". Reading `findings` and none of them would report a truncated
+// analysis as `clean`.
 import { COMPLETION_SHAPES, NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../../scripts/lib/failure-shape.mjs';
 import { outcomeFor, partialFrom, pickRunContext, reasonFrom, requestedModelFrom, runContextFrom } from './outcome.mjs';
 
@@ -120,8 +120,8 @@ export function isOutage(entry) {
 /**
  * Bound one captured stream, and say so when it was cut.
  *
- * Applied to `stderr` as well as `stdout`, which the first version missed: the
- * child capture allows 64MB per stream, so a night of verbose failures wrote
+ * Applied to `stderr` as well as `stdout`: the child capture allows 64MB per
+ * stream, so bounding stdout alone would let a night of verbose failures write
  * gigabytes into the record while `rawTruncated` stayed `false` because stdout
  * happened to be small. A record that quietly shortens its own evidence is the
  * same defect as a report that quietly shortens its own coverage.

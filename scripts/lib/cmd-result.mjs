@@ -99,12 +99,8 @@ function validateOutcomeShape(job) {
  * than one per call site.
  *
  * Composed as one string and written once: every consumed field is validated above before this
- * runs, but a field this table somehow still missed now fails before any byte reaches stdout,
- * rather than after part of the answer is already visible — the fragments and their order here are
- * unchanged from the four separate `stdout.write` calls this restructuring replaces, so for any
- * given `job`, concatenating them into one write produces the identical bytes those four calls
- * already produced. Not a claim that output is unchanged from before this whole feature — `content`,
- * `contextNote` and the rest render exactly what they already rendered one commit ago.
+ * runs, but a field this table somehow still missed fails before any byte reaches stdout, rather
+ * than after part of the answer is already visible.
  */
 function writeAnswer(job) {
   if (!validateOutcomeShape(job)) {

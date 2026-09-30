@@ -1,8 +1,7 @@
 // The command line `bench` builds for one run.
 //
 // `bench/run.mjs` drives the real CLI, so what it does or does not put on that
-// command line IS the experiment. `--structured-output` was absent from `SPEC`
-// for as long as it was precisely because nothing could reach `reviewFlags`.
+// command line IS the experiment.
 //
 // `bench/run.mjs`'s `main()` only runs when invoked as the entry script (a
 // `process.argv[1]` guard), so importing it from here does not itself trigger
@@ -19,34 +18,26 @@ import { reviewFlags } from '../bench/run.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
-  // THE GUARD THAT GUARDS THE GUARD (F4), SECOND ATTEMPT — the first one could not fail.
+  // THE GUARD THAT GUARDS THE GUARD.
   //
-  // It imported the module inside the test body and compared `bench/results/` before and after. But
-  // this file already imports `run.mjs` at the top for `reviewFlags`, so the module had executed long
-  // before the window opened: with the guard mutated to `if (true)`, the test still passed. An
-  // absence assertion whose firing path never runs.
+  // A FRESH PROCESS asks the question. This file already imports `run.mjs`
+  // at the top for `reviewFlags`, so an in-process import of that same URL
+  // finds the module already executed and cannot observe the guard. The
+  // discriminator is the child's output, not artifacts: an unguarded `main()`
+  // prints its per-case progress immediately but only persists a report at the
+  // END of the run, so waiting for files means waiting minutes for a signal
+  // that arrives in milliseconds. ASYNC spawn, never `spawnSync` —
+  // `tests/structure.test.js` forbids the sync forms outright: a sync spawn
+  // blocks the event loop, so any test that also needs an in-process server
+  // deadlocks until the client timeout.
   //
-  // A FRESH PROCESS is the only place the question exists. The discriminator is stdout, not artifacts:
-  // an unguarded `main()` prints its per-case progress immediately but only persists a report at the
-  // END of six cases, so waiting for files means waiting minutes for a signal that arrives in
-  // milliseconds.
-  // ASYNC spawn, never `spawnSync` — `tests/structure.test.js` forbids the sync forms outright and
-  // caught this test's first draft. The ban is a confirmed defect class here: a sync spawn blocks the
-  // event loop, so any test that also needs an in-process server deadlocks until the client timeout.
-  //
-  // THIRD ATTEMPT, and the second one could not fail EITHER — this is the level the defect recurred at.
-  // A bare `doesNotMatch` on child output is satisfied by a child that never imported anything: pointing
-  // it at `../bench/NOPE-does-not-exist.mjs` left the test GREEN, because a module-not-found error also
-  // fails to match. The absence was real and meant nothing.
-  //
-  // So the child now emits a SENTINEL, and only after the import resolves AND the module is confirmed to
-  // export what this file imports. Absence of the progress line is evidence only alongside presence of
-  // the sentinel, exit code 0 and no signal. The dead `Reviewing commit` alternative is gone — it
-  // appears nowhere in `bench/` and could never have matched.
+  // A bare `doesNotMatch` on child output is satisfied by a child that never imported anything — a
+  // module-not-found error also fails to match. So the child emits a SENTINEL, and only after the
+  // import resolves AND the module is confirmed to export what this file imports. Absence of the
+  // progress line is evidence only alongside presence of the sentinel, exit code 0 and no signal.
   // `fileURLToPath`, not `.pathname` — a checkout under a path containing a space yields `%20` in
   // the pathname, `spawn` cannot enter that directory, and the test fails ENOENT **while the guard
-  // it tests is correct**. A false red is this ladder's own class inverted: a check that fails for a
-  // reason unrelated to what it checks. Latent in this checkout, which is why it took a reviewer.
+  // it tests is correct**: a check that fails for a reason unrelated to what it checks.
   const child = spawn(process.execPath, [
     '-e',
     "import('../bench/run.mjs').then((m) => { if (typeof m.reviewFlags !== 'function') "
@@ -82,7 +73,7 @@ test('--structured-output is ABSENT by default', () => {
 });
 
 test('--max-tokens is forwarded with its value when asked for, absent by default', () => {
-  // OAI-215: bench could not set the one option that made a starved review complete.
+  // `--max-tokens` is the option that lets a starved review complete, so bench must forward it.
   const flags = build({ 'max-tokens': '8192' });
   const at = flags.indexOf('--max-tokens');
   assert.ok(at !== -1, '--max-tokens must be forwarded');
@@ -128,7 +119,7 @@ test('--cold mints a cache-buster unique to the case and run', () => {
   assert.ok(!build({}).includes('--cache-buster'));
 });
 
-test('bench refuses --max-tokens below the review reserve floor BEFORE materializing (OAI-215)', async () => {
+test('bench refuses --max-tokens below the review reserve floor BEFORE materializing', async () => {
   // The whole point of validating up front (like the budgets): a value in
   // [1, MIN_REVIEW_RESERVE_TOKENS) passes /oai:review's parse but is refused by
   // every child's reserveFor, so without this floor a multi-case sweep would
@@ -152,7 +143,7 @@ test('bench refuses --max-tokens below the review reserve floor BEFORE materiali
 });
 
 // ---------------------------------------------------------------------------
-// LENSES / pass strategy (OAI-11). The load-bearing property is no double-forward:
+// LENSES / pass strategy. The load-bearing property is no double-forward:
 // `--passes` and `--lens` are mutually exclusive at the review CLI, so a lens run
 // must forward `--lens` and NOT a synthesised `--passes`, or every case is refused.
 

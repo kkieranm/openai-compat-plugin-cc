@@ -67,9 +67,8 @@ function refusesUnlisted(described) {
  * model the dialect enumerated — even one it reports `loaded` — is missing from
  * it whenever /v1/models is the narrower list. Gating on the dialect having
  * published a catalogue while checking membership in the other endpoint's list
- * refused exactly the model the server was holding in memory. Found by the lean
- * review and reproduced end to end: absence from ONE list is not evidence, so
- * only absence from both refuses.
+ * would refuse exactly the model the server was holding in memory. Absence from
+ * ONE list is not evidence, so only absence from both refuses.
  *
  * Exact ids, never `matchKey`: `merge()` has already rewritten every record to
  * the `/v1/models` spelling the chat endpoint accepts, so there is nothing left
@@ -155,7 +154,7 @@ function statesUsable(candidates) {
  * sees an id the server does not have; known-but-not-loaded is the case it
  * cannot see, and the case these hints are about.
  * This was an instance of the very class this docstring warns about, sitting
- * in its own remedy. The dated per-server observations live in README.md, once.
+ * in its own remedy. The per-server observations live in README.md, once.
  */
 function autoSelect(described) {
   const candidates = chatCandidates(described);
@@ -259,14 +258,9 @@ export function planSelection({ defaultModel } = {}, explicitModel, described) {
  * Models eligible for automatic selection: everything the server did not call an
  * embedder.
  *
- * `described.models` only, so a model the dialect enumerated but `/v1/models`
- * omits can be REQUESTED by name yet is never picked automatically. Deliberate,
- * and the same asymmetry `planSelection` already runs on: a named model is the
- * caller's instruction and outranks our inference, while an automatic choice is
- * one we have to justify. Declining to consider a model means refusing and
- * saying why, which is the conservative direction; admitting it would mean
- * routing to an id only one of two endpoints ever mentioned. Raised as a
- * possible inconsistency; it is the rule, stated.
+ * `described.models` only: when `/v1/models` lists any model, a model the
+ * dialect enumerated but `/v1/models` omits can be REQUESTED by name yet is
+ * never picked automatically.
  */
 export function chatCandidates(described) {
   // A denylist, not an allowlist: the loaded chat model on the verification

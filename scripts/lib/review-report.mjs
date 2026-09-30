@@ -68,25 +68,20 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
  * prefilled before refusing, the prefill above would understate the run, and
  * this flag is what turns an undetectable limit into one a reader can see.
  *
- * **It counts both ladders, which the first version did not.** Deriving it from
- * `structured` alone saw only the `response_format` retry and missed the
- * `stream`/`stream_options` rungs in `postWithDegrade` — and those are not
- * hypothetical: `tests/stream-budget.test.js` drives three HTTP attempts for one
- * answer through the real CLI. A field whose own name promises "more than one
- * try" reporting `false` for a run that tried three times is the reported-state
- * class this repo keeps finding, in the field added to prevent it. `degraded` is
- * kept beside it for the narrower fact it actually names: the schema was refused
- * and the reply was parsed from prose.
+ * **It counts both ladders.** Deriving it from `structured` alone would see only
+ * the `response_format` retry and miss the `stream`/`stream_options` rungs in
+ * `postWithDegrade` — and those are not hypothetical:
+ * `tests/stream-budget.test.js` drives three HTTP attempts for one answer through
+ * the real CLI. `degraded` is kept beside it for the narrower fact it actually
+ * names: structured output was requested and the final reply was not
+ * structured.
  *
- * **Both were rewritten for when the default stopped sending a
- * schema.** `!structured` used to mean "we fell back", because a schema
- * was always asked for; now it is true of every ordinary run, so the old
- * expressions claimed a retry for a run that sent one request and a fallback for
- * a schema nobody requested. `degraded` therefore needs BOTH facts — asked for,
- * and not obtained — and `retried` needs none of them: the request count already
- * says what it means, across every ladder. Exactly the inversion this docstring
- * warns about, in the field added to prevent it, which is why it is written down
- * rather than quietly corrected.
+ * **Neither reads `!structured` alone.** The default sends no schema, so
+ * `!structured` is true of every ordinary run; reading it as "we fell back" would
+ * claim a retry for a run that sent one request and a fallback for a schema
+ * nobody requested. `degraded` therefore needs BOTH facts — asked for, and not
+ * obtained — and `retried` needs none of them: the request count already says
+ * what it means, across every ladder.
  *
  * **Read off the shared ledger when one is available, not `result.requestCount`.**
  * `requestCount` is scoped to the one `answerWithRetry`
@@ -334,7 +329,7 @@ export function errorReport(error) {
     // pre-stream refusal, or a mid-stream cutoff before that frame); a frame
     // arrived but reported no `reasoning_tokens` detail; or a `completion.mjs`
     // `refuseUnusable` completion-shape refusal (empty/unfinished/blank) attached
-    // no usage carrier at all — the last a not-yet-covered gap, tracked separately.
+    // no usage carrier at all, so it reads `unknown` here.
     // Needs no fail-closed reconstruction the way `serverConfig` does:
     // `reasoningWitness` reads only a number and returns a fresh
     // constant-and-primitive object, so nothing off a foreign error can reach the
@@ -464,7 +459,7 @@ export function sumUsage(readable) {
 // also carries its own reply facts, named exactly as `jsonReport` names them so a
 // parse-null entry's `model`/`usage` mean the same as a readable pass's. The `raw`
 // reply is kept for the shape-unreadable class — the evidence a parser-gap
-// coverage loss is diagnosed from (OAI-49/OAI-228).
+// coverage loss is diagnosed from.
 export function passEnvelope(pass, index, context) {
   // The lens this pass ran under (a name, or null on the plain `--passes` path),
   // stamped on EVERY branch — readable, parse-null, and thrown — so a diverse run

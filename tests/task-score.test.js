@@ -1,9 +1,9 @@
 // The task scorer: what an answer demonstrated, and what that does not prove.
 //
-// Driven by the four canonical answers Codex's design asks every marker scorer
-// to pin — exact, partial, contradictory, missed — using the real answers the
-// template evaluation recorded, so the fixtures are transcripts rather than
-// inventions.
+// Driven by the four canonical answer shapes the marker scorer classifies —
+// exact, partial, contradicted, missed. The two replies below answer the
+// `prototype-lookup` case's pointed and neutral prompts
+// (bench/task-cases/prototype-lookup/case.json).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MARKER_LIMITS, PROFILES, profileOf, scoreAnswer, tallyArm } from '../bench/lib/task-score.mjs';
@@ -18,13 +18,13 @@ const CLAIMS = [
   { id: 'remedy', any: ['Object.hasOwn', 'hasOwnProperty', 'Object.create(null)'] },
 ];
 
-// The real pointed-arm reply from the template evaluation, abridged.
+// The pointed-arm reply.
 const EXACT = `Passing an unsanitized CLI string directly into resolveTemplate as an object key relies on
 bracket notation for existence checks. In JavaScript this is a known prototype pollution vector. If the
 flag contains __proto__ or constructor, TEMPLATES[name] returns inherited properties. Whether
 Object.hasOwn(TEMPLATES, name) is used instead of direct bracket notation.`;
 
-// The real NEUTRAL reply, which found none of it.
+// The NEUTRAL reply, which found none of it.
 const MISSED = `The plan to ship registry.mjs as-is is rigid because it hardcodes the TEMPLATES object and
 provides no extension mechanism. Any addition of new templates requires modifying the source directly.`;
 
@@ -35,7 +35,7 @@ test('an answer naming every claim scores exact', async () => {
   assert.ok(byClaim.every((c) => c.hit));
 });
 
-test('the real neutral reply scores missed, which is the finding recorded', async () => {
+test('the neutral reply scores missed', async () => {
   const { profile, byClaim } = scoreAnswer(MISSED, CLAIMS);
   assert.equal(profile, 'missed');
   // It does mention TEMPLATES, but not as a lookup site — the markers are chosen

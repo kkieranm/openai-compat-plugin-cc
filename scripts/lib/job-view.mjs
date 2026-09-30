@@ -132,14 +132,13 @@ export function viewOf(row, nowMs = Date.now()) {
  * comparison. A filter on `queuedRole === 'blocks'` would ship, pass a test, and
  * hide the commonest blocker there is.
  *
- * **It also has TWO RUNGS, in `decide`'s order, because `decide` has two.** An
- * earlier revision consulted the queued rung alone and marked the queued head
- * while a live *running* row was what `tryAcquire` actually stopped at — naming
- * a row the user could clear without their job moving, which is this item's own
- * defect wearing new clothes. The rungs are: a non-dead running row, then the
- * queue's head. Only a FOREIGN blocker is named; a local one needs no
- * explanation, and falling through to the next rung instead of returning would
- * reinstate the mismatch.
+ * **It also has TWO RUNGS, in `decide`'s order, because `decide` has two.**
+ * Consulting the queued rung alone would mark the queued head while a live
+ * *running* row is what `tryAcquire` actually stops at — naming a row the
+ * user could clear without their job moving. The rungs are: a non-dead running
+ * row, then the queue's head. Only a FOREIGN blocker is named; a local one
+ * needs no explanation, and falling through to the next rung instead of
+ * returning would produce the same mismatch.
  *
  * `scanQueued` is the queue's own head rule, imported rather than restated. The
  * liveness handed to it is the one `viewOf` already resolved, so no pid is
@@ -170,28 +169,21 @@ export function viewOf(row, nowMs = Date.now()) {
  * true but FALSE: that job cannot proceed whatever clears ahead of it.
  *
  * **What excluding these rows costs, and one exclusion that costs nothing —
- * none of it fixable here.** A `malformed` row with NO pid
- * recorded is not permanently caller-less — `registerWaiter` can still attach a
- * worker to it, after which it reads `live` — so excluding it hides the blocker
- * for that window: a transient false negative, accepted because the alternative
- * is a confident false accusation. By contrast, **a row holding an unreadable pid is excluded
- * PERMANENTLY, and correctly**: `registerWaiter`'s `AND waiter_pid IS
- * NULL` can never match it and `claimJob`'s `AND waiter_pid = ?` can never match
- * it either, so no path here takes it to `running` — which is the rule three
- * paragraphs up applying exactly as written, not an exception to it. Such a row
- * cannot proceed whatever clears ahead of it, so naming a blocker on its behalf
- * would be false. And `live` proves only that the pid NUMBER exists
- * (`job-liveness.mjs` `pidLiveness`, which is what `livenessOf` calls — `isAlive`
- * is a projection of it with no production caller), so a dead worker whose pid
- * was recycled passes
- * condition 5 and the marker can still blame a healthy foreign job. That is the
- * recycled-pid wedge this whole item exists downstream of, not something a
- * display predicate can close.
- *
- * An earlier revision instead argued the witness need not be viable at all,
- * because "`decide` blocks such a row too". That was withdrawn at review: it is
- * unfalsifiable for the rows it was about, since a row with no caller issues no
- * `tryAcquire` and so produces no verdict to disagree with.
+ * none of it fixable here.** A `malformed` row with NO pid recorded is not
+ * permanently caller-less — `registerWaiter` can still attach a worker to it,
+ * after which it reads `live` — so excluding it hides the blocker for that
+ * window: a transient false negative, accepted because the alternative is a
+ * confident false accusation. By contrast, **a row holding an unreadable pid is
+ * excluded PERMANENTLY, and correctly**: `registerWaiter`'s `AND waiter_pid IS
+ * NULL` can never match it and `claimJob`'s `AND waiter_pid = ?` can never
+ * match it either, so no path here takes it to `running`. Such a row cannot
+ * proceed whatever clears ahead of it, so naming a blocker on its behalf would
+ * be false. And `live` proves only that the pid NUMBER exists
+ * (`job-liveness.mjs` `pidLiveness`, which is what `livenessOf` calls —
+ * `isAlive` is a projection of it with no production caller), so a dead worker
+ * whose pid was recycled reads `live` and the marker can still blame a healthy
+ * foreign job. That is the recycled-pid wedge `job-reconcile.mjs` describes,
+ * not something a display predicate can close.
  */
 function blockingSeqFor(views, cwd) {
   const queued = views.filter((view) => view.state === 'queued').sort((a, b) => a.seq - b.seq);
@@ -205,8 +197,8 @@ function blockingSeqFor(views, cwd) {
   // Rung one, and it must come first because `decide` does: the running loop
   // returns `blocked` before queue order is ever consulted, so whenever a
   // non-dead running row exists it is what every local job is actually waiting
-  // on. Marking the queued head here instead named a row that clearing would not
-  // help — the defect this feature exists to remove, in a new place.
+  // on. Marking the queued head here instead would name a row that clearing
+  // would not help.
   // NO seq comparison: `decide`'s running loop makes none, and a malformed
   // running row's seq is arbitrary by definition.
   const running = views
@@ -214,7 +206,7 @@ function blockingSeqFor(views, cwd) {
     .sort((a, b) => a.seq - b.seq)
     .find((view) => view.liveness !== 'dead');
   // A local blocker explains itself — and falling through to the queued head
-  // here would re-create exactly the mismatch this rung was added to fix.
+  // here would produce the mismatch described above.
   if (running) return running.workspace === cwd ? null : running.seq;
 
   // Rung two: nothing is running, so the queue's own head is the blocker.

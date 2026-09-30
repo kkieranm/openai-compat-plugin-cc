@@ -332,10 +332,10 @@ test('effectiveWindow surfaces detectedWindow when a configured window conflicts
   assert.equal(resolved.detected, 40000);
 });
 
-test('a persisted background request DTO carries NO run-context — the worker records the fields null', () => {
-  // The background-null invariant (decision F): runContext on prep must not reach
-  // the persisted DTO. Sibling fields are asserted present so the absence below is
-  // a real omission, not a shape the test failed to build.
+test('a persisted background request DTO carries NO run-context', () => {
+  // The invariant: runContext on prep must not reach the persisted DTO. Sibling
+  // fields are asserted present so the absence below is a real omission, not a
+  // shape the test failed to build.
   const dto = persistRequest({
     profile: {}, numeric: {}, messages: [{ role: 'user', content: 'x' }], budget: { checked: true },
     template: 'advisor', estimatedTokens: 42,

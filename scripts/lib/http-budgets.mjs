@@ -21,10 +21,9 @@ export const MAX_BUDGET_SECONDS = 2_147_483;
  * The timers that bound a request, and the rule for which one gets to explain a
  * failure when two are due at once.
  *
- * Split from `http.mjs` under the size ratchet, and the seam is a real one: that
- * file connects, sends and reads, while this one decides when to stop waiting.
- * The two have different reasons to change — a new transport concern versus a
- * new *budget*, and this feature added a budget.
+ * Split from `http.mjs`, and the seam is a real one: that file connects, sends
+ * and reads, while this one decides when to stop waiting. The two have different
+ * reasons to change — a new transport concern versus a new *budget*.
  *
  * `arm` is exported because the idle budget is armed from two places in
  * `http.mjs` that this module cannot own: once per body chunk, and once from
@@ -78,18 +77,15 @@ export function armBudgets(request, state, { firstByteMs, totalMs, totalBudget, 
   // rather than by the headers.
   if (!capSubsumesFirstByte) {
     // `state.settled` here too, not just on the timer below. With only one of
-    // the two call sites passing it, the equal-delay control-plane pair produced
-    // the same *reason* either way but a different `serverResponded` — the field
-    // this module's own note says must not be raced, decided by which timer ran
-    // last. Headers are a response, so a server that sent them and then stalled
-    // is answering whichever budget names the failure.
+    // the two call sites passing it, the equal-delay control-plane pair would
+    // produce the same *reason* either way but a different `serverResponded` —
+    // the field this module's own note says must not be raced, decided by which
+    // timer ran last. Headers are a response, so a server that sent them and
+    // then stalled is answering whichever budget names the failure.
     //
     // And note the arrow, which is not decoration. Writing the options object
     // directly as an argument to `arm` evaluates `state.settled` *now*, when it
-    // is always false — the identical trap the total timer below already carries
-    // a paragraph about, reintroduced here by copying its shape without its
-    // wrapper. It was written that way, and the test three lines from this
-    // comment caught it within a minute.
+    // is always false — the identical trap described above.
     state.firstByteTimer = arm(firstByteMs, () =>
       fire('first-byte', firstByteMs, { serverResponded: state.settled })());
   }

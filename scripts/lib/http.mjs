@@ -67,8 +67,8 @@ export function mediaType(headerValue) {
  * returns at `[DONE]` — must still release the timer and the socket. Without it
  * a live timer sits behind a half-read connection.
  *
- * Exported for the test, not for a caller — same reason as `requestErrorHandler`
- * below. Both ways of cutting a body that Node can be measured with on 26.3
+ * Exported for the test, not for a caller.
+ * Both ways of cutting a body that Node can be measured with on 26.3
  * (a short content-length, chunked with no terminator) raise on the stream
  * instead of ending cleanly, so neither the `!response.complete` branch below
  * nor the catch's code-less path is reachable through a real `node:http`
@@ -234,10 +234,8 @@ function onResponse({ request, response, state, target, resolve, fail, release }
  * delivery failure as one not worth retrying. `state.settled` is the answer: set
  * when headers resolve, it means "a response was obtained".
  *
- * Exported for the test, not for a caller — `TRANSPORTS` is module-private and
- * `send` takes no transport seam, so the post-header race cannot be driven end
- * to end. That the handler is still wired in is covered by the
- * refused-connection test.
+ * Exported for the test, not for a caller. That the handler is still wired in
+ * is covered by the refused-connection test.
  */
 export function requestErrorHandler(state, target, fail) {
   return (error) => {

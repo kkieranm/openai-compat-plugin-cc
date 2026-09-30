@@ -109,8 +109,9 @@ async function calibrate(config, caseDef) {
   // The SAME preconditions the challenge episodes must meet. Without this the
   // gate that licenses every other episode could clear while its own attempt
   // record contradicted itself, another model was resident, or the server never
-  // applied the TTL it was asked for — and G8 exists precisely because such a
-  // record "is not what this instrument thinks it is reading".
+  // applied the TTL it was asked for — and the record-self-consistent check
+  // exists precisely because such a record "is not what this instrument thinks
+  // it is reading".
   calibration.appliedTtlMs = resident?.ttlMs ?? null;
   calibration.competingModels = otherModelsSeen(calibration.samples, config.model);
   calibration.validityFailures = validityChecks({
@@ -119,9 +120,8 @@ async function calibrate(config, caseDef) {
     competingModels: calibration.competingModels,
     contradiction: calibration.contradiction,
   });
-  // ENUMERATED, then combined. Every collapse of these into a boolean produced a
-  // message naming one of several simultaneous causes — twice, in consecutive
-  // review rounds.
+  // ENUMERATED, then combined. Collapsing these into a boolean produces a message
+  // naming one of several simultaneous causes.
   calibration.causes = calibrationCauses({
     obtainedResponse: calibration.obtainedResponse,
     failed: calibration.failed,

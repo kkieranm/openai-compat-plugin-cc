@@ -49,7 +49,7 @@ test('the minimum reserve is the one that can carry the floor plus the allowance
   assert.equal(analysisCapFor(MIN_REVIEW_RESERVE_TOKENS), ANALYSIS_FLOOR);
 });
 
-test('a real review can never be handed the bare floor, however large its input', () => {
+test('a growing input never shrinks a review to the bare floor', () => {
   // The reserve shrinks as the input grows, so without this the biggest diffs
   // would draw the least reasoning — and a review at the floor still returns
   // valid JSON, so it would degrade quietly instead of failing. What prevents it

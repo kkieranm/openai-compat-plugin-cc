@@ -16,9 +16,8 @@ test('a row a newer plugin wrote is refused, and left exactly as it was', { skip
   const state = stateDir();
   // Asked on the version-99 row's OWN behalf, with its own waiter pid. Asking on
   // a LATER row's behalf proves nothing: that caller reads `blocked` from the
-  // seq comparison whether or not the version rule exists at all, which is how
-  // the first version of this test passed against a `queuedRole` whose
-  // `isKnownVersion` refusal had been deleted outright.
+  // seq comparison whether or not the version rule exists at all, so it passes
+  // against a `queuedRole` whose `isKnownVersion` refusal has been deleted outright.
   const foreign = insertSynthetic(state, { id: 'newer', workspace: HERE, waiterPid: process.pid, version: 99 });
 
   withStore(state, (db) => {
@@ -42,11 +41,9 @@ test('a row a newer plugin wrote is refused, and left exactly as it was', { skip
   });
 });
 
-test('`gone` covers the pre-existing state guard and the rewritten empty-scan exit', { skip: NEEDS_SQLITE }, async () => {
-  // Only the second of these is new. `decide`'s first line — the row is no longer
-  // queued — is byte-identical to the baseline; the rewrite replaced the loop's
-  // fall-through with `scanQueued` returning a null head. Both are pinned because
-  // the plan claimed no verdict changed and nothing checked the claim.
+test('`gone` covers both the state guard and the empty-scan exit', { skip: NEEDS_SQLITE }, async () => {
+  // Two routes reach `gone`: `decide`'s first line — the row is no longer queued —
+  // and `scanQueued` returning a null head. Both are pinned.
   const state = stateDir();
   const finished = insertSynthetic(state, { id: 'over', state: 'completed', workspace: HERE });
   // A live queued row alongside it, or this proves nothing: with an EMPTY queue,
@@ -62,9 +59,9 @@ test('`gone` covers the pre-existing state guard and the rewritten empty-scan ex
   const abandoned = insertSynthetic(empty, { id: 'ghost', workspace: HERE, waiterPid: await deadPid() });
   withStore(empty, (db) => {
     assert.equal(tryAcquire(db, abandoned, process.pid), 'gone');
-    // The verdict is half of it. Skipping a row also RECONCILES it, and that side
-    // effect belongs to the loop this change replaced — drop `onSkip` and the
-    // verdict is still `gone` while the row stays queued forever.
+    // The verdict is half of it. Skipping a row also RECONCILES it through
+    // `onSkip` — drop `onSkip` and the verdict is still `gone` while the row stays
+    // queued forever.
     const after = jobBySeq(db, abandoned);
     assert.equal(after.state, 'failed');
     assert.equal(after.failure.reason, 'worker-died', 'the reason names which route collected it');

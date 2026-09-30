@@ -1,13 +1,12 @@
-// The completion-after-abandon race — the one this feature exists to make safe.
+// The completion-after-abandon race — the one `/oai:abandon` must leave safe.
 //
 // `--force` on a live worker is allowed to end a row someone is still working
 // on. The promise that makes that defensible is that the answer is not
 // destroyed: when the worker finally calls `finish()` and its CAS matches
 // nothing, it writes the outcome to its own log as `SALVAGED_OUTCOME` instead.
 //
-// That promise was written and never once executed. This drives it end to end
-// across two real processes: a worker held mid-request, an abandon from the
-// CLI, then the reply released.
+// This drives that promise end to end across two real processes: a worker held
+// mid-request, an abandon from the CLI, then the reply released.
 //
 // It is a different branch from `job-busy-placement.test.js`, which reaches the
 // same salvage line by injecting a storage THROW in-process. This one reaches
@@ -183,12 +182,12 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     assert.match(salvaged, /"content":"ok"/, 'the answer itself must survive, not just the marker');
 
     // **Which arm wrote it.** `salvageOutcome` is reached two ways: the CAS
-    // returning false (this feature's arm) and the completed write THROWING. Both
-    // write the same marker, so the marker alone does not discriminate. The throw
-    // arm rethrows, and a rethrow in a spawned worker takes exactly one path —
-    // `oai-companion.mjs`'s top-level handler, which writes `Unexpected failure:`
-    // to this same log and exits 2. `job-busy-placement.test.js` proves that arm
-    // rethrows; this asserts that route was not taken.
+    // returning false and the completed write THROWING. Both write the same
+    // marker, so the marker alone does not discriminate. The throw arm
+    // rethrows, and a rethrow in a spawned worker takes exactly one path —
+    // `oai-companion.mjs`'s top-level handler, which writes `Unexpected
+    // failure:` to this same log and exits 2. `job-busy-placement.test.js`
+    // proves that arm rethrows; this asserts that route was not taken.
     //
     // Waited on the worker's death first: on the throw arm the crash line lands
     // moments AFTER the salvage line, so reading the instant the marker appears

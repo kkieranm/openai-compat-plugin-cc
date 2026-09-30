@@ -71,10 +71,11 @@ export function pairKey({ provider, model }) {
  * **Every flag before the prompt, which goes last.** `/oai:task` refuses a
  * flag-looking word inside the request text — deliberately, so a prompt that
  * mentions `--file` is not silently parsed as one — so a prompt-first argv is
- * rejected in milliseconds. The first version of this function built exactly
- * that, and the failure was invisible: warm-up records its outcome and never
- * throws, so the arm carried on with a `warmed` entry that had warmed nothing
- * and a first case still paying the model load. Caught only by running it.
+ * rejected in milliseconds. Nothing would flag that failure: warm-up records
+ * its outcome and never throws, and `answered: false` is routine, so the arm
+ * would carry on with a `warmed` entry that had warmed nothing — visible only
+ * in its `error` and a `durationMs` far shorter than a model load — and a first
+ * case still paying the model load.
  */
 export function warmUpFlags({ provider, model }, options) {
   const flags = ['task', '--max-tokens', WARM_UP_MAX_TOKENS];
@@ -144,9 +145,7 @@ export function warmUpPair(pair, options, { companion, cwd, beforeCase }) {
  * `--model` overrides every case — this collapses to exactly one warm-up
  * before the first case, identical to the behaviour it replaces.
  *
- * `warm` and `run` are injected because `bench/run.mjs` calls `main()` at
- * import, so the loop is otherwise unreachable from a test — and a pair-change
- * rule that no test can drive is a rule the next edit deletes silently.
+ * `warm` and `run` are injected so a test can drive the loop without a model.
  */
 export function runWithWarmUp(cases, options, { warm, run }) {
   const warmed = options['warm-up'] ? [] : null;

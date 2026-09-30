@@ -401,14 +401,11 @@ test('a hostile job.request.estimatedTokens is refused up front, never reaching 
 });
 
 test('every RENDER_CONSUMED_FIELDS entry is actually enforced, not merely claimed', { skip: NEEDS_SQLITE }, async () => {
-  // Not two hand-maintained lists compared against each other (a prior design
-  // a review round correctly rejected as circular) — this constructs, for
-  // every entry the table claims to cover, a synthetic row whose ONLY defect
-  // is a hostile value at that exact path, and proves it is actually refused.
-  // What this proves: every entry the table currently claims is enforced. It
-  // does NOT prove the table is complete — a field consumed by a future
-  // change without a matching entry would still slip past, exactly as the
-  // three prior review rounds' findings did before each was added here.
+  // This constructs, for every entry the table claims to cover, a synthetic row
+  // whose ONLY defect is a hostile value at that exact path, and proves it is
+  // actually refused. What this proves: every entry the table currently claims
+  // is enforced. It does NOT prove the table is complete — a field consumed by
+  // a future change without a matching entry would still slip past.
   const BUILDERS = {
     'outcome.model': () => ({ outcome: { content: 'ok', model: HOSTILE } }),
     'outcome.requestedModel': () => ({ outcome: { content: 'ok', model: 'test-model', requestedModel: HOSTILE } }),

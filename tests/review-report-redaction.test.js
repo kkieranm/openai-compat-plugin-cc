@@ -11,7 +11,7 @@ import { errorReport } from '../scripts/lib/review-report.mjs';
 // what the source error carries.
 
 test('errorReport never copies .endpoint, .responseBody, .bodyExcerpt or .finishReason, even when all four are present', () => {
-  // All four fields this feature introduced, pinned together — a test that
+  // All four fields pinned together — a test that
   // covers only some of them lets a regression on the others ship silently
   // even though the production code (an explicit field list) was
   // already safe.

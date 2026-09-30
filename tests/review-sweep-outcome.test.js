@@ -7,8 +7,7 @@
 // The premise under test: a review that starved for tokens and a review that
 // genuinely found nothing are both an empty findings list, and the CLI already
 // says which in FIELDS rather than prose. Reading `findings` and none of the
-// caveat fields is how the first version of this classifier reported a truncated
-// analysis as `clean`.
+// caveat fields reports a truncated analysis as `clean`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -28,9 +27,8 @@ const envelope = (reason, extra = {}) => ({
 const OPTIONS = { deadline: Infinity, maxSeconds: 900, maxAttempts: 3, abortAfter: 3 };
 const commits = (...shas) => shas.map((sha) => ({ sha, subject: `subject ${sha}`, eligible: true }));
 
-// The defect this whole feature exists to prevent, committed in its own
-// classifier: `analysisCut` is the CLI's word for "the model never finished
-// looking", and reading only `findings` called that a clean review.
+// `analysisCut` is the CLI's word for "the model never finished looking", and
+// reading only `findings` calls that a clean review.
 test('a truncated analysis is NOT clean, even with a well-formed empty findings list', () => {
   const entry = classify(ok([], { analysisCut: true }));
   assert.equal(entry.outcome, 'truncated');
@@ -161,10 +159,8 @@ test('the raw reply is retained for the machine record, and truncation is record
 });
 
 
-// --- pass 2 batch: what the entry CARRIES, not what its outcome is called ---
-
 // A truncated review is not a review of the commit — but the leads it did emit
-// are still leads, and the first fix dropped them from the morning artifact.
+// are still leads, and the entry keeps them.
 test('a truncated review keeps the findings it produced', () => {
   const entry = classify(ok([{ file: 'a.mjs', summary: 'real lead' }], { analysisCut: true }));
   assert.equal(entry.outcome, 'truncated');
@@ -252,8 +248,7 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
 // --- the rule, and the two shapes that prove it holds ---
 
 // The carried report fields survive on EVERY report-derived path. `findings`
-// is separate on purpose: `unreadable` has no array to carry, which is why the
-// first draft of this invariant contradicted the code it describes.
+// is separate on purpose: `unreadable` has no array to carry.
 // `skippedUnsizedWindow` is the CAUSE `hunksOnly`
 // cannot carry, so a path keeping one and losing the other reports a diff-only
 // review with no way to tell a deliberate shed from an unmeasurable window.

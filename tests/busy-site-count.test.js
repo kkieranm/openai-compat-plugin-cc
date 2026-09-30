@@ -1,11 +1,8 @@
 // The count of contention-handling sites, asserted against the code rather than
-// against a reviewer's attention.
+// left to prose.
 //
-// A site count in prose drifted THREE TIMES in three review passes — five, six,
-// nine, each wrong when written — because a number in prose has nothing holding
-// it to the code it describes. This repo's rule is that a recurring defect class
-// graduates from a reviewer's prompt to a structural test, and three instances
-// in one feature is that signal.
+// A site count in prose drifts, because a number in prose has nothing holding it
+// to the code it describes.
 //
 // The numbers are NOT hardcoded here. They are counted from `scripts/lib`, spelled
 // out, and the resulting sentence is required to appear in each document. Change

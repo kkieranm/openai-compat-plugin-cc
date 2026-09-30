@@ -16,9 +16,9 @@ import { tempDir } from './helpers.mjs';
 function fileWith(lines) {
   const dir = tempDir('oai-slice-');
   const path = join(dir, 'a.txt');
-  // WITH a trailing newline, like every real source file. The first version of
-  // this helper omitted it, which is why the phantom-line defect survived: the
-  // fixtures did not resemble the files the code actually reads.
+  // WITH a trailing newline, like every real source file. A fixture without one
+  // does not resemble the files the code actually reads, and never reaches the
+  // trailing empty element `readFileBlocks` drops.
   writeFileSync(path, `${lines.join('\n')}\n`);
   return path;
 }
@@ -80,13 +80,13 @@ test('a whole-file request is unchanged — no header suffix, no note', async ()
 });
 
 test('slicing does not break what /oai:status ACTUALLY shows as the request', async () => {
-  // Asserted through `excerptOf`, the real consumer, and not through
-  // `requestTextOf`. The first version of this test called `requestTextOf` and
-  // asserted `.pop()` — the LAST line — while `job-render.mjs:47` reads `[0]`,
-  // the FIRST. It therefore passed green while every backgrounded sliced job
-  // displayed the slice warning instead of the question, unrecoverably, since a
-  // job's messages are frozen at submission. A guard must read the same accessor
-  // its consumer reads; touching the same function is not enough.
+  // Asserted through `excerptOf`, the real consumer: `excerptOf` in
+  // `job-render.mjs` shows the FIRST line of `requestTextOf`'s result. With the
+  // slice note ahead of the file blocks the first and last lines agree, so an
+  // assertion on the LAST line could not catch the note moving behind the
+  // blocks — which `excerptOf` would then show as the request, unrecoverably,
+  // since a job's messages are frozen at submission. A guard must read the same
+  // accessor its consumer reads; touching the same function is not enough.
   const files = readFileBlocks([`${fileWith(TEN)}:3-5`, fileWith(TEN)]);
   const [, user] = buildMessages({ prompt: 'the real request', files });
   assert.equal(excerptOf({ request: { messages: [user] } }), 'the real request');

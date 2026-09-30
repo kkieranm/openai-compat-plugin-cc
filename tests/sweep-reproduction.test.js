@@ -339,7 +339,7 @@ test('a malformed sha-less entry makes the run ungroupable, never an undefined r
 });
 
 test('RENDER: a gap sha appears in the per-run gap section, never in a group matrix', () => {
-  // The plan's approved coverage bar. A gap makes its run ungroupable, so the lost sha
+  // A gap makes its run ungroupable, so the lost sha
   // must surface in the integrity section and NEVER be collapsed into a matrix's
   // not-reviewed cell — a settled-but-lost write is a different fact from an unreached
   // commit. Two clean runs form a real matrix beside the gap run so both halves show.
@@ -355,7 +355,7 @@ test('RENDER: a gap sha appears in the per-run gap section, never in a group mat
 });
 
 test('RENDER: a lead row carries the commit subject', () => {
-  // The subject is collected onto leads and must reach the reader (plan Phase 3); the
+  // The subject is collected onto leads and must reach the reader; the
   // sha alone identifies the commit, the subject makes the row human-readable.
   const withLead = run('LEAD', { header: { diffOnly: true }, entries: [reviewed('x', 'qwen')] });
   withLead.leads = [{ sha: 'abc123def', subject: 'fix the widget', outcome: 'truncated', count: 2 }];

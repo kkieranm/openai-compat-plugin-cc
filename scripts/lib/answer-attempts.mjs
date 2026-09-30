@@ -43,7 +43,6 @@ export const RETRY_DELAY_MS = 2_000;
  * alive. This one is the opposite: it is the work. An unref'd retry delay lets
  * Node find an empty event loop and exit **0** in the middle of the wait, so a
  * run that failed and was about to try again reports success and prints nothing.
- * Caught by the existing suite, which is exactly the kind of thing it is for.
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -68,8 +67,7 @@ function expired(expiresAt) {
  * The handle stays open across `finishAnswer` deliberately. `postChat` returns
  * *successfully* for an empty completion, a blank completion and an unfinished
  * stream — they are only detected here — so settling inside the transport would
- * record those as answered physical attempts with no reason code, and the
- * reliability figure this whole feature exists to produce would count them as
+ * record those as answered physical attempts with no reason code, counted as
  * successes.
  */
 async function attemptAnswer(profile, budgets, negotiation, finish) {

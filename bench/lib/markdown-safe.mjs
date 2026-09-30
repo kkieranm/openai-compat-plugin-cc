@@ -4,7 +4,7 @@
 // blank line breaks a list, and none of it is this tool's to trust. These three helpers neutralise
 // Markdown metacharacters uniformly (dot-replacement), and the structural test in
 // `tests/structure.test.js` enforces that EVERY interpolation of untrusted data in the render files is
-// one of these calls (or a reviewed formatting exception) — so a new sink cannot be added unwrapped.
+// one of these calls (or a formatting exception that test lists) — so a new sink cannot be added unwrapped.
 //
 // NO OPTIONS, deliberately. Each helper takes exactly one argument. A caller's fallback is a Markdown
 // literal appended as `safeInline(x) || '(none)'` (checked by the grammar as a whole string literal),

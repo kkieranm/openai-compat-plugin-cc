@@ -3,8 +3,7 @@
 //
 // `job-busy.test.js` proves each wrapped write survives a TRANSIENT busy. None
 // of that says anything about the exhausted case, or about a write whose failure
-// is handled by a catch that then publishes something false. Both were found by
-// review of the fix, not of the original code.
+// is handled by a catch that then publishes something false.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync } from 'node:fs';
@@ -92,10 +91,9 @@ test('a storage failure on the COMPLETED write is never republished as a task fa
   assert.notEqual(row.state, 'failed', 'an answer that exists must never be published as a task failure');
   assert.equal(row.state, 'running', 'no ROW is written: it stays running for reconciliation to judge by pid');
 
-  // The other half of the fix, and the half the verdict point demanded: not
-  // publishing `failed` keeps the answer from being mislabelled, but only this
-  // keeps it from being LOST. The row above is deliberately unhelpful, so the
-  // log line is the entire remaining record of a reply that was paid for.
+  // Not publishing `failed` keeps the answer from being mislabelled, but only
+  // this keeps it from being LOST. The row above is deliberately unhelpful, so
+  // the log line is the entire remaining record of a reply that was paid for.
   const salvaged = errors.split('\n').find((line) => line.startsWith('SALVAGED_OUTCOME'));
   assert.ok(salvaged, `the outcome was never salvaged; stderr was: ${JSON.stringify(errors)}`);
   assert.match(salvaged, /"content":"ok"/, 'the salvaged line must carry the reply, not merely announce one');
@@ -156,8 +154,7 @@ test('an EXHAUSTED spawn-stamp retry still reports the id', { skip: NEEDS_SQLITE
   // apparent success.
   //
   // The budget is exhausted by advancing the clock `withBusyRetry` reads rather
-  // than by waiting thirty seconds for it. That is also the only way to reach
-  // this path at all: a busy that clears is the case the OTHER witness covers.
+  // than by waiting thirty seconds for it.
   const server = await startFakeServer((request, response) => {
     if (request.url.includes('/models')) {
       respondJson(response, { data: [{ id: 'test-model', object: 'model' }] });

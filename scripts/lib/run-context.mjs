@@ -20,9 +20,9 @@ const UNOBSERVED = 'server-default-unobserved';
  * was set: `reasoning_effort`'s value is recoverable from the `sampling` echo and
  * `temperature`'s from the operator's own command — neither value is re-echoed here.
  *
- * Request-conditional, deliberately not a constant `'unknown'` stamp: once bench
- * forwards `--reasoning-effort` (OAI-215) a run that set it reads `'requested'`
- * rather than falsely claiming the default was unobserved.
+ * Request-conditional, deliberately not a constant `'unknown'` stamp: a run
+ * that set the knob reads `'requested'` rather than falsely claiming the
+ * default was unobserved.
  */
 export function serverConfigFrom({ sampling, temperature } = {}) {
   return {

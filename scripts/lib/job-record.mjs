@@ -138,13 +138,13 @@ export function markSpawned(db, seq, at) {
  * "A worker exists and is waiting" — written on worker start, long before it is
  * eligible to run.
  *
- * This is NOT the same fact as `worker_pid`, and collapsing the two broke
- * queuing outright in an earlier draft: with a pid recorded only at the moment a
- * job started running, every legitimately waiting worker presented
+ * This is NOT the same fact as `worker_pid`, and collapsing the two would break
+ * queuing outright: with a pid recorded only at the moment a job started
+ * running, every legitimately waiting worker would present
  * `state='queued', worker_pid IS NULL` — exactly the signature of a job whose
  * worker never started — so anything queued behind a run longer than the startup
- * grace was failed as abandoned. It also left a queued job uncancellable, since
- * no pid existed whose death a reader could observe.
+ * grace would be failed as abandoned. It would also leave a queued job
+ * uncancellable, since no pid would exist whose death a reader could observe.
  */
 export function registerWaiter(db, seq, pid, at) {
   const info = db

@@ -11,8 +11,7 @@
 // phrase is absent; the totality and pairing tests also read the source tables
 // directly. None can tell whether a sentence is TRUE of the row it describes —
 // the streak clause's TRANSITION is driven directly below, but that the prose
-// matches it is still read, not asserted; a false sentence here is caught by
-// review, not by this file. So the truth of
+// matches it is still read, not asserted. So the truth of
 // rendered prose is checked by a reader, and the
 // sentences are kept to directly observed facts to shrink what a reader has to
 // check; treating a green run as evidence that the report is honest is the
@@ -215,7 +214,7 @@ test('a starved reasoning-only commit is NOT described as having run out of toke
   assert.match(out, /stream ended cleanly/);
 });
 
-// The control: token-exhaustion's own prose must survive this change unchanged.
+// The control: token-exhaustion keeps its own prose.
 test('a starved token-exhaustion commit still says it ran out of tokens', () => {
   const out = render(commit({ outcome: 'starved', reason: 'token-exhaustion' }));
   assert.match(out, /ran out of tokens/);
@@ -516,8 +515,8 @@ test('a run that found fewer commits than asked for says so', () => {
   assert.doesNotMatch(full, /requested commits were eligible/, 'a complete run must not carry the warning');
 });
 
-// F1: one attribution per commit, not two. The old tests asserted the string was
-// PRESENT, which one occurrence and two both satisfy.
+// One attribution per commit, not two. Asserting only that the string is PRESENT
+// would pass for one occurrence and for two.
 test('a coverage row carrying findings names the answering model exactly once', () => {
   const out = render(commit({
     outcome: 'substituted', model: 'other-model',
@@ -526,7 +525,7 @@ test('a coverage row carrying findings names the answering model exactly once', 
   assert.equal(out.split('other-model').length - 1, 1, 'the model was named more than once for one commit');
 });
 
-// L1: the sentence must name WHICH cause applied. A pinned start makes "the
+// The sentence must name WHICH cause applied. A pinned start makes "the
 // history simply ran out" routine, and blaming the scan limit sends a reader to
 // tune a knob that was never the constraint.
 test('a shortfall names the cause the record supports', () => {
@@ -538,8 +537,8 @@ test('a shortfall names the cause the record supports', () => {
   assert.match(hitLimit, /scan-limit.*12/);
 });
 
-// L3: analysisCut is rendered from the ENTRY, so an overridden verdict cannot
-// erase it. A substituted model whose analysis was also cut used to lose it.
+// analysisCut is rendered from the ENTRY, so an overridden verdict cannot
+// erase it.
 test('a substituted entry whose analysis was cut still says so', () => {
   const out = render(commit({
     outcome: 'substituted', model: 'other', analysisCut: true,
@@ -553,7 +552,7 @@ test('the JSON record is private, because it is the only artifact holding raw ou
   // this file carries them. The ledger beside it is created 0o600 for exactly
   // that material, so a world-readable record made the ledger's privacy
   // decorative. The rendered .md is deliberately NOT included: it emits neither
-  // stream, which is what scopes this fix.
+  // stream.
   const dir = tempDir('sweep-report-mode-');
   const { reportPath, recordPath } = writeSweep(dir, 'stamp', {
     startedAt: '2026-08-13T09:00:00.000Z',
@@ -569,13 +568,13 @@ test('the JSON record is private, because it is the only artifact holding raw ou
   assert.notEqual(statSync(reportPath).mode & 0o777, 0o600);
 });
 
-// OAI-213 — untrusted values are escaped before they reach the Markdown, so a hostile
+// Untrusted values are escaped before they reach the Markdown, so a hostile
 // finding, id, subject, path or evidence cannot corrupt the report or throw. These assert
 // the RENDERED behaviour; the structural guarantee that EVERY sink is wrapped lives in
 // tests/structure.test.js.
 import { safeInline } from '../bench/lib/markdown-safe.mjs';
 
-test('a hostile finding.summary cannot open a fence or break the list (OAI-213)', () => {
+test('a hostile finding.summary cannot open a fence or break the list', () => {
   const out = render(commit({
     outcome: 'findings',
     model: 'qwen/qwen3.6-27b',
@@ -588,7 +587,7 @@ test('a hostile finding.summary cannot open a fence or break the list (OAI-213)'
   assert.doesNotMatch(out, /```/);
 });
 
-test('a hostile model id and commit subject are escaped, not rendered as markup (OAI-213)', () => {
+test('a hostile model id and commit subject are escaped, not rendered as markup', () => {
   const out = render(commit({
     outcome: 'findings',
     subject: 'fix **bold** and `code`',
@@ -600,7 +599,7 @@ test('a hostile model id and commit subject are escaped, not rendered as markup 
   assert.match(out, /srv\/\.inject\.-model/);
 });
 
-test('multi-line evidence with a bare \\r keeps every line inside the blockquote (OAI-213)', () => {
+test('multi-line evidence with a bare \\r keeps every line inside the blockquote', () => {
   const out = render(commit({
     outcome: 'findings',
     model: 'qwen/qwen3.6-27b',
@@ -612,7 +611,7 @@ test('multi-line evidence with a bare \\r keeps every line inside the blockquote
   }
 });
 
-test('a non-array / circular / throwing record.include renders without throwing (OAI-213)', () => {
+test('a non-array / circular / throwing record.include renders without throwing', () => {
   const circular = []; circular.push(circular);
   const throwing = new Proxy(['a'], { get(t, p) { if (p === Symbol.iterator) throw new Error('boom'); return t[p]; } });
   for (const include of ['not-an-array', 42, circular, throwing]) {
@@ -623,13 +622,13 @@ test('a non-array / circular / throwing record.include renders without throwing 
   assert.match(out, /scripts, bench\/\.x\./);
 });
 
-test('safeInline is idempotent (double-wrap is safe) (OAI-213)', () => {
+test('safeInline is idempotent (double-wrap is safe)', () => {
   for (const v of ['a`b*c_d', '/var/folders/x_y/z', 'HEAD~5', '{"code":42}']) {
     assert.equal(safeInline(safeInline(v)), safeInline(v));
   }
 });
 
-test('a finding.file/line with a throwing toString does not abort the report (OAI-213 review)', () => {
+test('a finding.file/line with a throwing toString does not abort the report', () => {
   const hostile = { toString() { throw new Error('boom'); } };
   assert.doesNotThrow(() => render(commit({
     outcome: 'findings',
@@ -638,7 +637,7 @@ test('a finding.file/line with a throwing toString does not abort the report (OA
   })));
 });
 
-test('a revoked array proxy in record.include does not abort the report (OAI-213 review)', () => {
+test('a revoked array proxy in record.include does not abort the report', () => {
   const { proxy, revoke } = Proxy.revocable([], {});
   revoke();
   assert.doesNotThrow(() => renderSweep({ ...base, include: proxy, enumerated: 0, entries: [] }));

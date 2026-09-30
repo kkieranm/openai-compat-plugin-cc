@@ -1,7 +1,5 @@
 // Which text in a chat completion is read as findings, and what shape counts as
-// findings at all. Split out of `structured.test.js` when this feature's repairs
-// pushed that file past the size budget — the two subjects had already come
-// apart: what a strict schema must LOOK like, and how a reply is READ.
+// findings at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFindings } from '../scripts/lib/structured.mjs';
@@ -84,10 +82,6 @@ test('the schema fallback cannot become a scratchpad channel', () => {
 });
 
 test('content wins over reasoning when both are present', () => {
-  // This predates the ordered-attempt loop and is now the ONLY thing pinning
-  // candidate order: the other channel tests all have exactly one channel that
-  // can win, so they would pass just as happily against `[reasoning, content]`.
-  // Reorder that list and this is the single test that goes red.
   const parsed = parseFindings(
     { content: payload([{ ...FINDING, file: 'real.js' }]), reasoning: payload([{ ...FINDING, file: 'scratch.js' }]) },
     { structured: true, schema: REVIEW_SCHEMA },
@@ -96,14 +90,14 @@ test('content wins over reasoning when both are present', () => {
 });
 
 test('a bare top-level array is the same reply as {findings: [...]}, field for field', () => {
-  // It used to be discarded and reported as "no findings in the requested
-  // shape", so a review that found two defects said it had found nothing
-  // readable. Asked for findings in prose — the default since the 2026-08-04
-  // amendment — a model answers with a bare array about as readily as with the
-  // wrapper, so this was reachable on every ordinary review.
+  // Discarding it as "no findings in the requested shape" would make a review
+  // that found two defects say it had found nothing readable. Asked for
+  // findings in prose — the default — a model answers with a bare array about
+  // as readily as with the wrapper, so this is reachable on every ordinary
+  // review.
   //
-  // Asserted as EQUIVALENCE rather than as "the array works", because the defect
-  // this repair must not reintroduce is the two spellings diverging somewhere
+  // Asserted as EQUIVALENCE rather than as "the array works", because the
+  // defect to guard against is the two spellings diverging somewhere
   // downstream: `dropped`, the cap diagnostics and `summary` all have to come
   // out identical, not merely both non-null.
   const findings = [FINDING, { ...FINDING, line: 9, summary: 'second' }];
@@ -177,11 +171,11 @@ test('an array wrapped in prose is the same reply as an object wrapped in prose'
 
 
 test('a whole reply keyed `message` instead of `summary` is real findings, not unreadable', () => {
-  // OAI-228: a capable model emitted valid findings as `{file, line, message}`
-  // (the linter/diagnostic spelling) and every one was dropped for naming no
-  // `summary`, reporting a review that found real defects as unreadable. Five
-  // runs of real work were lost this way in one measured arm. `message` is now
-  // read as the description on this whole-reply survival path.
+  // A capable model can emit valid findings as `{file, line, message}` (the
+  // linter/diagnostic spelling); dropping every one for naming no `summary`
+  // reports a review that found real defects as unreadable — five runs of real
+  // work lost this way in one measured arm. `message` is read as the
+  // description on this whole-reply survival path.
   const findings = [
     { file: 'scripts/lib/cmd-review.mjs', line: 103, message: 'the size guard is disarmed here' },
     { file: 'scripts/lib/cmd-review.mjs', line: 105, message: 'and again here' },
@@ -241,8 +235,7 @@ test('a scanned array selected by a summary-named finding also keeps its message
   // Once `some(named)` has SELECTED a scanned array (because a real
   // summary-named finding is in it), normalization runs over every element and
   // the `message` alias retains the siblings too. Bounded and consistent: the
-  // array was already accepted as the payload; keeping a real sibling finding in
-  // it is the same "keep what the model sent" the whole change is about.
+  // array was already accepted as the payload.
   const findings = [
     { file: 'a.js', line: 1, summary: 'the summary-named one that selects the array' },
     { file: 'b.js', line: 2, message: 'the message-keyed sibling' },
@@ -257,7 +250,7 @@ test('the `message` alias does not leak into the --structured-output schema path
   // runs BEFORE normalization — so a `message`-only finding is rejected by
   // `matchesSchema` (which requires `summary`) and never reaches the alias. The
   // widening is scoped to the unconstrained/degraded path, which is where the
-  // dated instance lived; keep it there.
+  // `message` spelling was observed; keep it there.
   const reply = JSON.stringify({ analysis: 'a', findings: [{ file: 'x.js', line: 1, message: 'm' }], summary: 's' });
   assert.equal(
     parseFindings({ content: reply, reasoning: '' }, { structured: true, schema: REVIEW_SCHEMA }),

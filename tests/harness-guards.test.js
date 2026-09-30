@@ -40,8 +40,7 @@ const STATIC_IMPORT = /^\s*import\s+(?:[^;'"]*\s+from\s+)?['"]node:sqlite['"]/m;
 // silently shrinks its own matrix has stopped being able to fail.
 //
 // The guard is falsifiable: reinstate `import { DatabaseSync } from 'node:sqlite'`
-// at the top of `tests/job-helpers.mjs` and this test names that file. Verified by
-// doing exactly that, not by assuming it.
+// at the top of `tests/job-helpers.mjs` and this test names that file.
 test('no test file statically imports node:sqlite, which links before any skip can run', () => {
   const offenders = filesUnder(TESTS)
     .filter((file) => STATIC_IMPORT.test(readFileSync(file, 'utf8')))
@@ -58,8 +57,7 @@ test('no test file statically imports node:sqlite, which links before any skip c
 });
 
 // Guards the guard. `filesUnder` walking nothing would make the assertion above
-// pass against an empty list forever, which is the exact shape this repo has
-// confirmed four separate assertions to have had.
+// pass against an empty list forever.
 test('the harness guard actually reads the test directory', () => {
   const files = filesUnder(TESTS);
   assert.ok(files.length > 20, `expected to scan the test suite, found ${files.length} files`);

@@ -8,9 +8,8 @@
  * that an observed unload was a TTL eviction, because sampling cannot establish
  * one: proving an unload happened after expiry requires observing the model
  * still resident after expiry, and a mechanism that fires AT expiry makes that
- * observation impossible. Four successive designs for a confirming branch each
- * failed on a different axis before the branch was withdrawn. An observed
- * absence is recorded in full and attributed to nothing.
+ * observation impossible. An observed absence is recorded in full and
+ * attributed to nothing.
  */
 
 /**
@@ -37,9 +36,7 @@ export const EXPOSURE_MARGIN = 1.5;
 import { calibrationSays } from './ttl-calibration.mjs';
 
 /**
- * Every SWEEP outcome `summarize` can return. The exhaustiveness guard reads it,
- * and so does the done-condition below — the outcome table has already lost a
- * row to drift once.
+ * Every SWEEP outcome `summarize` can return. The exhaustiveness guard reads it.
  */
 export const SWEEP_VERDICTS = Object.freeze([
   'deterministic-form-refuted',
@@ -57,10 +54,9 @@ export const SWEEP_VERDICTS = Object.freeze([
  * sampler and the server log before re-running", and `instrument-failed` says
  * NOTHING about the server at all — which is not a re-run instruction, and the
  * distinction is why this list is enumerated rather than described. Treating "not
- * `instrument-failed`" as completion re-admits the first two, the same
- * whole-class-from-one-sub-population mistake the done-condition it replaced was
- * written to fix. Exported so the exit code and the tracker read ONE rule, and
- * `tests/ttl-verdict.test.js` pins the tracker's copy against it.
+ * `instrument-failed`" as completion re-admits the first two — a whole class
+ * judged from one sub-population. Exported so the exit code in `ttl-challenge.mjs`
+ * reads this one rule, and `tests/ttl-vocabulary.test.js` pins it.
  */
 export const CONCLUSIVE = Object.freeze(['deterministic-form-refuted', 'inconclusive-failure']);
 
@@ -84,17 +80,17 @@ export const EPISODE_VERDICTS = Object.freeze([
  */
 export function validityChecks({ appliedTtlMs, requestedTtlMs, competingModels, contradiction }) {
   const failed = [];
-  // G6: the treatment this episode actually received, read back from the server
-  // rather than inferred from `lms load` exiting 0. Classifying against the
-  // requested constant is how an episode that silently ran under the default TTL
-  // gets scored as though it had not.
+  // The ttl-confirmed check: the treatment this episode actually received, read
+  // back from the server rather than inferred from `lms load` exiting 0.
+  // Classifying against the requested constant is how an episode that silently
+  // ran under the default TTL gets scored as though it had not.
   if (!(appliedTtlMs > 0) || appliedTtlMs !== requestedTtlMs) failed.push('ttl-confirmed');
-  // G2: the protocol REQUIRES nothing else connected — another resident model can
-  // trigger Auto-Evict and produce the same client-visible shape. A competing
-  // model means the precondition was violated, which is an instrument failure and
-  // not a finding about the server.
+  // The sole-tenancy check: the protocol REQUIRES nothing else connected —
+  // another resident model can trigger Auto-Evict and produce the same
+  // client-visible shape. A competing model means the precondition was violated,
+  // which is an instrument failure and not a finding about the server.
   if (competingModels?.length) failed.push('sole-tenancy');
-  // G8: a record this module does not understand.
+  // The record-self-consistent check: a record this module does not understand.
   if (contradiction) failed.push('record-self-consistent');
   return failed;
 }
@@ -110,13 +106,12 @@ export function episodeVerdict({ ttlMs, prefillMs, failed, unloadObserved, obtai
   // Before anything else: did a request obtain a RESPONSE? A refused
   // `--max-tokens`, an unreachable server, a materialization throw and a
   // validation refusal all exit non-zero having dispatched nothing, and reading
-  // those as "the server failed it" is the experiment reporting on an instrument
-  // that never ran. Not hypothetical — an accidental run of the withdrawn draft
-  // produced exactly that, and rendered a verdict about the mechanism from it.
+  // those as "the server failed it" is the experiment reporting on an
+  // instrument that never ran.
   if (!obtainedResponse) return 'not-dispatched';
   // Kept separate from `not-dispatched` rather than folded into it: a competing
   // model or an unconfirmed TTL did not fail to dispatch, and printing that word
-  // for them would be a false string — the defect class this feature is about.
+  // for them would be a false string.
   if (invalid?.length) return 'instrument-invalid';
 
   if (!failed) {
@@ -140,8 +135,8 @@ export function episodeVerdict({ ttlMs, prefillMs, failed, unloadObserved, obtai
  * The states in which this sweep may say NOTHING about the server.
  *
  * The seam is real: below this line every branch is a finding, above it every
- * branch says the instrument did not run. Conflating those is the defect the
- * whole feature keeps producing — "inconclusive" still reads as a claim about
+ * branch says the instrument did not run. Conflating those is the defect to
+ * guard against — "inconclusive" still reads as a claim about
  * the server, so a broken instrument must not reach it.
  */
 function disqualified(verdicts, calibrationCleared, calibrationFailures, causes) {
@@ -183,11 +178,10 @@ function disqualified(verdicts, calibrationCleared, calibrationFailures, causes)
 /**
  * The refutation sentence, split out at the function size budget.
  *
- * The bound is COMPUTED from the episode count, never hardcoded. It read "0
- * events in 3 is ~63%" for every sweep until a one-episode run printed exactly
- * that — a false statistic, in the sentence whose whole job is to stop "3/3
- * survived" being read as "the failure rate is low". Found by running the real
- * driver with `--episodes 1`, not by review.
+ * The bound is COMPUTED from the episode count, never hardcoded: a fixed "0
+ * events in 3 is ~63%" is a false statistic for any other count, in the sentence
+ * whose whole job is to stop "3/3 survived" being read as "the failure rate is
+ * low".
  */
 function refutedSays(count, minSlackMs) {
   // One-sided 95% upper bound on zero events in n trials: 1 - 0.05^(1/n).
@@ -240,8 +234,8 @@ export function summarize(verdicts, {
     return { verdict: 'deterministic-form-refuted', says: refutedSays(verdicts.length, minSlackMs) };
   }
   // Some episodes were exposures and some were not. Counted rather than asserted,
-  // so the sentence is true in every state it can print in — the first draft said
-  // "No episode stayed in flight past expiry" for a sweep in which one had.
+  // so the sentence is true in every state it can print in, including a sweep in
+  // which some episode did stay in flight past expiry.
   const exposed = verdicts.filter((v) => v === 'survived-past-expiry').length;
   return {
     verdict: 'no-exposure',

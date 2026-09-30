@@ -52,13 +52,10 @@ export function isBusy(error) {
  * matches nothing.
  *
  * Counting them, outside this module: seven `withBusyRetry` call sites, and
- * five `isBusy` call sites. The two sets are now DISJOINT — every remaining
- * `isBusy` is a skip-only caller that never retries. They overlapped until
- * the spawn stamp's exhaustion guard — the one shared member — stopped asking
- * WHICH storage fault it had suffered. No total is stated even so, and neither number
- * appears without its noun. `tests/busy-site-count.test.js` counts both from
- * `scripts/lib` and reddens if either sentence here disagrees, because this count
- * drifted repeatedly when it was prose alone.
+ * five `isBusy` call sites. The two sets are DISJOINT. No total is stated even
+ * so, and neither number appears without its noun.
+ * `tests/busy-site-count.test.js` counts both from `scripts/lib` and reddens if
+ * either sentence here disagrees.
  *
  * **What is deliberately NOT wrapped, so nobody reads the list above as a
  * guarantee about the database as a whole:** `insertJob` (precedes the spawn — a
@@ -66,12 +63,6 @@ export function isBusy(error) {
  * surfaces to a user at a terminal who can simply run the command again), and
  * every write in `job-reconcile.mjs`, whose sweep re-runs on the next read and so
  * corrects itself. That last one is a judgement, not a proof asserted here.
- *
- * An earlier draft of this comment said "writing a job's terminal state" and
- * meant only two of the three: `timeOut`'s `queue-timeout` write was not wrapped,
- * and the sentence was what made that look deliberate. Enumerated now, because a
- * doc claiming a property the code does not have is the same defect this module
- * was written to remove.
  *
  * **The bound is elapsed time, not an attempt count.** Each attempt can itself
  * block inside SQLite for that handle's `busy_timeout`, so "five attempts" bounds
@@ -88,9 +79,7 @@ export function isBusy(error) {
  * **`budgetMs` is a FLOOR on when giving up begins, not a ceiling on how long
  * this takes.** A synchronous SQLite call already in progress cannot be
  * interrupted, so the real elapsed time overshoots by up to one attempt plus one
- * delay. Said plainly here because the comment this file used to carry above the
- * WAL pragma made exactly the opposite mistake — it promised a guarantee the
- * code could not keep.
+ * delay.
  *
  * The sleep is synchronous, and that is safe **only because of where these
  * callers sit**: each of the first six runs before this process's model call or
@@ -104,28 +93,28 @@ export function isBusy(error) {
  * caller added inside a live request would freeze it.
  *
  * **The seventh site's argument, made on its own terms as that warning demands.**
- * The first version of it claimed the site runs "after the child has failed to
- * launch, so no model call exists" — and that is FALSE, by this feature's own
- * design: a spawn rejection can arrive after a detached worker was created, and
- * that worker may still be running and may yet call a model. The true argument does not depend on the spawn outcome at all.
+ * It is NOT that the site runs "after the child has failed to launch, so no
+ * model call exists" — that is FALSE: a spawn rejection can arrive after a
+ * detached worker was created, and that worker may still be running and may yet
+ * call a model. The argument does not depend on the spawn outcome at all.
  * **The sleep blocks the SUBMITTER and nothing else.** Any worker that does exist
  * is a DETACHED process with its own event loop, reaching the database
  * independently; this process cannot suspend it by blocking itself. So a request
  * in flight in that worker is not one this sleep can REACH — it keeps running
  * while this process sits still.
  *
- * Note what that argument does NOT say, because an earlier version of it said
- * exactly this and it was false: it does not say there is no such request. There
+ * Note what that argument does NOT say: it does not say there is no such
+ * request. There
  * may well be one — the paragraph above this says so outright — and this site is
  * safe because the sleep cannot touch it, never because it does not exist.
  * Unreachable is not nonexistent, and collapsing the two is the conflation
  * this argument exists to remove.
  *
- * Deliberately NOT argued from descriptors. An earlier version added that the
- * worker "holds no descriptor this process owns", which is false on exactly the
- * path in question: the rejection that brings us here can be a FAILING CLOSE of
- * the submitter's copy of the log descriptor, so what that copy is doing is the
- * one thing unresolved. The argument does not need it — process independence
+ * Deliberately NOT argued from descriptors. Saying the worker "holds no
+ * descriptor this process owns" would be false on exactly the path in question:
+ * the rejection that brings us here can be a FAILING CLOSE of the submitter's
+ * copy of the log descriptor, so what that copy is doing is the one thing
+ * unresolved. The argument does not need it — process independence
  * carries it alone.
  */
 export function withBusyRetry(fn, { budgetMs = 30_000, delayMs = 50 } = {}) {

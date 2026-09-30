@@ -46,9 +46,9 @@ function censorshipNotes(rows) {
   const unresolved = rows.reduce((total, row) => total + row.unresolved, 0);
   // Gated on `unresolved`, not on `cut`. A cut run that still named every listed
   // defect leaves nothing uncertain, and a caveat announcing an uncertainty band
-  // of X% to X% would be a warning firing when it is provably wrong — the
-  // inverse of the defect this whole item is about. The `(N cut)` in the scored
-  // cell still says the truncation happened; there is simply nothing to caveat.
+  // of X% to X% would be a warning firing when it is provably wrong. The
+  // `(N cut)` in the scored cell still says the truncation happened; there is
+  // simply nothing to caveat.
   if (unresolved > 0) {
     const found = rows.reduce((total, row) => total + row.found, 0);
     const opportunities = rows.reduce((total, row) => total + row.opportunities, 0);
@@ -70,13 +70,13 @@ function censorshipNotes(rows) {
 /**
  * What the prompt cache did to these runs, stated only as far as the data goes.
  *
- * Three careful things here, each of which an earlier draft got wrong.
+ * Three constraints shape this note.
  *
  * The mechanism is hedged — "may reuse" — because it is a claim about a server
  * this harness cannot inspect: LM Studio publishes no cache field on `usage`, a
  * server may have caching off, and under `--cold` every run is deliberately a
  * miss. Asserting that repeats *are* cheap would be reporting a server-side fact
- * from no evidence, which is the class this whole item exists to close.
+ * from no evidence.
  *
  * The ratio is **computed and conditional**, never a remembered number. It needs
  * two positive measurements in one case: one run cannot establish variation, and
@@ -94,23 +94,21 @@ function cacheNote(rows) {
   if (ratios.length === 0) return [];
   const worst = Math.max(...ratios);
   return [
-    // No claim about what generation did. The obvious flourish — "...where
-    // generation did not" — was written here and refuted by the first live run
-    // that read it: prefill varied 12× and generation varied 4.5× in the same
-    // row, because the model reasoned for longer, not because of any cache. Two
-    // drafts of this sentence have now overclaimed in the same direction, which
-    // is why it now says only what was counted.
+    // No claim about what generation did. "...where generation did not" would be
+    // false: a live run measured prefill varying 12× and generation 4.5× in the
+    // same row, because the model reasoned for longer, not because of any cache.
+    // So the sentence says only what was counted.
     '**Repeat runs may reuse a server-side prompt cache.** Observed prefill varied '
     + `${worst < 10 ? worst.toFixed(1) : Math.round(worst)}× within a case here. Prefill figures are `
     + 'therefore not comparable run to run and must not be averaged, and nothing in the reply says '
     + 'whether a given run was served from cache; pass `--cold` for runs that are independent by '
     + 'construction.',
     // Stated separately and deliberately, because the obvious next sentence —
-    // "generation is comparable" — is false and an earlier draft printed it. A
-    // cache does not touch generation, which is why the *pair* isolates the
-    // cache; it does not follow that generation is like-for-like across runs.
-    // This repo has measured 1,709 against 5,450 output tokens on identical
-    // input, so a generation figure moves with how much the model chose to say.
+    // "generation is comparable" — is false. A cache does not touch generation,
+    // which is why the *pair* isolates the cache; it does not follow that
+    // generation is like-for-like across runs. This repo has measured 1,709
+    // against 5,450 output tokens on identical input, so a generation figure
+    // moves with how much the model chose to say.
     '**Generation is what the cache does not touch — which is not the same as comparable.** A model '
     + 'that reasons for twice as long generates for twice as long on the same input, so these figures '
     + 'are only like-for-like once divided by the tokens actually produced — which is what the '
@@ -168,11 +166,11 @@ function schemaNote(structuredOutput, rows) {
     ...degradedNote(degraded, reported),
     '**`--structured-output` was on: the reply shape was enforced by a `response_format` schema**, not '
     + 'described in prose and parsed leniently. This is NOT the default path. **Measured on LM '
-    + "Studio's MLX backend, 2026-08-04**: the grammar built from the schema exhausted its lexer at "
+    + "Studio's MLX backend**: the grammar built from the schema exhausted its lexer at "
     + '13,956–14,744 generated tokens and segfaulted the model process, which is the cause of the '
     + 'empty-completion and stream-drop failures recorded there. The other side of the trade '
     + 'was measured **on that same server**: the unconstrained default can spend its entire shared '
-    + '`max_tokens` budget reasoning and emit no findings at all (OAI-115). **Both halves are '
+    + '`max_tokens` budget reasoning and emit no findings at all. **Both halves are '
     + 'observations about that one server, and neither is inferred for whichever provider this run '
     + 'measured** — `bench` accepts any OpenAI-compatible provider, and the flag exists for a server '
     + 'whose schema enforcement has *not been measured* to fail this way. Whether a given provider has '

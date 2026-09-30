@@ -159,10 +159,9 @@ test('a row settled BEFORE the command ran claims no drainage', { skip: NEEDS_SQ
 test('a cancelled row is recovery-owned even with no failure payload', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // The arm a mutation proved untested: `cancelled` carries NO failure payload —
-    // `job-reconcile.mjs` writes it with none — so a reason-only classifier would
-    // miss it entirely. That is the whole reason the classifier reads state AND
-    // reason, and deleting this arm left the suite green.
+    // `cancelled` carries NO failure payload — `job-reconcile.mjs` writes it with
+    // none — so a reason-only classifier would miss it entirely. That is why the
+    // classifier reads state as well as reason.
     insertSynthetic(scenario.state, {
       id: 'quiet', state: 'cancelled', workerPid: null, startedAgoMs: 600_000,
     });

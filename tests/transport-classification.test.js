@@ -22,12 +22,6 @@ async function caught(promise) {
 // three requests and two 2-second sleeps to establish what the first one already
 // proved.
 //
-// Note what this is NOT, because the plan's first draft claimed it and the
-// evidence refuted it: an unresolvable hostname was never retried three times.
-// `provider.mjs` `describeFailure` rewrote those errors and dropped `reason`
-// entirely, so they arrived unclassified and unretried — which is its own defect,
-// fixed here too and pinned at the bottom of this file.
-//
 // These tests pin the split, decided at the CALL SITE rather than by the code on
 // the error, because the two callers of `transportError` mean opposite things.
 // The axis is retryability, never blame: `EAI_AGAIN` and a pre-response
@@ -125,12 +119,11 @@ test('the handler still reports the failure, not only classifies it', () => {
   assert.equal(failures[0], state.aborted, 'the reported error and the stored one must be the same object');
 });
 
-test('a body cut off mid-flight is retryable — the shape OAI-20 exists to survive', async () => {
-  // The `!response.complete` branch, which had NO test at all and
-  // is the most retryable shape here: the server took the prompt, generated, and
-  // the socket died part way. It is also the one place `reason` is set without
-  // going through `transportError`, so the classification tests above cannot
-  // reach it — which is exactly how it could have diverged unnoticed.
+test('a body cut off mid-flight is retryable', async () => {
+  // The `!response.complete` branch is the most retryable shape here: the server
+  // took the prompt, generated, and the socket died part way. It is also the one
+  // place `reason` is set without going through `transportError`, so the
+  // classification tests above cannot reach it.
   //
   // A declared content-length the server never delivers, then a destroyed
   // socket. Whether Node ends the iteration cleanly (leaving `response.complete`
@@ -168,9 +161,7 @@ test('the !response.complete branch sets both reason and serverResponded — no 
   // Neither cut Node can be measured to produce ends cleanly (see the test
   // above): both raise on the stream instead, so this branch is unreachable
   // through a real server on Node 26.3. A stub iterable that finishes without
-  // throwing, with `complete` left false, drives it directly. Proved by
-  // mutation before this test existed: deleting either write left the whole
-  // suite green.
+  // throwing, with `complete` left false, drives it directly.
   const response = {
     complete: false,
     async *[Symbol.asyncIterator]() {
@@ -235,11 +226,9 @@ test('a pre-headers reset is retryable, the whitelist member that actually occur
 // Through the REAL provider wrapper, which the tests above do not cross.
 //
 // `describeFailure` rewords three connect codes with provider-specific messages,
-// and it used to build fresh errors to do it — dropping `reason`, `code` and
-// `cause` on exactly the codes this feature classifies. Every test above would
-// still have passed: they call `transportError` directly, one layer below the
-// place the classification was being thrown away. These tests stop it coming
-// back.
+// and must keep `reason`, `code` and `cause` on the errors it rewords. The tests
+// above call `transportError` directly, one layer below, so they cannot see a
+// rewording that drops them.
 
 test('a classified failure keeps its reason through the provider rewording', async () => {
   const error = await caught(request({ name: 'p', baseUrl: 'http://127.0.0.1:1/v1' }, '/models', { firstByteMs: 3_000 }));
@@ -259,12 +248,6 @@ test('EAI_AGAIN is marked retryable upstream — half of the pair the next test 
   // transport's reason proves it for both codes. What differs between them is
   // only what `transportError` decided upstream, and that is pinned separately:
   // EAI_AGAIN is classified retryable in the unit test above.
-  //
-  // Composing them is deliberate. A real `EAI_AGAIN` needs a resolver answering
-  // "try again" on demand, which a network-free suite cannot arrange, and the
-  // alternative — exporting the private `reword` purely so a test can reach it —
-  // is production indirection bought for testability, which this repo defers
-  // rather than takes.
   const direct = transportError(
     Object.assign(new Error('getaddrinfo EAI_AGAIN'), { code: 'EAI_AGAIN' }),
     new URL('http://example.test/v1'),
@@ -385,10 +368,10 @@ test('a redirect Location header lands on .responseBody, never on .message', asy
 });
 
 test('an empty-body 400 with only a reason phrase still carries it on .responseBody', async () => {
-  // Pass-7 finding: dropping statusText outright (rather than folding it in,
-  // like the redirect Location) broke capability-fallback detection for a
-  // server that signals a refusal purely through the HTTP reason phrase with
-  // no body — isFormatRejection/refusedField read only .responseBody now.
+  // Dropping statusText outright (rather than folding it in, like the redirect
+  // Location) would break capability-fallback detection for a server that
+  // signals a refusal purely through the HTTP reason phrase with no body —
+  // isFormatRejection/refusedField read only .responseBody.
   const server = createServer((request_, response) => {
     response.writeHead(400, 'response_format unsupported');
     response.end();

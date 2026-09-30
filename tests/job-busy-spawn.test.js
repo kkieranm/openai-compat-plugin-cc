@@ -4,8 +4,7 @@
 // — so a busy escaping it rejects `submitTask` while a detached process is
 // already running and about to make a real, billable model call. The id never
 // reaches stdout, and the user is left with a job they cannot name, poll or
-// cancel. This drives `submitTask` in-process, because injecting a busy into the
-// child `runCompanion` spawns is not possible from here.
+// cancel. This drives `submitTask` in-process.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 

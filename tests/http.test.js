@@ -156,8 +156,6 @@ test('a refused connection surfaces its transport code, not a timeout', async ()
     'calling a refusal a timeout sends the user to the wrong fix; calling it retryable sends three requests to a closed port',
   );
   // The end-to-end proof that `requestErrorHandler` is still wired into `send`.
-  // Its two branches are asserted directly in failure-shape.test.js, which can
-  // reach a state the real socket race cannot be made to produce on demand.
   assert.equal(isRetryable(error), false);
 });
 

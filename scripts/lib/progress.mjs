@@ -40,8 +40,7 @@ export async function withProgress(run) {
  * Measuring from the request folds prefill into the divisor, and prefill dwarfs
  * generation on a large prompt: a live run with a 42,043-token prompt reported
  * "~4.6 tok/s" for a model actually producing ~14.5, because 295 of its 444
- * seconds were spent before a single token existed. A figure labelled tok/s that
- * is not tok/s is the defect class this whole feature exists to remove.
+ * seconds were spent before a single token existed.
  */
 function rate(chars, generatingMs) {
   if (!generatingMs || generatingMs <= 0 || chars === 0) return null;

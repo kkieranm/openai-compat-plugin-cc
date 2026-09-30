@@ -234,8 +234,7 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
     // All fields the schema actually requires, per-finding and at the top
     // level (`analysis`, `findings[].evidence`) — a fixture missing them would
     // pass through the lenient prose parser regardless of what shape the
-    // follow-up asked for, which is exactly how the first version of this test
-    // failed to catch pass 3's bug. Reproducing the real shape closes that gap.
+    // follow-up asked for.
     response.write(finishFrame(JSON.stringify({
       analysis: 'concluded from the salvaged reasoning',
       findings: [{
@@ -480,14 +479,14 @@ test('a salvage follow-up grown past the context window is refused, not sent unc
 // `token-reserve-cutoff` and `reasoning-only` get the smaller flat
 // TOKEN_RESERVE_TOKENS reserve AND a head+tail trim of the
 // reasoning fed back into the follow-up; `deadline-timeout` keeps both its
-// full reserve and its full untouched reasoning, unchanged by this trial.
+// full reserve and its full untouched reasoning.
 //
 // A WIDE context window (matching tests/token-reserve-cutoff.test.js's own
 // WIDE_CONTEXT_LENGTH/cutoffChars derivation) is needed for all three
 // fixtures below, not just the token-reserve-cutoff one: without it, any
 // reasoning stream over ~6,144 chars on the DEFAULT 8192-token window would
 // get cut and reclassified as token-reserve-cutoff before it could exhibit
-// the OTHER two reasons this trial cares about. The fixture generator is
+// the OTHER two reasons these fixtures cover. The fixture generator is
 // copied locally rather than imported from tests/token-reserve-cutoff.test.js
 // — importing that file as a module would re-register its own tests a
 // second time under node's test runner.
@@ -747,7 +746,7 @@ test('a trimmed salvage attempt that succeeds directly never fires the untrimmed
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.salvaged, true);
     assert.equal(envelope.salvageTrim.applied, true);
-    assert.equal(envelope.salvageTrim.retainedChars, 6_000, 'unchanged from the pre-amendment behavior');
+    assert.equal(envelope.salvageTrim.retainedChars, 6_000, 'the trimmed retention size is 6,000 characters');
     assert.equal(
       server.requests.filter((r) => r.url.includes('/chat/completions')).length,
       2,

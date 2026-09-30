@@ -1,6 +1,4 @@
-// Two properties of the background machinery that no behavioural test notices
-// when they erode, because both fail in the direction of *working better* until
-// the day they take something down.
+// Properties of the background machinery, pinned by reading the source.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -56,9 +54,7 @@ test('a successfully spawned worker is unref()d before closeSync can throw', () 
   // the detached worker it points at exits on its own. `unref()` has to run in
   // the same synchronous continuation as the confirmed spawn — before
   // `closeSync(log)`, which can throw — or a failing close silently reintroduces
-  // the hang. Placement is a fact about the source; no behavioural test can
-  // schedule a real closeSync failure racing a real detached child to catch a
-  // regression here.
+  // the hang. Placement is a fact about the source.
   // Each literal must be UNIQUE before its position means anything — a bare
   // `indexOf` would happily match a stray mention inside a comment above the
   // real call and pass while the actual ordering had rotted.
@@ -76,16 +72,13 @@ test('a successfully spawned worker is unref()d before closeSync can throw', () 
 });
 
 test('abandonment reads, decides and writes inside ONE immediate transaction', () => {
-  // The property is placement, and placement is a fact about the source. No
-  // behavioural test in this repo can reach it: `node:sqlite` is synchronous, so
-  // nothing can interleave between an outside read and the write within a single
-  // process — an implementation that decided on stale bytes would pass every
-  // scenario test in `abandon.test.js` and still lose to a worker that resumed
+  // The property is placement, and placement is a fact about the source: a
+  // decision taken on a row read before the lock loses to a worker that resumed
   // from sleep and beat before the write landed.
   //
   // The ROW READ is the member that must not be dropped from this list. A guard
   // naming only the decision and the write still passes an implementation that
-  // reads the row outside and closes over it — which leaves the original defect
+  // reads the row outside and closes over it — which leaves that race
   // exactly as it was, the stale bytes merely decided on inside a transaction
   // that cannot save them.
   //
@@ -109,9 +102,7 @@ test('abandonment reads, decides and writes inside ONE immediate transaction', (
   // The extent must END at the callback's closing brace. Slicing to EOF instead
   // counts everything *after* the transaction opens as inside it — so a helper
   // calling `finish` appended below `abandonRow` would read as guarded, which is
-  // exactly the escape this test exists to refuse. Found by mutation, not by
-  // reasoning: three of four mutations fired against the EOF version and the
-  // fourth passed.
+  // exactly the escape this test exists to refuse.
   // Brace counting is naive about strings and comments, and the two directions
   // are NOT symmetric — so this says which, rather than claiming it fails closed.
   // A stray `}` in a string or comment SHRINKS the body: guarded calls then read
@@ -145,11 +136,9 @@ test('abandonment reads, decides and writes inside ONE immediate transaction', (
   );
 
   // **Resolving it is not the property; USING it is.** `abandonDecision` falls
-  // back to deriving liveness itself so the pure unit tests stay pure, which
-  // makes dropping the argument behaviourally invisible — a mutation that removed
-  // it passed all 920 tests. So the guard has to read the call site: the decision
-  // taken under this lock must be handed the verdict minted under it, not left to
-  // re-derive one. Found by mutation, which is the only reason this line exists.
+  // back to deriving liveness itself so the pure unit tests stay pure.
+  // The guard reads the call site: the decision taken under this lock must be
+  // handed the verdict minted under it, not left to re-derive one.
   const call = body.slice(body.indexOf('abandonDecision('));
   assert.match(
     call.slice(0, call.indexOf(')') + 1),
@@ -171,13 +160,11 @@ test('abandonment reads, decides and writes inside ONE immediate transaction', (
   // this same lock. It is the call site rather than `reconcile(` because the
   // reconcile itself sits in that helper's body, textually outside this callback
   // though it runs inside at runtime; pinning the call site is what stops a future
-  // edit hoisting recovery back out into the pre-transaction sweep this feature
-  // deleted, with the guard staying green throughout.
+  // edit hoisting recovery out into a pre-transaction sweep, with the guard
+  // staying green throughout.
   // `Date.now()` is counted total==inside for the same reason the reads are: a
   // clock sampled before the lock is a clock up to `busy_timeout` stale by the
-  // time anything reads it, and reverting the sample to a signature default is
-  // behaviourally invisible — no test can deterministically wedge lock
-  // acquisition, so nothing else would notice.
+  // time anything reads it.
   const guarded = ['jobById(', 'abandonDecision(', 'finish(', 'handOver(', 'Date.now()'];
   const escaped = [];
   for (const call of guarded) {
@@ -194,8 +181,7 @@ test('abandonment reads, decides and writes inside ONE immediate transaction', (
   // EXACTLY ONE occurrence of `reconcile(` is expected — the call inside
   // `handOver`. The import does not count: it reads `reconcile.mjs'`, which has
   // no paren. Do not "correct" this number upward to include it; a second match
-  // means a second route into recovery, which is the shape this feature spent a
-  // whole review pass removing.
+  // means a second route into recovery.
   assert.equal(
     source.split('reconcile(').length - 1, 1,
     'recovery must have exactly one call site, reached from inside the transaction',

@@ -35,22 +35,12 @@ for (const [name, quoted, wrong] of [
 }
 
 test('a decoy array does not outrank a payload that is ALSO a bare array', () => {
-  // The case that proves the predicate is load-bearing, found by mutating it and
-  // watching nothing go red. Every witness above survives a generous predicate,
-  // because the real payload is a `{findings: […]}` wrapper and objects outrank
-  // arrays whatever the predicate says. Here there IS no wrapper — both
-  // candidates are arrays — so ranking cannot arbitrate and the predicate is the
-  // only thing standing between the reader and the decoy.
   const reply = 'The code reads:\n\nconst rules = [{"id":1},{"id":2}];\n\nwhich is wrong.\n\n' + JSON.stringify([FINDING]);
   const parsed = parseFindings({ content: reply, reasoning: '' }, { structured: false });
   assert.equal(parsed?.findings.length, 1);
   assert.equal(parsed.findings[0].file, 'a.js', 'the decoy array must not win when the payload is a bare array too');
 });
 
-// Pass 4's set. Every one of these was a confirmed defect in the previous
-// batch's own candidate selection, and each is written so that reverting ITS
-// fix alone turns it red — the previous batch's witnesses passed under three
-// different mutations of the code they were supposed to guard.
 const REAL_ARRAY = JSON.stringify([FINDING]);
 const REAL_WRAPPER = JSON.stringify({ analysis: 'a', findings: [FINDING], summary: 'one defect' });
 const parse = (content) => parseFindings({ content, reasoning: '' }, { structured: false });
@@ -84,8 +74,8 @@ test('a wrapped decoy is held to the same rule as a bare one', () => {
   // trailing `{"findings":[…]}` example outranks the answer and — its items all
   // dropping — reports the whole reply unreadable.
   assert.equal(parse(`${REAL_ARRAY}\n\nFor example {"findings":[{"note":"eg"}]}`)?.findings[0]?.file, 'a.js');
-  // A quoted EMPTY wrapper is the false-clean again, through the spelling the
-  // previous batch's fix never touched.
+  // A quoted EMPTY wrapper is the false-clean again, through the wrapped
+  // spelling.
   assert.equal(parse(`${REAL_WRAPPER}\n\nThe shape is {"findings": []}`)?.findings.length, 1, 'a trailing empty wrapper must not read as a clean review');
 });
 
@@ -210,11 +200,6 @@ test('a fully-formed trailing decoy still wins on position — accepted, not a d
     'a trailing well-formed decoy wins on position, by design',
   );
 });
-
-// Pass 5's set. Two of these guard behaviour the pass repaired; three guard
-// behaviour that was already CORRECT and that no test could distinguish from
-// its own negation — found by mutating the previous batch's fixes rather than
-// by reading them. Each is written so that exactly ONE mutation turns it red.
 
 test('an unmatched bracket in quoted source does not hide the payload after it', () => {
   // `balanced` reported "this opener never closes" as the same null it uses for

@@ -3,10 +3,8 @@
 // Split from `abandon.test.js`, which owns the decision and the transaction.
 // This file owns everything between the argv and the terminal: which invocation
 // forms work, what is printed, and what the exit code is. That split is not
-// tidiness — the module was fully tested and the COMMAND was not, and the first
-// review of this feature found a flag that could not be passed at all through
-// the invocation its own markdown documented. A unit test of the decision could
-// never have caught it.
+// tidiness — a flag that cannot be passed through the invocation the command's
+// own markdown documents is invisible to a unit test of the decision.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';

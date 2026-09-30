@@ -135,12 +135,12 @@ function invoke(args, cwd = ROOT) {
  * The deadline is read immediately BEFORE starting each review and never after,
  * the same discipline `awaitTurn` keeps in `job-queue.mjs`: the cap governs
  * whether to begin, so it is read at the last moment before the thing it
- * authorises. A review already in flight is never truncated — overshoot is
- * bounded by the per-commit `--max-seconds`, with one stated exception:
- * a salvage follow-up (`trySalvage`) runs on its own `SALVAGE_MAX_MS` budget
- * outside `--max-seconds` entirely, and since OAI-204 that can be up to two
- * such attempts (trimmed, then untrimmed) on one commit — up to +600s beyond
- * `--max-seconds`, not the +300s a reader of this comment alone would expect.
+ * authorises. A review already in flight is never truncated. Overshoot is not
+ * bounded by the per-commit `--max-seconds` alone: target collection and model
+ * resolution (`cmd-review.mjs`) run before its deadline is minted, and a
+ * salvage follow-up (`trySalvage`) runs on its own `SALVAGE_MAX_MS` budget
+ * outside `--max-seconds` entirely — up to two such attempts (trimmed, then
+ * untrimmed) on one commit.
  *
  * **Aborting never shortens the record.** Every commit that was enumerated
  * appears in `entries` whatever happens, because the coverage section's whole
@@ -277,11 +277,10 @@ function normalizedInclude(raw) {
 // defect, and lexical resolve() never produces one.
 //
 // **Trimmed once, and the trimmed value is what both the empty check AND
-// `resolve()` use (Codex + fork-opener, pass 4)** — the same failure class
-// `normalizedInclude` had: validating a trimmed copy but resolving the
-// UNTRIMMED original made `--repo ' /tmp/target'` pass the empty guard and
-// then resolve to a bogus path with a literal space segment, failing later
-// with an opaque git/ENOENT error instead of the clear refusal.
+// `resolve()` use** — validating a trimmed copy but resolving the UNTRIMMED
+// original would let `--repo ' /tmp/target'` pass the empty guard and then
+// resolve to a bogus path with a literal space segment. `normalizedInclude`
+// likewise validates and returns one cleaned value.
 export function optionsFrom(parsed, startMs, root = ROOT) {
   const trimmedRepo = parsed.repo !== undefined ? parsed.repo.trim() : parsed.repo;
   if (trimmedRepo === '') {

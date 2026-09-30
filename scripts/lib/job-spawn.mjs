@@ -13,7 +13,7 @@ const COMPANION = fileURLToPath(new URL('../oai-companion.mjs', import.meta.url)
  * Launch the detached worker for a job, and do not return until we know it
  * actually started.
  *
- * **The stdio arrangement is the single biggest trap in this feature.**
+ * **The stdio arrangement is the single biggest trap in background jobs.**
  * `tests/helpers.mjs` `runCompanion` resolves on the child's `'close'` event,
  * which fires only once the process has ended *and every pipe it holds has
  * closed*. A detached grandchild that inherited the submitter's piped stdout

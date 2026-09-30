@@ -1,10 +1,4 @@
 // The task bench's loop, driven without a model.
-//
-// `bench/run.mjs` cannot be tested at all — it runs `main()` at import, which is
-// why `warm-up.mjs` had to take its loop as an injected parameter. This runner
-// was built the other way round from the start, and these tests are the reason
-// that mattered: the arm alternation and the incomplete-sweep guard are decisions
-// about what a number MEANS, and neither is observable from a report.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderReport, requestArgs, runSweep } from '../bench/task-run.mjs';

@@ -9,7 +9,7 @@ import { reasonNotes } from './reason-notes.mjs';
  * substitutions are already excluded from it; attempts 1 and 2 of a run answered
  * by attempt 3 do not belong there either, because the run completed. Keeping
  * them apart is what stops a reader mistaking transport reliability for reviewer
- * recall — the two denominators this feature exists to separate.
+ * recall, two denominators that must stay separate.
  *
  * Nor does this belong in `caveats.mjs`. Caveats say what a figure *means*; a
  * reason-code table is a second measurement, and putting it there would turn
@@ -49,9 +49,8 @@ function outcomeNotes(stats) {
       // `ledger.begin` when the replacement's ENTRY is minted, which is several
       // frames before anything reaches a socket: `provider.mjs` still has to
       // serialize the body and `http.mjs` to validate the URL, and either can
-      // throw. Both earlier drafts read the entry as proof of the wire write —
-      // the same claim twice, once per sentence, which is why the closing one
-      // had to change with the opening one.
+      // throw. So neither the opening sentence nor the closing one reads the
+      // entry as proof of the wire write.
       `${stats.refused} attempt(s) were **refused for their shape**, not dropped — the server rejected a`
       + ' capability (`stream_options`, streaming, or a response schema), triggering a replacement request'
       + ' without it. The original is marked `refused` only once that replacement has its own attempt'

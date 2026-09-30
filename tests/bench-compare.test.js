@@ -172,15 +172,15 @@ test('flipping warm-up, timeout, temperature, max-attempts, max-seconds each sup
 });
 
 test('an explicit --passes 1 does not diverge from a no-flag record (both single-pass)', () => {
-  // Mutation proof for the `?? 1` normalize: an absent `passes` is the
-  // byte-identical single-pass code path, so it must compare EQUAL to an explicit
-  // `--passes 1`, never suppress. Reverting `?? 1` makes absent `known(null)` vs
+  // Guards the `?? 1` normalize: an absent `passes` is the byte-identical
+  // single-pass code path, so it must compare EQUAL to an explicit `--passes
+  // 1`, never suppress. Dropping `?? 1` makes absent `known(null)` vs
   // `known(1)`, which would put `passes` in the divergence list.
   const comp = flip({ passes: 1 });
   assert.ok(!axisNames(comp).includes('passes'), `passes must not diverge: ${JSON.stringify(comp.divergences)}`);
 });
 
-// ---- OAI-11 pass-strategy axes (derived from raw persisted options.lens) ----
+// ---- pass-strategy axes (derived from raw persisted options.lens) ----
 
 test('a --lens record is incomparable to a plain-pass record (strategy + effective count derived)', () => {
   const comp = flip({ lens: 'correctness,security' });
@@ -193,10 +193,10 @@ test('a --lens record is incomparable to a plain-pass record (strategy + effecti
 });
 
 test('two lens runs differing only in ORDER are incomparable (the lens-set axis is UNSORTED)', () => {
-  // Mutation proof for the unsort: execution order is material (the first lens pays
-  // cold prefill, later lenses warm), so `correctness,security` and
-  // `security,correctness` must NOT rank as like-for-like. Sorting the axis (the
-  // reverted code) makes them equal and wrongly rankable.
+  // Guards the unsort: execution order is material (the first lens pays cold
+  // prefill, later lenses may be warm), so `correctness,security` and
+  // `security,correctness` must NOT rank as like-for-like. Sorting the axis
+  // makes them equal and wrongly rankable.
   const a = norm(baseRecord({ lens: 'correctness,security' }), 'a.json', 'a');
   const b = norm(baseRecord({ lens: 'security,correctness' }), 'b.json', 'b');
   const comp = buildComparison([a, b]);
@@ -209,11 +209,12 @@ test('a malformed persisted options.lens fails closed — no real run could pers
   // an unknown name, a duplicate, an empty string. Each must read `malformed` and
   // suppress on all three derived axes.
   const bads = [['security'], null, 'bogus', 'security,security', ''];
-  // The DISCRIMINATING assertion (Group C): a malformed-vs-plain pair diverges under
-  // BOTH the correct fix AND a buggy `null → present with names []` impl, so it
-  // cannot pin the fix. Two IDENTICAL malformed records CAN: the correct fix makes
-  // both `unknown` (suppressed even for a matched pair), while a buggy zero-pass
-  // "present" reading makes them equal and wrongly rankable.
+  // The DISCRIMINATING assertion: a malformed-vs-plain pair diverges under BOTH
+  // the correct reading AND a buggy `null → present with names []` impl, so it
+  // cannot pin the correct reading. Two IDENTICAL malformed records CAN: the
+  // correct reading makes both `unknown` (suppressed even for a matched pair),
+  // while a buggy zero-pass "present" reading makes them equal and wrongly
+  // rankable.
   for (const bad of bads) {
     const a = norm(baseRecord({ lens: bad }), 'a.json', 'a');
     const b = norm(baseRecord({ lens: bad }), 'b.json', 'b');
@@ -401,10 +402,10 @@ test('a dropped case id suppresses ranking, naming the case set', () => {
 });
 
 test('a middle-era run (contextWindow KEY absent) is lens-unknown and suppresses ranking', () => {
-  // contextWindow entered the writer (OAI-217, 2026-08-27 18:40) later than the
-  // other lens fields, written `?? null`. A record with hunksOnly/skippedUnsized
-  // but NO contextWindow key predates it: its lensLabel reads @unsized even if
-  // the window was actually sized, so the lens cannot be proven → unknown.
+  // contextWindow entered the writer later than the other lens fields, written
+  // `?? null`. A record with hunksOnly/skippedUnsized but NO contextWindow key
+  // predates it: its lensLabel reads @unsized even if the window was actually
+  // sized, so the lens cannot be proven → unknown.
   // BOTH records are middle-era with the same @unsized label, so the ONLY reason
   // to suppress is the unprovable lens — dropping the contextWindow-key check
   // would let them rank as equal.
@@ -541,7 +542,7 @@ test('max-tokens "1024" vs 1024 and temperature "1" vs 1.0 are rankable (numeric
   assert.equal(buildComparison([a, b]).rankable, true, JSON.stringify(buildComparison([a, b]).divergences));
 });
 
-// ---- per-case coverage (B) ----
+// ---- per-case coverage ----
 
 test('a case scored in one record but failed in another suppresses ranking (coverage)', () => {
   const a = norm(record({ runsPerCase: 1, options: {}, results: [
@@ -557,7 +558,7 @@ test('a case scored in one record but failed in another suppresses ranking (cove
   assert.ok(axisNames(comp).includes('coverage'), JSON.stringify(comp.divergences));
 });
 
-// ---- per-case effective degradation (A) ----
+// ---- per-case effective degradation ----
 
 test('per-case degradation on DIFFERENT cases suppresses ranking, though record-level "any degraded" is equal', () => {
   // Both records have exactly one degraded case, so a record-level boolean would
@@ -575,7 +576,7 @@ test('per-case degradation on DIFFERENT cases suppresses ranking, though record-
   assert.ok(axisNames(comp).includes('structured-output-effective'), JSON.stringify(comp.divergences));
 });
 
-// ---- hostile numeric coercion (C) ----
+// ---- hostile numeric coercion ----
 
 test('numeric option strings the CLI accepts (.5, 1e2, +5) read as known numbers, so equivalents rank', () => {
   const a = norm(baseRecord({ temperature: '.5', timeout: '1e2', 'max-tokens': '+5' }), 'a.json', 'a');
@@ -602,7 +603,7 @@ test('a hostile non-numeric option value is unknown, not coerced to a number', (
   assert.ok(axisNames(comp).includes('max-tokens'), JSON.stringify(comp.divergences));
 });
 
-// ---- never-throws on a pathological record (F) ----
+// ---- never-throws on a pathological record ----
 
 test('a pathologically deep caseDef is incompatible, never a thrown RangeError', () => {
   let deep = {};
@@ -620,7 +621,7 @@ test('a pathologically deep caseDef is incompatible, never a thrown RangeError',
   assert.equal(n.incompatible, true);
 });
 
-// ---- ranking order (G) ----
+// ---- ranking order ----
 
 test('the tie-break is the per-scored-run unmatched RATE, not the raw total (a failed run must not rank a record higher)', () => {
   // Two 2-defect cases, runsPerCase 2, recall tied at 0.5. A scored 1 of 2 runs
@@ -698,7 +699,7 @@ test('a control-only ranking discloses the control-FP order, not the recall-pool
   assert.doesNotMatch(out, /pooled over non-control/); // recall orders nothing here
 });
 
-// ---- delta values (H) ----
+// ---- delta values ----
 
 test('the N==2 baseline-relative delta shows the correct signed found-count on the right column', () => {
   const a = norm(record({ runsPerCase: 1, options: {}, results: [

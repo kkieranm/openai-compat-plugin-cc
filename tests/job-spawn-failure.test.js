@@ -14,12 +14,7 @@
 // case has a second process, and neither needs one — the shape is what the
 // compare-and-set reads.
 //
-// `submitTask` takes an injectable `spawn` for exactly this test. There is no
-// other way in: `spawnWorker` is a static import called unparameterised, and the
-// existing busy tests only manage injection by monkey-patching a SQLite method,
-// which cannot reach a process spawn. Without the seam the central fix has no
-// witness at all — and this repo treats a fix nothing can catch reverting as a
-// fix that has already half-reverted.
+// `submitTask` takes an injectable `spawn`.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -112,7 +107,7 @@ test('an unconfirmed launch terminalizes its own UNREGISTERED row and lets the q
     assert.doesNotMatch(JSON.stringify(rows[0]), /spawn-failed|could not start a worker/,
       'and never asserts the spawn FAILED: a rejection can arrive after the child is alive');
 
-    // The point of the whole item: the job behind it is not held.
+    // The job behind it is not held.
     assert.equal(successorVerdict(state), 'acquired', 'a failed spawn must not hold the queue');
   });
 });
@@ -156,14 +151,12 @@ test('a non-busy sweep failure rejects before a row or a worker exists', { skip:
         'a defect in the sweep is still raised, never swallowed',
       );
       assert.equal(spawned, 0, 'nothing was spawned: the sweep now runs before the worker exists');
-      // The half that would have caught the first draft of this fix, which put the
-      // sweep between the insert and the spawn: asserting only the rejection passes
-      // against the pre-fix code too.
+      // The half that catches a sweep placed between the insert and the spawn;
+      // asserting only the rejection would let that placement pass.
       assert.deepEqual(readJobs(state), [], 'and no queued orphan was left to block the queue');
-      // The plan's final assertion for this case, and not a restatement of the
-      // line above: an empty table is consistent with a queue that refuses
-      // everyone for some unrelated reason, so the property worth having is that
-      // the next job can actually start.
+      // Not a restatement of the line above: an empty table is consistent with
+      // a queue that refuses everyone for some unrelated reason, so the
+      // property worth having is that the next job can actually start.
       const seq = insertSynthetic(state, { id: 'successor-after-sweep' });
       const verdict = withStore(state, (db) => {
         registerWaiter(db, seq, process.pid, new Date().toISOString());
@@ -212,7 +205,7 @@ test('a NON-BUSY fault stamping the row still returns the id', { skip: NEEDS_SQL
     try {
       const result = await submitTask(submission, { spawn: () => Promise.resolve(4321) });
       returned = result.id;
-      assert.ok(result.id, 'the submission RESOLVED rather than rejecting — which is the whole change: in production a child would exist by now, and the id is what the user must not lose');
+      assert.ok(result.id, 'the submission RESOLVED rather than rejecting: in production a child would exist by now, and the id is what the user must not lose');
       assert.equal(result.pid, 4321, 'and the spawn result is carried through rather than discarded — pid plumbing, not evidence of a live process');
     } finally {
       DatabaseSync.prototype.prepare = original;

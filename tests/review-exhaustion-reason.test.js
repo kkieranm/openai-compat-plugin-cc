@@ -64,10 +64,10 @@ test('a token-exhausted review still carries the attempt that produced it', asyn
   }
 });
 
-// OAI-221's reasoning witness on the failure envelope was inert until the reply's
-// usage was carried onto the error at the throw site: token-exhaustion is the
-// mode it most wants to observe, since the model spent its whole budget reasoning.
-// This reads the `error.usage` route through `unparsedReply`.
+// The reasoning witness on the failure envelope reads the reply's usage carried
+// onto the error at the throw site: token-exhaustion is the mode it most wants to
+// observe, since the model spent its whole budget reasoning. This reads the
+// `error.usage` route through `unparsedReply`.
 test('a token-exhausted reply carrying reasoning usage reads reasoning-observed on the failure envelope', async () => {
   const { dir, server, configPath } = await scenario(replies({ finishReason: 'length', reasoningTokens: 512 }));
   try {
@@ -149,13 +149,11 @@ test('a reasoning-only reply intercepted before requireAnswer still carries the 
     assert.equal(report.error, true);
     assert.equal(report.reason, 'reasoning-only');
     // `outcome: 'failed'` / `reason: 'reasoning-only'`, not `'answered'` /
-    // `null`: the ledger closes every physical attempt `answered` on
-    // transport success (`settle()` runs before this rejection is ever
-    // judged), and `unconstrained()`'s own reasoning-only check reclassifies
-    // it via `result.markUnanswered()` before the failure propagates — the
-    // fix this test now pins rather than the pre-fix bug it used to pin
-    // (an `answered` entry for a request whose content this same envelope's
-    // `reason` field says was never usable).
+    // `null`: this reasoning-only reply passes `attemptAnswer`'s `finish` check
+    // and is settled `answered`, and `unconstrained()`'s own reasoning-only
+    // check then reclassifies it via `result.markUnanswered()` before the
+    // failure propagates — so no `answered` entry is recorded for a request
+    // whose content this same envelope's `reason` field says was never usable.
     assert.deepEqual(
       report.attempts.map(({ index, outcome, reason, serverResponded }) => ({ index, outcome, reason, serverResponded })),
       [{ index: 1, outcome: 'failed', reason: 'reasoning-only', serverResponded: true }],

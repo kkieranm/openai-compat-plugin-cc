@@ -1,4 +1,4 @@
-// Turning benchmark runs into something a person can read and paste into an ADR.
+// Turning benchmark runs into something a person can read.
 //
 // Three files, three questions, all three seams cut by the size ratchet and all
 // three real. `run-buckets.mjs` decides which bucket a run falls into;
@@ -62,11 +62,10 @@ function tokenCell({ values, measured, completed }) {
 /**
  * What was actually found — and only that.
  *
- * An earlier draft printed a low–high band here, which was worse than the
- * problem it solved: the high endpoint is not observed recall but the
- * counterfactual that continued reasoning would have found *everything*
- * remaining, so a wholly censored run overlapped a perfect one and the column
- * headed "defects found" reported defects nobody found. The uncertainty is real
+ * No low–high band is printed here: the high endpoint is not observed recall but
+ * the counterfactual that continued reasoning would have found *everything*
+ * remaining, so a wholly censored run would overlap a perfect one and the column
+ * headed "defects found" would report defects nobody found. The uncertainty is real
  * and stays visible — as its own `unresolved` column, and as a stated bound in
  * the caveats — but it is not smuggled into a figure whose name promises
  * observation.

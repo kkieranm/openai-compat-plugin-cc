@@ -166,7 +166,7 @@ export function reserveFor(contextLength, requested) {
   // **Deliberately not floored at `MIN_REVIEW_RESERVE_TOKENS`, unlike the branch
   // above** — an asymmetry worth stating, because it otherwise reads as the
   // guard being armed on one path and forgotten on the other, which is this
-  // repo's most-repeated defect and exactly what a reviewer flagged here.
+  // repo's most-repeated defect.
   //
   // The two situations differ. An explicit `--max-tokens` too small to hold the
   // reply is a *mistake*, and refusing it costs nothing. A model whose window is
@@ -443,9 +443,7 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 're
  * be called twice — trimmed, then untrimmed
  * on the trimmed attempt's failure — with each call computing its own
  * `budget`/`estimatedTokens` via its own `checkContextBudget`/`estimateTokens`
- * call, never reusing another attempt's (already true for the single attempt
- * before this change; this just keeps it per-attempt, not shared, now that
- * there can be two).
+ * call, never reusing another attempt's.
  *
  * Returns `{ result, budget, estimatedTokens }` on a genuine answer
  * (non-empty content) and `null` on anything that does not count as one — an
@@ -545,21 +543,20 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
  * tier 1 still preserves that answer on the ordinary failure path.
  *
  * **At most two attempts, never recursed further: trimmed, then untrimmed
- * once.** The trimmed follow-up regressed the one known-working case —
- * confirmed by direct replay — so a trimmed attempt's failure
- * gets exactly one further attempt with the reasoning fed back untouched
- * (the reasoning exactly as an untrimmed salvage always sent it), but only when trimming actually removed
- * something (`trim.applied` — nothing to fall back from otherwise, and
- * `deadline-timeout`'s own attempt is already untrimmed, so this never fires
- * for it). A failure of both attempts (or of the single attempt when
- * trimming never applied) is swallowed — `null` — and the caller falls back
- * to reporting the ORIGINAL `fallbackError`, whose `.answer` (tier 1) is
- * untouched by any of this having been tried and failed.
+ * once.** The trimmed follow-up alone fails the one known-working case, so a
+ * trimmed attempt's failure gets exactly one further attempt with the reasoning
+ * fed back untouched (exactly as an untrimmed salvage sends it), but only when
+ * trimming actually removed something (`trim.applied` — nothing to fall back
+ * from otherwise, and `deadline-timeout`'s own attempt is already untrimmed, so
+ * this never fires for it). A failure of both attempts (or of the single
+ * attempt when trimming never applied) is swallowed — `null` — and the caller
+ * falls back to reporting the ORIGINAL `fallbackError`, whose `.answer`
+ * (tier 1) is untouched by any of this having been tried and failed.
  *
- * **Worst-case cost, stated plainly:** a case that fails both attempts now
+ * **Worst-case cost, stated plainly:** a case that fails both attempts
  * spends up to 2×`SALVAGE_MAX_MS` (600s) rather than 300s on the salvage
  * phase alone, on top of the original request. Accepted — the alternative
- * (no fallback) is the regression this amendment measured directly.
+ * (no fallback) loses the known-working case above.
  *
  * Returns a result shaped like `unconstrained`'s own success return, tagged
  * `salvaged: true` so nothing downstream can mistake this for an ordinary

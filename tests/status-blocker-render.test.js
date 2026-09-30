@@ -26,7 +26,7 @@ test('a malformed queued row is not described as running, and claims nothing abo
     // A malformed QUEUED row holds the line only while it is the first row the
     // scan does not skip, which one row cannot know about itself.
     assert.doesNotMatch(text, /It blocks the queue/);
-    // This fixture is the only thing in the suite that reaches `relativeAge`'s
+    // This fixture reaches `relativeAge`'s
     // unparseable-timestamp branch — `breakStamps` is what corrupts `created_at`,
     // and the age column is rendered from it. Reached and unasserted is a branch
     // that only looks covered.
@@ -168,11 +168,7 @@ test('the way out is named on the blocker only when taking it would work', { ski
 
 test('a malformed blocker with NO pid recorded is named, and gets no command at all', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // A running row with no worker pid and a stale, PARSEABLE beat. `theirHead`
-  // cannot build it — that helper sets a live waiter pid on a queued row — and a
-  // `starting` row would not discriminate, because it has no beat at all so
-  // `beatIsStale` already suppresses the remedy. This is the only shape that
-  // reaches the liveness gate as the single deciding predicate.
+  // A running row with no worker pid and a stale, PARSEABLE beat.
   //
   // **The universe here is malformed rows with NO PID RECORDED, not every
   // malformed row** — the title used to claim the latter while the fixture only

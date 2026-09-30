@@ -2,10 +2,8 @@ import { UserError } from './errors.mjs';
 
 /**
  * Reading a response body. Separate from `http.mjs` (which makes the request)
- * and from `sse.mjs` (which frames an event stream) — the size ratchet that
- * used to be in tests/structure.test.js (retired 2026-08-17) was a design
- * instrument, not an obstacle, when this split was made: one module per
- * question — send it, read it, frame it.
+ * and from `sse.mjs` (which frames an event stream): one module per question —
+ * send it, read it, frame it.
  */
 
 /**
@@ -13,8 +11,7 @@ import { UserError } from './errors.mjs';
  *
  * `limit` stops early and releases the socket, which matters on the error path:
  * the non-2xx handler quotes the first 400 characters, and a server answering a
- * failure with an endless body would otherwise be its own hang — the exact
- * shape of bug this feature exists to remove.
+ * failure with an endless body would otherwise be its own hang.
  */
 export async function readText(response, { limit } = {}) {
   let text = '';

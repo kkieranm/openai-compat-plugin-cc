@@ -42,7 +42,7 @@ const SPEC = {
  * One value per bench invocation, so `--cold` runs cannot collide with each
  * other *or* with a run from an hour ago.
  *
- * A UUID rather than a timestamp, which was the first draft and is wrong twice:
+ * A UUID rather than a timestamp, which would be wrong twice:
  * two invocations launched inside one clock tick would share it, and a wall
  * clock can step backwards onto a value already used. What has to be true is
  * that the server has never seen this prefix, and only uniqueness delivers that.
@@ -57,11 +57,8 @@ const INVOCATION = randomUUID();
  * with the answer — including how to record a failure, which is the half that
  * kept growing.
  */
-// EXPORTED for `tests/bench-review-flags.test.js`. `main()` here is unexported and
-// runs only under the `process.argv[1]` guard, so nothing could reach the command
-// line this builds — which is how `--structured-output` came to be missing from
-// SPEC for as long as it was. Exporting the composition is the seam, not another
-// end-to-end test.
+// EXPORTED for `tests/bench-review-flags.test.js`. Exporting the composition is
+// the seam, not another end-to-end test.
 export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runIndex }) {
   const flags = ['review', ...materializedArgs, '--json'];
   if (diffOnly) flags.push('--diff-only');

@@ -3,8 +3,7 @@
 //
 // Split out of `review-sweep.test.js` when that file reached the repo's size
 // ratchet. It is a coherent subject on its own: everything here answers "does
-// what I typed reach the run", which is the question two flags failed silently
-// for — documented in the plan, and unpassable.
+// what I typed reach the run".
 //
 // **These invoke `parseArgs` with the exported `SPEC`.** The versions they
 // replace built the parsed object by hand and called `optionsFrom`, so removing
@@ -19,11 +18,10 @@ import { parseArgs } from '../scripts/lib/args.mjs';
 const TOOL_ROOT = '/tool/root';
 const from = (argv, root = TOOL_ROOT) => optionsFrom(parseArgs(argv, SPEC).options, 0, root);
 
-// --abort-after was documented in the plan and could not be
-// passed. **This now runs the REAL argv through the REAL parser**: the earlier
-// version handed `optionsFrom` an object it built itself, so dropping the flag
-// from SPEC would have made the CLI reject `--abort-after` while this test went
-// on passing — a check named for the parser that never invoked it.
+// The `--abort-after` gap: **this runs the REAL argv through the REAL parser**:
+// handing `optionsFrom` an object built by hand would keep passing after the
+// flag was dropped from SPEC, while the CLI rejected `--abort-after` — a check
+// named for the parser that never invoked it.
 test('--abort-after survives the whole path from argv to options', () => {
   assert.equal(from(['--minutes', '10', '--abort-after', '7']).abortAfter, 7);
   assert.equal(from(['--minutes', '10']).abortAfter, 3);

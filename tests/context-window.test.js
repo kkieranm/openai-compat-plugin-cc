@@ -127,9 +127,10 @@ test('a fully configured profile lists models anyway, so setup and task agree', 
   // class as two planners — REPO_TRAPS records nine instances of it — and the
   // only fix with one authority is one input.
   //
-  // Still proven by counting requests, which is what caught the original
-  // regression: the fully-configured tests all pointed at an unreachable port
-  // where an extra probe failed silently.
+  // Proven by counting requests against a reachable server: against an
+  // unreachable port the probe fails silently (`describeProvider` swallows the
+  // refusal when a model is configured), so neither a missing probe nor an
+  // extra one would show.
   const server = await startFakeServer((request, response) => {
     const path = request.url.split('?')[0];
     if (path.endsWith('/chat/completions')) return respondJson(response, completion('done'));

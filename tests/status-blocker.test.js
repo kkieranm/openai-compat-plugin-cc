@@ -165,9 +165,9 @@ test('nothing is marked when this workspace has nothing queued', { skip: NEEDS_S
   // A LIVE foreign runner, or this fixture cannot fail: delete the eligible-
   // witness gate at the top and, with no running row, the queued rung returns
   // null on its own. With a runner present, deleting that gate makes rung one
-  // mark it — telling a workspace with no queued work what is blocking it.
-  // The runner is shown either way (it is running, and that clause predates this
-  // change); what must not appear is the marker.
+  // mark it — telling a workspace with no queued work what is blocking it. The
+  // runner is shown either way (it is running); what must not appear is the
+  // marker.
   insertSynthetic(state, { id: 'runner', state: 'running', workspace: THERE, workerPid: process.pid });
 
   viewHere(state, (view) => {

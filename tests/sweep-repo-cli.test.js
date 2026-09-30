@@ -2,7 +2,7 @@
 // second git repo — not the exported functions, because `git()` and `invoke()`
 // are module-private and the defect this covers was both of them independently
 // hardcoding this tool's own ROOT as `cwd`. A unit test against `optionsFrom`
-// alone cannot see that; only spawning `main()` can.
+// alone cannot see that.
 //
 // `--include` deliberately names a prefix the scratch commit does NOT touch,
 // so it is enumerated as ineligible and `runSweep` never calls `execute` — no
@@ -71,7 +71,7 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
   assert.equal(record.repo, target);
   // The rendered report escapes the repo path for display (it is untrusted operator/foreign
   // data in a code span — a backtick would break out); the raw path stays in the JSON record
-  // above. Attribution survives escaping, which is what this asserts (OAI-213).
+  // above. Attribution survives escaping, which is what this asserts.
   const shownRepo = safeInline(target);
   assert.match(readReport(outDir), new RegExp(`Repository.*${shownRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });

@@ -2,10 +2,8 @@
 //
 // `tests/delegate-template.test.js` deliberately stubs `canon` and `root` to
 // identity, because it tests argument construction, not containment. Nothing
-// anywhere else in this repo exercised the boundary check, `canon`'s `--`
-// argument-injection defence, or its control-character refusal — confirmed
-// with a positive control during this file's own probe: reverting the
-// boundary check to always match left the full 1158-test suite green.
+// anywhere else in this repo exercises the boundary check, `canon`'s `--`
+// argument-injection defence, or its control-character refusal.
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
@@ -214,8 +212,7 @@ test('canon resolves a clean in-tree path with no control character', async () =
 
 test('canon refuses a resolved path carrying a control character, in isolation', async () => {
   // A real filesystem entry literally named with an embedded newline — no
-  // boundary check anywhere in this harness to mask the result either way,
-  // unlike the round-1 design this replaced.
+  // boundary check anywhere in this harness to mask the result either way.
   const outside = tracked('oai-containment-control-');
   const named = join(outside, 'weird\nname.txt');
   writeFileSync(named, 'x');
@@ -224,11 +221,10 @@ test('canon refuses a resolved path carrying a control character, in isolation',
 });
 
 test('canon resolves a --require= manifest entry correctly, in isolation', async () => {
-  // Found missing in review-ladder pass 1 (Codex, verdict point round 1,
-  // CHANGES-REQUIRED): the plan calls for an ISOLATED canon() proof of the
-  // -- separator, the same isolation principle already applied to the
-  // control-character check above — distinct from the two integration
-  // cases below, which exercise canon() only as part of the whole recipe.
+  // An ISOLATED canon() proof of the -- separator, the same isolation
+  // principle already applied to the control-character check above — distinct
+  // from the two integration cases above, which exercise canon() only as part
+  // of the whole recipe.
   await withScratchRepo(async (repo) => {
     mkdirSync(join(repo, '--require=.'));
     writeFileSync(join(repo, '--require=.', 'evil.js'), 'payload');
@@ -239,15 +235,14 @@ test('canon resolves a --require= manifest entry correctly, in isolation', async
 });
 
 test('canon defeats an inherited NODE_OPTIONS preload that would forge its result, in isolation', async () => {
-  // Found alongside the identical vulnerability in the model-id validator
-  // (this pass's own verdict point, round 3, codex-adversarial): a preload
-  // loaded via an inherited NODE_OPTIONS can write to stdout before canon's
-  // own script runs, forging the "resolved path" this recipe trusts — the
-  // same class of hazard an unrefused `--eval=…` argument already defends
-  // against, but `--` cannot help here, since NODE_OPTIONS is not an argv
-  // flag. Fixed by clearing NODE_OPTIONS for this invocation; this test
-  // proves the fix by confirming a hostile preload's injected text never
-  // reaches the resolved path canon() returns.
+  // The model-id validator faces the identical exposure, under the same
+  // defence: a preload loaded via an inherited NODE_OPTIONS can write to stdout
+  // before canon's own script runs, forging the "resolved path" this recipe
+  // trusts — the same class of hazard an unrefused `--eval=…` argument already
+  // defends against, but `--` cannot help here, since NODE_OPTIONS is not an
+  // argv flag. canon() runs under `env -i PATH="$PATH"`, which clears it; this
+  // test confirms a hostile preload's injected text never reaches the resolved
+  // path canon() returns.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
     const preloadDir = tracked('oai-containment-preload-');
@@ -262,14 +257,10 @@ test('canon defeats an inherited NODE_OPTIONS preload that would forge its resul
 });
 
 test('canon defeats an inherited OPENSSL_CONF that would crash it before it resolves anything, in isolation', async () => {
-  // Found at this pass's own verdict point, round 4 (codex-adversarial):
-  // NODE_OPTIONS was not the only startup input Node consults before -e
-  // runs — OPENSSL_CONF is a second, independent one, and this vulnerability
-  // applies to canon() the same way it applies to the model-id validator.
-  // Originally fixed by adding OPENSSL_CONF= alongside NODE_OPTIONS=; finding
-  // 15 (below) replaced that pairwise clearing with env -i PATH="$PATH",
-  // which still defeats this exact reproduction — this test still passes
-  // unchanged under the current fix.
+  // NODE_OPTIONS is not the only startup input Node consults before -e runs —
+  // OPENSSL_CONF is a second, independent one, and it applies to canon() the
+  // same way it applies to the model-id validator. `env -i PATH="$PATH"`
+  // clears it along with every other inherited variable.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
     const confDir = tracked('oai-containment-openssl-conf-');
@@ -284,19 +275,16 @@ test('canon defeats an inherited OPENSSL_CONF that would crash it before it reso
 });
 
 test('canon defeats an inherited Node IPC/cluster channel that would inject bytes into its result, in isolation', async () => {
-  // Found at this pass's own verdict point, round 5 (codex-adversarial): a
-  // third independent startup input, Node's own IPC/cluster bootstrap
+  // A third independent startup input, Node's own IPC/cluster bootstrap
   // (NODE_CHANNEL_FD/NODE_UNIQUE_ID), applies to canon() the same way it
-  // applies to the model-id validator. This is the finding that prompted
-  // finding 15's redesign: env -i PATH="$PATH" runs this invocation under an
-  // empty environment rather than clearing named variables one discovery at
-  // a time.
+  // applies to the model-id validator. It is why env -i PATH="$PATH" runs this
+  // invocation under an empty environment rather than clearing named
+  // variables one at a time.
   //
-  // `timeout` is deliberate and load-bearing, not defensive padding — see
-  // the identical note on this same test's twin in delegate-template.test.js:
-  // an UNFIXED invocation under this exact env-var combination does not
-  // merely misbehave, it can HANG indefinitely, discovered while
-  // mutation-testing this test's own fix.
+  // `timeout` is deliberate and load-bearing, not defensive padding — see the
+  // identical note on this same test's twin in delegate-template.test.js: an
+  // invocation without `env -i` under this exact env-var combination does not
+  // merely misbehave, it can HANG indefinitely.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
     const script = `${canonBlock()}\ncanon "$1"`;
@@ -309,10 +297,9 @@ test('canon defeats an inherited Node IPC/cluster channel that would inject byte
 });
 
 test('canon runs cleanly under an empty environment with every hostile variable set at once, in isolation', async () => {
-  // The positive control for finding 15's redesign, mirroring the same test
-  // in delegate-template.test.js: every hostile variable findings 13-15
-  // individually demonstrated, set simultaneously, proving env -i
-  // PATH="$PATH" defeats all of them at once.
+  // The positive control for the empty-environment design, mirroring the same
+  // test in delegate-template.test.js: every hostile variable, set
+  // simultaneously, proving env -i PATH="$PATH" defeats all of them at once.
   await withScratchRepo(async (repo) => {
     writeFileSync(join(repo, 'clean.txt'), 'hi');
     const preloadDir = tracked('oai-containment-kitchensink-preload-');
@@ -337,11 +324,11 @@ test('canon runs cleanly under an empty environment with every hostile variable 
 });
 
 /**
- * Runs a `dirPreambleBlock()`-shaped script and asserts it actually STOPS —
- * not merely that it printed a diagnostic. A guard that warns but forgets
- * `exit 1` would still match a bare message-only assertion while proceeding
- * to `echo ok` right after it (Codex, review-ladder pass 1): asserting the
- * absence of `ok` is what proves execution halted, not just that it spoke.
+ * Runs a `dirPreambleBlock()`-shaped script and asserts it actually STOPS — not
+ * merely that it printed a diagnostic. A guard that warns but forgets `exit 1`
+ * would still match a bare message-only assertion while proceeding to `echo ok`
+ * right after it: asserting the absence of `ok` is what proves execution
+ * halted, not just that it spoke.
  */
 async function assertDirRefused(script, messagePattern) {
   const { status, stdout } = await run(SHELL, ['-c', script])

@@ -52,9 +52,8 @@ test('--json emits one object carrying the findings and every caveat field', asy
   // key reads as `undefined`, which is falsy and therefore silently reassuring.
   for (const key of [
     'dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'usage', 'finishReason',
-    // Added after a review found them missing: the text footer has always shown
-    // whether the size guard actually ran, and --json did not, while both this
-    // file's docstring and commands/review.md promised it carried every caveat.
+    // The text footer says when the size guard did not run, and commands/review.md
+    // promises --json carries every caveat the text report does.
     'contextChecked', 'contextNote',
     // The measurement behind analysisCut. Recording only the flag made the
     // ceiling unsizeable: 6 of 15 recorded runs were cut and nothing said how

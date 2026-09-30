@@ -179,9 +179,9 @@ export async function main(argv) {
     if (!known.has(id)) throw new Error(`no such case "${id}"; have: ${[...known].join(', ')}`);
   }
   const selected = options.case?.length ? all.filter((c) => options.case.includes(c.id)) : all;
-  // Kept BESIDE the unknown-id check, not replaced by it. Adding that check in
-  // pass 1 deleted this one, so an empty corpus persisted a successful report
-  // with no rows — a result from no evidence.
+  // Kept BESIDE the unknown-id check, not replaced by it: with no ids requested
+  // every case is selected, so only this check stops an empty corpus persisting
+  // a successful report with no rows — a result from no evidence.
   if (selected.length === 0) throw new Error('no cases to run — the corpus is empty');
 
   const sweep = runSweep(selected, options);

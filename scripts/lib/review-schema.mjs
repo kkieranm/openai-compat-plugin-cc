@@ -24,17 +24,17 @@ export const MAX_FINDINGS = 20;
  * How many findings the reply *budget* leaves room for — not how many the schema
  * permits, which stays `MAX_FINDINGS`.
  *
- * These were the same number until 2026-07-28, and holding room for twenty is
- * what crowded out the reasoning: on five of six benchmark cases the reserve was
- * ~55,700 characters while `analysis` was allowed 28,000, because ~24,500 was
- * held back for a reply shape that has never occurred. The most findings any
- * recorded reply has carried is six.
+ * Holding room for twenty crowded out the reasoning while the two numbers were
+ * equal: on five of six benchmark cases in the sample this allowance was sized
+ * on, the reserve was ~55,700 characters while `analysis` was allowed 28,000,
+ * because ~24,500 was held back for twenty findings; the most any reply in that
+ * sample carried was six.
  *
  * **This is a chosen allowance, not a measured one.** Every observation behind
- * it was taken *under* the old cap, and more reasoning room may itself produce
- * more findings — so "six, plus headroom" is a bet about a distribution this
- * change is about to move, and it should be revisited against post-change data
- * rather than treated as settled. What it buys: a reply that does carry many
+ * it was taken with room reserved for twenty, and more reasoning room may itself
+ * produce more findings — so "six, plus headroom" is a bet about a distribution
+ * this allowance can move, and it should be revisited against data taken under
+ * it rather than treated as settled. What it buys: a reply that does carry many
  * long findings on a tight window overruns `max_tokens` and fails loudly,
  * which is the trade taken deliberately.
  */
@@ -71,32 +71,31 @@ export const RESERVED_CHARS = BUDGETED_FINDINGS * FINDING_CHARS + REPLY_SUMMARY_
  *
  * A wall-clock bound, not an arithmetic one: 74,000 characters is roughly 21,765
  * tokens, which is ~6-9 minutes of generation on the MoE and ~28 minutes on a
- * dense 27B at the rates measured on 2026-07-28. Above this the reserve would
+ * dense 27B at measured rates. Above this the reserve would
  * still permit more and a review would stop being worth waiting for.
  */
 export const ANALYSIS_CEILING = 74_000;
 
 /**
- * A defensive backstop, and deliberately **not** reachable by a real review.
+ * A defensive backstop that a growing input deliberately never reaches.
  *
- * An earlier comment here called this "where reasoning becomes a formality",
- * which — with nothing preventing a review from landing on it — would have
- * described the code shipping exactly that: because the reserve shrinks as the
- * input grows, the largest and most complex diffs would have drawn the *least*
- * reasoning, and a review at the floor still returns valid JSON, so it would
- * have degraded quietly rather than failing. Caught by an adversarial review of
- * this design, and it was a fair hit.
+ * It must never become the point where reasoning is a formality: because the
+ * reserve shrinks as the input grows, a floor the shrink could reach would give
+ * the largest
+ * and most complex diffs the *least* reasoning, and a review at the floor still
+ * returns valid JSON, so it would degrade quietly rather than failing.
  *
- * What keeps it unreachable is `REVIEW_MIN_TOKENS` (4,096) sitting above
+ * What keeps the shrink off it is `REVIEW_MIN_TOKENS` (4,096) sitting above
  * `MIN_REVIEW_RESERVE_TOKENS` (3,912): the shrink stops at the former, so the
- * smallest cap a real review can be handed is ~2,626 characters, not 2,000. The
+ * smallest cap the shrink can hand a review is ~2,626 characters, not 2,000. The
  * relationship is load-bearing and is pinned by a test — lower the reply floor
  * below the schema's minimum and the starved regime opens up again.
  *
- * Even 2,626 is a *shallow* review rather than a broken one, and it is reached
- * only when the input sits within ~4k tokens of the whole window, by which point
- * the ladder has already shed whole files for the diff alone. When the cap does
- * bind there, `analysisCut` says so — the review is labelled, not silently thin.
+ * Without an explicit `--max-tokens`, a window of ~7,824 tokens or fewer
+ * reaches the floor directly, and so does `--max-tokens` at its 3,912 minimum.
+ *
+ * Even 2,626 is a *shallow* review rather than a broken one. When the cap does
+ * bind, `analysisCut` says so — the review is labelled, not silently thin.
  */
 export const ANALYSIS_FLOOR = 2_000;
 

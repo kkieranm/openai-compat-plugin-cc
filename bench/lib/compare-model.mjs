@@ -192,7 +192,7 @@ function lensAxisState(o) {
 // of the format could make the report show one label and suppress on another.
 // A non-diff run must carry `hunksOnly`, `skippedUnsizedWindow`, AND
 // `contextWindow` as present keys. `contextWindow` presence matters because it
-// entered the writer (OAI-217, 2026-08-27) LATER than the other lens fields and
+// entered the writer LATER than the other lens fields and
 // is written `?? null` — so under the current writer the key is always present
 // (null iff genuinely unsized, which is a proven state), while a middle-era
 // record carries `hunksOnly`/`skippedUnsizedWindow` but no `contextWindow` and
@@ -363,7 +363,7 @@ function aggregate(rows) {
   // is already a rate (per opportunity), but raw `unmatched`/`controlFP` totals
   // scale with how many runs SUCCEEDED — so a record that failed more runs has a
   // smaller total and would unfairly rank ahead of a more reliable one. The
-  // per-scored-run rate removes that (Pass 2).
+  // per-scored-run rate removes that.
   const scoredRunCount = nonControl.reduce((t, row) => t + row.scored, 0);
   const controlScored = control.reduce((t, row) => t + row.scored, 0);
   const throughput = median(rows.flatMap((row) => row.rate?.values ?? []));
@@ -464,11 +464,11 @@ function divergencesOf(compatible) {
       }
     }
     // Reasoning: the observed thinking-channel state the SCORED runs ran under — a
-    // server-controlled input (`enable_thinking`, unreachable over the wire, OAI-221),
+    // server-controlled input (`enable_thinking`, unreachable over the wire),
     // the same class as lens. Compared over `n.reasoningScored` (the scored-run set),
     // NOT the displayed `row.reasoning` (which spans `measurable` runs): a truncated
     // run's reasoning state would otherwise inflate the set and could conceal a real
-    // scored-run difference. Fail-closed Option A: among records that scored the case
+    // scored-run difference. Fail-closed: among records that scored the case
     // (a non-empty set — an empty one means `scored === 0`, coverage's job), a
     // differing set suppresses, INCLUDING known-vs-unknown; two records both witnessing
     // only `unknown` agree and rank through (suppressing that would make every provider

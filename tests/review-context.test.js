@@ -177,8 +177,6 @@ test('an unknown window withholds the files, and the report says why', async () 
 });
 
 test('--commit reviews a commit end to end, whole files and all', async () => {
-  // No CLI-level coverage of any non-default target existed before this item,
-  // and this is the surface it changes.
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
   const server = await startFakeServer(findings);

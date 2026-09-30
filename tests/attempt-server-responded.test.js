@@ -99,11 +99,11 @@ test('an entry reclassified to `refused` keeps the flag even with NO status behi
 });
 
 test('an answered entry says so BY VALUE, not merely by carrying the key', () => {
-  // The majority path, and it was untested. Deleting `settle`'s write left all
-  // 412 tests green while every answered attempt serialized
-  // `{outcome: 'answered', serverResponded: false}` — a self-contradictory record
-  // on the commonest outcome of all. The key-set tests could not see it: they
-  // assert `Object.keys`, and `newEntry` mints the key as `false` regardless.
+  // The majority path. Deleting `settle`'s write would serialize every answered
+  // attempt as `{outcome: 'answered', serverResponded: false}` — a
+  // self-contradictory record on the commonest outcome of all. The key-set
+  // tests cannot see it: they assert `Object.keys`, and `newEntry` mints the
+  // key as `false` regardless.
   const ledger = createLedger();
   ledger.begin({ body: BODY, cause: CAUSE }).settle({ prefillMs: 5, generationMs: 9 });
 
@@ -113,11 +113,10 @@ test('an answered entry says so BY VALUE, not merely by carrying the key', () =>
 });
 
 test('a refusal says so BY VALUE even when no earlier failure recorded it', () => {
-  // The sibling hole, and the reason this is a SECOND test rather than an extra
-  // assertion on the refusal test above. That one reaches `pendUntilReplaced`
-  // through `fail({status: 400})`, which has already written `true` from the
-  // status witness — so DELETING the write there leaves the entry correct by
-  // accident and the suite green. Measured, not assumed.
+  // The reason this is a SECOND test rather than an extra assertion on the
+  // refusal test above. That one reaches `pendUntilReplaced` through
+  // `fail({status: 400})`, which has already written `true` from the status
+  // witness — so DELETING the write there leaves the entry correct by accident.
   //
   // Reaching it via `refuse(error)` on a fresh entry is what removes the
   // accident: nothing has written the field, so the unconditional `true` is the
@@ -130,11 +129,8 @@ test('a refusal says so BY VALUE even when no earlier failure recorded it', () =
 });
 
 test('the ledger copies a flag the transport set, for the families with no other witness', () => {
-  // Honest scope, narrowed in review. This drives `fail()` with a hand-built
-  // error, so it proves the LEDGER carries the flag across — NOT that any minting
-  // site sets it. An earlier version of this test claimed the second thing while
-  // doing the first, and a review verifier falsified the claim by deleting the
-  // write in `body.mjs`'s `bad-json` branch and watching all 415 tests stay green.
+  // Honest scope. This drives `fail()` with a hand-built error, so it proves the
+  // LEDGER carries the flag across — NOT that any minting site sets it.
   // The sites are covered in `attempt-response-sites.test.js`; this is the copy.
   //
   // Still worth its own test, because these three reasons (and `stream-error-frame`,
@@ -170,13 +166,9 @@ test('a measured prefill is itself a response, whatever the error forgot to say'
 });
 
 test('a status witness must BE a status code, not merely a property that exists', () => {
-  // Two loosenings, each caught a review round apart, each turning "no response"
-  // into "a response" for a request that never got one. `!== undefined` admitted
-  // `null`; `typeof === 'number'` still admitted `0`, `NaN` and `Infinity`. None
-  // is reachable from `http.mjs` or `provider.mjs`, which both assign a real
-  // `statusCode` — so this keeps the guard unreachable by CONSTRUCTION rather than
-  // by an audit of today's call sites, which is the kind of guarantee that expires
-  // quietly the next time a site is added.
+  // Two looser checks would each turn "no response" into "a response" for a
+  // request that never got one: `!== undefined` admits `null`; `typeof ===
+  // 'number'` still admits `0`, `NaN` and `Infinity`.
   for (const status of [null, undefined, 0, 99, NaN, Infinity, '400']) {
     assert.equal(
       failedEntry(Object.assign(new Error('reset'), { reason: TRANSPORT, status })).serverResponded,
@@ -232,10 +224,9 @@ test('a status refusal records a response WITHOUT marking the prompt cache-warm'
 test('each of the four witnesses proves an obtained response on its own', () => {
   // Independent on purpose. Trusting `serverResponded` alone would make the
   // record's correctness depend on every present and future error-minting site
-  // remembering one flag — which is not hypothetical: a verifier deleted exactly
-  // one such write and nothing went red. A post-response path added later that
-  // forgot it would silently record a false negative, a dropped request filed as
-  // one nothing ever answered, which is the inversion the flag exists to stop.
+  // remembering one flag. A post-response path added later that forgot it would
+  // silently record a false negative, a dropped request filed as one nothing
+  // ever answered, which is the inversion the flag exists to stop.
   assert.equal(failedEntry(Object.assign(new Error('dropped'), { serverResponded: true })).serverResponded, true);
   assert.equal(failedEntry(Object.assign(new Error('bad request'), { status: 400 })).serverResponded, true);
   assert.equal(failedEntry(Object.assign(new Error('no message'), { reason: EMPTY_COMPLETION })).serverResponded, true);

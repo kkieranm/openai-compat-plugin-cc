@@ -32,8 +32,7 @@ test('an orphaned log is swept, and anything else in the directory is left alone
   const live = insertSynthetic(state, { id: 'live', state: 'running', workerPid: process.pid });
   writeLog(state, live);
   // Exactly what a crash between the DELETE and the unlink leaves behind: a log
-  // with no row to explain it. Written by hand because the only other way to
-  // produce one is to kill a process at the one instruction in between.
+  // with no row to explain it.
   writeFileSync(logPath(state, 9999), 'orphan\n');
   writeFileSync(join(state, 'logs', 'notes.txt'), 'not ours\n');
 

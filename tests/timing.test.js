@@ -185,11 +185,11 @@ test('a run that took two requests says so, so an odd prefill can be explained',
   assert.ok(report.prefillMs < report.durationMs);
 });
 
-// `degraded` names one fact: a schema was asked for, refused, and the reply
-// parsed from prose instead. The default asks for none, so there is
-// nothing to refuse and nothing to degrade from — and deriving the flag from
-// "was the reply parsed from a grammar" reported `true` for every ordinary run,
-// which is what this pins. A run that sent one unconstrained request and got an
+// `degraded` names one fact: a schema was asked for and the final reply was
+// not structured. The default asks for none, so there is
+// nothing to degrade from — deriving the flag from "was the reply parsed from a
+// grammar" would mark every ordinary run degraded, which is what this pins.
+// A run that sent one unconstrained request and got an
 // answer is not a fallback from anything.
 test('an ordinary run is not marked degraded', async () => {
   const { dir, server, configPath } = await scenario(
@@ -207,11 +207,10 @@ test('an ordinary run is not marked degraded', async () => {
 });
 
 test('a retry in the transport ladder counts too, not just the schema one', async () => {
-  // The case the first version of this flag missed. A server that refuses
-  // `stream_options` but accepts `stream` sends two requests and still streams,
-  // so a measured prefill sits beside a retry — and deriving "did it retry" from
-  // the schema outcome alone reported false for a run that tried twice, in the
-  // field whose name promises otherwise.
+  // A server that refuses `stream_options` but accepts `stream` sends two
+  // requests and still streams, so a measured prefill sits beside a retry — and
+  // deriving "did it retry" from the schema outcome alone would report false
+  // for a run that tried twice, in the field whose name promises otherwise.
   let seen = 0;
   const handler = (request, response) => {
     // `seen` counts chat attempts, so the context probe must not be one — it now

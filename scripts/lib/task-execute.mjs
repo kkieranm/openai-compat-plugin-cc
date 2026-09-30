@@ -168,8 +168,8 @@ export async function prepareTask({ spec, options, inlinePrompt, terminated, sam
       // `persistRequest` (background), and the report echo.
       sampling,
       // The run context, carried onto `prep` for the outcome echo and the
-      // attach at `executeTask`'s and `taskFlow`'s later throw sites. A background
-      // submission ignores it (decision F): the worker records the fields null.
+      // attach at `executeTask`'s and `taskFlow`'s later throw sites. A
+      // background submission ignores it.
       runContext,
       // The NAME, not the resolved template: this is what crosses into persisted
       // state, and a queued job must not snapshot prose that the build reading it

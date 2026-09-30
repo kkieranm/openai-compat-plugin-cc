@@ -50,7 +50,7 @@
  * real payload that happens to be mixed and refusing a decoy that happens to
  * be mixed are the same predicate; this file accepts both, and a fully
  * well-formed trailing decoy was never distinguishable from a real reply by
- * content alone, before or after this fix.
+ * content alone.
  *
  * That is worth stating because the rule looks redundant if you read only the
  * cases that motivated it, and deleting it costs a REAL behaviour: a genuine
@@ -126,12 +126,12 @@ export function findingsShaped(value, whole = false) {
   // the finding in place of the payload it wraps. It needs a model to emit a
   // wrapper carrying finding keys, which no prompt here asks for.
   //
-  // `record(item)` gates first, by short-circuit — `named` no longer assumes
-  // every list element is already an object before it runs, which `usable`
-  // (below) stopped guaranteeing once a non-object sibling became admissible.
+  // `record(item)` gates first, by short-circuit — `named` does not assume every
+  // list element is already an object before it runs, which `usable` (below)
+  // does not guarantee: it admits a list with a non-object sibling.
   //
   // `summary` ONLY here, deliberately narrower than `normalizeFinding`'s
-  // description identity, which since OAI-228 also accepts a `message` alias.
+  // description identity, which also accepts a `message` alias.
   // This gate decides whether to SELECT a scanned candidate dug out of prose,
   // where `[{file, line, message}]` — the linter/diagnostic shape — is the most
   // likely quoted decoy; admitting it here would let such a decoy win on

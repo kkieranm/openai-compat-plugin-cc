@@ -43,13 +43,12 @@ function budgetMessages(host, seconds, received) {
     //
     // **`received` means something different here, and neither line may call it
     // generation.** From `chat.mjs` this parameter carries model text; from the
-    // transport it carries raw body bytes, framing and keepalives included. A
-    // first draft branched on it to say "the model was still generating", which
-    // is the very inference `http.mjs` refuses in its own module note — a server
-    // emitting `:\n\n` every 30 seconds moves this counter while producing
-    // nothing. That would have sent someone to buy more time from a model that
-    // had generated no output at all, in the field added to stop a hint
-    // asserting what nobody observed.
+    // transport it carries raw body bytes, framing and keepalives included.
+    // Branching on it to say "the model was still generating" would be the very
+    // inference `http.mjs` refuses in its own module note — a server emitting
+    // `:\n\n` every 30 seconds moves this counter while producing nothing — and
+    // would send someone to buy more time from a model that had generated no
+    // output at all.
     //
     // So both branches say only what the counter can support: bytes arrived, or
     // they did not. Labelled `bytes`, not `characters`, because the SSE envelope
@@ -128,7 +127,7 @@ export function transportError(error, url, { delivered = false } = {}) {
   // request `'error'` handler, which usually does not. Classifying by `code`
   // alone would file the first as non-retryable whenever Node hands over a
   // code-less `Error: aborted` — a genuinely retryable delivery failure marked
-  // not worth retrying, which is this whole change inverted. Whether Node
+  // not worth retrying. Whether Node
   // populates `code` there is version-dependent and unverifiable from here, so
   // the code that KNOWS which phase it is in says so, exactly as
   // `failure-shape.mjs` requires of every tag.

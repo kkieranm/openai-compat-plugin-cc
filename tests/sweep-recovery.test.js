@@ -52,7 +52,7 @@ test('a recovered record refuses to claim an end it never saw', () => {
 // means the "no `repo` key at all" shape an older ledger actually has on
 // disk was never exercised. Built by hand, deliberately without the key,
 // rather than by calling `envelopeFor`.
-test('a header from before OAI-165, with no `repo` key at all, recovers and renders without crashing', () => {
+test('an older header with no `repo` key at all recovers and renders without crashing', () => {
   const header = { maxSeconds: 900, abortAfter: 3, include: ['scripts'], from: 'abc', requestedCommits: 1, eligible: 1, scanLimit: 200, walked: 1, enumerated: 1, commits: [{ sha: 'a', eligible: true }] };
   assert.ok(!('repo' in header), 'the fixture must omit the key, not merely set it to null');
   const record = recoveredRecord({ header, entries: [{ sha: 'a', outcome: 'clean' }], discarded: 0 });

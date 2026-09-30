@@ -189,11 +189,9 @@ test('a newer plugin\'s row with an UNREADABLE pid wedges this build, and names 
   // above liveness, which no flag lifts. So this build can neither run past the
   // row nor write it off.
   //
-  // That combination already existed for a newer row with no pid at all, and
-  // extending it to this input the same way is queue-core work, not this fix.
-  // What ships here is that the row SAYS which schema it carries, because the
-  // note that used to carry that number is no longer the one it reaches. It does
-  // not say which build can clear it — see the last assertion for why.
+  // The same combination holds for a newer running row with no pid at all. The
+  // row SAYS which schema it carries. It does not say which build can clear it
+  // — see the last assertion for why.
   const scenario = await queueScenario();
   try {
     insertSynthetic(scenario.state, { id: 'skewed', state: 'running', version: 99, workerPid: 'garbage' });
@@ -249,9 +247,8 @@ test('a newer plugin\'s row with a READABLE dead pid still skips, and says nothi
 });
 
 test('a row THIS build understands is not told a newer plugin wrote it', { skip: NEEDS_SQLITE }, () => {
-  // The negative control for the version clause above, and it lives here rather
-  // than in the render suite because this is the only file with a version-99
-  // fixture to control against. Without it the `isKnownVersion` guard is unpinned:
+  // The negative control for the version clause above.
+  // Without it the `isKnownVersion` guard is unpinned:
   // deleting it would make every malformed row claim a schema it does not have,
   // and nothing in the suite would go red.
   //
@@ -274,8 +271,7 @@ test('a row THIS build understands is not told a newer plugin wrote it', { skip:
 /**
  * Made deterministic: `reconcileAll` and `viewOf` each probe
  * liveness separately, so a row can be fine at the first probe and dead by the
- * second — a real timing race this repo's black-box CLI harness has no seam to
- * force. Calling `renderList`/`statusView` directly, on a row seeded straight
+ * second. Calling `renderList`/`statusView` directly, on a row seeded straight
  * into the store, skips `reconcileAll` entirely — which is exactly what a row
  * that died AFTER reconciliation observed it alive would look like by render
  * time, without needing to land the actual race.
@@ -290,7 +286,7 @@ test('a known-schema dead row on a writable database is not blamed on a version 
   assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
   assert.doesNotMatch(text, /this build did reconcile the database this run/, 'reconciliation running this session is not a claim that THIS row was checked');
   assert.doesNotMatch(text, /left this row exactly as found/, 'a row inserted after reconcileAll\'s snapshot was never examined at all, not "examined and left unchanged"');
-  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
+  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row');
   assert.match(text, /schema \(1\) is understood/);
   assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row');
   // Fragment-only assertions above would still
@@ -323,7 +319,7 @@ test('a known-schema never-started row on a writable database is not blamed on a
   assert.doesNotMatch(text, /worker likely changed state/, 'a never-started row has no worker to have changed state');
   assert.doesNotMatch(text, /this build did reconcile the database this run/, 'reconciliation running this session is not a claim that THIS row was checked');
   assert.doesNotMatch(text, /left this row exactly as found/, 'a row inserted after reconcileAll\'s snapshot was never examined at all, not "examined and left unchanged"');
-  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row (pass 3)');
+  assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row');
   assert.match(text, /schema \(1\) is understood/);
   assert.match(text, /keeps showing.*across repeated runs/, 'the persistence clause that distinguishes a real race from a stuck row, same branch as the dead-row test above');
   // Same reasoning as the dead-row test

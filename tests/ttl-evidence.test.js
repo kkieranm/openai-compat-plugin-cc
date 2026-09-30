@@ -15,9 +15,8 @@ import { DEFAULTS, isCanonical, resolveConfig } from '../bench/lib/ttl-config.mj
 
 const MODEL = 'qwen/qwen3.6-27b';
 
-// A REAL `lms ps --json` entry, trimmed. Copied from a live reply rather than
-// invented: the first draft guessed the key names and its comment asserted the
-// TTL was not reported at all. It is, as `ttlMs`.
+// A REAL `lms ps --json` entry, trimmed, copied from a live reply rather than
+// invented. The TTL is reported, as `ttlMs`.
 const RESIDENT = {
   type: 'llm',
   modelKey: MODEL,
@@ -105,7 +104,7 @@ test('activity is measured over the PREFILL window, not the whole episode', () =
   // read `true` every time and be reported as an answer about prefill.
   const samples = [sample(0, 1_000), sample(60_000, 1_000), sample(200_000, 9_000)];
   assert.equal(activityObserved(samples, MODEL, 100_000), false);
-  assert.equal(activityObserved(samples, MODEL, null), true, 'what the first draft did');
+  assert.equal(activityObserved(samples, MODEL, null), true, 'with no window bound, generation counts as activity');
 });
 
 test('too few readable samples answers null, never false', () => {
@@ -122,15 +121,13 @@ test('too few readable samples answers null, never false', () => {
 const answered = { outcome: 'answered', serverResponded: true, prefillMs: 335_000 };
 
 test('only serverResponded witnesses a response — a minted entry does not', () => {
-  // `ledger.begin` mints an entry before the socket is opened, so a run against a
-  // server that is down produces attempts. That is the exact state an accidental
-  // run of the withdrawn draft was in, and it rendered a verdict from it.
+  // `ledger.begin` mints an entry before the socket is opened, so a run against
+  // a server that is down produces attempts.
   assert.equal(obtainedAnyResponse([{ outcome: 'failed', serverResponded: false, reason: 'transport' }]), false);
   assert.equal(obtainedAnyResponse([]), false);
   assert.equal(obtainedAnyResponse(null), false);
   assert.equal(obtainedAnyResponse([answered]), true);
-  // The draft's disjunction had already drifted from the production rule: a
-  // measured prefill alone was enough for it. It must not be.
+  // A measured prefill alone is not enough.
   assert.equal(obtainedAnyResponse([{ outcome: 'failed', serverResponded: false, prefillMs: 12 }]), false);
 });
 
@@ -149,7 +146,7 @@ test('a self-contradictory record voids the sweep, and is not folded into the re
 
 test('prefill comes from the answering attempt, not a top-level field', () => {
   // `review-report.mjs` spreads `runTimings` onto the SUCCESS envelope only, so
-  // the withdrawn draft's `report.prefillMs` was null on every failed episode —
+  // a top-level `report.prefillMs` is never written on a failed episode —
   // precisely the episodes this experiment is about.
   assert.equal(prefillFromAttempts([{ outcome: 'failed', prefillMs: 5 }, answered]), 335_000);
   // Else the last, so it does not break quietly if `--max-attempts 1` ever moves.
@@ -172,14 +169,11 @@ test('the shipped protocol is the default, and it is the canonical one', () => {
   assert.equal(DEFAULTS.challengeTtlSeconds, 120);
   assert.equal(DEFAULTS.case, 'scaffold');
   // Imported, never a literal: a review REFUSES a budget below its floor rather
-  // than sending it, and the only run the first draft ever produced died in ~1s
-  // per episode against exactly that.
+  // than sending it.
   assert.ok(DEFAULTS.maxTokens >= 4096);
 });
 
 test('any experimental override makes the run non-canonical; the out-dir does not', () => {
-  // The done-condition reads this. "A file matching the glob exists" was already
-  // satisfied by a junk record from a draft that never dispatched a request.
   assert.equal(isCanonical(resolveConfig(['--challenge-ttl', '5'])), false);
   assert.equal(isCanonical(resolveConfig(['--case', 'docs-only'])), false);
   assert.equal(isCanonical(resolveConfig(['--provider-config', '/tmp/x.json'])), false);
@@ -190,8 +184,6 @@ test('any experimental override makes the run non-canonical; the out-dir does no
 test('a malformed protocol is refused rather than silently defaulted', () => {
   assert.throws(() => resolveConfig(['--nonsense', '1']), /unknown flag/);
   assert.throws(() => resolveConfig(['--episodes']), /needs a value/);
-  // What makes an empty episode list unreachable, and with it the `no-episodes`
-  // verdict the withdrawn draft could return but no outcome table ever listed.
   for (const bad of ['0', '-1', '2.5']) {
     assert.throws(() => resolveConfig(['--episodes', bad]), /positive integer/);
   }

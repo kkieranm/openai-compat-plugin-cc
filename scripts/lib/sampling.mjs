@@ -92,8 +92,8 @@ export function applySampling(body, sampling) {
 /**
  * Record the run's sampling settings on a thrown error, so the `--json` failure
  * envelope (`errorReport`) can report the sampling the run was REQUESTED with —
- * the settings that matter most on the failure this feature exists to fix, the
- * reasoning runaway refused *after* the model call returns.
+ * the settings that matter most on a reasoning runaway refused *after* the model
+ * call returns.
  *
  * Attached at the command-level catch, the one point every foreground failure
  * funnels through — which is why the honest word is "requested", not "sent":

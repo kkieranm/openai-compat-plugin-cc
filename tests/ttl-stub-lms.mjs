@@ -8,8 +8,7 @@
  * The driver shells out to `lms` for four things — `ps --json`, `load`,
  * `unload -a` and `version` — and every residency fact the instrument reads comes
  * back through the first of them. So this is the seam that lets the whole I/O
- * half execute in a test: the withdrawn draft's I/O half never ran, and that is
- * where 10 of its 18 review findings lived.
+ * half execute in a test.
  *
  * A scenario is a JSON file named by `TTL_STUB_SCENARIO`; mutable state lives
  * beside it under `TTL_STUB_STATE`. Residency is computed from the elapsed time
@@ -58,10 +57,9 @@ function residency() {
       identifier: scenario.model,
       ttlMs: (faultActive(state) ? scenario.appliedTtlMs : null) ?? state.requestedTtlMs,
       // A fixed placeholder. The instrument RECORDS lastUsedTime and never branches
-      // on it (ADR 013), so nothing here needs it to move. A real LM Studio reports
+      // on it, so nothing here needs it to move. A real LM Studio reports
       // `null` for the whole time it is serving a request — so an ADVANCING
-      // timestamp is a shape never observed in the wild (2026-08-04), and the knob
-      // that used to simulate it was removed rather than pin the instrument to it.
+      // timestamp is a shape not observed on the server this stub imitates.
       lastUsedTime: 1_785_775_000_000,
       status: 'idle',
       contextLength: 61_696,

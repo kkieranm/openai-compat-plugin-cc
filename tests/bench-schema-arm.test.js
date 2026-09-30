@@ -1,9 +1,10 @@
 // Whether the benchmark's schema arm actually measured a schema.
 //
 // `--structured-output` is a REQUEST. `review-request.mjs` falls back to the
-// unconstrained path when a server rejects `response_format`, and the CLI has
-// always reported that as `degraded` — the pair `cmd-review.mjs` documents as
-// what distinguishes "fell back after a refusal" from "never wanted a schema".
+// unconstrained path when a server rejects `response_format`, and the CLI
+// reports that as `degraded` — the pair `cmd-review.mjs` documents as what
+// distinguishes "asked for a schema and got an unstructured reply" from "never
+// wanted a schema".
 // The benchmark read only the flag, so an arm that degraded on every request was
 // captioned as a schema arm and compared against an unconstrained one: the same
 // measurement under two names, while the report's own text instructs the reader
@@ -28,7 +29,7 @@ const degradedRun = (degraded) => ({
   report: { ...goodRun().report, degraded },
 });
 
-test('the schema arm says so when the server refused the schema on EVERY run', () => {
+test('the schema arm says so when EVERY run degraded', () => {
   const report = render([degradedRun(true), degradedRun(true)], { 'structured-output': true, structuredOutput: true });
   assert.match(report, /THIS ARM DID NOT MEASURE A SCHEMA/, 'a wholly degraded arm must say so unmissably');
   assert.match(report, /2 of 2/, 'and quote the count it is claiming');

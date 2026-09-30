@@ -56,9 +56,9 @@ test('a recorded-but-unreadable pid takes the malformed arm, and claims no probe
   // may NOT say is that a pid answered a probe.
   //
   // **The recorded value is not kept.** `finish` NULLs `worker_pid`, so it is
-  // lost — a scope decision recorded with this item, not an oversight: keeping it
-  // means interpolating an arbitrary-length column into a payload written inside
-  // the queue's write transaction.
+  // lost, and not by oversight: keeping it would mean interpolating an
+  // arbitrary-length column into a payload written inside the queue's write
+  // transaction.
   insertSynthetic(state, { id: 'unreadable', state: 'running', workerPid: 'garbage', startedAgoMs: 600_000 });
 
   withStore(state, (db) => abandonRow(db, 'unreadable', { override: true, at: at() }));

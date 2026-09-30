@@ -7,10 +7,10 @@ import { EXPOSURE_MARGIN } from './ttl-verdict.mjs';
  * module answers "is the sweep licensed", `ttl-verdict.mjs` answers "what did it
  * find".
  *
- * Everything here is enumerated rather than collapsed into a boolean, because
- * every collapse produced a message naming one of several simultaneous causes.
- * That happened twice in consecutive review rounds: first the precondition and
- * the exposure bar, then the exposure bar and the request outcome.
+ * Everything here is enumerated rather than collapsed into a boolean, because a
+ * collapse produces a message naming one of several simultaneous causes — the
+ * precondition and the exposure bar, or the exposure bar and the request outcome,
+ * can fail together.
  */
 
 /**

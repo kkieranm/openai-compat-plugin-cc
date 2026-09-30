@@ -9,10 +9,11 @@
  * What the SERVER did about the schema, before what the schema MEANS.
  *
  * The note below describes a trade between two failure classes, and that is
- * worth nothing if the arm never sent a schema. It could not previously say so:
- * it was gated on the flag the operator passed, not on `degraded` — the pair
- * `cmd-review.mjs` documents as separating "fell back after a refusal" from
- * "never wanted a schema". Silent when nothing degraded, loudest when everything
+ * worth nothing if the arm never sent a schema. This note is gated on
+ * `degraded` as well as on the flag the operator passed — together they draw
+ * the distinction `cmd-review.mjs` documents as
+ * separating "asked for a schema and got an unstructured reply" from "never
+ * wanted a schema". Silent when nothing degraded, loudest when everything
  * did, because that reading invalidates the arm rather than qualifying it.
  */
 export function degradedNote(degraded, reported) {

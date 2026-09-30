@@ -102,9 +102,8 @@ const DIAGNOSE_DISCIPLINE =
  * Every other template here is judged by whether a reader finds it useful, which
  * is why the benchmark scores declared markers and says plainly what that is
  * worth. A patch is different: it applies or it does not, and `git apply --check`
- * settles it without reading a word. The plan named exactly this — "validated
- * with `git apply --check` — no schema needed" — and it is the reason this
- * template asks for a diff rather than prose describing a change.
+ * settles it without reading a word — no schema needed — and that is the reason
+ * this template asks for a diff rather than prose describing a change.
  *
  * The prohibition on prose is load-bearing, not stylistic: anything outside the
  * diff makes the reply unappliable, so the shape request and the oracle are the
@@ -190,8 +189,7 @@ export function resolveTemplate(name) {
  * obvious pair; the third is "the figure was not recorded". Folding that into
  * "below" would render a large request identically to a small one.
  *
- * **What can actually reach that third state, stated precisely, because the first
- * version of this comment got it wrong and a review caught it.** NOT "an older
+ * **What can actually reach that third state, stated precisely.** NOT "an older
  * persisted row": a row written before templates existed carries no `template`
  * at all, so it returns above without ever reaching the size check. The reachable
  * case is a row whose build persisted the pair differently — a future template

@@ -108,9 +108,9 @@ export function matchesSchema(value, schema) {
 
 // The description field a finding must carry. The schema asks for `summary`;
 // `message` is accepted as its one alias — the compiler/linter-diagnostic
-// spelling a capable model naturally reaches for, and the field a whole reply
-// keyed `{file, line, message}` was silently discarded for (OAI-228: five runs
-// of real findings lost this way in one measured arm). A CLOSED set, extended
+// spelling a capable model naturally reaches for; without it a whole reply
+// keyed `{file, line, message}` loses every finding (measured: five runs of
+// real findings lost this way in one benchmark arm). A CLOSED set, extended
 // only on a future dated instance, never on a plausible one — which is what
 // answers the "the next model spells it differently" worry rather than a
 // slippery slope. `code`, seen beside `message`, is a rule id, not descriptive

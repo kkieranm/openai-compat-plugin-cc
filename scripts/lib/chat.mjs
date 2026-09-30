@@ -120,7 +120,8 @@ export async function postWithDegrade(profile, budgets, negotiation) {
  * unverified: `review-report.mjs` records that a server may prefill before
  * refusing a field and that nothing here detects it.
  *
- * So one expiry is minted per command and every attempt subtracts from it.
+ * So the expiry is minted once, before the first attempt, and every attempt
+ * subtracts from it.
  * `performance.now()` because a wall-clock step must not lengthen a cap.
  *
  * Called ONCE per dispatch and the result carried into `postChat`, never

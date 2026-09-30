@@ -152,13 +152,12 @@ function sweepQuietly(db) {
  * which the rejection branch cannot determine: "no child" and "live child after a
  * failed cleanup" arrive down the same path.
  *
- * **Its two branches know different amounts, and the difference is the whole
- * feature.** Past the `await`, the `'spawn'` event has fired and a child
- * demonstrably existed — the stamp path below can say so. The REJECTION branch
- * cannot: `spawnWorker` closes its copy of the log descriptor after that event,
- * so a rejection may mean no child was ever created, or a child that is alive.
- * `terminalizeSpawnFailure` is written for both, which is why it uses a
- * compare-and-set instead of a terminal write.
+ * **Its two branches know different amounts.** Past the `await`, the `'spawn'`
+ * event has fired and a child demonstrably existed — the stamp path below can
+ * say so. The REJECTION branch cannot: `spawnWorker` closes its copy of the log
+ * descriptor after that event, so a rejection may mean no child was ever
+ * created, or a child that is alive. `terminalizeSpawnFailure` is written for
+ * both, which is why it uses a compare-and-set instead of a terminal write.
  *
  * Stamped only once the child is known to exist, because it is what bounds how
  * long a job may sit with no worker registered before it is treated as one
@@ -252,9 +251,10 @@ export async function submitTask(args, { spawn = spawnWorker } = {}) {
   noteEndpointPersistence();
   const prep = await prepareTask({ ...args, options });
 
-  // The estimate belongs here MORE than on the foreground path, not less: "shown
-  // before submission" is what the plan asked for, and this is submission. It is
-  // also the moment a caller decides whether the wait is worth a `--max-wait`.
+  // The estimate belongs here MORE than on the foreground path, not less: a
+  // caller should see it before a job is submitted, and this is where
+  // submission happens. It is also the moment a caller decides whether the wait
+  // is worth a `--max-wait`.
   const estimate = estimateRun({ estimatedTokens: prep.estimatedTokens, maxTokens: prep.numeric.maxTokens, profile: prep.profile });
   process.stderr.write(`${estimate ? estimateNote(estimate) : NO_RATE_NOTE}\n`);
 

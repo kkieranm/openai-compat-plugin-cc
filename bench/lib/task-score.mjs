@@ -87,9 +87,8 @@ function bounded(text, marker) {
     if (/[a-z0-9_]/.test(before) || /[a-z0-9_]/.test(after)) continue;
     const lead = text.slice(Math.max(0, at - NEGATION_WINDOW), at);
     // Word-bounded, or this check commits the very defect it exists to fix:
-    // `'known'.includes('no')` is true, so a bare substring test read "a known
-    // prototype vector" as a negation. Caught by an existing test, which is the
-    // only reason it is not in the shipped code.
+    // `'known'.includes('no')` is true, so a bare substring test reads "a known
+    // prototype vector" as a negation.
     if (NEGATIONS.some((word) => new RegExp(`(^|[^a-z0-9_])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9_]|$)`).test(lead))) continue;
     // A quoted restatement is the caller's own words coming back, not a claim.
     if (/["“'']\s*$/.test(lead)) continue;

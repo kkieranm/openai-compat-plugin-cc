@@ -15,22 +15,21 @@ import { findingsFirst, schemaInstruction } from './structured.mjs';
 /**
  * Whole changed files if they fit the window, the diff alone if they do not.
  *
- * Two rungs rather than a per-file shed. The second rung is exactly the
- * behaviour that shipped before whole files existed, so it needs no manifest of
- * what was left out in order to be honest, and there is no drop order to get
- * wrong — largest-first would have shed `model-info.mjs`, the very file whose
- * absent definition produced the false positive this feature removes.
+ * Two rungs rather than a per-file shed. The second rung is the plain diff-only
+ * review, so it needs no manifest of what was left out in order to be honest,
+ * and there is no drop order to get wrong — a size-ordered shed can drop the
+ * very file whose definition the diff depends on.
  *
  * Only `target.changed` is droppable. `target.files` is code no diff covers —
  * untracked files, or `--file` where there is no diff at all — so dropping one
  * would review nothing and report a clean pass.
  *
  * The first rung needs a CHECKABLE window, not merely a non-empty `changed`
- * list. `windowKnown` already gated the prompt's completeness claim; it now also
- * gates whether those bodies are attached at all, because the two were the same
- * decision wearing one flag. Without this the guard returns unchecked, the
- * oversize refusal below never throws, and nothing else drops `changed` — so a
- * cold process shipped a request nobody could size. The cost is real and is
+ * list. `windowKnown` gates both the prompt's completeness claim and whether
+ * those bodies are attached at all, because the two are the same decision.
+ * Without this the guard returns unchecked, the oversize refusal below never
+ * throws, and nothing else drops `changed` — so a cold process would ship a
+ * request nobody could size. The cost is real and is
  * NOT hidden: an unknown window is not evidence of a SMALL one, so a review
  * that would have fitted is narrowed, and
  * `review.mjs` says so and names `contextLength` as the remedy.
@@ -41,7 +40,7 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // file" depends on. `unreadable` is the one that is easy to forget: a path git
   // listed whose body would not load is absent from `changed` and leaves no
   // other trace, so without this the prompt would vouch for a file that never
-  // arrived — this feature's own defect, asserted rather than merely risked.
+  // arrived.
   //
   // The lens rides the TAIL, after the diff and after any `suffix` (the schema
   // instruction on the structured paths): the server prefix-caches, so keeping
@@ -81,11 +80,10 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // findings the diff alone had to carry.
   //
   // `skipped` is the CAUSE beside that state, and it is OBSERVED here rather
-  // than re-derived at the renderer. The first version of this feature computed
-  // the same predicate a second time where the report is built; the two agreed
-  // only by construction, so removing the guard above left the report asserting
-  // a skip while whole bodies went on the wire. Both halves of that predicate
-  // survive — they are simply evaluated once, at the branch that acts on them.
+  // than re-derived at the renderer. Computing the same predicate a second time
+  // where the report is built would agree only by construction, so removing the
+  // guard above would leave the report asserting a skip while whole bodies went
+  // on the wire. The predicate is evaluated once, at the branch that acts on it.
   //
   // `null`, never `false`, where the rung was taken deliberately: a known-window
   // oversize fallback reaches this line having been sized and shed, and `false`

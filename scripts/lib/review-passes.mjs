@@ -38,11 +38,10 @@ export function partitionPasses(passes) {
 // "unreadable", because a token-exhausted pass (the dominant overnight failure
 // mode) reads loudly in the single-pass path and must not go quiet here. A thrown
 // pass carries the transport/deadline reason on its error and no reply. A
-// `parsed === null` pass is classified by `unparsedReply`, which THROWS for
-// token-exhaustion and reasoning-only (carrying `.reason`, no readable reply) and
-// RETURNS the prose for a genuinely shape-unreadable reply — kept as `raw`, the
-// evidence that diagnoses a parser-gap coverage loss (OAI-49/OAI-228) and would
-// otherwise be lost per pass.
+// `parsed === null` pass is classified by `unparsedReply`: when it throws, the
+// error's own `.reason` is kept (`'unreadable'` when it carries none); when it
+// returns a reply, that reply is kept as `raw`, the evidence that diagnoses a
+// parser-gap coverage loss and would otherwise be lost per pass.
 export function passReason(pass, unparsedContext) {
   if (!pass.ok) return { reason: pass.error?.reason ?? 'errored', raw: null };
   try {
@@ -65,16 +64,16 @@ function mostSevere(severities) {
   return [...severities].sort((a, b) => rank(a) - rank(b))[0];
 }
 
-// Dedup key = file + EXACT line. Deviates from the item's literal
-// "file+line+claim": a local model paraphrases claims, so keying on the summary
-// would UNDERCOUNT agreement — the very signal this feature produces. So the
-// merge is by LOCATION: two findings at one file+line are one entry, and K
-// counts the passes that flagged that LOCATION, not that proved one shared
-// defect. Their distinct summaries are retained in `summaries[]` so a reader can
-// tell whether the passes described the same thing or two different ones at that
-// line. The key is the JSON of `[file, line]` rather than a joined string, so no
-// separator character has to be assumed absent from a path — two distinct
-// (file, line) pairs always serialise distinctly and no pair collides.
+// Dedup key = file + EXACT line, not file+line+claim: a local model paraphrases
+// claims, so keying on the summary would UNDERCOUNT agreement — the very signal
+// a multi-pass review produces. So the merge is by LOCATION: two findings at
+// one file+line are one entry, and K counts the passes that flagged that
+// LOCATION, not that proved one shared defect. Their distinct summaries are
+// retained in `summaries[]` so a reader can tell whether the passes described
+// the same thing or two different ones at that line. The key is the JSON of
+// `[file, line]` rather than a joined string, so no separator character has to
+// be assumed absent from a path — two distinct (file, line) pairs always
+// serialise distinctly and no pair collides.
 function locationKey(finding) {
   return JSON.stringify([finding.file, finding.line]);
 }
@@ -235,7 +234,7 @@ export function aggregateAttempts(passes) {
  * `findings: []` at exit 0 would be a false clean review, so the run fails
  * closed through the ordinary failure envelope. The attempt records of EVERY
  * pass ride the error so `errorReport`'s `attempts` reads the whole run's
- * requests rather than `null` (the OAI-116 regression) or one pass's alone.
+ * requests rather than `null` or one pass's alone.
  *
  * The reason is the FIRST failure IN PASS ORDER — `passes[0]`, since every pass
  * here is a non-observation — never `find(!ok)`, which would skip a leading

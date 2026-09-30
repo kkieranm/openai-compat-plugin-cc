@@ -35,13 +35,9 @@ const CONFIG = {
 const TIMEOUT_MS = 5_000;
 
 test('a spawn that never starts resolves as never-dispatched, not an uncaught crash', { timeout: TIMEOUT_MS }, async () => {
-  // materialize() always returns a real, freshly-created directory — the only
-  // way to make the spawn itself fail is to override its cwd through the
-  // injected spawnImpl, exercising the real Node ENOENT-on-bad-cwd path rather
-  // than a hand-built fake child process.
   // Randomized, not a fixed literal: a fixed path could exist on some host and
   // silently turn this into a test of a real child instead of a spawn failure.
-  const missingCwd = join(tmpdir(), `oai200-missing-${randomUUID()}`);
+  const missingCwd = join(tmpdir(), `ttl-missing-cwd-${randomUUID()}`);
   const spawnImpl = (command, args, options) => spawn(command, args, {
     ...options,
     cwd: missingCwd,
@@ -88,7 +84,7 @@ test('a close firing after error is a no-op, not a second finalize', { timeout: 
   // `sampler.stop()` would push a second 'post-exit' sample onto the SAME array
   // `episode.samples` already points at, mutating an already-resolved value out
   // from under whoever holds it.
-  const missingCwd = join(tmpdir(), `oai200-missing-${randomUUID()}`);
+  const missingCwd = join(tmpdir(), `ttl-missing-cwd-${randomUUID()}`);
   // A promise for the underlying child's OWN 'close' event, registered
   // synchronously inside spawnImpl — before either 'error' or 'close' can fire
   // on it, and therefore before runEpisode's own listeners for the same event.
@@ -97,9 +93,8 @@ test('a close firing after error is a no-op, not a second finalize', { timeout: 
   // `await` included) run as a microtask — so by the time `await closed` below
   // continues, runEpisode's own 'close' handler has already run to completion,
   // whether or not `settled` suppressed it. Checking `child.exitCode` instead
-  // (an earlier draft of this test did) is NOT equivalent: that field can be
-  // set before the queued 'close' listeners — including runEpisode's — have
-  // actually executed, which let a real mutation through undetected.
+  // is NOT equivalent: that field can be set before the queued 'close'
+  // listeners — including runEpisode's — have actually executed.
   let closed;
   const spawnImpl = (command, args, options) => {
     const child = spawn(command, args, { ...options, cwd: missingCwd });

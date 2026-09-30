@@ -19,7 +19,7 @@ test('a skipped commit is not replayed, because the loop never counted it', () =
   assert.equal(replayStreak(entries).resets, 0);
 });
 
-test('the interleaved failure OAI-140 describes is counted and named', () => {
+test('an interleaved outage/slow failure is counted and named', () => {
   // outage, slow, outage, slow, outage — a dying server whose streak never
   // reaches 3, which is exactly the night that reads as coverage today.
   const entries = [outage('a', 1), slow('b', 2), outage('c', 3), slow('d', 4), outage('e', 5)];

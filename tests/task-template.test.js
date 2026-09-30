@@ -1,8 +1,7 @@
 // Task templates: the named question, the reply shape, and the caveats printed
 // with the answer.
 //
-// A separate file rather than lines in `tests/task.test.js`, which sat one line
-// under the size ratchet's ceiling (retired 2026-08-17). The seam is real either way: that file tests
+// A separate file rather than lines in `tests/task.test.js`: that file tests
 // what a task *run* does, and this one tests what a *template* adds to it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -151,10 +150,10 @@ test('/oai:result carries the same discipline line the foreground rendering does
 });
 
 test('/oai:result renders the SIZE caveat from the frozen request, not just the discipline line', { skip: NEEDS_SQLITE }, async () => {
-  // The distinguishing assertion this suite lacked. `/oai:result` reads
+  // The distinguishing assertion. `/oai:result` reads
   // `job.request.estimatedTokens` across a JSON round trip and a process
-  // boundary, and the existing test submitted a small prompt — so pointing that
-  // read at a field that does not exist left all 560 tests green. The size caveat
+  // boundary, and a small prompt never shows the size caveat — so a read pointed
+  // at a field that does not exist passes unnoticed without this. The size caveat
   // is the half that can only come from the persisted request.
   // Seeded rather than submitted: a request that exceeds the template's 8000
   // ceiling cannot also fit an 8k window, so driving this through a real

@@ -146,7 +146,7 @@ export function abandonDecision(row, nowMs, { override = false, liveness } = {})
  * **Two arms.** A `malformed` row was never probed at all — no pid recorded,
  * timestamps that will not parse, or a value that is not a pid. Only
  * the readable-pid arm may say a probe answered, and only it names the pid. The
- * UNREADABLE-pid shape's value is never quoted in the record; the item says why.
+ * UNREADABLE-pid shape's value is never quoted in the record.
  */
 function abandonFailure(row, liveness) {
   const owner = row.state === 'running' ? 'worker' : 'waiter';
@@ -173,10 +173,9 @@ function abandonFailure(row, liveness) {
     reason: OPERATOR_ABANDONED,
     message: `${observed} Nothing was signalled, so this says what happened to the ROW and nothing`
       + ' about the process.',
-    // The hint branches with the message. Batch 3 split the message and left this
-    // shared — so a malformed row's permanent record said no judgement was
-    // possible AND that a pid was recorded as evidence a probe answered, in the
-    // same envelope.
+    // The hint branches with the message. A shared hint would make a malformed
+    // row's permanent record say no judgement was possible AND that a pid was
+    // recorded as evidence a probe answered, in the same envelope.
     hint: liveness === 'malformed'
       ? 'Anything it printed is in the job log. No pid or timestamps could be read for this row, so'
         + ' there is no probe result and no pid to attribute — the record says only that an operator'

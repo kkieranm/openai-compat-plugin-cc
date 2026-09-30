@@ -19,17 +19,13 @@
  *
  * A non-empty `attempts` array is NOT evidence: `ledger.begin` mints an entry
  * before the socket is opened, so a run against a server that is simply down
- * produces attempts. That is the exact state an accidental run of the withdrawn
- * driver was in, and an earlier draft rendered a verdict about the mechanism
- * from it.
+ * produces attempts.
  *
  * One witness, not four. `serverResponded` is the serialized contract:
  * `attempt-ledger.mjs` mints it `false`, the success closers set it directly,
  * and the failure closer sets it from `obtainedResponse(error, { prefillMs })`,
  * which already weighs the transport flag, an HTTP status, a completion shape
- * and a measured prefill. The withdrawn draft re-derived those here as a
- * disjunction, and had already drifted — its `prefillMs != null` arm was looser
- * than the production rule.
+ * and a measured prefill.
  */
 export function obtainedAnyResponse(attempts) {
   if (!Array.isArray(attempts) || attempts.length === 0) return false;
@@ -68,11 +64,8 @@ export function recordContradiction(attempts) {
  * The prefill this episode measured, from the ATTEMPT that answered.
  *
  * Read here rather than from a top-level `report.prefillMs`, which the failure
- * envelope does not carry — `review-report.mjs`'s `runTimings` is spread onto the
- * success path only. The withdrawn draft read the top-level field, so
- * `firstTokenMs` was null on every FAILED episode: precisely the episodes this
- * experiment is about, and it silently disabled two fixes already made
- * elsewhere in this module.
+ * envelope does not carry — `review-report.mjs`'s `runTimings` is spread onto
+ * the success path only.
  *
  * The answering attempt first, else the last attempt, else null — stated rather
  * than left to `--max-attempts 1` making the question moot, so it does not break

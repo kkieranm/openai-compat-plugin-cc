@@ -117,12 +117,12 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
     // tries run for three times the number the caller set.
     maxMs: resolveMax(profile, maxSeconds),
     maxAttempts,
-    // OFF by default since 2026-08-04, and the default is the whole point.
+    // OFF by default, and the default is the whole point.
     // Sending `response_format` makes LM Studio's LLGuidance build a grammar
     // whose lexer exhausts a 250,000-state budget at ~14k generated tokens,
     // which raises a fatal exception in the MLX generation thread and SEGFAULTS
-    // the model process — a ~38% request failure rate this repo spent four days
-    // attributing to an unreliable server.
+    // the model process — a ~38% request failure rate that reads as an
+    // unreliable server.
     //
     // A flag rather than a deletion, because the fault is in one backend's
     // grammar engine and this plugin is generic by construction: a
@@ -241,9 +241,9 @@ async function reviewFlow(options, instructions, terminated, sampling) {
       salvaged: Boolean(salvaged),
       salvageTrim: salvageTrim ?? null,
       // What was ASKED for, beside `structured` which is what was obtained. Only
-      // the pair distinguishes "fell back after a refusal" from "never wanted a
-      // schema" — since 2026-08-04 the second is the ordinary case, and the two
-      // were indistinguishable for exactly as long as the first was the only one.
+      // the pair distinguishes "asked for a schema and got an unstructured
+      // reply" from "never wanted a schema" — and the second is the ordinary
+      // case, since `--structured-output` is off by default.
       structuredOutput: Boolean(options['structured-output']),
       budget,
       estimatedTokens,
@@ -268,12 +268,9 @@ async function reviewFlow(options, instructions, terminated, sampling) {
  * `parseFindings` with its OWN fresh `reviewPlan` and ledger: the target is
  * shared (what makes the union comparable and the agreement count meaningful),
  * the attempt bookkeeping is not, so a pass's `attempts`/`retried` never spans
- * passes. A pass is structured to take its target as a parameter even though all
- * N are identical today, so OAI-11 (per-pass `{provider, model, lens}`) is a
- * config change, not a rewrite. Sequential: one local model, so concurrency buys
- * nothing here — the concurrent case is cross-provider (OAI-11). Called inside
- * `reviewFlow`'s post-resolution `try`, so its fail-closed throws carry the run
- * context like every other failure on this path.
+ * passes. Called inside `reviewFlow`'s post-resolution
+ * `try`, so its fail-closed throws carry the run context like every other
+ * failure on this path.
  */
 async function runMultiPass({ passCount, lenses = [], profile, options, instructions, target, model, contextLength, numeric, sampling, runContext }) {
   const outcomes = [];

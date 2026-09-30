@@ -75,9 +75,7 @@ const submission = { spec: TASK_SPEC, options: { background: true }, inlinePromp
 // second process exists here — the fixture registers THIS process as the waiter
 // and then rejects, which reproduces the only thing the production code can
 // observe about that ordering, namely a row already REGISTERED at the moment the
-// rejection is handled. A real detached child racing a real failing `closeSync`
-// is not something a test can schedule; the row shape is, and the row shape is
-// what the CAS reads.
+// rejection is handled.
 //
 // "REGISTERED", never "claimed": `claimJob` is ACQUISITION (`state = 'running'`);
 // this row is `queued` with a `waiter_pid`, a worker announcing itself.
@@ -162,7 +160,7 @@ test('a TRANSIENT busy on the launch-outcome write is retried, not lost', { skip
 
 // The wrapper around the REPORT. A throw raised inside a `catch` replaces the
 // pending rethrow — that defect cost a whole diagnosis once
-// already. No other test here ASSERTS what the report produced: most never reach
+// already. No other test here drives a report that THROWS: most never reach
 // the reporting path because their storage write succeeds, and the integrated
 // failing-write witness below does reach it — through the real `writeSync` —
 // but deliberately does not capture fd 2. Either way, deleting the wrapper
@@ -200,8 +198,8 @@ test('a report that throws does not replace the launch error it accompanies', as
 // left asserting something the failed write never managed to record.
 //
 // The stderr half is deliberately NOT asserted here and is not missing: the
-// report goes out through `writeSync(2, …)`, which an in-process test cannot
-// capture without a subprocess, and the modular test above owns that assertion
+// report goes out through `writeSync(2, …)`, which the subprocess test below
+// captures, and the modular test above owns that assertion
 // by injecting `report`. Split because each half is checkable somewhere, rather
 // than left as one witness that would have to fake the part it cannot see.
 test('a failing terminal write leaves the launch error intact and the row unwritten', { skip: NEEDS_SQLITE }, async () => {
@@ -233,20 +231,20 @@ test('a failing terminal write leaves the launch error intact and the row unwrit
   });
 });
 
-// The PRODUCTION report path, which every test above bypasses.
+// The PRODUCTION report path.
 //
 // The seam that makes the throwing-report case testable also hides the default:
 // injecting `report` never runs `reportToStderr`, and the integrated witness runs
-// it but cannot capture fd 2 in-process. So replacing the default with a no-op —
-// or with an async `process.stderr.write` — left every other assertion green.
+// it without capturing fd 2. So replacing the default with a no-op — or with
+// an async `process.stderr.write` — would leave every other assertion green.
 // A subprocess removes THAT limit — which is the limit about the default being
 // used at all, not the one about drainage. See below.
 //
 // What it does NOT establish, measured rather than assumed: it is not a drainage
 // witness. Swapping `writeSync` for an async `process.stderr.write` leaves this
 // test GREEN — the write happened to survive the exit on this run, which is
-// precisely the timing-dependence that makes `writeSync` the right call and makes
-// the race untestable by observation. This test pins that the DEFAULT is used and
+// precisely the timing-dependence that makes `writeSync` the right call.
+// This test pins that the DEFAULT is used and
 // that its content reaches fd 2; the choice of a synchronous write rests on the
 // credential-notice design, not on this assertion.
 //

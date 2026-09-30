@@ -21,9 +21,8 @@ const CASES = [
  * Drives the real pair-change loop with fakes, recording the interleaving.
  *
  * The loop lives behind an injection seam precisely so this is possible:
- * `bench/run.mjs` calls `main()` at import, so asserting only on `pairFor` and
- * `pairKey` would stay green with the comparison in the loop deleted — a
- * mutation check that proves nothing.
+ * asserting only on `pairFor` and `pairKey` would stay green with the
+ * comparison in the loop deleted — a mutation check that proves nothing.
  */
 function drive(cases, options, { warmUp = true } = {}) {
   const order = [];
@@ -68,7 +67,7 @@ test('one warm-up per distinct pair when the pairs do not alternate', () => {
   assert.deepEqual(warmed[1], { provider: 'other', model: 'pinned-model', beforeCase: 'c' });
 });
 
-test('an ALTERNATING corpus warms on every switch — the defect OAI-22 closed', () => {
+test('an ALTERNATING corpus warms on every switch', () => {
   // The whole point of interleaving. Warming each pair once at first use leaves
   // cases 3 and 4 paying a JIT load on a server that keeps one model resident,
   // because the second warm-up evicted the first — which is the cost `--warm-up`
@@ -95,7 +94,7 @@ test('case ORDER is untouched — the reason grouping by pair was rejected', () 
   assert.deepEqual(order.filter((step) => step.startsWith('run:')), ['run:a', 'run:c', 'run:a', 'run:c']);
 });
 
-test('a command-line pair collapses a mixed corpus to ONE warm-up — every OAI-19 arm', () => {
+test('a command-line pair collapses a mixed corpus to ONE warm-up', () => {
   // `reviewFlags` resolves provider/model the same way, so warm-up must agree
   // with it: warming a model no case will actually request is a wasted load and
   // leaves the case that *does* run carrying the one that matters.
@@ -160,8 +159,7 @@ test('the prompt goes last, after every flag', () => {
   // `/oai:task` refuses a flag-looking word inside the request text, so a
   // prompt-first argv is rejected before anything is sent — and warm-up records
   // its outcome rather than throwing, so the arm would carry on with a `warmed`
-  // entry that warmed nothing. That is exactly what the first version did, and
-  // only running it revealed it.
+  // entry that warmed nothing.
   const flags = warmUpFlags({ provider: 'p', model: 'm' }, { timeout: '30' });
   assert.equal(flags[0], 'task');
   const prompt = flags.at(-1);

@@ -8,16 +8,10 @@ import { deltaFrame, reviewScenario, runCompanion, scriptOf } from './helpers.mj
 // Split from `attempt-server-responded.test.js`, and the seam is the whole point
 // rather than a size split. That file asks whether the LEDGER carries the flag —
 // `fail()` is handed an error and the entry is read back. This one asks whether
-// anything SETS it, which is a different question and was the one nobody was
-// asking: its sibling drove `fail()` with `Object.assign(new Error(r), {reason: r,
-// serverResponded: true})`, manufacturing the very evidence it claimed to check,
-// while its comment said dropping the write at `sse.mjs`, `body.mjs` or
-// `http.mjs` would "go red".
-//
-// It would not have. A review verifier deleted `failure.serverResponded = true`
-// from `body.mjs`'s `bad-json` branch and ran the whole suite: 415 tests, all
-// green. So the claim was false, and the class is the one this repo keeps
-// finding — a comment asserting a guarantee the code does not provide.
+// anything SETS it, which is a different question: a test that drives `fail()`
+// with `Object.assign(new Error(r), {reason: r, serverResponded: true})`
+// manufactures the evidence it would claim to check, and stays green with the
+// write at `sse.mjs`, `body.mjs` or `http.mjs` deleted.
 //
 // These are the families with no second witness, and every fixture below is
 // built to keep it that way. `obtainedResponse` reads a `status`, a completion
@@ -26,13 +20,13 @@ import { deltaFrame, reviewScenario, runCompanion, scriptOf } from './helpers.mj
 // and is no completion shape, so the flag is the only thing standing between "the server answered and
 // then the reply was unusable" and "nothing ever answered" — PROVIDED no model
 // text arrived, since text would supply the fourth witness and reconstruct the
-// answer without the flag. None of these four sends any, deliberately: the first
-// version of this file did, and that case passed with its flag write deleted.
+// answer without the flag. None of these four sends any, deliberately: where
+// text supplies that witness, a case that sent some could pass with its flag
+// write deleted.
 //
 // So the rule for anything added here: a fixture must reach its branch with the
 // flag as the ONLY evidence, and the mutation must be run rather than reasoned
-// about. Four of these have been; the two sites at the end of the file have not,
-// and say so.
+// about; the sites at the end of the file are not reached here, and say so.
 
 /**
  * Headers, a ROLE-ONLY delta, then the socket destroyed — bytes delivered, no
@@ -141,20 +135,21 @@ for (const [name, script, reason] of SITES) {
   });
 }
 
-// NOT covered here. Named rather than left to be inferred, because the whole
-// reason this file exists is a comment that implied a site was guarded when it
-// was not — and the first version of this file then did it again.
+// NOT covered here. Named rather than left to be inferred, because a comment that
+// implies a site is guarded when it is not is the defect this file exists to stop.
 //
 //   - `http.mjs`'s `!response.complete` branch. It fires when iteration ends with
 //     no 'error' event at all, and no fixture here reaches it: a destroyed socket
 //     throws from the iterator instead, which `http.mjs`'s own comment states.
-//     Deleting its flag write leaves the whole suite green — measured, not
-//     assumed. Reaching it needs a reply that ENDS cleanly while short of what it
-//     declared, which is a fixture nobody has written. Backlogged, not covered.
+//     Reaching it needs a reply that ENDS cleanly while short of what it
+//     declared, which no fixture here builds.
 //   - `body.mjs`'s oversized-document branch, which mints `protocol` when a reply
 //     passes `MAX_COMPLETION_CHARS` without closing its JSON. Reaching it end to
 //     end costs 8,000,000 characters over a socket.
+//   - `http-errors.mjs`'s `assertDecodable`, which mints `protocol` for a
+//     compressed response; no test in the suite asserts its flag.
 //
-// Both set the flag by inspection only. That is weaker evidence than every other
-// line in this file, and saying so is the point: "guarded by test" is a claim,
-// and this repo has now been wrong about it three times in one feature.
+// `tests/transport-classification.test.js` drives the first directly with a
+// stub and asserts the flag; the oversized-document branch sets it by
+// inspection only. That is weaker evidence, and saying so is the point:
+// "guarded by test" is a claim.

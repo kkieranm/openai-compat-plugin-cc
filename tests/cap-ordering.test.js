@@ -144,15 +144,15 @@ test('a cap falling due after a refusal leaves it a FAILURE, with no entry for t
   // leave `failed`/`shape-rejected` standing, and must not mint a second entry
   // for a request that was never sent.
   //
-  // The clock moves inside the handle's `refuse` — after `pendUntilReplaced` has
-  // run and before the loop reaches the replacement's `capBudgets`. That is the
-  // boundary this test is named for, and an earlier draft got it wrong in a way
-  // worth recording: advancing in the fake server's handler **passed
-  // identically**, because it fired while the FIRST request's response was still
-  // being written. The assertions held under either placement, so this hook is
-  // what makes the fixture match its own description — no coverage claim rides
-  // on it. What proves the assertions bite is the mutation: moving `capBudgets`
-  // below `ledger.begin` in `postWithDegrade` turns this test red.
+  // The clock moves inside the handle's `refuse` — after `pendUntilReplaced`
+  // has run and before the loop reaches the replacement's `capBudgets`. That is
+  // the boundary this test is named for. Advancing in the fake server's handler
+  // instead **passes identically**, because it fires while the FIRST request's
+  // response is still being written. The assertions hold under either
+  // placement, so this hook is what makes the fixture match its own description
+  // — no coverage claim rides on it. What proves the assertions bite is the
+  // mutation: moving `capBudgets` below `ledger.begin` in `postWithDegrade`
+  // turns this test red.
   const server = await startFakeServer((request, response) =>
     respondJson(response, { error: 'stream_options is not supported' }, 400));
   const ledger = createLedger();

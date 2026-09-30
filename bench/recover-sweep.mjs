@@ -107,9 +107,8 @@ export function recoveredRecord({ header, entries, gaps = [], discarded }) {
   const unrecorded = merged.filter((entry) => entry.outcome === 'unrecorded').length;
   // The last time anything was OBSERVED, which only an attempted commit has —
   // a skipped one is settled without the clock ever being read. Taking the last
-  // entry's `endedAt` unconditionally reported "no commit was settled" over a
-  // ledger holding four settled skips, because `undefined` is falsy. Found by
-  // running the tool against a real torn ledger rather than by reading it.
+  // entry's `endedAt` unconditionally would report that no activity time was
+  // observed over a ledger ending in settled skips, because `undefined` is falsy.
   const last = [...entries].reverse().find((entry) => entry.endedAt)?.endedAt ?? null;
   // Counted over BOTH, or a ledger of nothing but gaps says no commit was
   // settled directly after saying which commits were settled and lost.
@@ -182,10 +181,9 @@ function finishedRun(recordPath) {
  * and silently wrote beside the ledger instead. A flag that is accepted and does
  * nothing is worse than one that is refused.
  *
- * **Every surplus positional is refused, not merely the flag-shaped ones.** The
- * first version of this guard looked only for a leading `--`, so
- * `recover-sweep.mjs ledger-A ledger-B` recovered A and discarded B in silence —
- * the same defect one door along from the one it was written to close. This
+ * **Every surplus positional is refused, not merely the flag-shaped ones.** A
+ * guard looking only for a leading `--` would let
+ * `recover-sweep.mjs ledger-A ledger-B` recover A and discard B in silence. This
  * command takes exactly one ledger.
  */
 function ledgerPathFrom(positionals) {

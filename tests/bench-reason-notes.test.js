@@ -45,10 +45,10 @@ function paragraphAbout(markdown, code) {
 
 test('shape-rejected is explained as the terminal twin of refused, not as a dropped request', () => {
   const markdown = renderWith('shape-rejected');
-  // Scoped to the paragraph. The document-wide version of this passed on the
-  // COUNT-TABLE row `| \`shape-rejected\` | 1 |` — proved by gutting the whole
-  // paragraph and watching it stay green — so it asserted the failure was
-  // counted, never that it was explained.
+  // Scoped to the paragraph. A document-wide match for `shape-rejected` alone
+  // passes on the COUNT-TABLE row `| \`shape-rejected\` | 1 |` even with the
+  // whole paragraph gutted, so it would assert the failure was counted, never
+  // that it was explained.
   const para = paragraphAbout(markdown, 'shape-rejected');
   assert.match(para, /terminal twin of the `refused` outcome/);
   assert.match(para, /nothing replaced it/, 'the whole point: no replacement was ever dispatched');
@@ -66,16 +66,14 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // The gate, from the direction with teeth. `transport` is a SUBSTRING of this
   // code, so `sawReason`'s `key === code` is one loosened operator from printing
   // the `transport` paragraph here — asserting "a further attempt could
-  // plausibly survive" about a code that by definition was never retried. Proved
-  // by mutation: `key.includes(code)` left all 404 tests green. The sibling that
-  // looks like it covers this asserts only the reverse containment, which stays
-  // true under exactly that edit.
+  // plausibly survive" about a code that by definition was never retried. The
+  // sibling that looks like it covers this asserts only the reverse containment,
+  // which stays true under `key.includes(code)`.
   assert.doesNotMatch(markdown, /^`transport` below/m);
-  // The claim that was WRONG and had to be withdrawn: `ENOTFOUND` and
-  // `ECONNREFUSED` are outside the transient whitelist, so they carry this
-  // reason — and reachability is not uniform across the codes that do. Saying
-  // "not a reachability finding" of the whole code asserted a fact that is false
-  // of part of it.
+  // `ENOTFOUND` and `ECONNREFUSED` are outside the transient whitelist, so they
+  // carry this reason — and reachability is not uniform across the codes that
+  // do. Saying "not a reachability finding" of the whole code asserts a fact
+  // that is false of part of it.
   assert.doesNotMatch(para, /not a reachability finding/);
   // Both still NAMED — `ENOTFOUND` as the contacted-nothing case,
   // `ECONNREFUSED` as the origin-unknown one. A regex asserting only presence
@@ -96,10 +94,9 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // record from an older build can lack a field.
   assert.match(para, /An attempt record this build writes carries/);
   // The enumeration itself, pinned label by label from the export — membership
-  // in the prose, not the join's formatting, which gets ordinary review. One
-  // label is vacuous here: `serverResponded`'s reappears in the closing
-  // sentence, so its containment alone cannot prove the enumeration prints —
-  // the other nine carry that.
+  // in the prose, not the join's formatting. One label is vacuous here:
+  // `serverResponded`'s reappears in the closing sentence, so its containment
+  // alone cannot prove the enumeration prints — the other nine carry that.
   for (const [, label] of RECORD_FIELDS) {
     assert.ok(para.includes(label), `the record enumeration lost "${label}"`);
   }
@@ -125,18 +122,13 @@ test('the transport disclaimer prints for a transport-only sweep, which is when 
   assert.doesNotMatch(para, /non-retryable-transport/, 'it must stand on its own code, not a neighbour\'s');
 });
 
-// Three drafts of this paragraph tried to tell the reader where the underlying
-// error code could be found, and review refuted all three. The last is why the
-// promise is gone rather than reworded: whether a dead run's message names the
-// code depends entirely on the error, and the paragraph's own examples are the
-// ones where it does not.
+// The paragraph promises nothing about where the underlying error code can be
+// found: whether a dead run's message names the code depends entirely on the
+// error.
 //
-// BOTH failures in ONE document, on purpose. This replaced a parametrised pair
-// whose comment claimed it "proves the difference" and which proved nothing —
-// every assertion was against static prose gated on a reason code, so neither
-// fixture was read, and turning both to junk left the suite green. A pair is
-// evidence only when its halves assert DIFFERENT things, so each gets its own
-// witness below.
+// BOTH failures in ONE document, on purpose. Assertions against static prose
+// gated on a reason code read neither fixture, so a pair is evidence only when
+// its halves assert DIFFERENT things — each gets its own witness below.
 test('the non-retryable-transport paragraph promises nothing about the cause', () => {
   const syscall = deadRunWith('non-retryable-transport');
   syscall.error = 'Request to localhost:1234 failed: connect EHOSTUNREACH 10.0.0.1:1234';
@@ -149,8 +141,8 @@ test('the non-retryable-transport paragraph promises nothing about the cause', (
   });
 
   const para = paragraphAbout(markdown, 'non-retryable-transport');
-  assert.doesNotMatch(para, /not carried in this report/, 'refuted draft 2');
-  assert.doesNotMatch(para, /names the underlying code|read `?\.code/, 'refuted drafts 1 and 3');
+  assert.doesNotMatch(para, /not carried in this report/, 'the paragraph must not say the code is missing from the report');
+  assert.doesNotMatch(para, /names the underlying code|read `?\.code/, 'the paragraph must not say where the code can be found');
   // It may enumerate what the record holds, and that is all. The enumeration
   // itself is pinned against a real ledger entry by the tripwire below.
   assert.match(para, /a \*\*measured\*\* timing proves the model was reached/);
@@ -161,26 +153,24 @@ test('the non-retryable-transport paragraph promises nothing about the cause', (
   assert.doesNotMatch(para, /only one of those/);
   assert.match(para, /the one direction this record settles/);
   // The ASYMMETRY clause, pinned on its own. A regex matching only the sentence
-  // around it would survive deletion of this qualifier — which is finding (4)
-  // of this very item regenerating at its own fix site. The clause exists
+  // around it would survive deletion of this qualifier. The clause exists
   // because a flat "none of these fields tells you" contradicted `firstTextNote`
   // in the same document, which says a measured prefill proves the model was
   // reached — and contradicted the very next clause of its own sentence.
   assert.match(para, /the absence is the absence of a measurement/);
   // The prior-attempt caveat, pinned on its own: `warmEligible` DOES bear on
-  // whether the endpoint was ever reached, just not by this attempt, and a
-  // sentence saying 'only one field bears on it' without this clause was the
-  // last overclaim a reviewer had to remove.
+  // whether the endpoint was ever reached, just not by this attempt, so a
+  // sentence saying 'only one field bears on it' without this clause overclaims.
   assert.match(para, /speaks for that one and not this/);
   // And the hedge itself. "cannot **always** tell you which" is the difference
-  // between a true sentence and the categorical one two drafts shipped; a regex
-  // that ignored it would pass on either.
+  // between a true sentence and a categorical one; a regex that ignored it
+  // would pass on either.
   assert.match(para, /cannot \*\*always\*\* tell you which/);
   // Where the two fixtures finally differ. The listing prints each dead run's
   // stderr verbatim, so the syscall message carries its code and the TLS one
-  // carries none — the asymmetry that made "the listing usually names it"
-  // false. The TLS message is asserted PRESENT as well as its code ABSENT: a
-  // bare negative also passes if that run vanishes from the listing.
+  // carries none — the asymmetry that makes a claim like "the listing usually
+  // names it" false. The TLS message is asserted PRESENT as well as its code
+  // ABSENT: a bare negative also passes if that run vanishes from the listing.
   assert.match(markdown, /^## Logical runs that did not complete$/m);
   assert.match(markdown, /EHOSTUNREACH/);
   assert.match(markdown, /certificate has expired/);
@@ -189,9 +179,9 @@ test('the non-retryable-transport paragraph promises nothing about the cause', (
 
 test('the paragraph enumerates a closed record, and this is the list it enumerates', () => {
   // The paragraph says what an attempt record HOLDS, so what is pinned here is
-  // the whole list — not the absence of one field. An earlier draft asserted
+  // the whole list — not the absence of one field. Asserting
   // `Object.hasOwn(entry, 'serverResponded') === false` against prose claiming
-  // "no peer-reachability field", and the two could drift apart in both
+  // "no peer-reachability field" would let the two drift apart in both
   // directions: a field named anything else falsifies the prose while that
   // assertion stays green, and `serverResponded` is not peer-reachability
   // anyway — a TLS rejection reaches a peer and obtains no response.
@@ -201,11 +191,8 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   // record shape is deliberately stable so other runs can be differenced against it.
   //
   // What this does NOT do: check the LABELS. Membership is mechanised because
-  // membership is what drifted — the first draft transcribed eight of the nine
-  // fields that existed at the time
-  // with this test green, and a reviewer found the missing `outcome`. The
-  // reader-facing wording in `RECORD_FIELDS` is ordinary prose and gets
-  // ordinary review.
+  // membership is what drifts — a hand-transcribed list can silently omit a
+  // field. The reader-facing wording in `RECORD_FIELDS` is ordinary prose.
   //
   // Read AFTER `fail()` closes the entry, never off the freshly minted one —
   // `fail()` is where the entry copies its flag across, so a check against the

@@ -9,10 +9,7 @@ import {
  * the size ratchet.
  *
  * Two separate sets of names (per-episode verdicts, per-sweep outcomes) and one
- * subset of the second (the outcomes that mean the run produced a result). All
- * three have already drifted from the code once: the documented outcome table lost a
- * row it still licensed, and its "the mapping is now a test" claim sat under the
- * sweep table while only the episode set had a guard.
+ * subset of the second (the outcomes that mean the run produced a result).
  */
 
 const ttlMs = 120_000;
@@ -20,10 +17,7 @@ const past = 300_000;
 const short = 130_000;
 const ok = { ttlMs, failed: false, unloadObserved: false, obtainedResponse: true, invalid: [] };
 
-test('the emitted verdict set is exactly the documented one', () => {
-  // A documented table lost a row once to exactly this drift — an outcome the
-  // code could produce that no table listed. A recurring defect class graduates
-  // from a reviewer's prompt to a guard.
+test('the emitted verdict set is exactly `EPISODE_VERDICTS`', () => {
   const emitted = new Set();
   for (const failed of [false, true]) {
     for (const unloadObserved of [false, true]) {
@@ -38,10 +32,9 @@ test('the emitted verdict set is exactly the documented one', () => {
 });
 
 
-test('the emitted SWEEP outcome set is exactly the documented one', () => {
-  // The documented outcome table lists SWEEP outcomes, not episode verdicts, and
-  // amendment claiming "the mapping is now a test" sat directly under it while
-  // the only guard covered the episode set. Two vocabularies, one claim.
+test('the emitted SWEEP outcome set is exactly `SWEEP_VERDICTS`', () => {
+  // `SWEEP_VERDICTS` is a separate vocabulary from the episode verdicts, so it
+  // needs its own guard beside the episode one.
   //
   // Every sequence up to the canonical three episodes, not singletons and
   // survivor-led pairs: a combination-specific return could otherwise be missing
@@ -66,8 +59,7 @@ test('the emitted SWEEP outcome set is exactly the documented one', () => {
 
 test('only the outcomes that actually produced a result count as conclusive', () => {
   // `no-exposure` and `contradictory-evidence` both ask to be re-run in their own
-  // text, so "any verdict other than instrument-failed" is not completion — the
-  // done-condition said exactly that until a wide review caught it.
+  // text, so "any verdict other than instrument-failed" is not completion.
   assert.deepEqual([...CONCLUSIVE], ['deterministic-form-refuted', 'inconclusive-failure']);
   for (const verdict of SWEEP_VERDICTS.filter((v) => !CONCLUSIVE.includes(v))) {
     const says = verdict === 'instrument-failed'

@@ -1,8 +1,7 @@
 // The overnight sweep runs while nobody is watching, so every claim it makes in
 // the morning has to survive being read cold. These tests drive the whole loop
 // with injected executor, clock and git reader — no model, no child process, no
-// waiting — which is the seam `bench/task-run.mjs` established precisely because
-// `bench/run.mjs` cannot be imported and therefore has no test at all.
+// waiting.
 //
 // The classification tests carry most of the weight. On this hardware a review
 // that starved for tokens and a review that found nothing both end
@@ -115,8 +114,8 @@ test('the deadline stops work being STARTED, and the rest are recorded as skippe
 });
 
 // The review already running when the deadline passes is finished, not killed:
-// the cap governs whether to BEGIN. Overshoot is bounded by --max-seconds
-// instead, which is the same discipline awaitTurn keeps in job-queue.mjs.
+// the cap governs whether to BEGIN — the same discipline awaitTurn keeps in
+// job-queue.mjs.
 test('a review already in flight when the deadline passes is not truncated', () => {
   let clock = 0;
   const { entries } = runSweep(commits('a'), { ...OPTIONS, deadline: 10 }, {
@@ -246,8 +245,6 @@ test('--from pins where enumeration starts, and defaults to HEAD', () => {
   enumerateCommits({ include: ['scripts'], maxCommits: 1, scanLimit: 10 }, git);
   assert.ok(seen[0].includes('HEAD'), 'and HEAD is the default');
 });
-
-// --- pass-1 batch: an auditable window, and a run that admits it fell short ---
 
 // The stub CAPTURES what was asked for. The previous one returned its configured
 // SHA for any arguments at all, so hardcoding the call to `['rev-parse','HEAD']`

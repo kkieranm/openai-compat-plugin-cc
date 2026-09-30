@@ -157,10 +157,10 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
 function refuseUnusable(answer, { profile, sawDone, streamed }) {
   if (!answer.sawContent && !answer.sawReasoning) {
     // `answer.finishReason` is read straight off the server's own payload
-    // (completion.mjs's applyFrame/applyCompletion, no validation) — the same
-    // secret-shape risk as every other server-controlled value this feature
-    // guards, so it travels on `.finishReason`, never inside
-    // `.message`. `transportDetail()` (provider.mjs) composes it for display.
+    // (completion.mjs's applyFrame/applyCompletion, no validation) and could
+    // carry a secret-shaped string, so it travels on `.finishReason`, never
+    // inside `.message`. `transportDetail()`
+    // (provider.mjs) composes it for display.
     const failure = new UserError(`${profile.name} returned a completion with no message content.`, {
       reason: EMPTY_COMPLETION,
     });

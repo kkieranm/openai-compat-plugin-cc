@@ -98,7 +98,7 @@ Making the call — four steps, in this order:
   # The `--` is load-bearing. Without it node parses the path as its OWN option,
   # so a file named `--require=/tmp/evil.js` is EXECUTED, and `--eval=…` replaces
   # this script and controls its stdout — which forges a path that passes the
-  # containment check below. Both were demonstrated; `--` refuses both.
+  # containment check below. `--` refuses both.
   # It also REFUSES a resolved path containing a control character. Without that,
   # `$(…)` silently strips a trailing newline, so a link to `target<newline>`
   # yields `target` — a path that was never canonicalised. If a sibling `target`
@@ -109,30 +109,26 @@ Making the call — four steps, in this order:
   # write to stdout, or set an exit code BEFORE `-e`'s own script ever
   # executes, forging the captured "resolved path" the same way an unrefused
   # `--eval=…` argument already does. `--` cannot stop this: none of these
-  # are argv flags. Three separate hazards of this kind were found and fixed
-  # incrementally: `NODE_OPTIONS` (a preload writing to stdout or forging
-  # `process.exitCode` via `--import`/`--require`); `OPENSSL_CONF` (an
-  # OpenSSL 3.x config can load a PROVIDER — arbitrary native code — during
-  # Node's own startup consultation of it, verified directly: a broken
-  # config crashed node with `NODE_OPTIONS` already cleared); and Node's own
-  # IPC/cluster bootstrap (`NODE_CHANNEL_FD`, `NODE_CHANNEL_SERIALIZATION_MODE`,
-  # `NODE_UNIQUE_ID`) — verified directly: `NODE_CHANNEL_FD=1
-  # NODE_UNIQUE_ID=x node -e '...'` wrote a `{"cmd":"NODE_CLUSTER",...}` JSON
+  # are argv flags. Three independent inputs of this kind are known: `NODE_OPTIONS`
+  # (a preload writing to stdout or forging `process.exitCode` via
+  # `--import`/`--require`); `OPENSSL_CONF` (an OpenSSL 3.x config can load a
+  # PROVIDER — arbitrary native code — during Node's own startup consultation
+  # of it; a broken config can crash node even with `NODE_OPTIONS` cleared); and
+  # Node's own IPC/cluster bootstrap (`NODE_CHANNEL_FD`,
+  # `NODE_CHANNEL_SERIALIZATION_MODE`, `NODE_UNIQUE_ID`) — `NODE_CHANNEL_FD=1
+  # NODE_UNIQUE_ID=x node -e '...' -- <arg>` writes a `{"cmd":"NODE_CLUSTER",...}` JSON
   # line to stdout, ahead of the script's own output, with exit 0, even with
-  # both prior fixes in place. Finding a NEW inherited variable each time is
-  # why this is not one more blocklist entry, but a redesign. Rather than
-  # continuing to enumerate every hazardous variable Node might ever
-  # consult — a search with no proof it terminates — this invocation now
-  # runs under an EMPTY environment, built back up to hold only what it
-  # needs: `env -i PATH="$PATH"` clears every inherited variable
+  # the other two variables cleared. Rather than enumerate every hazardous
+  # variable Node might ever consult — a search with no proof it terminates —
+  # this invocation runs under an EMPTY environment, built back up to hold only
+  # what it needs: `env -i PATH="$PATH"` clears every inherited variable
   # unconditionally and restores only `PATH`, which is the one thing this
   # command needs from the caller's environment (to find `node` itself).
-  # Verified directly: with all three prior hostile variables set
-  # simultaneously (a broken `OPENSSL_CONF`, an `--import` preload, and the
-  # IPC/cluster pair), `env -i PATH="$PATH" node -e …` produced clean,
-  # unmangled output in all four shells, both standalone and inside a
-  # `$(...)` command substitution — the exact context this recipe uses it in
-  # below.
+  # With all three hostile variables set simultaneously (a broken
+  # `OPENSSL_CONF`, an `--import` preload, and the IPC/cluster pair),
+  # `env -i PATH="$PATH" node -e …` produces clean, unmangled output in zsh,
+  # bash, sh and dash, both standalone and inside a `$(...)` command
+  # substitution — the exact context this recipe uses it in below.
   canon() { env -i PATH="$PATH" node -e '
     const p = require("fs").realpathSync(process.argv[1]);
     if (/[\x00-\x1f]/.test(p)) throw new Error("control character in resolved path");
@@ -149,12 +145,12 @@ Making the call — four steps, in this order:
   # See the template note below the recipe.
   template=''
 
-  # The closed set builds the arguments LITERALLY inside the matching arm, rather
-  # than expanding `$template` into the command line later. An earlier draft used
-  # `${template:+--template "$template"}` unquoted, relying on field splitting to
-  # produce two words — and under **zsh**, which does not split unquoted
-  # expansions, it produced the single argument `--template advisor`, which the
-  # companion refuses as an unknown option. The submission failed every time.
+  # The closed set builds the arguments LITERALLY inside the matching arm,
+  # rather than expanding `$template` into the command line later. An unquoted
+  # `${template:+--template "$template"}` relies on field splitting to produce
+  # two words — and under **zsh**, which does not split unquoted parameter
+  # expansions, it produces the single argument `--template advisor`, which the
+  # companion refuses as an unknown option, so the submission fails every time.
   # This shape has no splitting to depend on, so it behaves the same in every
   # shell, and an unknown name is refused before anything is assembled.
   set --
@@ -169,22 +165,19 @@ Making the call — four steps, in this order:
   # caller's text would ever populate directly — the same reason `files` is a
   # raw file and not a shell argument. Empty when no model was named.
   model=''
-  # Validated in NODE, not shell — three rounds of shell-level fixes each
-  # closed one byte class and reopened another: `IFS= read -r` truncated at
-  # the first embedded `\n` before any guard ran; the `$(cat …)` that fixed
-  # that then dropped an embedded NUL in bash/sh/dash (POSIX shell variables
-  # are C-string-backed there, only zsh preserves a NUL) *and* still silently
-  # stripped a trailing `\n` as a side effect of command substitution,
-  # contrary to the unconditional "refuse a newline" rule above; a code-level
-  # `[[:cntrl:]]` case guard sitting on top of that is itself locale- and
-  # shell-dependent — a Unicode control character (e.g. U+0085 NEXT LINE,
-  # UTF-8 `c2 85`) was demonstrated to pass dash under one locale and fail it
-  # under another, on otherwise-identical bytes. Each was found independently,
-  # across three consecutive rounds of review — the recurring pattern this
-  # rewrite responds to, not one more byte-class patch. One Node read closes
+  # Validated in NODE, not shell — each shell-level approach closes one byte
+  # class and leaves another open: `IFS= read -r` truncates at the first
+  # embedded `\n` before any guard runs; `$(cat …)` drops an embedded NUL in
+  # bash/sh/dash (POSIX shell variables are C-string-backed there, only zsh
+  # preserves a NUL) *and* still silently strips a trailing `\n` as a side
+  # effect of command substitution, contrary to the unconditional "refuse a
+  # newline" rule above; a code-level `[[:cntrl:]]` case guard on top of that
+  # is itself locale- and shell-dependent — a Unicode control character (e.g.
+  # U+0085 NEXT LINE, UTF-8 `c2 85`) can pass under one locale and fail under
+  # another, on otherwise-identical bytes. One Node read closes
   # the whole class at once, the same reasoning `canon` above already applies
   # to a resolved path: read the raw bytes once, strip AT MOST one trailing
-  # `\n` (mirroring what `IFS= read -r` always did for a well-formed id, so a
+  # `\n` (mirroring what `IFS= read -r` does for a well-formed id, so a
   # file a text editor terminated normally still works), then refuse on any
   # control character left in what remains — C0 (`\x00`-`\x1f`), DEL
   # (`\x7f`), and C1 (`\x80`-`\x9f`, which is where U+0085 lives) — checked
@@ -196,130 +189,92 @@ Making the call — four steps, in this order:
   # even though the prose rule says "refuse a newline": it is the file's own
   # terminator, not part of the id — the same distinction `files` already
   # draws between a newline that SEPARATES entries and one embedded inside a
-  # single entry, and exactly what `IFS= read -r` always did before any of
-  # this rewrite existed. What is refused is everything the earlier fixes
-  # were actually chasing: a SECOND trailing newline, one embedded before the
-  # end, or any other control byte — all of which leave a control character
-  # in `s` after exactly one trailing `\n` is gone.
+  # single entry, and what `IFS= read -r` does. What is refused is a SECOND
+  # trailing newline, one embedded before the end, or any other control
+  # byte — all of which leave a control character in `s` after exactly one
+  # trailing `\n` is gone.
   if [ -f "$dir/model" ]; then
     # `fs.readFileSync(path, "utf8")` decodes leniently — an
     # invalid UTF-8 byte sequence is silently replaced with U+FFFD rather
     # than rejected, and U+FFFD sits outside `[\x00-\x1f\x7f-\x9f]`, so a
-    # `model` file with malformed bytes passed through as a garbled-but-
-    # accepted id instead of being refused. Not the same hazard the NUL/LF
-    # findings were (nothing is silently DROPPED or concatenated — the
-    # replacement character is visible in what results), but it is still
-    # content the guard was supposed to catch and didn't. A `TextDecoder`
-    # with `fatal: true` throws on the first invalid byte instead of
-    # substituting, so malformed input is refused rather than laundered.
+    # `model` file with malformed bytes would pass through as a
+    # garbled-but-accepted id. A `TextDecoder` with `fatal: true` throws on
+    # the first invalid byte instead of substituting, so malformed input is
+    # refused rather than laundered.
     #
-    # Two more issues apply to THIS validator (not a
-    # new byte class in the file's content, but two ways the SCRIPT AROUND
-    # the read could itself launder or hide a refusal), found independently:
+    # Two more properties of THIS validator (not a byte class in the file's
+    # content, but two ways the SCRIPT AROUND the read could itself launder or
+    # hide a refusal):
     #
     # 1. A leading UTF-8 byte-order mark (`EF BB BF`) is invisible to every
     #    check above: `TextDecoder`'s default `ignoreBOM: false` strips it
     #    during decode, before the control-character regex or the empty
-    #    check ever see it, so a BOM-prefixed id like `<BOM>qwen` decoded to
-    #    plain `qwen`, and a BOM-only file decoded to `""`, mislabeled as
+    #    check ever see it, so a BOM-prefixed id like `<BOM>qwen` decodes to
+    #    plain `qwen`, and a BOM-only file decodes to `""`, mislabeled as
     #    empty rather than reported as a BOM. Checked here on the RAW bytes,
     #    before decoding, so nothing downstream ever gets to normalize it
     #    away first.
-    # 2. The exit-code dispatch below was not exhaustive: an exit code
-    #    outside {0,2,3,4} (a `node` crash, `node` missing entirely — 127,
-    #    killed — 143, or any other cause) fell into the wildcard arm and
-    #    was reported as "contains a control character" — true for none of
-    #    those causes. Every code node can actually emit now has its own
-    #    arm, and an exit 1 (a real refusal) has an explicit arm instead of
-    #    a `*)` that also caught the causes that were never that. The
-    #    assignment itself is also now the CONDITION of an `if`, not a bare
+    # 2. Every code the validator emits has its own arm in the exit-code
+    #    dispatch below; anything else (a `node` crash, `node` missing
+    #    entirely — 127, killed — 143, or any other cause) falls into the
+    #    wildcard "failed unexpectedly" arm rather than being reported as
+    #    "contains a control character" — true for none of those causes. The
+    #    assignment itself is the CONDITION of an `if`, not a bare
     #    statement followed by a separate `case "$?"` — bare, a caller
     #    running this recipe under `set -e` sees the shell exit at the
     #    failed assignment itself, silently, before the `case` and its
-    #    message are ever reached (verified directly: `model=$(node -e
-    #    "process.exit(4)")` under `-e` in zsh/bash/sh/dash all terminate
-    #    with no output at all). `if cmd; then … else …; fi` is the standard
-    #    exemption from `-e` for exactly this shape, verified the same way.
+    #    message are ever reached (`model=$(node -e "process.exit(4)")`
+    #    under `-e` in zsh/bash/sh/dash terminates with no output at all).
+    #    `if cmd; then … else …; fi` is the standard exemption from `-e` for
+    #    exactly this shape.
     #
-    # The same BOM check above has a further gap: it only catches a BOM at byte offset 0.
+    # The BOM check above only catches a BOM at byte offset 0.
     # `TextDecoder`'s BOM-stripping is positional — a BOM anywhere else in the
     # byte stream decodes to a literal U+FEFF character that survives into the
-    # string untouched, sits outside the control-character range, and was
-    # forwarded verbatim as part of `--model` (verified directly:
+    # string untouched and sits outside the control-character range, so it
+    # would be forwarded verbatim as part of `--model` (e.g.
     # `Buffer.from([...'qwen'.split('').map(c=>c.charCodeAt(0)), 0xef, 0xbb,
-    # 0xbf, ...'rest'.split('').map(c=>c.charCodeAt(0))])` decoded to
-    # `"qwen" + U+FEFF + "rest"`, which the old regex accepted). Checked on the
-    # decoded string, after the trailing-newline strip and the empty check,
-    # so a lone embedded BOM is reported distinctly from either of those.
+    # 0xbf, ...'rest'.split('').map(c=>c.charCodeAt(0))])` decodes to
+    # `"qwen" + U+FEFF + "rest"`, which the control-character regex accepts).
+    # Checked on the decoded string, after the trailing-newline strip and the
+    # empty check, so a lone embedded BOM is reported distinctly from either
+    # of those.
     #
-    # Two more issues surfaced against the same check, in two rounds:
-    #
-    # Round 1: exit code 1 was both OUR deliberate signal for "contains a
-    # control character" and NODE'S OWN default exit code on an uncaught
-    # exception — a real Node startup failure (a broken NODE_OPTIONS preload,
-    # an internal V8 fault) exits 1 before this script's own `process.exit`
-    # calls are ever reached, and the dispatch below could not tell that
-    # apart from a genuine refusal (verified directly: `NODE_OPTIONS=
-    # '--require=/no-such-module.js' node -e '1'` exits 1 with no control
-    # character anywhere in sight). First fixed by moving the signal onto
-    # exit 7 alone — which round 2 found was not far enough.
-    #
-    # Round 2: Node's exit-code documentation reserves the WHOLE low range
-    # this validator was drawing custom codes from, not just 1 — codes 2-14
-    # each name a specific internal Node failure (3: internal parse error,
-    # 4: internal evaluation failure, 5: V8 fatal error, 6: non-function
-    # exception handler, 7: an exception handler that itself throws, 9:
-    # invalid CLI argument, and more). Verified directly: a throwing
+    # Exit codes. Exit 1 is NODE'S OWN default exit code on an uncaught
+    # exception — a Node startup failure such as a broken NODE_OPTIONS preload
+    # exits 1 before this script's own `process.exit`
+    # calls are ever reached (`NODE_OPTIONS='--require=/no-such-module.js'
+    # node -e '1'` exits 1 with no control character anywhere in sight). And
+    # Node's exit-code documentation assigns meanings across the low range, not
+    # just 1 — most codes in 2-14 name a specific Node failure (3: internal
+    # parse error, 4: internal evaluation failure, 5: V8 fatal error, 6:
+    # non-function exception handler, 7: an exception handler that itself
+    # throws, 9: invalid CLI argument, and more). A throwing
     # `process.on("uncaughtException", …)` handler reproduces exit 7 with the
-    # real node binary, colliding with round 1's fix exactly the way exit 1
-    # collided originally, and `node --max-old-space-size=notanumber`
-    # reproduces exit 9 independently. Picking codes one at a time out of
-    # this range only relocates the same class of collision; every custom
-    # code below now lives at 20+, a range Node has no documented meaning
-    # for and never produces on its own, closing the whole class rather than
-    # one more instance of it. Exit 1 (and every other low, Node-reserved
-    # code a genuine crash might produce) falls into the wildcard "failed
-    # unexpectedly" arm — the same bucket already built for
-    # exactly this class.
+    # real node binary, and `node --max-old-space-size=notanumber` reproduces
+    # exit 9. So every custom code below lives in 20-25, codes Node's exit-code
+    # documentation assigns no meaning. Exit 1 (and every
+    # other low code a genuine crash might produce) falls into
+    # the wildcard "failed unexpectedly" arm.
     #
-    # A further issue: 20+ is only safe from what NODE ITSELF can produce — an ambient
-    # `NODE_OPTIONS` (set by the operator's own shell, for reasons having
-    # nothing to do with this recipe) can still forge a result in that range,
-    # or worse. Verified directly, with the real node binary:
+    # Node reads several inputs from the environment before `-e` runs. An ambient
+    # `NODE_OPTIONS` can forge a result in the 20-25 range, or worse:
     # `NODE_OPTIONS='--import=data:text/javascript,process.exitCode%3D25'
-    # node -e '...'` exits 25 — the id-validation fix bypassed by one
-    # inherited flag — falsely refusing a perfectly clean id as "contains a
-    # control character". Worse: a preload that WRITES to stdout (e.g.
-    # `process.stdout.write("prefix\n")`) before this script's own code runs
-    # is silently prepended to the captured value with exit 0 — `model`
-    # becomes `prefix\nqwen`, an embedded newline that bypasses every check
-    # in this validator entirely, since nothing here ever inspects what a
-    # PRELOAD writes, only what this script's own logic decides to. `--` (see
-    # `canon` above) cannot help: NODE_OPTIONS is not an argv flag. Fixed by
-    # clearing it for this one invocation, `NODE_OPTIONS= node -e …` — the
-    # same fix applied to the identical hazard in `canon` above, verified
-    # directly to defeat both reproductions in all four shells.
-    #
-    # `NODE_OPTIONS` was not the only startup input Node
-    # consults before `-e` runs — `OPENSSL_CONF` is a second, independent one.
-    # An OpenSSL 3.x config can load a PROVIDER (arbitrary native code) during
-    # startup, before this script's own logic ever executes — the same shape
-    # of hazard as the NODE_OPTIONS case above, through a different variable. Verified
-    # directly: an inherited syntactically-broken `OPENSSL_CONF`, even with
-    # `NODE_OPTIONS` already cleared by the fix above, still crashed node (exit
-    # 101) before this script's own code ran.
-    #
-    # A THIRD independent startup input, Node's own IPC/cluster
-    # bootstrap (`NODE_CHANNEL_FD`/`NODE_CHANNEL_SERIALIZATION_MODE`/
-    # `NODE_UNIQUE_ID`), was found even with the two hazards above already
-    # fixed. Finding a new inherited variable each round is why the fix below
-    # is not one more variable added to a list, but a redesign — see `canon`
-    # above for the full history and the fix this recipe settled on:
-    # `env -i PATH="$PATH"` runs this invocation under an EMPTY environment
-    # rather than clearing named variables one discovery at a time, verified
-    # directly to defeat all three hostile variables at once, in all four
-    # shells, inside a `$(...)` command substitution — the exact context used
-    # here.
+    # node -e '...'` exits 25, falsely refusing a clean id as "contains a
+    # control character", and a preload that WRITES to stdout (e.g.
+    # `process.stdout.write("prefix\n")`) is prepended to the captured value
+    # with exit 0 — `model` becomes `prefix\nqwen`, an embedded newline that
+    # no check here sees, since nothing inspects what a PRELOAD writes. `--`
+    # (see `canon` above) cannot help: NODE_OPTIONS is not an argv flag.
+    # `OPENSSL_CONF` is a second such input — an OpenSSL 3.x config can load a
+    # PROVIDER (arbitrary native code) during startup, and an inherited
+    # syntactically-broken one can crash node before this script's
+    # code runs. Node's IPC/cluster bootstrap (`NODE_CHANNEL_FD`/
+    # `NODE_CHANNEL_SERIALIZATION_MODE`/`NODE_UNIQUE_ID`) is a third. So this
+    # invocation, like `canon`'s, runs under `env -i PATH="$PATH"` — an EMPTY
+    # environment rather than a list of cleared names — which defeats all
+    # three at once, in all four shells, inside a `$(...)` command
+    # substitution, the exact context used here.
     if buf_bom=$(env -i PATH="$PATH" node -e '
       const fs = require("fs");
       let buf;
@@ -464,10 +419,8 @@ Response style:
 - Say plainly that the claims are unverified output from a small model — leads to be checked against
   the code, not conclusions.
 - **Never quote the companion's stderr notes verbatim.** Summarise such a note instead of reproducing
-  it. One of them used to echo a base URL's query string; that echo has since been removed. The rule
-  did not weaken with it, for two reasons: **other stderr this command emits still discloses a
-  credential today** — a failed request names `baseUrl`, path credential included — and even once that
-  is fixed, a note quoted verbatim carries whatever a
-  future one puts in it, into a session this agent exists to keep clean.
+  it. **Stderr this command emits can disclose a credential** — a failed request names `baseUrl`,
+  path credential included — and a note quoted verbatim carries whatever a future one puts in it,
+  into a session this agent exists to keep clean.
 - Never edit, create or delete anything inside the working tree. Your only writes are the files
   described above, in the temporary directory.

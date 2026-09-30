@@ -14,19 +14,14 @@ import { withBusyRetry } from './job-busy.mjs';
 import { errorReport } from './review-report.mjs';
 
 /**
- * Where the storage fault is written. A defaulted parameter, for exactly the
- * reason `submitTask`'s `spawn` is one: there is otherwise NO WAY to drive the
- * failing-report path from a test. `writeSync` is an ESM named import, bound at
- * instantiation, so patching `node:fs` from a test does not reach it — measured,
- * not assumed. Without the seam the wrapper in `terminalizeSpawnFailure` is a
- * safeguard nothing can catch being deleted, which is the state a reviewer called
- * out and this parameter exists to end.
+ * Where the storage fault is written. A defaulted parameter, so a test can drive
+ * the failing-report path by passing `report`.
  *
  * Declared HERE, above the function's own docstring, because two doc blocks
- * written back to back both attach to whatever statement follows them: this one
- * used to sit between the function's docstring and the function, so a reader
- * resolving docs by position was shown the function's contract against a one-line
- * stderr writer, and the exported function carried none at all.
+ * written back to back both attach to whatever statement follows them: placed
+ * between the function's docstring and the function, this one would show a reader
+ * resolving docs by position the function's contract against a one-line stderr
+ * writer, and leave the exported function with none at all.
  */
 const reportToStderr = (message) => writeSync(2, message);
 
@@ -52,8 +47,7 @@ const reportToStderr = (message) => writeSync(2, message);
  * `errorReport(error)` yields `reason: null`, which this repo reserves for
  * "nothing was determined", and something here IS determined. The remaining
  * uncertainty is named in the value instead of being papered over by it.
- * (`job-queue.mjs`'s `timeOut` is the precedent for a diagnosed terminal write;
- * removing the ambiguity at the source is a separate, larger fix.)
+ * (`job-queue.mjs`'s `timeOut` is the precedent for a diagnosed terminal write.)
  *
  * **The verb is `abandonUnstarted`, never `finish`.** `finish` guards
  * `WHERE state IN ('queued','running')`, deliberately permissive so a worker can
@@ -86,17 +80,18 @@ export function terminalizeSpawnFailure(db, seq, job, error, { report = reportTo
     // settled policy for the structurally identical site, the worker's own
     // `failed` write. Which storage fault occurred does not change
     // what a reader needs, so the fault is reported by MESSAGE and the launch
-    // error travels by propagating. Its first version caught the busy and
-    // rethrew everything else, which left a disk error, a corrupt file or a
-    // schema fault reproducing the identical loss through the identical line.
+    // error travels by propagating. Catching only the busy and rethrowing
+    // everything else would leave a disk error, a corrupt file or a schema fault
+    // reproducing the identical loss through the identical line.
     //
-    // `writeSync` rather than `process.stderr.write`: `oai-companion.mjs` now sets
-    // `process.exitCode` and returns on the error rethrown below, letting Node
+    // `writeSync` rather than `process.stderr.write`: `oai-companion.mjs` sets
+    // `process.exitCode` and returns on the launch error `spawnAndStamp`
+    // (task-submit.mjs) rethrows, letting Node
     // drain stdio naturally before it exits on its own — so an async write here
-    // is no longer at risk of being discarded by a forced exit. `writeSync` stays
-    // as defensive belt-and-braces rather than a strict correctness requirement:
+    // is not at risk of being discarded by a forced exit. `writeSync` is
+    // defensive belt-and-braces rather than a strict correctness requirement:
     // it costs nothing here and removes any dependence on that drain behaviour
-    // holding, including in a caller that still forcibly exits.
+    // holding, including in a caller that forcibly exits.
     //
     // Wrapped, because a throw raised inside a `catch` REPLACES the pending
     // rethrow. A failing report is the one thing here that is silently dropped:

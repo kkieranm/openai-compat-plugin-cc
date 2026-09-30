@@ -92,11 +92,11 @@ export function artifactNote({ state, detail }) {
  * The verdict for one finished run, or null when this template has no oracle.
  *
  * Here rather than in a renderer, and that placement is the whole point of this
- * function existing. Computing it at render time meant `/oai:result` could never
- * carry it — the worker never saw it, because it did not exist until something
- * rendered — so a backgrounded patch printed a discipline line about a check
- * nobody had run. Refusing the combination was pass 1's stopgap and it broke the
- * delegate agent, whose only submission is a background one.
+ * function existing. Computed at render time, `/oai:result` could never carry it
+ * — the worker would never see it, because it would not exist until something
+ * rendered — so a backgrounded patch would print a discipline line about a check
+ * nobody had run. Refusing background patches instead would break the delegate
+ * agent, whose only submission is a background one.
  */
 export function artifactFor({ template, answer, cwd }) {
   if (artifactKind(template) !== 'diff') return null;

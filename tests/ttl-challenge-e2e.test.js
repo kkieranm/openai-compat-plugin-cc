@@ -18,8 +18,7 @@ import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
  * producing its verdict fails that test), and the reachability guard at the foot of
  * the file proves this set is exactly `EPISODE_VERDICTS` (so a verdict left with no
  * e2e scenario fails the guard). The declared value is what the tests check against
- * reality, so the two cannot drift the way a hand-maintained second list would —
- * the class of drift OAI-34's matrix already lost a row to.
+ * reality, so the two cannot drift the way a hand-maintained second list would.
  *
  * The guard's reach is bounded, and the bound is disclosed rather than closed with
  * cross-test state: it proves no `EPISODE_VERDICTS` member is MISSING a scenario,
@@ -88,8 +87,8 @@ test('observation quality is RECORDED and decides nothing', async () => {
 
 test('a failure with an unload observed is inconclusive, never a mechanism claim', async () => {
   // The episode this whole experiment is pointed at: the request fails and the
-  // model is gone. Four gate rounds established the instrument may NOT read that
-  // as the mechanism firing, so this is the pin for that.
+  // model is gone. The instrument may NOT read that as the mechanism firing, so
+  // this is the pin for that.
   const { manifest } = await runScenario({ unloadAtMs: 300 }, { failFromCall: 2 });
 
   assert.equal(manifest.outcome.verdict, 'inconclusive-failure');
@@ -176,9 +175,8 @@ test('a calibration run under broken preconditions does not license the sweep', 
   assert.deepEqual(manifest.episodes, [], 'no challenge episode may run on an unlicensed calibration');
   assert.equal(manifest.outcome.verdict, 'instrument-failed');
   // The SENTENCE, not just the verdict. This episode's prefill actually cleared
-  // the exposure bar — a wide review reproduced exactly that — so a message
-  // blaming the prefill would be false and would send the operator to the wrong
-  // knob.
+  // the exposure bar, so a message blaming the prefill would be false and would
+  // send the operator to the wrong knob.
   assert.match(manifest.outcome.says, /sole-tenancy/);
   assert.doesNotMatch(manifest.outcome.says, /prefill clearing the shortened TTL/);
   assert.equal(result.status, 1);
@@ -217,9 +215,10 @@ test('a residency poll that returns garbage is recorded as unreadable, not as an
 });
 
 test('the driver reads and forwards the attempt record the rules consume', async () => {
-  // G8 (an `answered` attempt with `serverResponded: false`) is structurally
-  // impossible for a fake server to produce — `attempt-outcome.mjs`'s closers set
-  // the flag directly — so it is pinned by a unit test on the pure rule instead.
+  // The record-self-consistent check's case (an `answered` attempt with
+  // `serverResponded: false`) is structurally impossible for a fake server to
+  // produce — `attempt-outcome.mjs`'s closers set the flag directly — so it is
+  // pinned by a unit test on the pure rule instead.
   // What CAN be proved here is the plumbing that rule depends on: the attempts
   // array reaching the driver at all.
   const { manifest } = await runScenario({});
@@ -238,8 +237,6 @@ test('an unknown flag is refused rather than swallowed', async () => {
 });
 
 test('--episodes must be a positive integer', async () => {
-  // What makes an empty episode list unreachable, and with it the `no-episodes`
-  // verdict the withdrawn draft could return but no outcome table ever listed.
   for (const bad of ['0', '-1', '2.5']) {
     const result = await runDriver(['--episodes', bad], {});
     assert.equal(result.status, 1, `--episodes ${bad} must be refused`);
@@ -248,18 +245,18 @@ test('--episodes must be a positive integer', async () => {
 });
 
 test('every episode verdict is reachable through the real e2e matrix', () => {
-  // OAI-34's rule: every verdict-bearing check gets a scenario crossing the real
-  // entry point. This is the mechanical guard the tracker asked be kept, so the
-  // next hole fails the suite instead of waiting for a review to find it — a
-  // `no-exposure` scenario went missing until one did.
+  // Every episode verdict must be reached by a scenario crossing the real entry
+  // point — a mechanical guard, so the next hole fails the suite.
   //
-  // Nothing is subtracted from `EPISODE_VERDICTS`. The one STATED exemption (G8) is
-  // not a verdict left uncovered: it is the MECHANISM by which `instrument-invalid`
-  // can arise — an `answered` attempt with `serverResponded: false`, which a fake
-  // server cannot produce (see the attempt-record test above) — so that verdict is
-  // still reached e2e by the competing-model scenario, and only the G8 SHAPE of it
-  // is pinned by a unit test on the pure rule. The reachable set is therefore all
-  // seven, and `E2E_VERDICTS` is proven complete against the source of truth.
+  // Nothing is subtracted from `EPISODE_VERDICTS`. The one check without its
+  // own e2e scenario (the record-self-consistent check) is not a verdict left
+  // uncovered: it is the MECHANISM by which `instrument-invalid` can arise — an
+  // `answered` attempt with `serverResponded: false`, which a fake server
+  // cannot produce (see the attempt-record test above) — so that verdict is
+  // still reached e2e by the competing-model scenario, and only the
+  // record-self-consistent SHAPE of it is pinned by a unit test on the pure
+  // rule. The reachable set is therefore all seven, and `E2E_VERDICTS` is
+  // proven complete against the source of truth.
   assert.deepEqual(
     [...new Set(Object.values(E2E_VERDICTS))].sort(),
     [...EPISODE_VERDICTS].sort(),

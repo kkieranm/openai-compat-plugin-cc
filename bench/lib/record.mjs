@@ -30,7 +30,7 @@ import { join } from 'node:path';
  * undefined on a normal invocation (the config supplies it), so the title became
  * `# Benchmark — unknown / unknown` above a table of nothing but failures: the
  * report losing the identity of the server it ran against at exactly the moment
- * a reader needs it. Confirmed by the built-in review.
+ * a reader needs it.
  *
  * So: `provider` from any report at all, since a substitution says nothing about
  * which server answered. `model` from a COUNTED run, and where none exists, the

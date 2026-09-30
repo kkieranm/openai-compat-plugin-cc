@@ -46,9 +46,8 @@ test('the size caveat never offers to explain an EMPTY answer', async () => {
 });
 
 test('an unknown template name still states the duty, rather than silently dropping it', async () => {
-  // REVERSED DELIBERATELY. This asserted `[]` until a wide review pointed out
-  // what that means: a row written by a NEWER build — which `job-view.mjs` goes
-  // out of its way to keep readable — would render with no caveat at all, losing
+  // Not `[]`: a row written by a NEWER build — which `job-view.mjs` goes
+  // out of its way to keep readable — would then render with no caveat at all, losing
   // the one line saying the answer is unverified on exactly the reply whose
   // template this build cannot vouch for. Silence is the wrong answer; a caveat
   // that claims less is the right one.

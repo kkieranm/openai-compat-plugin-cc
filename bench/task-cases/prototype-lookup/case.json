@@ -4,7 +4,7 @@
   "template": "advisor",
   "origin": {
     "commit": "d3436bf",
-    "note": "Found by codex-plain during OAI-83's review ladder and verified by running it: --template toString resolved to Object.prototype.toString, so the run used the DEFAULT system prompt while reporting the template name, and printed 'undefined' where the discipline line belongs. Fixed with Object.hasOwn at both lookup sites."
+    "note": "--template toString resolved to Object.prototype.toString, so the run used the DEFAULT system prompt while reporting the template name, and printed 'undefined' where the discipline line belongs. Fixed with Object.hasOwn at both lookup sites."
   },
   "files": ["registry.mjs"],
   "witness": "witness.mjs",

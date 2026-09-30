@@ -96,8 +96,8 @@ export function startHeartbeat(db, seq, { intervalMs = BEAT_MS, onCancel = exitO
   const timer = setInterval(() => {
     // A throw from inside a timer callback has nowhere to go: it is an uncaught
     // exception and it KILLS THE WORKER, mid-model-call, discarding a request
-    // already in flight. Proved by execution — a handle whose `prepare()` throws
-    // errcode 5 exits this process 1.
+    // already in flight: an uncaught errcode-5 throw from `prepare()` or
+    // `run()` would exit this process 1.
     //
     // So a contended database skips the tick. The next beat is five seconds
     // away and the stale-beat → `stalled` path already represents a missed

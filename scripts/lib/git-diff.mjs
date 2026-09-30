@@ -80,9 +80,8 @@ async function blockFor(path, readContent) {
  *
  * The failures have to come back. A path git listed as changed whose body could
  * not be read (an unmerged path mid-conflict, a file removed under us) would
- * otherwise vanish from `changed` leaving no trace — and the request would go on
- * to claim it holds the complete content of every changed file, which is this
- * feature's own bug with the prompt vouching for it.
+ * otherwise vanish from `changed` leaving no trace — and the request would go
+ * on to claim it holds the complete content of every changed file.
  */
 async function blocksFor(paths, readContent) {
   const blocks = [];

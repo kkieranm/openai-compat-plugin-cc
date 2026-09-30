@@ -1,8 +1,7 @@
 // The vendor sampling/reasoning parameters: that each is validated, that the one
 // place they become body fields cannot reach anything else, that they survive the
 // background-job DTO, and that a run's settings reach the --json envelope on the
-// failure path — the one that matters most, since the runaway this feature exists
-// to fix fails after the model call has already returned.
+// failure path.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SAMPLING_PARAMS, applySampling, parseSampling } from '../scripts/lib/sampling.mjs';
@@ -118,11 +117,11 @@ test('--reasoning-effort reaches the wire and the --json success envelope', asyn
 });
 
 test('a post-dispatch runaway still records sampling in the --json failure envelope', async () => {
-  // The motivating shape: the stream finishes cleanly with content empty and the
-  // whole reply on the reasoning channel, so `requireAnswer` throws in the report
-  // stage AFTER chatCompletion returned. Attaching sampling anywhere narrower
-  // than the command catch would emit `sampling: null` here — on exactly the
-  // failure whose settings need recording.
+  // The stream finishes cleanly with content empty and the whole reply on the
+  // reasoning channel, so `requireAnswer` throws in the report stage AFTER
+  // chatCompletion returned. Attaching sampling anywhere narrower than the
+  // command catch would emit `sampling: null` here — on exactly the failure
+  // whose settings need recording.
   const server = await serverStreaming(reasoningFrames('thinking, thinking, and never an answer'));
   try {
     const result = await runCompanion(

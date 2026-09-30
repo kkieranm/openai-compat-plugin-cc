@@ -266,12 +266,10 @@ function buckets(runs) {
 /**
  * WHAT THE SERVER DID ABOUT THE SCHEMA, not what the operator asked for.
  *
- * `--structured-output` is a REQUEST. `review-request.mjs` falls back to the unconstrained path when a
- * server rejects `response_format`, and the CLI already reports that as `degraded` — "asked for, and
- * not obtained", the pair `cmd-review.mjs` emits precisely so a harness can tell "fell back after a
- * refusal" from "never wanted a schema". The benchmark read only the flag, so an arm that degraded on
- * every request was captioned as a schema arm and compared against an unconstrained one: two names for
- * the same measurement.
+ * `--structured-output` is a REQUEST. `review-request.mjs` falls back to the
+ * unconstrained path when a server rejects `response_format`, and the CLI
+ * reports `degraded` — "asked for, and not obtained", which a refusal or a
+ * salvaged reply both produce.
  *
  * Counted per RUN, not collapsed to a boolean — a case can degrade on some runs and not others, and a
  * boolean would replace one caption that cannot see the failure with another. `reported` is the

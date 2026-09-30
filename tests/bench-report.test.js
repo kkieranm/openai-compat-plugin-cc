@@ -1,10 +1,10 @@
 // What the benchmark's summary table claims about its own runs.
 //
-// These exist because a review found a run that fell out of every bucket at
-// once — not scored, not cut, not failed — while still counting toward the run
-// total, so a row asserted full accounting over runs it had silently dropped.
-// The repo's signature class, in the artifact whose whole job is to be quoted
-// as evidence.
+// The bucket tests in this file guard against a run that falls out of every
+// bucket at once — not scored, not cut, not failed — while still counting
+// toward the run total, so a row asserts full accounting over runs it has
+// silently dropped: an overclaim in the artifact whose whole job is to be
+// quoted as evidence.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReport } from '../bench/lib/report.mjs';
@@ -202,8 +202,7 @@ test('a substituted run contributes no timing, rate or prompt-size sample', () =
   // COMPLETED — it answered and was timed — so it counts in the coverage
   // denominator even though its value is excluded. Dropping it from both would
   // make `measured === completed`, print no suffix at all, and let a range over
-  // one of two completed runs read as fully measured. Raised at 0.94 confidence
-  // by the adversarial review, and it was right.
+  // one of two completed runs read as fully measured.
   assert.equal(cell(report, 'prefill s'), '4–4 (1/2 measured)');
   assert.equal(cell(report, 'generate s'), '2–2 (1/2 measured)');
   assert.equal(cell(report, 'gen tok/s'), '10.0 (1/2 measured)');
@@ -358,7 +357,7 @@ test('a schema arm says so in its header and its caveats, and an unconstrained o
   assert.doesNotMatch(off, /the reply shape was enforced/);
 });
 
-// OAI-215: `--max-tokens`/`--temperature` change completion rate and recall, so an
+// `--max-tokens`/`--temperature` change completion rate and recall, so an
 // arm run under one must name it in the artifact, or a reader differences two arms
 // and credits the gap to the model. Present/absent twins, like the schema arm above.
 test('a sampling-knob arm names the knob in its caveats, and a default arm does not', () => {
@@ -375,7 +374,7 @@ test('a sampling-knob arm names the knob in its caveats, and a default arm does 
   assert.doesNotMatch(off, /--temperature/);
 });
 
-// The lens column (OAI-218): a case's row must say at what depth it was reviewed —
+// The lens column: a case's row must say at what depth it was reviewed —
 // whole file vs hunks, and the window that decided it — so two per-model reports
 // compared on one case cannot silently be a lens comparison wearing a model's name.
 function lensRun({ hunksOnly = false, contextWindow, skippedUnsizedWindow = false, diffOnly = false } = {}) {
@@ -419,9 +418,9 @@ test('a case whose every run failed shows no lens, not a fabricated one', () => 
   assert.equal(cell(render([{ diffOnly: false, error: 'the server refused' }]), 'lens'), '—');
 });
 
-test('two runs at different lenses BOTH show — a silent single value is the defect this fixes', () => {
-  // The item's own comparand: one model reviewed whole at 154624, another as hunks
-  // at 61696, and the table equated them. Within one row (a --runs reload) the same
+test('two runs at different lenses BOTH show — a silent single value is the defect', () => {
+  // One model reviewed whole at 154624, another as hunks at 61696: a table that
+  // equates them hides the difference. Within one row (a --runs reload) the same
   // conflation is possible, and the cell must refuse to pick one.
   assert.equal(
     cell(render([lensRun({ hunksOnly: false, contextWindow: 154624 }), lensRun({ hunksOnly: true, contextWindow: 61696 })]), 'lens'),

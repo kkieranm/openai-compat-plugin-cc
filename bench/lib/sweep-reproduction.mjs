@@ -325,14 +325,12 @@ export function reproductionOf(group) {
     comparableCommits: comparable.length,
     unanimous: comparable.filter((row) => row.reproduced).length,
     findingBearingCommits: findingBearing.length,
-    // The N-run consensus analogue of OAI-141's per-reference reproduction rate: of
-    // the comparable (n>=2) commits any reviewing run found a finding on, how many
-    // did EVERY reviewing run find one on. Overall unanimity is dominated by commits
-    // all runs agreed were clean and hides this, the tool's whole point. It is a
-    // DIFFERENT statistic from OAI-141's own directional figure ("12 of run A's 17")
-    // — a symmetric consensus, not a per-reference rate — so read the two as separate
-    // measures, never one as the other's degradation; the matrix's per-run cells
-    // carry any directional figure a reader wants.
+    // An N-run consensus reproduction rate: of the comparable (n>=2) commits
+    // any reviewing run found a finding on, how many did EVERY reviewing run
+    // find one on. Overall unanimity is dominated by commits all runs agreed
+    // were clean and hides this, the tool's whole point. It is a symmetric
+    // consensus, NOT a per-reference directional figure; the matrix's per-run
+    // cells carry any directional figure a reader wants.
     findingBearingReproduced: findingBearing.filter((row) => row.k === row.n).length,
   };
   const perRun = runs.map((run) => {

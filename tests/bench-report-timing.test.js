@@ -18,9 +18,8 @@ function timedRun(prefillMs, generationMs) {
 }
 
 test('prefill and generation are separate columns, never one number', async () => {
-  // The whole point of the change: a cache moves prefill by tens of times and
-  // leaves generation alone, so a single `seconds` range across these three runs
-  // would print `3–425` and describe nothing.
+  // A cache moves prefill by tens of times and leaves generation alone, so a
+  // single `seconds` range across these three runs would describe nothing.
   const report = renderReport(
     [{ caseDef: CASE, runs: [timedRun(421_660, 2_955), timedRun(11_457, 2_701), timedRun(10_257, 2_722)] }],
     { runsPerCase: 3, provider: 'local', model: 'test-model' },
@@ -235,7 +234,7 @@ test('a generation window too short to have been measured reports no rate', asyn
   // so a server that buffers its SSE output and flushes the reply in one write
   // produces a 1ms window — ±50% quantisation — and the quotient renders as a
   // five-digit measurement, arriving in the bench as the *upper endpoint* of the
-  // range with no coverage suffix to warn anyone. Found by the code review.
+  // range with no coverage suffix to warn anyone.
   const report = renderReport(
     [{ caseDef: CASE, runs: [ratedRun(7, 1)] }],
     { runsPerCase: 1, provider: 'local', model: 'test-model' },

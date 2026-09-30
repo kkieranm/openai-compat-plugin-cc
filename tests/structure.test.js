@@ -1,10 +1,11 @@
 // Structural invariants.
-// A recurring defect class graduates from reviewer prompts to a test here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -38,14 +39,10 @@ function* sourceFiles(dir) {
   }
 }
 
-// Confirmed twice, so promoted from a reviewer's prompt to a guard. Extracting
-// a function means inserting one above an existing declaration, and twice now
-// the new function has landed *between* a docblock
-// and the function that docblock described — leaving the old comment attached to
-// unrelated code and its subject with none. It reads as harmless placement and
-// is not: the orphaned block in `review-report.mjs` ended "Exported for the
-// tests that pin those fields", which was then false of the private helper it
-// had come to sit above.
+// Extracting a function means inserting one above an existing declaration, and
+// the new function can land *between* a docblock and the function that docblock
+// described — leaving the old comment attached to unrelated code and its
+// subject with none.
 //
 // Two consecutive `/**` blocks with nothing between them is the exact shape, and
 // nothing else in this repo produces it.
@@ -80,9 +77,8 @@ test('no doc comment is orphaned from the thing it documents', () => {
   assert.deepEqual(offenders, []);
 });
 
-// Confirmed defect class, promoted from a review note to a guard: spawnSync
-// blocks this process's event loop, so the in-process fake server can never
-// answer and the suite hangs until the client timeout instead of failing.
+// spawnSync blocks this process's event loop, so the in-process fake server can
+// never answer and the suite hangs until the client timeout instead of failing.
 test('tests never spawn a child synchronously', () => {
   const offenders = [];
   for (const file of sourceFiles(join(ROOT, 'tests'))) {
@@ -92,6 +88,44 @@ test('tests never spawn a child synchronously', () => {
     }
   }
   assert.deepEqual(offenders, [], 'use the async runCompanion helper instead');
+});
+
+// A tracker id or decision-record number names a document this repository does
+// not contain, so it points a reader at nothing. This guard reads the
+// working-tree content of the paths git's index lists, so a local untracked
+// file can neither pass nor fail this; a listed path deleted from the working
+// tree is skipped, and any other unreadable path (a submodule among them) fails
+// the test. The historical fixtures under bench/cases/ keep theirs by design,
+// and .claude/REPO_TRAPS.md, a dated defect log, is excluded.
+test('no tracked file cites a tracker id or a decision-record number', async () => {
+  const git = (...args) => promisify(execFile)('git', args, { cwd: ROOT, maxBuffer: 16e6 });
+  let listing, deleted;
+  try {
+    [{ stdout: listing }, { stdout: deleted }] = await Promise.all([
+      git('ls-files', '-z'),
+      git('ls-files', '-z', '--deleted'),
+    ]);
+  } catch (error) {
+    assert.fail(`this guard needs a git checkout to list tracked files: ${error.message}`);
+  }
+  const files = listing.split('\0').filter(Boolean);
+  assert.ok(files.includes('tests/structure.test.js'), 'git ls-files did not list this repository\'s own files');
+  const gone = new Set(deleted.split('\0').filter(Boolean));
+  const offenders = [];
+  for (const file of files) {
+    if (file.startsWith('bench/cases/') || file === '.claude/REPO_TRAPS.md') continue;
+    let text;
+    try {
+      text = readFileSync(join(ROOT, file), 'utf8');
+    } catch (error) {
+      // git also lists a path as deleted when it merely could not stat it, so
+      // its word alone never excuses a read that failed for another reason.
+      if (error.code === 'ENOENT' && gone.has(file)) continue;
+      assert.fail(`cannot read tracked file ${file}: ${error.message}`);
+    }
+    if (/\bOAI-\d+|\badr\/\d+|\bADR[- ]?\d+/.test(text)) offenders.push(file);
+  }
+  assert.deepEqual(offenders, [], 'drop the id; keep what the code does');
 });
 
 // A URL's pathname is percent-encoded, so a path taken from
@@ -107,12 +141,12 @@ test('no path is derived from import.meta.url through .pathname', () => {
   assert.deepEqual(offenders, [], 'use fileURLToPath(new URL(…, import.meta.url))');
 });
 
-// Confirmed defect class: `mkdtempSync` called across the suite with no
-// cleanup leaked temp dirs, and three files each hand-rolled their own
-// independent cleanup copy that could drift from the other two. `tempDir` in
-// tests/helpers.mjs is now the single place a scratch dir is created and
-// tracked for cleanup — a bare `mkdtempSync` call anywhere else in tests/ is
-// the same defect reappearing.
+// Defect class: `mkdtempSync` called across the suite with no cleanup leaked
+// temp dirs, and three files each hand-rolled their own independent cleanup
+// copy that could drift from the other two. `tempDir` in tests/helpers.mjs is
+// now the single place a scratch dir is created and tracked for cleanup — a
+// bare `mkdtempSync` call anywhere else in tests/ is the same defect
+// reappearing.
 test('no test creates a temp dir except through tests/helpers.mjs\'s tempDir', () => {
   const ALLOWED = ['tests/helpers.mjs'];
   const offenders = [];
@@ -126,7 +160,6 @@ test('no test creates a temp dir except through tests/helpers.mjs\'s tempDir', (
   assert.deepEqual(offenders, [], 'use the shared tempDir helper (tests/helpers.mjs) instead of a bare mkdtempSync');
 });
 
-// Confirmed defect class, promoted from "a reviewer should catch it" to a guard.
 // The global fetch is undici, and undici applies its own headersTimeout and
 // bodyTimeout — 300s each, configurable by nothing at the call site. A
 // configured `timeoutSeconds: 1800` was therefore decoration, and 14 of 18
@@ -149,10 +182,8 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
   assert.deepEqual(offenders, [], 'use send() from scripts/lib/http.mjs, which requires an explicit budget');
 });
 
-// Confirmed twice — scripts/oai-companion.mjs (commit 31c98d7) and
-// bench/review-sweep.mjs (OAI-198) — so promoted to a guard: process.exit() tears
-// the process down before queued stdio writes drain, truncating a large stdout
-// or stderr payload at the pipe buffer. process.exitCode plus a natural return
+// process.exit() tears the process down before queued stdio writes drain, truncating
+// a large stdout or stderr payload at the pipe buffer. process.exitCode plus a natural return
 // lets Node drain first. Scoped to this repo's actual CLI entrypoints rather than banned
 // repo-wide: scripts/lib/job-heartbeat.mjs has a deliberate process.exit(0) whose
 // side effect (closing the model socket to stop generation server-side) is the
@@ -180,29 +211,28 @@ test('CLI entrypoints use process.exitCode, never process.exit()', () => {
   assert.deepEqual(offenders, [], 'use process.exitCode instead — see .claude/REPO_TRAPS.md');
 });
 
-// Confirmed defect class, promoted from "I noticed it" to a guard: `node --test`
-// with no path walks the whole repo, so the benchmark corpus — historical source
-// kept deliberately as data — was discovered and its 2026-vintage tests were run
-// against today's tree, failing on imports that no longer exist. The scope in the
-// npm script is what stops that, and it reads as redundant until someone removes it.
+// Defect class: `node --test` with no path walks the whole repo, so the
+// benchmark corpus — historical source kept deliberately as data — was
+// discovered and its 2026-vintage tests were run against today's tree, failing
+// on imports that no longer exist. The scope in the npm script is what stops
+// that, and it reads as redundant until someone removes it.
 test('the test runner is scoped, so corpus snapshots are not discovered as tests', () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.test, /tests\//, 'an unscoped `node --test` would run bench/cases snapshots');
 });
 
 /**
- * Proved by mutation: moving
- * `capBudgets` below `ledger.begin` in `postWithDegrade` left all 370 tests
- * green while reopening the exact defect this guards against on the capability-rung
- * path — a refusal reclassified as benign negotiation for a replacement that was
- * never dispatched, plus a phantom entry for it.
+ * Moving `capBudgets` below `ledger.begin` in `postWithDegrade` reopens the
+ * defect this guards against on the capability-rung path — a refusal
+ * reclassified as benign negotiation for a replacement that was never
+ * dispatched, plus a phantom entry for it.
  *
  * The class, which is what earns a guard: **an ordering that carries an
- * invariant, pinned by nothing**. Two statements swap and the invariant is gone.
- * The suite no longer stays green when they do — `failure-shape.test.js` and
- * `cap-ordering.test.js` both go red — so this guard does not stand IN PLACE of
- * behavioural cover, though it once claimed to. It localizes the
- * contract to the two statements carrying it, naming the rule where it lives.
+ * invariant, pinned by nothing**. Two statements swap and the invariant is
+ * gone. The suite goes red when they do — `failure-shape.test.js` and
+ * `cap-ordering.test.js` both fail — so this guard does not stand IN PLACE of
+ * behavioural cover. It localizes the contract to the two statements carrying
+ * it, naming the rule where it lives.
  *
  * Comments are stripped first: both tokens now appear in the prose that explains
  * this very ordering, and a guard matching those would pass vacuously. Absence of
@@ -314,22 +344,17 @@ test('the body-stream catch classifies its failures as delivered, whatever code 
   );
 });
 
-// Confirmed FOUR times: a UserError message
-// built at the HTTP response boundary interpolated something the SERVER
-// controls — profile.baseUrl, a redirect Location header, an echoed response
-// body, a JSON.parse error quoting the input, a raw content-encoding header —
-// each one independently discovered because
-// nothing forced the next call site to remember the others. `.message` is what
-// `errorReport()` persists into `jobs.db` and what an uncaught worker error
-// prints to its own job log, so this graduates from a reviewer's prompt to a
-// guard per this file's own header rule.
+// A UserError message built at the HTTP response boundary must not interpolate
+// something the SERVER controls — profile.baseUrl, a redirect Location header,
+// an echoed response body, a JSON.parse error quoting the input, a raw
+// content-encoding header. `.message` is what `errorReport()` persists into
+// `jobs.db` and what an uncaught worker error prints to its own job log.
 //
-// DENYLIST, not allowlist: the four confirmed variable names (plus the
-// destination fields themselves, in case one is ever read back into a
-// message) are what this guard can prove wrong. It cannot prove a NEW
-// interpolation is safe — that judgement still belongs to a reviewer — so a
-// legitimate new interpolation is added to SAFE_MESSAGE_EXPRESSIONS by hand,
-// a conscious decision, never silently passed.
+// DENYLIST, not allowlist: the substrings in TAINTED_SUBSTRINGS below — the
+// offending variable names and the destination fields themselves, in case one
+// is ever read back into a message — are what this guard can prove wrong. An
+// interpolation matching none of them passes unchecked; SAFE_MESSAGE_EXPRESSIONS
+// exempts an expression a listed substring would otherwise flag.
 //
 // Known limitation, stated rather than hidden: this only sees a template
 // literal passed DIRECTLY to `new UserError(` or `reword(` — a message built
@@ -372,8 +397,9 @@ const TAINTED_SUBSTRINGS = [
   'text',
 ];
 
-// The one reviewed-safe exception: transportError's Node/OS-level syscall
-// message (ECONNREFUSED, EAI_AGAIN, …), never server response content.
+// The deliberate exceptions: transportError's Node/OS-level syscall message
+// (ECONNREFUSED, EAI_AGAIN, …), never server response content, and the static
+// hint below.
 const SAFE_MESSAGE_EXPRESSIONS = new Set([
   'cause.message ?? error.message',
   // provider.mjs's ECONNREFUSED hint: a static lookup table plus a hardcoded
@@ -483,28 +509,24 @@ test('no server-controlled value reaches a UserError message at the response bou
     'a server-controlled value must travel on error.endpoint / .responseBody / .bodyExcerpt / ' +
       '.finishReason, never inside .message — all are read unconditionally by errorReport() ' +
       "(-> jobs.db) and by oai-companion.mjs's top-level catch (-> a background worker's job log). " +
-      'If this is a new, genuinely safe interpolation, add it to SAFE_MESSAGE_EXPRESSIONS by hand ' +
-      '(OAI-185). Scoped to RESPONSE_BOUNDARY_FILES only — not a repo-wide guarantee; ' +
-      'scripts/lib/model-selection.mjs / delegate.mjs carry a related, lower-severity, deferred gap ' +
+      'If this is a new, genuinely safe interpolation, add it to SAFE_MESSAGE_EXPRESSIONS by hand. ' +
+      'Scoped to RESPONSE_BOUNDARY_FILES only — not a repo-wide guarantee; ' +
+      'scripts/lib/model-selection.mjs / delegate.mjs carry a related, lower-severity gap ' +
       '(a server-reported model id can reach a UserError message, but only pre-submission, never on ' +
-      'the background persistence path this feature protects — OAI-185 residue).',
+      'the background persistence path this guard protects).',
   );
 });
 
-// Nothing
-// proved the DETECTOR itself still catches the exact historical leaks it was
+// Proves the DETECTOR itself still catches the historical leaks it was
 // written from — a rename in TAINTED_SUBSTRINGS or a bug in
 // messageTemplates()/interpolations() could silently stop catching them, and
-// the guard above would report "clean" for the wrong reason. The first version
-// of this block was not what it claimed: fixtures
-// had been simplified (the body.mjs / sse.mjs snippets dropped their `.hint`
-// clause entirely, which is a SECOND, independent leak in the same call the
-// `.message` clause does not cover) and each fixture asserted only "at least
-// one offender found," which cannot catch one expression masking a second,
-// missed one in the same call. These are the pre-fix snippets, verbatim —
-// never executed, just fed through the
-// same detector the guard above uses — each paired with EVERY expression it
-// must individually flag.
+// the guard above would report "clean" for the wrong reason. Each fixture
+// asserts EVERY expected expression, not "at least one offender found", which
+// cannot catch one expression masking a second, missed one in the same call —
+// the body.mjs / sse.mjs snippets keep their `.hint` clause, a SECOND,
+// independent leak the `.message` clause does not cover. These are the pre-fix
+// snippets — never executed, just fed through the same detector the
+// guard above uses — each paired with EVERY expression it must individually flag.
 const HISTORICAL_LEAKS = [
   ['describeFailure ECONNREFUSED (original)',
     'reword(error, `Cannot reach ${profile.name} at ${profile.baseUrl} — connection refused.`, { ' +
@@ -553,7 +575,7 @@ const HISTORICAL_LEAKS = [
     ["result.finishReason ?? 'unknown'"]],
 ];
 
-test('the detector itself still catches every historical leak this ladder found — EVERY expected expression, not just one', () => {
+test('the detector itself still catches every historical leak it was written from — EVERY expected expression, not just one', () => {
   const missed = [];
   for (const [name, snippet, expectedExprs] of HISTORICAL_LEAKS) {
     const found = new Set(taintedInterpolations(snippet, 'fixture').map((o) => o.replace(/^fixture: \$\{(.*)\}$/, '$1')));
@@ -565,7 +587,7 @@ test('the detector itself still catches every historical leak this ladder found 
     missed,
     [],
     'a historical leak expression no longer trips the detector — TAINTED_SUBSTRINGS, messageTemplates() ' +
-      'or interpolations() regressed silently (OAI-185).',
+      'or interpolations() regressed silently.',
   );
 });
 
@@ -574,8 +596,8 @@ test('the detector itself still catches every historical leak this ladder found 
 // git subjects, operator paths, foreign-build ledger values — into Markdown across
 // three files that compose one artifact. Every such interpolation must be a
 // markdown-safe wrapper call (`safeInline`/`safeBlockquoteLines`/`displayReason`),
-// or a reviewed FORMATTING exception. A new sink added unwrapped fails this test
-// (OAI-213). This is default-deny: the rule is not a list of known-bad fields (which
+// or an allowlisted FORMATTING exception. A new sink added unwrapped fails this
+// test. This is default-deny: the rule is not a list of known-bad fields (which
 // fails open on the next field added) but a positive whitelist of the ONLY safe
 // interpolation SHAPE, so a value reaching render under any name is caught.
 const SWEEP_RENDER_FILES = [
@@ -631,7 +653,7 @@ const SWEEP_SAFE_EXPRESSIONS = {
 };
 
 // String-aware comment stripping — a deliberate fork of the shared `withoutComments`
-// above, not consolidated with it: `withoutComments` also feeds the OAI-185 credential
+// above, not consolidated with it: `withoutComments` also feeds the credential
 // leak detector, whose historical-leak inputs are pinned by their own test, so making the
 // shared stripper string-aware would change that detector's blast radius.
 //
@@ -707,7 +729,7 @@ function sweepInterpolationAccepted(expr) {
   return /^\|\|\s*'[^'\\]*'$/.test(rest) || /^\|\|\s*"[^"\\]*"$/.test(rest);
 }
 
-test('every untrusted interpolation in the sweep render files is markdown-safe-wrapped or an exception (OAI-213)', () => {
+test('every untrusted interpolation in the sweep render files is markdown-safe-wrapped or an exception', () => {
   const offenders = [];
   for (const rel of SWEEP_RENDER_FILES) {
     const allowed = SWEEP_SAFE_EXPRESSIONS[rel];
@@ -724,14 +746,13 @@ test('every untrusted interpolation in the sweep render files is markdown-safe-w
     [],
     'an untrusted value reaches the sweep report unescaped — wrap it in safeInline/safeBlockquoteLines ' +
       '(fallback via a trailing `|| \'literal\'`); add a file-bound SWEEP_SAFE_EXPRESSIONS entry ONLY for ' +
-      'intentional Markdown/layout that is provably safe (OAI-213).',
+      'intentional Markdown/layout that is provably safe.',
   );
 });
 
-// Positive control: the grammar and the walker must actually fire. Proven against the
-// pre-fix files (56 offenders); here pinned so a broken grammar/walker fails rather
-// than passing vacuously.
-test('the sweep interpolation grammar rejects unsafe shapes and accepts the wrapped ones (OAI-213 positive control)', () => {
+// Positive control: the grammar must actually fire, pinned here so a broken
+// grammar fails rather than passing vacuously.
+test('the sweep interpolation grammar rejects unsafe shapes and accepts the wrapped ones (positive control)', () => {
   const mustReject = [
     'entry.model',
     "abortAfter ?? '(not recorded)'",
@@ -758,10 +779,10 @@ test('the sweep interpolation grammar rejects unsafe shapes and accepts the wrap
   const wrongly = [];
   for (const e of mustReject) if (sweepInterpolationAccepted(e)) wrongly.push(`accepted unsafe: ${e}`);
   for (const e of mustAccept) if (!sweepInterpolationAccepted(e)) wrongly.push(`rejected safe: ${e}`);
-  assert.deepEqual(wrongly, [], 'the sweep interpolation grammar mis-classified a control case (OAI-213).');
+  assert.deepEqual(wrongly, [], 'the sweep interpolation grammar mis-classified a control case.');
 });
 
-test('sweepStripComments preserves interpolations in strings/templates and drops only real comments (OAI-213)', () => {
+test('sweepStripComments preserves interpolations in strings/templates and drops only real comments', () => {
   // False NEGATIVE cases — an interpolation that must survive stripping, or the guard misses a sink:
   // a `//` inside a string before it.
   assert.deepEqual(interpolations(sweepStripComments('x(`- see https://example.com ${entry.model}`);')), ['entry.model']);

@@ -90,9 +90,9 @@ test('a loose config with a valid-JSON but wrong-shaped body is still repaired b
 // sk-LEAKEDSECRET}')` throws a message containing only "sk-LEAKEDS", not the
 // rest — so the marker below is deliberately short (well within that window)
 // rather than a long, easily-truncated-past string, or this test would pass
-// vacuously against a broken fix the same way an earlier draft of it did
-// (confirmed empirically: `doesNotMatch(..., /LEAKED-FRAGMENT/)` against a
-// 20-char marker never actually matched the truncated leak either way).
+// vacuously against a broken implementation: `doesNotMatch(...,
+// /LEAKED-FRAGMENT/)` against a 20-char marker never matches the truncated leak
+// either way.
 test('a JSON syntax error never echoes a fragment of the file\'s own content', () => {
   const dir = tempDir('oai-plugin-config-');
   const path = join(dir, 'providers.json');
@@ -103,10 +103,8 @@ test('a JSON syntax error never echoes a fragment of the file\'s own content', (
     (error) => {
       assert.ok(error instanceof UserError);
       assert.doesNotMatch(error.message, /LEAKED/);
-      // The fix makes this message fully static — assert the exact text too,
-      // not just the marker's absence. This discriminates against a reverted
-      // fix regardless of what any particular V8 version happens to quote,
-      // rather than depending on the truncation-window behavior above.
+      // Assert the exact message too, not just the marker's absence, so this
+      // does not depend on what any particular V8 version happens to quote.
       assert.equal(error.message, `Config at ${path} is not valid JSON.`);
       return true;
     },
@@ -152,18 +150,15 @@ function normalizedLoadConfigSource() {
   return fn.replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ');
 }
 
-// Same untestable-by-behavior class as job-store-modes.test.js's openOnce
-// pins: the actual race (a concurrent creator between readFileSync's ENOENT
-// and this writeFileSync) needs two processes or a syscall interleaving no
-// deterministic in-process test can drive. Pinned structurally instead —
+// The race here is a concurrent creator between readFileSync's ENOENT and
+// this writeFileSync. Pinned structurally —
 // anchored on ONE contiguous pattern spanning condition+action, not on the
 // textual ORDER of three separate substrings: an order-only check (does
 // "EEXIST" appear before "return loadConfigAttempt()" anywhere in the
 // function) would pass equally against `if (EEXIST) throw raceError; return
 // loadConfigAttempt(...)` — the exact inverted mutant, which recurses on
 // every OTHER write failure (EACCES, ENOSPC, EROFS — uncontrolled retries)
-// and throws raw on the one case meant to recurse. Confirmed by mutation:
-// with the branches swapped, an order-only version of this test still passed.
+// and throws raw on the one case meant to recurse.
 // Recursion is bounded (MAX_CREATE_RACE_ATTEMPTS in config.mjs) — a dangling
 // symlink at the config path makes readFileSync see ENOENT (the target is
 // missing) and this writeFileSync see EEXIST (the link itself isn't) on
@@ -184,21 +179,16 @@ test('the create-path write uses flag "wx" and recurses (bounded) into loadConfi
   );
 });
 
-// Same untestable-by-behavior class: reproducing a real EPERM/EACCES (or
-// EROFS/EIO) from chmodSync needs a file whose permissions genuinely can't
-// be changed, which an unprivileged test process cannot reliably construct
-// (and — see job-store-modes.test.js — ESM's named `fs` imports can't be
-// monkey-patched from a test either). Pinned structurally, anchored the same
-// way as the wx test above: on the throw being textually INSIDE the
-// "not a mode-less filesystem" if-body, not merely appearing somewhere after
-// the condition. An order-only check (does the throw text appear after the
+// Pinned structurally, anchored the same way
+// as the wx test above: on the throw being textually INSIDE the "not a
+// mode-less filesystem" if-body, not merely appearing somewhere after the
+// condition. An order-only check (does the throw text appear after the
 // condition text) would equally pass an inverted mutant that swallows every
-// real failure via an empty if-body and throws in an else. The polarity here
-// is deliberately inverted from a first draft of this fix: only ENOSYS
-// ("chmod not implemented") and EINVAL (the mode argument itself rejected as
-// meaningless) are what a genuinely mode-less filesystem returns — treating
-// every OTHER code as "no modes here" swallowed EROFS/EIO too, silently
-// leaving a loose file on a read-only mount.
+// real failure via an empty if-body and throws in an else. The polarity here is
+// deliberate: only ENOSYS ("chmod not implemented") and EINVAL (the mode
+// argument itself rejected as meaningless) are what a genuinely mode-less
+// filesystem returns — treating every OTHER code as "no modes here" would
+// swallow EROFS/EIO too, silently leaving a loose file on a read-only mount.
 test('the read-path chmod repair fails loud on anything but ENOSYS/EINVAL', () => {
   const body = normalizedLoadConfigSource();
 

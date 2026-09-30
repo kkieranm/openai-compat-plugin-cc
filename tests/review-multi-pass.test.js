@@ -66,7 +66,7 @@ test('--passes 3 unions the passes and counts agreement 3/3', async () => {
   assert.equal(report.model, 'test-model');
   assert.equal(report.salvaged, false);
   assert.equal(report.analysisCut, false);
-  // PC2-5: a top-level parsed:true so a scoring consumer gates it like a
+  // A top-level parsed:true so a scoring consumer gates it like a
   // single-pass record.
   assert.equal(report.parsed, true);
 });
@@ -114,9 +114,9 @@ test('all passes unreadable fails closed, never a clean review at exit 0', async
   const report = JSON.parse(result.stdout);
   assert.notEqual(report.kind, 'multi-pass-review');
   assert.match(result.stderr, /could not be read|not.*findings|unread/i);
-  // F2/P-c: the error envelope's attempts is non-null and spans BOTH passes — the
-  // OAI-116 field is populated, and the mixed-failure evidence is not one pass's
-  // alone. (Each pass makes one physical request → one attempt record.)
+  // The error envelope's attempts is non-null and spans BOTH passes, so the
+  // mixed-failure evidence is not one pass's alone. (Each pass makes one
+  // physical request → one attempt record.)
   assert.ok(Array.isArray(report.attempts), 'the --json error envelope carries attempts');
   assert.equal(report.attempts.length, 2, 'attempts span every pass, not just the first');
 });
@@ -168,18 +168,18 @@ test('a --passes 3 record scores through the real bench path (not just fields pr
 });
 
 test('the merged --json envelope carries every single-pass top-level key a consumer reads', async () => {
-  // Graduation test for the recurring class "the merged envelope drops a jsonReport
-  // field a consumer reads" (plan-gate → caveats; Pass 2 → parsed; Pass 3 →
-  // usage-reasoning, run-context, degraded). Default-deny: every top-level key of a
-  // real single-pass --json report must appear in the merged --passes envelope OR
-  // sit in the explicit PER_PASS_ONLY allowlist below. SCOPE: this samples a CLEAN
-  // run, so it default-denies every UNCONDITIONALLY-emitted top-level key (which is
-  // all of jsonReport's today — its body is one object literal, `parseFields` and
+  // Guards the class "the merged envelope drops a jsonReport field a consumer
+  // reads". Default-deny: every top-level key of a real single-pass --json
+  // report must appear in the merged --passes envelope OR sit in the explicit
+  // PER_PASS_ONLY allowlist below. SCOPE: this samples a CLEAN run, so it
+  // default-denies every UNCONDITIONALLY-emitted top-level key (which is all of
+  // jsonReport's today — its body is one object literal, `parseFields` and
   // `runTimings` return fixed key sets, and the only conditional key,
-  // `usage.completion_tokens_details`, is nested, not top-level). A future field
-  // emitted ONLY on a failure/salvage path would not appear in this clean sample and
-  // so would escape the deny — whoever adds a conditionally-emitted top-level field
-  // OWES this test a fixture that exercises it, or a conscious PER_PASS_ONLY entry.
+  // `usage.completion_tokens_details`, is nested, not top-level). A future
+  // field emitted ONLY on a failure/salvage path would not appear in this clean
+  // sample and so would escape the deny — whoever adds a conditionally-emitted
+  // top-level field OWES this test a fixture that exercises it, or a conscious
+  // PER_PASS_ONLY entry.
   const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
   const single = JSON.parse((await runCompanion(['review', '--json'], { configPath, cwd: dir })).stdout);
   const merged = JSON.parse((await runCompanion(['review', '--passes', '2', '--json'], { configPath, cwd: dir })).stdout);
@@ -206,10 +206,9 @@ test('the merged --json envelope carries every single-pass top-level key a consu
 });
 
 test('the merged SUCCESS envelope carries a whole-run attempts aggregate the bench reliability reader consumes', async () => {
-  // The OAI-9 bench-wiring residue, landing with OAI-11's --passes forwarding: a
-  // multi-pass success record's whole-run reliability reads TOP-LEVEL
+  // A multi-pass success record's whole-run reliability reads TOP-LEVEL
   // `report.attempts` (bench/lib/attempt-rows.mjs everyAttempt). Aggregate over ALL
-  // passes, so two clean passes contribute two answered attempts. Mutation: dropping
+  // passes, so two clean passes contribute two answered attempts. Dropping
   // the aggregate (or scoping it to one pass) reds `report.attempts.length` and the
   // consumer's `total`.
   const { dir, server, configPath } = await scenario(streams(clean), { contextLength: 131_072 });
@@ -231,16 +230,16 @@ test('the merged SUCCESS envelope carries a whole-run attempts aggregate the ben
 });
 
 test('a PARSE-NULL truncated pass flips the union finishReason — over every result-bearing pass, not just readable', async () => {
-  // The round-7 correction (found by codex-adversarial): the union truncation signal
-  // ranges over EVERY pass carrying a `result`, not the readable subset. A parse-null
-  // pass (a reply arrived that parseFindings could not read) is a non-observation
-  // EXCLUDED from `readable`, yet still carries its `finishReason` — and
-  // token-exhaustion (finish_reason 'length') is a leading cause of unreadability. So
-  // a run with one clean readable pass and one parse-null 'length' pass is truncated,
-  // and reading `readable` only would blind the signal on exactly the truncated pass.
+  // The union truncation signal ranges over EVERY pass carrying a `result`, not
+  // the readable subset. A parse-null pass (a reply arrived that parseFindings
+  // could not read) is a non-observation EXCLUDED from `readable`, yet still
+  // carries its `finishReason` — and token-exhaustion (finish_reason 'length')
+  // is a leading cause of unreadability. So a run with one clean readable pass
+  // and one parse-null 'length' pass is truncated, and reading `readable` only
+  // would blind the signal on exactly the truncated pass.
   //
-  // Mutation proof: change reportPasses's `passes.some(...)` to `readable.some(...)`
-  // and this reds — the truncated pass is not in `readable`, so finishReason reads
+  // Changing reportPasses's `passes.some(...)` to `readable.some(...)`
+  // reds this — the truncated pass is not in `readable`, so finishReason reads
   // null and the bench misclassifies the record as scored rather than truncated.
   let seen = 0;
   const handler = (request, response) => {
@@ -266,7 +265,7 @@ test('a PARSE-NULL truncated pass flips the union finishReason — over every re
 });
 
 test('the merged usage preserves reasoning_tokens and the top-level reasoning witness reads it', async () => {
-  // Mutation proof for sumUsage's completion_tokens_details branch: two passes each
+  // sumUsage's completion_tokens_details branch: two passes each
   // reporting 40 reasoning tokens sum to 80 on the merged usage, and the top-level
   // `reasoning` witness — which reads THIS merged usage — classifies observed.
   // Dropping the detail from the sum reds the count and reads `reasoning` unknown.
@@ -281,7 +280,7 @@ test('the merged usage preserves reasoning_tokens and the top-level reasoning wi
 });
 
 test('sumUsage rejects a negative base token count, nulling the whole usage', () => {
-  // Mutation proof for the base-gate `>= 0`: a negative prompt_tokens is corruption,
+  // The base-gate `>= 0`: a negative prompt_tokens is corruption,
   // not a measurement, so the whole top-level usage nulls (fail-closed) rather than
   // summing a corrupt total. Reverting `>= 0` lets it sum through, reding this.
   // Array-of-passes signature: sumUsage reads `pass.result.usage`.
@@ -295,11 +294,11 @@ test('sumUsage rejects a negative base token count, nulling the whole usage', ()
 });
 
 test('a parse-null pass discloses salvaged/salvageTrim/degraded on its entry; caveatUnion never ORs a non-observation in', () => {
-  // Mutation proof for F4: a salvaged/degraded parse-null pass (a reply arrived,
-  // unparseable) carries salvaged/salvageTrim/degraded on its OWN passes[] entry,
-  // so "nothing is concealed" holds for it. Reverting any of the three branch lines
-  // reds its assert. `salvageTrim` round-trips as-is: a realistic trimmed shape,
-  // where applied:true implies retained < original (the all-equal shape is the
+  // A salvaged/degraded parse-null pass (a reply arrived, unparseable) carries
+  // salvaged/salvageTrim/degraded on its OWN passes[] entry, so nothing about
+  // it is concealed. Reverting any of the three branch lines reds its assert.
+  // `salvageTrim` round-trips as-is: a realistic trimmed shape, where
+  // applied:true implies retained < original (the all-equal shape is the
   // untrimmed applied:false case).
   const nonObs = passEnvelope(
     { ok: true, parsed: null, structured: false, salvaged: true, salvageTrim: { applied: true, originalChars: 8000, retainedChars: 6000 }, result: { content: 'unreadable prose', reasoning: '', finishReason: 'stop' }, ledger: { entries: () => [] } },
@@ -371,7 +370,7 @@ test('a salvaged-but-unparseable pass discloses salvaged in passes[] but never f
 });
 
 test('passEnvelope surfaces a thrown pass\'s usage from either error carrier', () => {
-  // Mutation proof for the thrown-pass usage branch: a pass whose REQUEST threw
+  // The thrown-pass usage branch: a pass whose REQUEST threw
   // (the dominant stream-drop failure mode) may carry the reply's usage on
   // error.answer.usage (a reply-envelope failure) or error.usage (no envelope) —
   // the same two disjoint carriers errorReport reads. Reverting the branch leaves
@@ -406,13 +405,13 @@ test('a served model the server never confirmed fails closed', async () => {
   assert.equal(result.status, 1);
   const report = JSON.parse(result.stdout);
   assert.equal(report.reason, 'unconfirmed-served-model');
-  // PC2-2: the served-model refusal carries the completed passes' attempts, like
+  // The served-model refusal carries the completed passes' attempts, like
   // every other post-hoc failure — not attempts:null.
   assert.ok(Array.isArray(report.attempts) && report.attempts.length >= 1, 'the served-model failure carries its passes\' attempts');
 });
 
 // ---------------------------------------------------------------------------
-// LENSES (OAI-11): one pass per named lens, tagged by lens, the lens riding the
+// LENSES: one pass per named lens, tagged by lens, the lens riding the
 // prompt tail so the passes share a cached prefix.
 
 test('--lens correctness,security runs one pass per lens and tags findings by lens', async () => {
@@ -471,7 +470,7 @@ test('the lens directive reaches the sent user message on the unconstrained AND 
 });
 
 test('the lens directive reaches the structured schema-rejection FALLBACK request (path c)', async () => {
-  // The third prompt path §2 names: a server that rejects response_format forces
+  // The third prompt path: a server that rejects response_format forces
   // the structured request to fall back to unconstrained, which reuses the same
   // closed-over ladder — so the fallback must still carry the lens. The earlier
   // test covers (a) unconstrained and (b) structured success; this covers (c).

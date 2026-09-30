@@ -150,9 +150,8 @@ test('an option written AFTER the ledger path is refused, never silently ignored
 });
 
 test('a SECOND ledger path is refused rather than silently dropped', async () => {
-  // The first version of that guard looked only for a leading `--`, so passing
-  // two ledgers recovered the first and discarded the second in silence — the
-  // same defect one door along from the one it was written to close.
+  // A guard that looked only for a leading `--` would recover the first of two
+  // ledgers and discard the second in silence.
   const dir = tempDir();
   const { path, stamp } = ledgerIn(dir);
   const other = tempDir();

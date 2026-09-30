@@ -21,9 +21,7 @@
 // `logs/`, and NOT write `jobs.db` — state `0755`, logs `0777`, database `0600`.
 // Neither end generalises: state `0755` with a plugin-created `logs/` at `0700` is
 // safe, and state `0777` lets the attacker replace `logs/` and `jobs.db` alike, so
-// the distinction disappears rather than worsening. `job-store.mjs` requests `0700`
-// at creation only and never repairs an inherited directory, which is what makes
-// the middle case reachable.
+// the distinction disappears rather than worsening.
 //
 // **Nothing here throws.** The read runs inside the queue's `BEGIN IMMEDIATE`
 // (`job-queue.mjs` `decide`), where a throw rolls back the transaction, escapes

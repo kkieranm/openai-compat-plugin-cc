@@ -2,11 +2,7 @@
 //
 // Split from `abandon-cli.test.js` when that file outgrew the 300-line budget,
 // and the seam is a real one rather than a cut: that file owns which invocations
-// work and what the exit code is, this one owns what the operator is told. Nearly
-// every finding this feature's review found late was a sentence, not a branch —
-// a message claiming drainage it had not earned, a wait that was wrong by 2x, a
-// pid presented as a target. So the assertions live together where they can be
-// read as one contract.
+// work and what the exit code is, this one owns what the operator is told.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';

@@ -11,13 +11,10 @@
  * names it to a reader.
  *
  * **Hand-authored and schema-pinned. What is GENERATED is the prose**, which is
- * rendered from this list rather than transcribing it — and keeping those two
- * words apart matters, because an earlier draft of this comment called the
- * constant itself generated in the same breath as admitting its field column is
- * typed by hand. Nothing stops that column being wrong except
- * `tests/bench-reason-notes.test.js`, which asserts these keys ARE a closed
- * ledger entry's keys. The reader labels are ordinary prose and get ordinary
- * review; only membership is mechanised, because membership is what drifted.
+ * rendered from this list rather than transcribing it. Nothing stops the field
+ * column being wrong except `tests/bench-reason-notes.test.js`, which asserts
+ * these keys ARE a closed ledger entry's keys. The reader labels are ordinary
+ * prose; only membership is mechanised.
  *
  * It exists because the sentence below used to transcribe this list, and a
  * transcription is a mirror: a hand-written prose list can drift from the
@@ -66,32 +63,28 @@ function recordList() {
  * report already draws: those describe an `outcome` field, these describe a
  * `reason`, and only the second kind has a row in the table.
  *
- * Every paragraph is gated on the code it is ABOUT. Stated because the first
- * draft got it wrong in a way three reviewers had to find: the `transport`
- * disclaimer sat inside the `non-retryable-transport` block, so a sweep whose
+ * Every paragraph is gated on the code it is ABOUT. Nesting the `transport`
+ * disclaimer inside the `non-retryable-transport` block would leave a sweep whose
  * only failures were `transport` — the shape LM Studio actually produces —
- * printed a bare row with the one sentence forbidding the server-blame reading
+ * printing a bare row with the one sentence forbidding the server-blame reading
  * nowhere in the document.
  *
  * And a paragraph that speaks about the record says what it HOLDS, never where
- * else in the report a cause might be found. Three drafts tried the latter — "read `.code`", then
- * "the code is not carried in this report", then "the listing below usually
- * names it" — and review refuted all three, the last one decisively: a TLS
- * rejection's message is the words "certificate has expired" and contains no
- * `CERT_HAS_EXPIRED` anywhere, so the sentence was false for exactly the
- * examples the paragraph itself cites.
+ * else in the report a cause might be found: a TLS rejection's message is the
+ * words "certificate has expired" and contains no `CERT_HAS_EXPIRED` anywhere, so
+ * a pointer such as "the listing below usually names it" is false for that
+ * example.
  *
- * Two further drafts failed the other way, and the rule they produced is the one
- * stated here. "The reason code is all an attempt record carries" was simply
- * false — `newEntry` also records `index`, `cause`, `promptChars`,
- * `warmEligible`, `waitedMs`, `serverResponded`, `outcome` and both timings. Its
- * replacement, "the record has no peer-reachability field", read as narrow but is
- * a universal wearing a disguise: it quantifies over the *meaning* of every field
+ * The opposite error is as easy: "The reason code is all an attempt record
+ * carries" is false — `newEntry` also records `index`, `cause`, `promptChars`,
+ * `warmEligible`, `waitedMs`, `serverResponded`, `outcome` and both timings. "The
+ * record has no peer-reachability field" reads as narrow but is a universal
+ * wearing a disguise: it quantifies over the *meaning* of every field
  * that might ever be added, so it can go false via a field named anything at all,
- * and a test pinning one literal name would not notice. That draft would now be
- * doubly wrong: `serverResponded` is a *response* field rather than a
- * reachability one, so it neither satisfies the claim nor refutes it, and no
- * literal-name test could have told the difference.
+ * and a test pinning one literal name would not notice. `serverResponded` shows
+ * why: it is a *response* field rather than a reachability one, so it neither
+ * satisfies the claim nor refutes it, and no literal-name test could tell the
+ * difference.
  *
  * **So a paragraph does not assert what the record LACKS. The one that makes
  * record claims — `non-retryable-transport`'s, the only entry that needs to —

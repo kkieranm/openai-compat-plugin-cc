@@ -1,8 +1,5 @@
-// The spike: can a detached worker be launched, survive its parent, and be
-// observed from a different process — without hanging the suite?
-//
-// This is the risky unknown in the whole feature and it is proved before
-// anything real is built on it. Everything else here is mechanical; this is not.
+// Can a detached worker be launched, survive its parent, and be observed from
+// a different process — without hanging the suite?
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { writeFileSync } from 'node:fs';

@@ -24,9 +24,7 @@ test('a worker that died with a cancellation pending is not published as a clean
     await deadRunning(scenario.state, 'justdied', { cancelled: false });
     // FORGERY. The job log is the one channel model output can reach — through
     // `SALVAGED_OUTCOME` — so marker-shaped bytes are planted in it here. This
-    // establishes what it can: the reconciler does not read the log. It cannot
-    // establish provenance, because the worker persists the model's answer rather
-    // than printing it, so no fixture can drive genuine model output onto a log.
+    // establishes that the reconciler does not read the log.
     writeFileSync(logPath(scenario.state, seq), ackPayload('killed'));
 
     await scenario.run(['status', '--all']);
@@ -95,9 +93,8 @@ test('a worker with no id to announce writes nothing at all', { skip: NEEDS_SQLI
     const previous = process.env.OAI_PLUGIN_STATE;
     process.env.OAI_PLUGIN_STATE = scenario.state;
     try {
-      // The guard the plan asked for by name, so that a future caller driving the
-      // default `onCancel` cannot drop an `undefined`-id file into a real state
-      // directory — where it would be read as some job's acknowledgement.
+      // The guard exists so that a future caller driving the default `onCancel`
+      // cannot drop an `undefined`-id file into a real state directory.
       assert.equal(writeCancelAck(seq, undefined), false);
       assert.equal(writeCancelAck(undefined, 'noid'), false, 'and neither half is enough on its own');
     } finally {
@@ -229,17 +226,17 @@ test('a worker whose acknowledgement will not write exits anyway', { skip: NEEDS
 
     assert.equal((await scenario.run(['cancel', id])).status, 0);
     // The claim, stated narrowly: an unguarded throw would ALSO end this process,
-    // so the exit alone does not separate decision P from an uncaught error. What
-    // it does redden on is the failure mode that matters — a worker waiting on a
-    // write while a paid-for request keeps generating.
+    // so the exit alone does not separate the guarded exit from an uncaught error.
+    // What it does redden on is the failure mode that matters — a worker waiting
+    // on a write while a paid-for request keeps generating.
     await waitForExit(running.worker_pid);
 
-    // What discriminates the GUARD, and it had to: the verdict alone does not. An
-    // unguarded throw kills the worker too — dead pid, no acknowledgement, identical
-    // `cancel-unconfirmed` — so measured against the row this witness was green with
-    // the catch removed. What only the guarded path produces is a clean exit line on
-    // the job log instead of an uncaught EEXIST trace, and the positive match is what
-    // gives the absence assertion beside it a path that fires.
+    // What discriminates the GUARD, and it had to: the verdict alone does not.
+    // An unguarded throw kills the worker too — dead pid, no acknowledgement,
+    // identical `cancel-unconfirmed` — so the row alone is the same with the
+    // catch removed. What only the guarded path produces is a clean exit line
+    // on the job log instead of an uncaught EEXIST trace, and the positive
+    // match is what gives the absence assertion beside it a path that fires.
     //
     // **It does NOT establish that a write was attempted, and must not be read as
     // if it did.** Delete the `writeCancelAck` call outright and every assertion

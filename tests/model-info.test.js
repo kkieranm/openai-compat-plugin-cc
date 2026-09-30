@@ -86,9 +86,9 @@ test('vLLM is read from the models payload we already fetched, with no extra req
   );
   await server.close();
 
-  // NOT "vLLM ..." — corrected 2026-08-09. `max_model_len` is a field convention,
-  // not a fingerprint: oMLX publishes it too, and this reader runs first, so the
-  // old label named the wrong product for every server that is not vLLM.
+  // NOT "vLLM ...". `max_model_len` is a field convention, not a fingerprint:
+  // oMLX publishes it too, and this reader runs first, so a vLLM label would name
+  // the wrong product for every server that is not vLLM.
   assert.equal(described.source, '/v1/models max_model_len');
   assert.equal(windowFor(described, 'chat-a'), 8192);
   assert.equal(server.requests.length, 0, 'the free path must not probe native endpoints');
@@ -110,12 +110,10 @@ test('TGI /info reports its configured total', async () => {
   assert.equal(windowFor(described, 'chat-a'), 16384);
 });
 
-// CAPTURED FROM A RUNNING oMLX 0.5.7 ON 2026-08-09, trimmed to the fields this
-// reader touches plus enough envelope to be recognisable. The previous test used
-// `{data: [...]}` — the DOCUMENTED shape — and so asserted the same mistake the
-// code made, which is why a reader that never worked against a real oMLX passed
-// for months. A fixture written from the same source as the implementation
-// cannot falsify it.
+// CAPTURED FROM A RUNNING oMLX 0.5.7, trimmed to the fields this reader touches
+// plus enough envelope to be recognisable. Not the DOCUMENTED `{data: [...]}`
+// shape, which a real oMLX does not serve here: a fixture written from the same
+// source as the implementation cannot falsify it.
 const OMLX_STATUS = {
   final_ceiling: 30111512115,
   model_count: 1,
@@ -134,9 +132,9 @@ const OMLX_STATUS = {
 };
 
 // The real `/v1/models` beside it, captured in the same session. oMLX puts
-// `max_model_len` here too, which is exactly how the broken reader stayed hidden:
-// the vLLM lens detected the same window and the plugin reported a correct number
-// under the provenance "detected via vLLM" — for a server that is not vLLM.
+// `max_model_len` here too, so the `max_model_len` lens detects the same window
+// and reports it under its own source — which is how a broken oMLX reader would
+// go unnoticed at runtime.
 const OMLX_MODELS = {
   object: 'list',
   data: [{
@@ -148,9 +146,10 @@ test('oMLX is read from the REAL envelope, whose entries are under `models`', as
   const described = await describeAgainst({ '/v1/models/status': OMLX_STATUS }, OMLX_MODELS);
 
   assert.equal(windowFor(described, 'mlx-community--Qwen3-14B-4bit'), 40960);
-  // The window is right, and BOTH lenses agree on it — which is precisely why the
-  // broken reader hid for so long. What must never come back is the provenance
-  // claim: this server is oMLX, and nothing here may call it vLLM.
+  // The window is right, and BOTH lenses agree on it — which is precisely why a
+  // broken reader would go unnoticed at runtime. What must never come back is
+  // the provenance claim: this server is oMLX, and nothing here may call it
+  // vLLM.
   assert.doesNotMatch(described.source, /vLLM/);
   assert.doesNotMatch(described.source, /unverified/);
 });
@@ -167,7 +166,7 @@ test('the oMLX envelope is read when nothing cheaper answers', async () => {
   assert.equal(described.source, 'oMLX /v1/models/status');
 });
 
-test('THE NEGATIVE TWIN: `data` is still accepted, so the fix did not just swap one guess for another', async () => {
+test('THE NEGATIVE TWIN: `data` is still accepted, so the oMLX reader is not one guess swapped for another', async () => {
   const described = await describeAgainst({
     '/v1/models/status': { data: [{ id: 'chat-a', max_context_window: 32768 }] },
   });
@@ -177,7 +176,7 @@ test('THE NEGATIVE TWIN: `data` is still accepted, so the fix did not just swap 
 
 test('an oMLX envelope carrying no window is DECLINED, not reported as zero', async () => {
   // The empty-but-successful probe: mlx_lm.server returns HTTP 200 with
-  // `{object: 'list', data: []}` on this path. Observed 2026-08-09. A reader that
+  // `{object: 'list', data: []}` on this path. A reader that
   // treated that as an answer would shadow the working /v1/models.
   const described = await describeAgainst({
     '/v1/models/status': { object: 'list', data: [] },

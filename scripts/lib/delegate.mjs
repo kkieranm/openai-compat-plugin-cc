@@ -47,10 +47,7 @@ export function parseNumericOptions(options) {
         : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 }),
     temperature:
       options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
-    // Both bounded above, for the reason MAX_BUDGET_SECONDS states. `--timeout`
-    // carried the same latent flaw before this feature existed; it is one
-    // expression away and left unfixed only if you decide a known immediate-fire
-    // bug is fine next to the one you just closed.
+    // Both bounded above, for the reason MAX_BUDGET_SECONDS states.
     timeoutSeconds:
       options.timeout === undefined
         ? undefined
@@ -111,26 +108,25 @@ export async function describeProvider(profile, { required = true } = {}) {
 /**
  * Which model to send to, and how big its window is.
  *
- * The server is consulted every time, and it did not used to be: a profile
- * answering both questions in config — `defaultModel` plus `contextLength` —
- * skipped the probe entirely. That became
- * untenable the moment `planSelection` could refuse an id for being absent from
- * the catalogue, because `/oai:setup` probes unconditionally and this did not.
- * Same authority, two different inputs: setup printed `reachable, but /oai:task
- * cannot run here` and `No provider can take a task right now`, while the task
- * it was describing ran perfectly well.
+ * The server is consulted every time, even for a profile answering both
+ * questions in config — `defaultModel` plus `contextLength`. `planSelection` can
+ * refuse an id for being absent from the catalogue, and `/oai:setup` probes
+ * unconditionally; skipping the probe here would give the same authority two
+ * different inputs, so setup could print `reachable, but /oai:task cannot run
+ * here` and `No provider can take a task right now` while the task it was
+ * describing ran perfectly well.
  *
- * That is this repo's most-repeated defect class with its sign flipped — the
- * REPO_TRAPS entry says two review rounds produced nine instances of setup
- * promising what a task refused, and that "the cure was a single authority, not
- * a better approximation". Calling one planner is not enough if the two callers
- * feed it different evidence, and the only fix with ONE authority is one input.
- * Teaching setup this function's probing rule would be a second copy of it.
+ * That is this repo's most-repeated defect class — setup promising what a task
+ * refuses (see `.claude/REPO_TRAPS.md`) — with its sign flipped, and the cure is
+ * a single authority, not a better approximation. Calling one planner is not
+ * enough if the two callers feed it different evidence, and the only fix with
+ * ONE authority is one input. Teaching setup this function's probing rule would
+ * be a second copy of it.
  *
  * The cost is one `/v1/models` GET, against a server the next line is about to
- * post a whole prompt to. `required: mustChooseModel` is unchanged, so a probe
- * that fails is still only fatal when there is no configured model to fall back
- * on. Found by the built-in review, reproduced end to end.
+ * post a whole prompt to. With `required: mustChooseModel`, a probe that fails
+ * with a `UserError` is only fatal when there is no requested or configured
+ * model to fall back on; any other failure is rethrown.
  */
 export async function resolveTarget(profile, options) {
   const mustChooseModel = !options.model && !profile.defaultModel;

@@ -76,12 +76,11 @@ export const TRANSPORT = 'transport';
 /**
  * A pre-response transport failure this client does not recognise as transient.
  *
- * Named for the decision it records, after a first draft called it `unreachable`
- * and was refuted: `request.on('error')` before headers carries TLS certificate
- * rejections and protocol and parser errors — each fired by bytes a peer sent —
- * beside failures with no `code` at all, which establish nothing either way.
- * "Unreachable" would have asserted a fact the classification never
- * established, which is the exact defect class the module note above exists to
+ * Named for the decision it records, not `unreachable`: `request.on('error')`
+ * before headers carries TLS certificate rejections and protocol and parser
+ * errors — each fired by bytes a peer sent — beside failures with no `code` at
+ * all, which establish nothing either way. "Unreachable" would assert a fact the
+ * classification never established, which is the exact defect class the module note above exists to
  * keep out. So the name says what was decided and the reader takes `.code` for
  * the rest.
  */

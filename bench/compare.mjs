@@ -21,8 +21,7 @@ import { renderComparison } from './lib/compare-report.mjs';
 const SPEC = { valueFlags: ['baseline'], booleanFlags: [], repeatableFlags: [] };
 
 // A file becomes an entry only if it is a REVIEW record — a sweep or task record
-// carrying a `results` array is refused here, before normalization, since it is
-// OAI-151's concern, not this reader's.
+// carrying a `results` array is refused here, before normalization.
 function readEntry(path) {
   let text;
   try {
@@ -39,7 +38,7 @@ function readEntry(path) {
   if (!isReviewRecord(record)) {
     throw new UserError(
       `${path} is not a bench review record.`,
-      { hint: 'Expected a { runsPerCase, options, results } record from `npm run bench`; sweep/task records are out of scope (OAI-151).' },
+      { hint: 'Expected a { runsPerCase, options, results } record from `npm run bench`; sweep/task records are out of scope.' },
     );
   }
   return { path, stamp: basename(path).replace(/\.json$/, ''), record };

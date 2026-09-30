@@ -52,7 +52,7 @@ test('an abandoned row reads failed / operator-abandoned, never cancelled', { sk
 
   const after = readJob(state, 'wedged');
   assert.equal(after.state, 'failed');
-  assert.notEqual(after.state, 'cancelled', 'OAI-66: an unconfirmed stop must not read as a tidy cancellation');
+  assert.notEqual(after.state, 'cancelled', 'an unconfirmed stop must not read as a tidy cancellation');
   assert.equal(after.failure.reason, 'operator-abandoned');
 });
 

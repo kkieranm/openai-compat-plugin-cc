@@ -41,8 +41,7 @@ function failWalTimes(DatabaseSync, n) {
 
 test('a busy during the open is RETRIED, not reported', { skip: NEEDS_SQLITE }, async () => {
   // The mutation this exists for: replacing `withBusyRetry(openOnce, …)` with a
-  // bare `openOnce()` in `openStore`. Without this witness that edit left 651
-  // tests green.
+  // bare `openOnce()` in `openStore`.
   const state = stateDir();
   const { DatabaseSync } = await import('node:sqlite');
   const injection = failWalTimes(DatabaseSync, 1);

@@ -6,10 +6,8 @@
 //    from a stale worker, zero overlap of model calls, and never signalling a
 //    process cannot all hold at once; automatically this repo keeps the LAST two
 //    by paying in recovery — a suspended or recycled-pid worker wedges the head
-//    of the queue and is named in `/oai:status` for a human to act on. (It read
-//    "the first two" until 2026-08-14, which contradicted the same sentence's
-//    "paying in recovery" and the wedge described right after it.) This does not
-//    stop a worker ending its *own* run on cancel or `--max-wait`.
+//    of the queue and is named in `/oai:status` for a human to act on. This does
+//    not stop a worker ending its *own* run on cancel or `--max-wait`.
 //
 //    **Only the operator may trade that corner back**, and `/oai:abandon` is
 //    where: it buys finite recovery by spending zero-overlap, per invocation and

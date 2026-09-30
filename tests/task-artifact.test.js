@@ -76,9 +76,7 @@ test('no diff at all is ABSENT, never rejected', async () => {
 });
 
 test('the note never lets "applies" imply "correct"', async () => {
-  // Instance 14's shape: a check that converts a loud unknown into a
-  // confident-looking result. Applying is the strongest claim available and it
-  // is a weak one.
+  // Applying is the strongest claim available and it is a weak one.
   const applies = artifactNote({ state: 'applies', detail: null });
   assert.match(applies, /applies cleanly/);
   assert.match(applies, /not evidence it is right/);
@@ -99,10 +97,8 @@ test('checking never touches the working tree', async () => {
 });
 
 test('the verdict is computed where every other run fact is, so a job can carry it', async () => {
-  // The regression this exists to stop: computing the verdict at RENDER time meant
-  // /oai:result could never have it, so pass 1 refused --template patch
-  // --background — which made the patch template unreachable through the delegate
-  // agent, whose only submission is a background one. Nothing tested any of it.
+  // Computed at RENDER time, the verdict would never reach /oai:result — and the
+  // delegate agent's only submission is a background one, read back through it.
   const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
   const dir = await repoWith('one\ntwo\nthree\n');
   const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: dir });
@@ -113,8 +109,8 @@ test('the verdict is computed where every other run fact is, so a job can carry 
 });
 
 test('a cwd that is not a work tree is UNAVAILABLE, and that branch is reachable', async () => {
-  // The pass-1 version matched a stderr string `git apply --check` never emits,
-  // so the branch could not fire at all. Driven against a real non-repo dir.
+  // Matching a stderr string `git apply --check` never emits would leave this
+  // branch unable to fire. Driven against a real non-repo dir.
   const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
   const notARepo = tempDir('oai-norepo-');
   const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: notARepo });

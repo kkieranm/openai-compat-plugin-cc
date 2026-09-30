@@ -21,8 +21,8 @@ function describeAuth(profile, rawProfile, built) {
  * Formats whatever `effectiveWindow` resolved, and says where it came from.
  *
  * Naming the source matters: a detected number and a hand-set one carry
- * different confidence, and one probe shape (oMLX) is documented rather than
- * verified. Reporting the window of the model a task would actually use is the
+ * different confidence.
+ * Reporting the window of the model a task would actually use is the
  * point — naming some other loaded model's window would promise a guard the task
  * will not have.
  */

@@ -30,10 +30,10 @@ test('a strict schema declares every property required and forbids extras', () =
 });
 
 test('every string and array in the schema carries a ceiling', () => {
-  // The confirmed defect class, promoted from a comment to a guard: an
-  // unbounded field is a runaway waiting to happen, and one measured run
-  // generated all 16,384 tokens it was allowed and returned nothing.
-  // A field added later without a cap fails here rather than in production.
+  // The defect class: an unbounded field is a runaway waiting to happen, and
+  // one measured run generated all 16,384 tokens it was allowed and returned
+  // nothing. A field added later without a cap fails here rather than in
+  // production.
   const missing = [];
   const walk = (node, path) => {
     const types = Array.isArray(node.type) ? node.type : [node.type];
@@ -288,7 +288,7 @@ test('emptyFindingsDocument accepts the observed shapes and refuses everything e
   assert.equal(emptyFindingsDocument('findings: [{"file":"a"}]'), null);
 });
 
-test('mutation-1 witness: an arbitrary prose reply with no findings line is unreadable', () => {
+test('an arbitrary prose reply with no findings line is unreadable', () => {
   // Its refusal routes SOLELY through the line-1 anchor — findingsInYaml and extractJson
   // both decline (no `findings:` opener, no brackets), and the tail-scan finds nothing.
   // This is the negative that goes red if the anchor is removed.
@@ -314,8 +314,8 @@ test('a real bracketed payload after findings: [] is read by extractJson, not th
 
 // A reply that DECLARED findings: [] yet carries a real finding extractJson could not
 // read must stay loud-unreadable, never silently clean. These are the bracket-guard's
-// reason to exist (OAI-212 Pass 4, F1): each has a bracketed payload extractJson maps
-// to null, so pre-guard the acceptor would have read them clean and vanished the finding.
+// reason to exist: each has a bracketed payload extractJson maps to null, so without
+// the guard the acceptor would read them clean and vanish the finding.
 const HIDDEN_FINDING_REPLIES = {
   // Quote-blinded: the unterminated `"` leaves extractJson's scanner in-string, hiding
   // the trailing array.

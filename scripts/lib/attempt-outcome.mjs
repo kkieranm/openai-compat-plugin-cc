@@ -94,13 +94,9 @@ function reachedTheModel(error, timings) {
  *     so model output was served, so headers were. See below: this is the only
  *     witness that survives a site forgetting.
  *
- * The fourth exists because the third turned out to be a single point of
- * forgetting in fact and not just in theory. A verifier DELETED the flag write
- * in `body.mjs`'s `bad-json` branch and the whole suite stayed green — so
- * "the flag is their only evidence" was true, and the guard for it was not
- * there. `prefillMs` comes from the timings the caller measured rather than from
- * anything a minting site remembered to set, which is exactly the failure that
- * proved real. It cannot produce a false positive: model text implies headers.
+ * The fourth does not depend on a minting site remembering the flag:
+ * `prefillMs` comes from the timings the caller measured. It cannot produce a
+ * false positive: model text implies headers.
  *
  * It is honestly a BACKSTOP, not a live path. Every production site that can
  * measure a prefill already sets the flag — `sse.mjs`, `http.mjs`, and
@@ -111,22 +107,20 @@ function reachedTheModel(error, timings) {
  * forgets.
  *
  * And it has a cost: a witness that reconstructs the value can MASK a test
- * written to guard a site. The end-to-end case for the delivered-body path
- * measured a prefill, so it went on passing with the flag write deleted.
- * `tests/attempt-response-sites.test.js` now drives each covered site with no
- * model text at all, so the flag is the only witness there and deleting it
- * reddens exactly one case. That file also names the two sites it does NOT
- * reach — read it before believing any site here is guarded.
+ * written to guard a site. `tests/attempt-response-sites.test.js` drives each
+ * covered site with no model text at all, so the flag is the only witness there
+ * and deleting it reddens exactly one case there. That file also names sites it
+ * does
+ * NOT reach, and no test asserts the flag that `http-errors.mjs`'s
+ * `assertDecodable` sets — read it before believing any site here is guarded.
  *
  * What it does NOT establish is reachability. `false` is the absence of an
  * obtained response, not evidence about what was at the other end.
  */
 function obtainedResponse(error, { prefillMs } = {}) {
   if (error?.serverResponded === true) return true;
-  // A status CODE, not a property that happens to exist. `!== undefined` admitted
-  // `null`; `typeof === 'number'` still admitted `NaN`, `0` and `Infinity`, none
-  // of which any server sent. Each loosening turned "no response" into "a
-  // response" for a request that never got one.
+  // A status CODE, not a property that happens to exist: `!== undefined` admits
+  // `null`, and `typeof === 'number'` admits `NaN`, `0` and `Infinity`.
   if (Number.isInteger(error?.status) && error.status >= 100) return true;
   if (COMPLETION_SHAPES.has(error?.reason)) return true;
   // Likewise a MEASUREMENT, not merely a non-null. A `NaN` here would be a
@@ -157,10 +151,9 @@ export function reclassifiable(entry) {
       entry.outcome = 'refused';
       // `null`, NOT `SHAPE_REJECTED`. That code means "the shape was rejected and
       // nothing replaced it", so stamping it on an entry that WAS replaced makes
-      // the record assert both at once — the same misleading-serialized-entry
-      // defect this feature removes, moved from the outcome into the reason. It
-      // also keeps a `refused` entry byte-identical to the records made before
-      // this change, which a later re-measure is differenced against.
+      // the record assert both at once. It also keeps a `refused` entry
+      // byte-identical to older records, which a later re-measure is differenced
+      // against.
       entry.reason = error?.reason ?? null;
     },
   });
@@ -176,12 +169,11 @@ export function reclassifiable(entry) {
  * and an entry marked `refused` in advance files a run that died as benign
  * capability negotiation.
  *
- * It sits in this module rather than beside the slot it feeds, which is a seam
- * question a reviewer raised and this answers: what it *writes* is an ending —
- * the outcome and reason of one request — while "did a replacement follow" is
- * sequence state, and the slot holding that stays in `attempt-ledger.mjs`. The
- * alternative was tried on paper and rejected: `closeHandle.refuse` below calls
- * this, so moving it would make this module import from the one that imports it.
+ * It sits in this module rather than beside the slot it feeds: what it *writes*
+ * is an ending — the outcome and reason of one request — while "did a
+ * replacement follow" is sequence state, and the slot holding that stays in
+ * `attempt-ledger.mjs`. `closeHandle.refuse` below calls this, so moving it
+ * would make this module import from the one that imports it.
  *
  * Deliberately NOT routed through `fail()`. That consults `reachedTheModel` and
  * can add the request key to `dispatched`, which is what makes a later identical

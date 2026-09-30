@@ -79,15 +79,14 @@ function readVllm(payload) {
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_model_len))
     .map((entry) => ({ id: entry.id, window: entry.max_model_len }));
-  // NAMES THE FIELD, NOT A VENDOR (corrected 2026-08-09, against a running oMLX).
+  // NAMES THE FIELD, NOT A VENDOR (checked against a running oMLX).
   //
-  // This said "vLLM /v1/models max_model_len". `max_model_len` is a convention
-  // vLLM popularised, not a fingerprint — oMLX 0.5.7 publishes it too — and this
-  // reader runs FIRST, so the plugin reported "detected via vLLM" for a server
-  // that is not vLLM. A correct number under a wrong provenance is exactly what
-  // this repo's "a fact names its source" rule exists against; here the source
-  // line was itself the guess. The order stays (a window already in hand costs no
-  // round trip); what it buys is the window, not a claim about the product.
+  // `max_model_len` is a convention vLLM popularised, not a fingerprint — oMLX
+  // 0.5.7 publishes it too — and this reader runs FIRST, so naming the vendor
+  // would report "detected via vLLM" for a server that is not vLLM. A correct
+  // number under a wrong provenance is exactly what this repo's "a fact names its
+  // source" rule exists against. The order stays (a window already in hand costs
+  // no round trip); what it buys is the window, not a claim about the product.
   return models.length > 0 ? { models, source: SOURCE_VLLM } : null;
 }
 
@@ -126,16 +125,14 @@ function readTgi(payload) {
 }
 
 /**
- * oMLX. **VERIFIED 2026-08-09 against a running oMLX 0.5.7.** This said
- * "UNVERIFIED: from documentation, not a running server", and the doubt was
- * earned: the documented shape was HALF wrong. Per-entry `max_context_window` is
- * right; the ENVELOPE is not — oMLX returns `{final_ceiling, model_count,
- * loaded_count, models: [...]}`, so entries sit under `models`, never `data`, and
- * reading only `data` made this return null against every real oMLX there has
- * been. The failure was INVISIBLE because the cheaper `max_model_len` lens above
- * detects the same window, so the plugin printed a right number with a wrong
- * source. The unit test could not catch it either: it was written from the same
- * documentation as the code and asserted the same mistake.
+ * oMLX. **VERIFIED against a running oMLX 0.5.7.** The documented shape is HALF
+ * wrong. Per-entry `max_context_window` is right; the ENVELOPE is not — oMLX
+ * returns `{final_ceiling, model_count, loaded_count, models: [...]}`, so
+ * entries sit under `models`, never `data`, and reading only `data` would
+ * return null against every real oMLX. That failure would be INVISIBLE because
+ * the cheaper `max_model_len` lens above detects the same window first and
+ * reports it under its own correct source, so against a real oMLX a broken
+ * reader here goes unnoticed in the plugin's own output.
  *
  * `data` is still accepted — dropping it would swap a verified shape for an
  * unverified assumption pointing the other way.
@@ -232,17 +229,6 @@ function merge(ids, detected) {
   // narrower — filtered, aliased or permission-scoped. Absence from a bare
   // /v1/models list is not evidence a model isn't loaded; this is what keeps
   // that true.
-  //
-  // Not every dialect's list is exhaustive, and that is safe rather than
-  // overlooked: `readVllm` and `readOmlx` keep only entries carrying a window,
-  // so their ids are a FILTERED view. Both build from the `/v1/models` payload
-  // itself, so what they filter out is still in `ids` above and still in the
-  // union `unservedProblem` tests — the two halves cover each other. Only
-  // `readLmStudio` can contribute an id `/v1/models` lacks, and it filters
-  // nothing. So there is no id this pair can both miss while the server would
-  // serve it. Raised as a completeness-provenance gap; kept as is because no
-  // failing case exists, and a `catalogueComplete` flag would be ceremony
-  // asserting something no caller could act on.
   return { models, source: detected.source, catalogueIds: detected.models.map((model) => model.id) };
 }
 
@@ -279,14 +265,13 @@ export function effectiveWindow(profile = {}, described, explicitModel) {
       problem: plan.problem,
     };
   }
-  // `modelId` and `because` here too, and the comment above is exactly why this
-  // branch was wrong to omit them. A server that is up but serves no
-  // `/v1/models` reaches here with `described: null` and a `defaultModel` the
-  // planner resolves happily — so the text report printed `ok` and listed the
-  // provider under "Ready:" while `--json` reported `selectedModel: null`. Two
-  // views of one run disagreeing about whether a model had even been chosen,
-  // which is the defect the line above declares itself against. Found by the
-  // built-in review, reproduced by execution.
+  // `modelId` and `because` here too, for exactly the reason the comment above
+  // gives. A server that is up but serves no `/v1/models` reaches here with
+  // `described: null` and a `defaultModel` the planner resolves happily — so
+  // without them the text report would print `ok` and list the provider under
+  // "Ready:" while `--json` reported `selectedModel: null`. Two views of one run
+  // disagreeing about whether a model had even been chosen, which is the defect
+  // the line above declares itself against.
   if (!described) {
     return { window: undefined, source: null, modelId: plan.modelId, because: plan.because, problem: plan.problem };
   }

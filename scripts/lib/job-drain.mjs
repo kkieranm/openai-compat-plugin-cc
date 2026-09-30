@@ -48,14 +48,14 @@ export function couldDrain(db, nowMs) {
   // its old beat is still fresh passes for up to `STALE_BEAT_MS`. Narrowed from
   // unbounded to a minute, not closed.
   //
-  // **And the other direction, which the first draft of this comment omitted:
-  // this bar is STRICTER than `decide`'s own eligibility.** `decide` seats a head
-  // on a live pid and a known version, never on beat freshness — so a genuinely
-  // live successor whose beat has gone stale (machine sleep, or a `beat` write
-  // swallowed by `SQLITE_BUSY`) IS acquirable while this returns false and the
-  // sentence is withheld. Under-claiming is the direction to fail in: a missing
-  // sentence costs a reader nothing, and the alternative is the recycled-pid
-  // false positive above.
+  // **And the other direction: this bar is STRICTER than `decide`'s own
+  // eligibility.** `decide` seats a head on a live pid and a known version,
+  // never on beat freshness — so a genuinely live successor whose beat has gone
+  // stale (machine sleep, or a `beat` write swallowed by `SQLITE_BUSY`) IS
+  // acquirable while this returns false and the sentence is withheld.
+  // Under-claiming is the direction to fail in: a missing sentence costs a
+  // reader nothing, and the alternative is the recycled-pid false positive
+  // above.
   if (!Number.isFinite(Date.parse(head.last_beat_at ?? ''))) return false;
   if (beatIsStale(head, nowMs)) return false;
 

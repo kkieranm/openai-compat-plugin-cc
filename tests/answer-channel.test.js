@@ -57,12 +57,12 @@ test('a response carrying no message at all is still malformed', async () => {
 });
 
 test('a marker-bearing finish_reason is shown in full, but never baked into .message', async () => {
-  // finish_reason is read straight off the server's payload with no
-  // validation (completion.mjs's applyFrame), so it can be as secret-shaped as
-  // any other server-controlled value this feature guards. It travels on
-  // .finishReason, composed into the foreground display by transportDetail —
-  // this is `task` (interactive), so the marker should still be VISIBLE,
-  // just not as part of the raw .message string a persisted record would keep.
+  // finish_reason is read straight off the server's payload with no validation
+  // (completion.mjs's applyFrame), so it could carry a secret-shaped string. It
+  // travels on .finishReason, composed into the
+  // foreground display by transportDetail — this is `task` (interactive), so
+  // the marker should still be VISIBLE, just not as part of the raw .message
+  // string a persisted record would keep.
   const marker = 'SECRET_MARKER_finishreason';
   const chat = () => [deltaFrame({}), { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: marker }] }];
   const result = await runWith(chat, ['task', 'explain this']);

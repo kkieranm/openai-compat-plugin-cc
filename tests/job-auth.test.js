@@ -88,10 +88,10 @@ test('the policy records where a key was authorised, never the key', () => {
   assert.ok(!JSON.stringify(policy).includes('sk-a'), 'the credential must not reach the row');
 });
 
-// The widening this item adds: a profile with NO apiKey but a non-empty query
-// (and not ad hoc) still gets `mode: 'profile'`, so a worker can re-resolve the
-// query later — but `apiKeyAuthorized` records that no key was ever authorised,
-// which is the fact that stops a key gained later from being sent.
+// The widening: a profile with NO apiKey but a non-empty query (and not ad hoc)
+// still gets `mode: 'profile'`, so a worker can re-resolve the query later —
+// but `apiKeyAuthorized` records that no key was ever authorised, which is the
+// fact that stops a key gained later from being sent.
 test('a query-only profile is widened to carry provenance, with the key marked unauthorised', () => {
   const policy = authPolicyFor({ name: 'vendor', baseUrl: 'https://real.example/v1', query: '?tenant=7' });
 
@@ -131,17 +131,15 @@ test('the profile still pointing where the job was authorised supplies the key',
   });
 });
 
-// The fail-open regression two review rounds were spent finding: `AUTHORISED`
-// is the un-updated `{mode, profile, authorizedOrigin}` shape, with no
-// `apiKeyAuthorized` field at all — exactly what every row written before that
-// field existed looks like. Read literally against the new rule
-// (`auth.apiKeyAuthorized ?? (auth.mode === 'profile')` done wrong, or omitted),
-// such a row would return no key AND raise no refusal: an unauthenticated
-// request sent to an endpoint that was authorised with a key, reported
-// `completed` if the server answers. The legacy default must read this shape as
-// authorised. This must not be "fixed" by adding `apiKeyAuthorized: true` to
-// `AUTHORISED` — doing so would remove the only fixture this repo has for a
-// pre-field row and let a fail-open implementation pass silently.
+// The fail-open regression: `AUTHORISED` is the un-updated `{mode, profile,
+// authorizedOrigin}` shape, with no `apiKeyAuthorized` field at all — exactly
+// what every row written before that field existed looks like. Read literally
+// against the rule (`auth.apiKeyAuthorized ?? (schemaVersion === 1 &&
+// auth.mode === 'profile')` done wrong, or omitted), such a row would return
+// no key AND raise no refusal:
+// an unauthenticated request sent to an endpoint that was authorised with a
+// key, reported `completed` if the server answers. The legacy default must read
+// this shape as authorised.
 test('a legacy v1 auth blob with no apiKeyAuthorized still yields its key — the fail-open regression', () => {
   assert.ok(
     !('apiKeyAuthorized' in AUTHORISED),
@@ -172,7 +170,7 @@ test('a v2 auth blob missing apiKeyAuthorized does NOT fall back to the legacy d
 // but a legitimate rotation — a new value behind the SAME source — must not.
 const AUTHORISED_ENV_A = {
   mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
-  apiKeyAuthorized: true, credentialSource: { kind: 'env', name: 'OAI183_KEY_A' },
+  apiKeyAuthorized: true, credentialSource: { kind: 'env', name: 'JOBAUTH_KEY_A' },
 };
 const AUTHORISED_INLINE = {
   mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
@@ -180,8 +178,8 @@ const AUTHORISED_INLINE = {
 };
 
 test('an apiKeyEnv repointed to a different variable, endpoint unchanged, is refused', async () => {
-  await withEnv('OAI183_KEY_A', 'sk-a', () => withEnv('OAI183_KEY_B', 'sk-b', () => {
-    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_B'), () => {
+  await withEnv('JOBAUTH_KEY_A', 'sk-a', () => withEnv('JOBAUTH_KEY_B', 'sk-b', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'JOBAUTH_KEY_B'), () => {
       assert.throws(
         () => resolveCredential(AUTHORISED_ENV_A, TRANSPORT, 3),
         /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
@@ -191,8 +189,8 @@ test('an apiKeyEnv repointed to a different variable, endpoint unchanged, is ref
 });
 
 test('the same apiKeyEnv name with a rotated value still authorises', async () => {
-  await withEnv('OAI183_KEY_A', 'sk-a-rotated', () => {
-    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+  await withEnv('JOBAUTH_KEY_A', 'sk-a-rotated', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'JOBAUTH_KEY_A'), () => {
       assert.deepEqual(resolveCredential(AUTHORISED_ENV_A, TRANSPORT, 3), { apiKey: 'sk-a-rotated', query: '' });
     });
   });
@@ -214,8 +212,8 @@ test('an env-to-inline transition is refused', () => {
 });
 
 test('an inline-to-env transition is refused', async () => {
-  await withEnv('OAI183_KEY_A', 'sk-now-env', () => {
-    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+  await withEnv('JOBAUTH_KEY_A', 'sk-now-env', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'JOBAUTH_KEY_A'), () => {
       assert.throws(
         () => resolveCredential(AUTHORISED_INLINE, TRANSPORT, 3),
         /credential-unavailable: provider "vendor" now resolves its credential from a different source than this job was authorised for/,
@@ -262,8 +260,8 @@ test('a v3 row with an env pin carrying an empty name fails closed', async () =>
     mode: 'profile', profile: 'vendor', authorizedOrigin: 'https://real.example',
     apiKeyAuthorized: true, credentialSource: { kind: 'env', name: '' },
   };
-  await withEnv('OAI183_KEY_A', 'sk-a', () => {
-    withConfig(vendorEnvConfig('https://real.example/v1', 'OAI183_KEY_A'), () => {
+  await withEnv('JOBAUTH_KEY_A', 'sk-a', () => {
+    withConfig(vendorEnvConfig('https://real.example/v1', 'JOBAUTH_KEY_A'), () => {
       assert.throws(() => resolveCredential(emptyName, TRANSPORT, 3), /now resolves its credential from a different source/);
     });
   });
@@ -623,8 +621,8 @@ test('the same fixture, config left alone, reaches the model carrying the key', 
 // `--background` submission under an `apiKeyEnv` profile actually persists an
 // `{kind:'env'}` pin, not just that `resolveCredential` accepts one if handed it.
 test('a real background submission under an apiKeyEnv profile persists an env-kind credential source', { skip: NEEDS_SQLITE }, async () => {
-  await withEnv('OAI183_E2E_KEY', 'key-env', async () => {
-    const scenario = await heldScenario({ configFor: (server) => vendorEnvConfig(server.baseUrl, 'OAI183_E2E_KEY') });
+  await withEnv('JOBAUTH_E2E_KEY', 'key-env', async () => {
+    const scenario = await heldScenario({ configFor: (server) => vendorEnvConfig(server.baseUrl, 'JOBAUTH_E2E_KEY') });
     try {
       const submitted = await scenario.submit();
       assert.equal(submitted.status, 0, submitted.stderr);
@@ -634,7 +632,7 @@ test('a real background submission under an apiKeyEnv profile persists an env-ki
 
       const row = await waitForState(scenario.state, id, ['completed', 'failed']);
       assert.equal(row.state, 'completed', JSON.stringify(row.failure));
-      assert.deepEqual(row.auth.credentialSource, { kind: 'env', name: 'OAI183_E2E_KEY' });
+      assert.deepEqual(row.auth.credentialSource, { kind: 'env', name: 'JOBAUTH_E2E_KEY' });
 
       const chats = scenario.chats();
       assert.equal(chats.length, 1);

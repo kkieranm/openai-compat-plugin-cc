@@ -209,8 +209,7 @@ test('the request size is recorded, because the characterization asks for it', (
 test('a 400 that nobody reclassifies stays a failure', () => {
   // The PRIMITIVE only. This deliberately does not claim to guard the ordering
   // inside `degraded()` — a unit test over the ledger passes whichever order
-  // that function uses, which a reviewer proved by reverting the fix and
-  // watching this stay green. The ordering guard is the end-to-end test in
+  // that function uses. The ordering guard is the end-to-end test in
   // `tests/review-budget.test.js`, which drives the real call sequence and
   // asserts the recorded outcome.
   const ledger = createLedger();

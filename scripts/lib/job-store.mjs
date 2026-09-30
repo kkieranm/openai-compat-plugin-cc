@@ -1,10 +1,8 @@
 // Where background jobs live, and the only place this repo opens a database.
 //
-// SQLite rather than files, and the reason is recorded rather than assumed:
-// fourteen review rounds went into building atomic publication, a never-reused
-// queue position, and terminal immutability out of `wx` files and renames, and
-// every round's fix produced the next round's defect. A transaction, an
-// `AUTOINCREMENT` and a guarded `UPDATE` answer all three, and the OS releases
+// SQLite rather than files: atomic publication, a never-reused queue position,
+// and terminal immutability are each hard to build out of `wx` files and renames.
+// A transaction, an `AUTOINCREMENT` and a guarded `UPDATE` answer all three, and the OS releases
 // the locks when a process dies — which is the one primitive node core does not
 // otherwise offer.
 import { chmodSync, existsSync, lstatSync, mkdirSync } from 'node:fs';
@@ -60,13 +58,13 @@ try {
  *
  * `ERR_UNKNOWN_BUILTIN_MODULE` is the ONLY shape that means "this runtime does
  * not offer it", and that is measured rather than assumed: the `node:` scheme
- * resolves against the builtin registry alone and never falls through to package
- * resolution, so an absent builtin, a flag-gated one and a build compiled without
- * it all raise that single code. An earlier draft of this guard also accepted
- * `ERR_MODULE_NOT_FOUND` whenever the message mentioned sqlite. Nothing can
- * produce it — and matching on message text is exactly what would relabel a
- * genuine loader fault as a stale Node, sending the user to fix the one thing
- * that is not wrong. Anything else is rethrown with its cause intact.
+ * resolves against the builtin registry alone and never falls through to
+ * package resolution, so an absent builtin, a flag-gated one and a build
+ * compiled without it all raise that single code. `ERR_MODULE_NOT_FOUND` is not
+ * accepted even when the message mentions sqlite:
+ * matching on message text is exactly what would relabel a genuine loader
+ * fault as a stale Node, sending the user to fix the one thing that is not
+ * wrong. Anything else is rethrown with its cause intact.
  */
 export function requireDatabaseSync() {
   if (DatabaseSync) return DatabaseSync;
@@ -282,15 +280,7 @@ export function openStore() {
  * same terms as this repo's other documented narrow local races.
  *
  * Exported for testing only — `openOnce` and `openStoreForReading` are the
- * real callers. A non-ENOENT
- * lstat failure (EACCES, ENOTDIR: not "missing" but genuinely unreadable or
- * blocked) can't be witnessed through `openStore()` itself: the same
- * underlying condition also blocks the `mkdirSync` that follows just as
- * surely, so an end-to-end test can't tell "this function rethrew" from "this
- * function swallowed it and the next call failed anyway" — this needs to be
- * called directly. (ENOENT is the one case that does NOT transfer this way:
- * `mkdirSync(..., {recursive: true})` creates a missing ancestor rather than
- * failing on it, so a missing path is not a stand-in for a blocked one.)
+ * real callers.
  */
 export function refuseSymlink(path) {
   let stat;
@@ -339,13 +329,13 @@ function openOnce() {
   const logs = logsPath();
   // `mkdirSync`'s `mode` is a no-op on a directory that already exists (Node's
   // own documented behaviour), so a pre-existing state dir or `logs/` looser
-  // than `0700` — from an older build, or widened by anything else — stayed
-  // that way on every subsequent run before this fix. Repaired unconditionally
-  // by `repairDir`, the same way `jobs.db` itself is repaired below: the
-  // WAL/SHM sidecars SQLite creates under WAL mode live directly in this
-  // directory and hold the same prompt/source data `jobs.db` does, so a loose
-  // directory defeats the file-level chmod regardless of it. A state dir at
-  // `0755` with `logs/` at `0777` let another local principal plant a forged
+  // than `0700` — from an older build, or widened by anything else — would
+  // otherwise stay that way on every run. Repaired unconditionally by
+  // `repairDir`, the same way `jobs.db` itself is repaired below: the WAL/SHM
+  // sidecars SQLite creates under WAL mode live directly in this directory and
+  // hold the same prompt/source data `jobs.db` does, so a loose directory
+  // defeats the file-level chmod regardless of it. A state dir at `0755` with
+  // `logs/` at `0777` would let another local principal plant a forged
   // `<seq>.cancel-ack` without ever touching `jobs.db`.
   repairDir(state);
   // `logs` and `path` are both subpaths of `state` — string joins computed
@@ -437,8 +427,7 @@ export function openStoreForReading() {
   // follows the symlink, and an attacker directory with no `jobs.db` inside it
   // would otherwise make this function return `null` — quietly, no throw —
   // without the guard ever running at all. Guards `state`, not `path` (the
-  // database file itself) — that narrower gap is a separate, pre-existing
-  // condition this fix does not fold in.
+  // database file itself).
   // `existsSync` is itself a syscall a state-directory swap can land inside,
   // exactly like the gap `repairDir`'s own two checks (before `mkdirSync` and
   // again before `chmodSync`) exist to narrow — so this re-checks the same

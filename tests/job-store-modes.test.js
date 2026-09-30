@@ -22,7 +22,7 @@ function modeOf(path) {
   return statSync(path).mode & 0o777;
 }
 
-test('the OAI-150 discriminating fixture: state 0755 / logs 0777 must both repair to 0700', { skip: NEEDS_SQLITE }, () => {
+test('the discriminating fixture: state 0755 / logs 0777 must both repair to 0700', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // `logs/` must exist before it can be loosened — `withStore`'s `openStore()`
   // call creates it, but only AFTER this test needs it already there.
@@ -33,7 +33,7 @@ test('the OAI-150 discriminating fixture: state 0755 / logs 0777 must both repai
   withStore(state, () => {
     assert.equal(modeOf(statePath()), 0o700, 'the state directory must be repaired');
     assert.equal(modeOf(logsPath()), 0o700, 'logs/ must be repaired');
-    assert.equal(modeOf(databasePath()), 0o600, 'jobs.db is unaffected by this fix and stays 0600');
+    assert.equal(modeOf(databasePath()), 0o600, 'jobs.db stays 0600');
   });
 });
 
@@ -57,7 +57,7 @@ test('a stricter-than-0700 state dir and logs/ are widened back to exactly 0700'
 // A `logs/` at 0700 is not enough on its own: the WAL/SHM sidecars live
 // directly in the STATE directory (not logs/), so the state directory itself
 // must also be repaired unconditionally, even when logs/ is already safe.
-test('state 0755 / logs 0700 is now ALSO repaired, superseding OAI-150s original "leave it alone" case', { skip: NEEDS_SQLITE }, () => {
+test('state 0755 / logs 0700 is ALSO repaired', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   mkdirSync(`${state}/logs`, { recursive: true });
   chmodSync(state, 0o755);
@@ -198,32 +198,15 @@ test('a symlinked logs/ directory is refused, not followed and "repaired"', { sk
   assert.deepEqual(readdirSync(attackerDir), [], 'refusal must happen before anything is written through the symlink');
 });
 
-// refuseSymlink must treat ONLY ENOENT as "not there yet" — any other lstat
-// failure (EACCES, EIO, a parent segment that isn't a directory) is a real
-// problem the guard exists to surface, not something to swallow as absence.
-// Called DIRECTLY rather than through openStore(): the same underlying
-// condition that makes lstatSync fail here (a missing/blocked ancestor) would
-// also make the mkdirSync inside openOnce() fail identically, so an
-// end-to-end test can't tell "refuseSymlink rethrew" from "refuseSymlink
-// swallowed it and mkdirSync failed anyway" — see refuseSymlink's own
-// docblock. A regular file standing where a directory component is expected
-// produces a genuine ENOTDIR from lstatSync, no mocking needed (and ESM's
-// named `fs` imports can't be monkey-patched from a test in any case).
-// A symlink swap of `state` itself, between the repair call on `state`
+// The re-check against a symlink swap of `state` itself, between the repair call on `state`
 // completing and `state` being used again (`logs`/`path` are string joins on
 // it computed up front, so what they resolve to depends on what `state`
 // points at when each is actually USED, not on when the string was built),
-// is not something any deterministic test can drive: it needs a second
-// process (or a syscall interleaving) racing synchronous code with no
-// event-loop yield, which the ESM-mocking failure noted just above (named
-// fs imports can't be monkey-patched from a test) already ruled out
-// simulating in-process. Pinned structurally instead, the same way
-// tests/queue-guards.test.js pins abandonRow's inside-the-lock property:
+// is pinned structurally:
 // read the source and assert the re-check calls are textually present in
 // the right ORDER relative to each subsequent use of `state` — not that
 // nothing else runs between a check and its use, which no string search can
-// prove — so a future edit that drops or reorders one goes red here even
-// though no behavioural test could ever have caught it.
+// prove — so a future edit that drops or reorders one goes red here.
 test('openOnce re-checks state, in order, before repairDir(logs) and before opening the database', () => {
   const source = readFileSync(fileURLToPath(new URL('../scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
   const withComments = source.slice(source.indexOf('function openOnce('), source.indexOf('\n}\n', source.indexOf('function openOnce(')));
@@ -251,8 +234,8 @@ test('openOnce re-checks state, in order, before repairDir(logs) and before open
   );
 });
 
-// Same untestable-by-behavior class as the pin above, for openStoreForReading's
-// own re-check across its existsSync call.
+// The same structural pin as above, for openStoreForReading's own re-check
+// across its existsSync call.
 test('openStoreForReading re-checks state, in order, before existsSync and before opening the database', () => {
   const source = readFileSync(fileURLToPath(new URL('../scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
   const withComments = source.slice(source.indexOf('function openStoreForReading('), source.indexOf('\n}\n', source.indexOf('function openStoreForReading(')));
@@ -273,6 +256,11 @@ test('openStoreForReading re-checks state, in order, before existsSync and befor
   );
 });
 
+// refuseSymlink must treat ONLY ENOENT as "not there yet" — any other lstat
+// failure (EACCES, EIO, a parent segment that isn't a directory) is a real
+// problem the guard exists to surface, not something to swallow as absence.
+// A regular file standing where a directory component is expected
+// produces a genuine ENOTDIR from lstatSync, no mocking needed.
 test('refuseSymlink propagates a non-ENOENT lstat failure rather than treating it as absence', () => {
   const container = stateDir();
   const blocker = `${container}/blocker`;

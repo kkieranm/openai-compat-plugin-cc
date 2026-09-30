@@ -59,11 +59,10 @@ test('the response split keeps legacy records out of BOTH answers, in a bucket o
 });
 
 test('a bucket nobody hit still prints when there ARE failures — a zero is a measurement', () => {
-  // The mutation this kills, and it went unnoticed for a whole review pass:
-  // dropping `RESPONSE_BUCKETS` from the tally left all 415 tests green. The
+  // The mutation this kills: dropping `RESPONSE_BUCKETS` from the tally. The
   // three-bucket test above populates every bucket organically, one attempt each,
-  // so seeding changes nothing about its result; the render test below asserts
-  // only the row that was populated. Neither could see the seed disappear.
+  // so seeding changes nothing about its result, and it could not see the seed
+  // disappear.
   //
   // Here exactly one bucket is hit, so the other two exist ONLY because they were
   // seeded — which is the claim the seeding makes: `not recorded: 0` is what says
@@ -172,7 +171,7 @@ test('the response split is described as a RESPONSE, never as a peer being reach
   assert.match(note, /not the same question as whether a peer was reached/);
   // And the legacy row is explained where it is printed, not left as a bare word.
   // It may NOT assert provenance: absence of the field does not establish that a
-  // record predates it, and an earlier draft of this sentence said exactly that.
+  // record predates it.
   assert.match(note, /counts attempts carrying no such field/);
   assert.doesNotMatch(note, /predates this field/);
 });

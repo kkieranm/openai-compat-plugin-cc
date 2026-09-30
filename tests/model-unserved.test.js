@@ -120,15 +120,14 @@ test('an id only /v1/models lists is still served, not refused', async () => {
   assert.equal(chatRequests(server)[0].body.model, 'chat-b');
 });
 
-test('an id only the dialect lists is served too — even loaded, it was being refused', async () => {
-  // The mirror of the test above, and a defect the lean review CONFIRMED by
-  // reproducing it end to end. `merge` keys `described.models` on the
+test('an id only the dialect lists is served too', async () => {
+  // The mirror of the test above. `merge` keys `described.models` on the
   // /v1/models ids, so a model the dialect enumerated is absent from it
   // whenever /v1/models is the narrower list — filtered, aliased or
-  // permission-scoped, all of which are expected. The refusal gated
-  // on "the dialect published a catalogue" while testing membership in the
-  // OTHER endpoint's list, and so refused `chat-b` here: the one model the
-  // server actually had resident in memory and would have answered instantly.
+  // permission-scoped, all of which are expected. A refusal gated on "the
+  // dialect published a catalogue" while testing membership in the OTHER
+  // endpoint's list would refuse `chat-b` here: the one model the server
+  // actually has resident in memory and would answer instantly.
   const server = await startFakeServer((request, response) => {
     const path = request.url.split('?')[0];
     if (path.endsWith('/api/v0/models')) {
@@ -184,17 +183,15 @@ test('a model on neither list is still refused, and both lists are offered', asy
 });
 
 test('a fully configured profile is checked too, so setup and task cannot disagree', async () => {
-  // The compromise this replaced, and why it had to go. `resolveTarget` used to
-  // consult the server only for what the config left unanswered, so a profile
-  // setting both `defaultModel` and `contextLength` never fetched a catalogue and
-  // the up-front check could not fire — while `/oai:setup` probes
-  // unconditionally and therefore DID refuse. Setup printed "reachable, but
-  // /oai:task cannot run here" and "No provider can take a task right now" about
-  // a task that ran perfectly well.
+  // A profile setting both `defaultModel` and `contextLength` must still fetch
+  // a catalogue. If `resolveTarget` consulted the server only for what the
+  // config leaves unanswered, the up-front check could never fire for it —
+  // while `/oai:setup` probes unconditionally and DOES refuse, so setup would
+  // print "reachable, but /oai:task cannot run here" and "No provider can take a
+  // task right now" about a task that runs perfectly well.
   //
-  // That is this repo's most-repeated defect class with its sign flipped, and
-  // calling one planner does not cure it when the two callers hand it different
-  // evidence. Confirmed by the built-in review, reproduced end to end.
+  // Calling one planner does not cure that when the two callers hand it
+  // different evidence.
   const server = await startFakeServer((request, response) => {
     const path = request.url.split('?')[0];
     // A real dialect catalogue, because that is what arms the refusal at all —

@@ -86,8 +86,8 @@ test('a dropped request is sent again, and the retry answers', async () => {
 /**
  * Text, then the stream stops with no terminator and no finish_reason — shape 2.
  *
- * This is the shape the *observed* incidents most likely landed on: the
- * 2026-07-30 arms recorded stream drops around 50,000 characters into reasoning.
+ * This is the shape the *observed* incidents most likely landed on: recorded
+ * stream drops came around 50,000 characters into reasoning.
  * Worth pinning explicitly rather than assuming, because if a real drop lands on
  * the transport shape instead, `stream-unfinished` is a branch the taxonomy
  * claims and nothing ever reaches.

@@ -13,9 +13,8 @@
  * What `lms ps --json` says about each resident model, or null when it could not
  * be read at all.
  *
- * The fields are taken from a real reply rather than guessed — an earlier draft
- * of this file assumed the TTL was not reported and said so in a comment, which
- * was false. A live entry carries: `modelKey`, `ttlMs`, `lastUsedTime`,
+ * The fields are taken from a real reply rather than guessed. A live entry
+ * carries: `modelKey`, `ttlMs`, `lastUsedTime`,
  * `status`, `contextLength`, `maxContextLength`.
  *
  * `lastUsedTime` is recorded and never acted on. It is the anchor the server's
@@ -48,9 +47,8 @@ export function entryFor(loaded, model) {
  * Samples belonging to one window of the episode.
  *
  * Every sample is stamped with its `phase` at COLLECTION time, and each reader
- * selects the window it is actually entitled to. One place decides what a sample
- * is; three places consume it — the alternative was three ad-hoc filters over one
- * flat array, which is how two window bugs got into the withdrawn draft.
+ * selects the window it is actually entitled to. One place decides what a
+ * sample is.
  *
  * `pre-dispatch` — taken before the child was spawned.
  * `in-flight`    — taken while the child process was alive. NOT the same as
@@ -69,10 +67,10 @@ export function inPhase(samples, ...phases) {
  * Did the server's idle anchor move while the model was still PREFILLING?
  *
  * Restricted to in-flight samples before first token, because that is the window
- * the question is about. The first draft compared the first and last readable
- * sample of the whole episode — which spans load, generation and completion — so
- * it would have read `true` off generation, the one activity nobody disputes
- * counts, and reported it as an answer about prefill.
+ * the question is about. The whole episode spans load, generation and
+ * completion, so comparing its first and last readable samples would read `true`
+ * off generation, the one activity nobody disputes counts, and report it as an
+ * answer about prefill.
  *
  * Null unless two readings actually exist in that window: an unreadable or
  * absent sample must never become an answer in either direction.
@@ -121,8 +119,9 @@ export function lastPresentBefore(samples, model, atMs) {
  *
  * The protocol requires nothing else connected, because another resident model
  * can trigger Auto-Evict and produce the same client-visible shape. So this is
- * an instrument-VALIDITY check (G2): a competing model means the precondition was
- * violated, which voids the sweep rather than saying anything about the server.
+ * an instrument-VALIDITY check (the sole-tenancy check): a competing model means
+ * the precondition was violated, which voids the sweep rather than saying
+ * anything about the server.
  */
 export function otherModelsSeen(samples, model) {
   const others = new Set();

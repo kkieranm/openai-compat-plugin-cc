@@ -257,11 +257,10 @@ test('--structured-output never arms the watchdog — the answer legitimately li
 });
 
 test('a salvage attempt that itself fails falls back to reporting token-reserve-cutoff plainly', async () => {
-  // Both the trimmed follow-up AND the untrimmed fallback fail identically
-  // here (OAI-204 amendment, Finding 1: a trimmed attempt's failure gets one
-  // further, untrimmed attempt before salvage gives up) — this fixture
-  // doesn't distinguish request 2 from request 3, so both get the same
-  // malformed response.
+  // Both the trimmed follow-up AND the untrimmed fallback fail identically here
+  // (a trimmed attempt's failure gets one further, untrimmed attempt before
+  // salvage gives up) — this fixture doesn't distinguish request 2 from request
+  // 3, so both get the same malformed response.
   const handler = reasoningPastThresholdThenFollowUp((record, response) => {
     response.writeHead(500, { 'content-type': 'application/json' });
     response.end('not json');
@@ -394,13 +393,12 @@ test('a small-window model where the reserve would exceed half the budget is nev
   // Deliberately NOT a round-number window like 4096 (built.reserve exactly
   // 2048, i.e. exactly TOKEN_RESERVE_TOKENS): at that boundary a broken arm
   // guard that always returns TOKEN_RESERVE_TOKENS produces cutoffChars of
-  // exactly 0, which stream-collect.mjs's OWN defensive `cutoffChars > 0`
-  // check also blocks — masking the very regression this test exists to
-  // catch (proven by mutation: that boundary value left this test green
-  // even with `armedReserve` mutated to always arm). 6000 keeps
-  // built.reserve (3000) strictly between TOKEN_RESERVE_TOKENS and
-  // 2 * TOKEN_RESERVE_TOKENS, where a broken arm guard and the correct one
-  // genuinely disagree.
+  // exactly 0, which stream-collect.mjs's OWN defensive `cutoffChars > 0` check
+  // also blocks — masking the very regression this test exists to catch (at
+  // that boundary value this test would stay green even with `armedReserve`
+  // mutated to always arm). 6000 keeps built.reserve (3000) strictly between
+  // TOKEN_RESERVE_TOKENS and 2 * TOKEN_RESERVE_TOKENS, where a broken arm guard
+  // and the correct one genuinely disagree.
   const handler = reasoningPastThresholdThenFollowUp(() => {
     throw new Error('no salvage follow-up should ever be requested — the watchdog must never have armed');
   });

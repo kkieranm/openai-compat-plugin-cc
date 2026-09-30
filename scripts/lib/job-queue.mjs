@@ -1,14 +1,13 @@
 // One background job runs at a time, and this is where that is decided.
 //
 // The eligibility check, the choice of who goes next and the transition to
-// `running` are ONE transaction. Splitting them apart is what a dozen rounds of
-// filesystem protocol could not recover from: any gap between "nothing is
-// running" and "I am running" is a gap in which a second worker reads the same
-// answer, and two concurrent model calls is the one thing this queue exists to
-// prevent — the machine's memory ceiling has room for one loaded model, not two.
+// `running` are ONE transaction: any gap between "nothing is running" and "I am
+// running" is a gap in which a second worker reads the same answer, and two
+// concurrent model calls is the one thing this queue exists to prevent — the
+// machine's memory ceiling has room for one loaded model, not two.
 //
 // The invariant is honestly "one *background* job at a time": foreground
-// `/oai:task` and `/oai:review` do not participate. A backlog item covers that.
+// `/oai:task` and `/oai:review` do not participate.
 //
 // There is a SECOND exception, and unlike the first it is taken deliberately,
 // one invocation at a time: `/oai:abandon` terminalizes a row whose worker this

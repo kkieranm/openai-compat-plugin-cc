@@ -72,9 +72,6 @@ export function resolveConfig(argv) {
     config[key] = cast(raw);
     i += 1;
   }
-  // `--episodes` must be a positive integer, which is what makes an empty episode
-  // list unreachable — and with it the `no-episodes` verdict the withdrawn draft
-  // could return but no outcome table ever listed.
   if (!Number.isInteger(config.episodes) || config.episodes < 1) {
     throw new Error(`--episodes must be a positive integer, got ${config.episodes}`);
   }
@@ -88,10 +85,7 @@ export function resolveConfig(argv) {
  * Is this the shipped experiment, or something else wearing its filename?
  *
  * `--out-dir` alone does NOT clear it — writing the record elsewhere does not
- * change what was measured. Everything else does. A done-condition that only
- * checks "a file matching the glob exists" can be satisfied by a junk record
- * from a draft that never dispatched a request, so this field is what
- * distinguishes a real measurement from that.
+ * change what was measured. Everything else does.
  */
 export function isCanonical(config) {
   return EXPERIMENTAL.every((key) => config[key] === DEFAULTS[key]);

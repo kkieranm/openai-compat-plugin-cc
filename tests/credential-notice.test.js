@@ -1,11 +1,10 @@
 // The notice about a persisted endpoint must not itself disclose one.
 //
-// Every one of these reaches `insertJob` — the notice really fires — because
-// that is the whole lesson of this defect. The version this replaces was
-// asserted about across four review passes, and every assertion ran on a refusal
-// path where the notice never fired, so a real injected leak reported green. An
-// assertion that cannot fail is not evidence, so each test here proves the notice
-// fired, by matching its whole line, while proving what it does not say.
+// Every one of these reaches `insertJob` — the notice really fires — because an
+// assertion that runs on a refusal path, where the notice never fires, reports
+// a real injected leak as green. An assertion that cannot fail is not evidence,
+// so every test here that asserts what the notice says also proves it fired, by
+// matching its whole line.
 //
 // The last two deliberately return no job id: they drive the partial failure the
 // notice's wording exists for — a worker that never starts, leaving a row nobody
@@ -201,24 +200,24 @@ test('a query credential in the CONFIGURED provider is announced too', { skip: N
 
 test('the core leak: a configured provider commits its query rather than storing it, though the model still saw it', { skip: NEEDS_SQLITE }, async () => {
   // The positive control must be scoped to the CHAT COMPLETION, not to "the
-  // server saw it": `prepareTask` runs the `/v1/models` probe in the foreground,
-  // BEFORE the row is written, against the same effective endpoint — so the
-  // secret is already in `server.requests[…].url` regardless of what the worker
-  // later sends, and the fake server answers 200 with no auth check, so "the job
-  // completed" discriminates nothing either. Both halves of that naive control
-  // pass against an implementation that simply drops the query — the single most
-  // likely way to get this fix wrong. The `chat/completions` filter is the whole
-  // discriminator: it is the one request that cannot happen without the detached
-  // worker re-resolving and sending the query.
+  // server saw it": `prepareTask` runs the `/v1/models` probe in the
+  // foreground, BEFORE the row is written, against the same effective endpoint
+  // — so the secret is already in `server.requests[…].url` regardless of what
+  // the worker later sends, and the fake server answers 200 with no auth check,
+  // so "the job completed" discriminates nothing either. Both halves of that
+  // naive control pass against an implementation that simply drops the query.
+  // The `chat/completions` filter is the whole discriminator: it is the one
+  // request that cannot happen without the detached worker re-resolving and
+  // sending the query.
   const { submit, row, requests } = await submitAgainst((server) => `${server.baseUrl}?api_key=${SECRET}`, { viaConfig: true });
 
   assert.equal(submit.status, 0, submit.stderr);
   assert.equal(row.state, 'completed', `expected the job to actually complete: ${JSON.stringify(row.failure)}`);
 
   // Absence, checked against every JSON column, not just `transport` — the
-  // widening also edits the `auth` blob in this same change, so a "keep the raw
-  // query in the policy so the comparison is easy" slip would sail past a
-  // `transport`-scoped assertion.
+  // `auth` policy is also derived from the query (`authPolicyFor`,
+  // job-auth.mjs), so a "keep the raw query in the policy so the comparison is
+  // easy" slip would sail past a `transport`-scoped assertion.
   assert.ok(
     !JSON.stringify(row).includes(SECRET),
     `the secret leaked into the whole row, not just transport: ${JSON.stringify(row)}`,
@@ -234,33 +233,30 @@ test('the core leak: a configured provider commits its query rather than storing
 
 test('an ad hoc --base-url carrying a non-credential query string still reaches completed', { skip: NEEDS_SQLITE }, async () => {
   // Catches the `Unknown provider "custom"` regression the widening's own
-  // docblock warns about: keying the widening on the query alone, rather than on
-  // `!adHoc && query`, would send an ad hoc row's synthetic `custom` profile
+  // docblock warns about: keying the widening on the query alone, rather than
+  // on `!adHoc && query`, would send an ad hoc row's synthetic `custom` profile
   // through `resolveProfile` at worker time and fail every ad hoc job carrying
   // any query string at all — including one, like this, that carries nothing
-  // secret. `?api-version=2024-02-01` is this plan's own example of a query that
-  // is not a credential, and it must still work end to end. The storage
-  // assertion alone would not catch this: it needs the job to actually reach a
-  // terminal state, which is why this waits for one and checks which.
+  // secret. `?api-version=2024-02-01` is a query that is not a credential, and
+  // it must still work end to end. The storage assertion alone would not catch
+  // this: it needs the job to actually reach a terminal state, which is why
+  // this waits for one and checks which.
   const { row } = await submitAgainst((server) => `${server.baseUrl}?api-version=2024-02-01`);
 
   assert.equal(row.state, 'completed', `expected an ad hoc query-bearing base-url to complete: ${JSON.stringify(row.failure)}`);
 });
 
 test('the notice survives a preamble larger than the pipe buffer', { skip: NEEDS_SQLITE }, async () => {
-  // The notice, the orphaned row, and credential redaction all still hold
-  // together even with this enormous preamble and a slow stderr consumer —
-  // real, still-live coverage. This no longer depends on `noteEndpointPersistence()`
-  // running before `prepareTask()` for correctness: `oai-companion.mjs` now sets
-  // `process.exitCode` and lets Node drain stdio naturally regardless of write
-  // order or size, so nothing forces an early exit that could discard queued
-  // output. The call order in `task-submit.mjs` is unchanged and still correct —
-  // defensive belt-and-braces, independently justified by CLAUDE.md's own
-  // "gating on nothing... no preamble can crowd it out" design note, not by
-  // anything this test can still detect. This test can no longer catch a
-  // regression to `oai-companion.mjs`'s `process.exitCode` behavior specifically
-  // (the notice is already flushed well before this preamble reaches the pipe
-  // in the current ordering) — that defect class is tracked separately, OAI-199.
+  // The notice, the orphaned row, and credential redaction all hold together
+  // even with this enormous preamble and a slow stderr consumer. Correctness does
+  // not depend on `noteEndpointPersistence()` running before `prepareTask()`:
+  // `oai-companion.mjs` sets `process.exitCode` and lets Node drain stdio
+  // naturally regardless of write order or size, so nothing forces an early exit
+  // that could discard queued output. The call order in `task-submit.mjs` is
+  // defensive belt-and-braces, not something this test can detect. Nor can this
+  // test catch a regression to `oai-companion.mjs`'s `process.exitCode` behavior
+  // specifically (the notice is already flushed well before this preamble
+  // reaches the pipe in the current ordering).
   // The endpoint here must still come from the CONFIG — `--base-url` replaces the
   // provider name in the preamble, so with that flag only ~1 KB is written.
   const server = await startFakeServer(modelsAndChat());

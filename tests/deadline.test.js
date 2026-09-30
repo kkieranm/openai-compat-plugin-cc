@@ -1,17 +1,14 @@
 // The wall-clock cap, and the machine-readable reason a capped run reports.
 //
-// Both halves of the original failure path. Before this, `--timeout` bounded only the
-// wait for the *first* token: once text arrived the idle budget took over and
-// reset on every text-bearing frame, so a model that kept emitting ran forever
-// and a 6-case corpus at N=3 had no worst case at all. And when a run did fail,
-// the CLI wrote prose to stderr and nothing else, so a harness could tell *that*
-// a run failed but never *why* — a wall-clock cap and a 500 were the same blob.
+// Both halves matter. `--timeout` bounds only the wait for the *first* token: once
+// text arrives the idle budget takes over and resets on every text-bearing frame,
+// so without a cap a model that keeps emitting runs forever and a 6-case corpus at
+// N=3 has no worst case at all. And prose on stderr alone tells a harness *that* a
+// run failed but never *why* — a wall-clock cap and a 500 are the same blob.
 //
 // The server below is what makes these guards rather than restatements. It emits
 // a frame every DRIP_MS, which is far *under* the idle budget — that is the whole
-// point. A server that simply stalled would trip the idle timer and the test
-// would pass with the cap never armed, which is precisely the bug this feature
-// fixes wearing the costume of a passing test.
+// point.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRepo, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
@@ -116,9 +113,9 @@ test('--max-seconds is refused before any request when it is not a number', asyn
     assert.equal(result.status, 1);
     assert.match(result.stderr, /max-seconds/);
     // The envelope covers validation too, not only failures out on the wire.
-    // Scoping it to "operational errors after validation" was the first draft,
-    // and it left four failure modes prose-only under a flag documented as
-    // machine-readable — a contract broader than its implementation.
+    // Scoping it to "operational errors after validation" would leave validation
+    // failures prose-only under a flag documented as machine-readable — a
+    // contract broader than its implementation.
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.error, true);
     // Null, not an invented category. Nothing determined a transport reason
@@ -178,8 +175,7 @@ test('a budget larger than a timer can express is refused, not silently made imm
   // Above 2,147,483,647 ms Node clamps a setTimeout delay to 1 ms, so an
   // enormous cap would arm an *immediate* timeout — the exact opposite of what
   // anyone typing it means, and invisible until a run died in milliseconds under
-  // a flag its author read as generous. Both duration flags carry the ceiling;
-  // `--timeout` had the same latent flaw before this feature and is fixed with it.
+  // a flag its author read as generous. Both duration flags carry the ceiling.
   const { dir, server, configPath } = await scenario((record, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end('{}');

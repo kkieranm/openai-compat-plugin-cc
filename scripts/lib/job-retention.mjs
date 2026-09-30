@@ -160,10 +160,9 @@ function ownedSeq(name) {
  * `AUTOINCREMENT` per database, so deleting `jobs.db` while `logs/` survives
  * restarts it: a sweep that listed a stale `2.cancel-ack` and read rows holding no
  * seq 2 can be overtaken by a submission that inserts seq 2 and opens its log, and
- * the unlink below then takes a LIVE job's files. The race predates this key — a
- * surviving `<seq>.log` could always start it — and the union widens which residues
- * can. Closing it needs the key bound to a store incarnation, which is a schema
- * change this feature does not make.
+ * the unlink below then takes a LIVE job's files. Any surviving owned residue can
+ * start the race, a `<seq>.log` included. Closing it would need the key bound to a
+ * store incarnation, which is a schema change.
  *
  * **Names are matched, and a name is not a provenance.** The check says the file
  * is SHAPED like one this plugin writes and has no row to explain it; it cannot

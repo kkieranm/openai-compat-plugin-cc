@@ -122,9 +122,8 @@ function runDriver(args, env) {
 /**
  * Stand up a stub `lms`, a fake server and a temp out-dir, then run the driver.
  *
- * `--out-dir` is not a convenience: a self-test writing into `bench/results/`
- * would recreate the junk-record incident the driver's own guard test exists to
- * prevent, and the junk would match the glob the done-condition reads.
+ * `--out-dir` is not a convenience: without it a self-test would write its
+ * record into `bench/results/`.
  */
 async function runScenario(scenario, {
   episodes = 1, failFromCall = Infinity, destroyFromCall = Infinity,

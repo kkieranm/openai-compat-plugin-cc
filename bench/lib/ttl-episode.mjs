@@ -59,7 +59,7 @@ function reviewFlags(config, args, label) {
     'review', ...args, '--json',
     '--provider', config.provider,
     '--model', config.model,
-    '--cache-buster', `oai34-${label}-${randomUUID()}`,
+    '--cache-buster', `ttl-${label}-${randomUUID()}`,
     '--max-tokens', String(config.maxTokens),
     '--timeout', String(config.timeoutSeconds),
     // Never retried. A retry would re-send after the first failure, resetting the
@@ -87,10 +87,10 @@ function childEnv(config) {
 /**
  * One review through the real command, timed, with residency sampled throughout.
  *
- * `spawnImpl` defaults to the real `spawn` and exists only so a test can wrap it
+ * `spawnImpl` defaults to the real `spawn` and exists so a test can wrap it
  * with a forced bad `cwd` to exercise the `'error'` path below against real Node
  * ENOENT semantics — `materialize` always returns a real, freshly-created
- * directory, so there is no other way to make this function's spawn actually fail.
+ * directory.
  */
 export function runEpisode(config, caseDef, label, root, spawnImpl = spawn) {
   const { dir, args } = materialize(caseDef, root);

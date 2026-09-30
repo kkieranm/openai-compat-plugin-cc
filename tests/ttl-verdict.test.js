@@ -16,10 +16,10 @@ const short = 130_000; // past expiry but INSIDE the margin — not an exposure
 const ok = { ttlMs, failed: false, unloadObserved: false, obtainedResponse: true, invalid: [] };
 
 test('importing the driver does not RUN the experiment', () => {
-  // Regression, and it bit during this feature: `main()` was called at module
-  // scope, so importing it drove `lms`, spawned a review, added 44s to the suite
-  // and wrote a junk record into bench/results. The symptom is slow and quiet
-  // rather than red, so the guard is asserted rather than assumed.
+  // Calling `main()` at module scope would make importing the driver drive `lms`,
+  // spawn a review and write a junk record into
+  // bench/results. The symptom is slow and quiet rather than red, so the guard is
+  // asserted rather than assumed.
   const source = readFileSync(new URL('../bench/ttl-challenge.mjs', import.meta.url), 'utf8');
   assert.match(source, /process\.argv\[1\] === fileURLToPath\(import\.meta\.url\)/);
   assert.doesNotMatch(source, /^main\(/m, 'main must not be called at module scope');
@@ -70,12 +70,11 @@ test('a failure is classified by whether an absence was SEEN, and by nothing els
   );
 });
 
-test('NO episode verdict names a TTL, an eviction or an expiry', () => {
-  // The instrument refutes; it does not confirm. Four designs for a confirming
-  // branch each failed on a different axis before it was withdrawn, because
-  // proving an unload was post-expiry needs residency observed AFTER expiry —
-  // which a mechanism firing AT expiry can never leave behind. A label that says
-  // "post-TTL" would assert exactly what cannot be established.
+test('NO episode verdict attributes an unload to TTL expiry', () => {
+  // The instrument refutes; it does not confirm: proving an unload was
+  // post-expiry needs residency observed AFTER expiry — which a mechanism
+  // firing AT expiry can never leave behind. A label that says "post-TTL" would
+  // assert exactly what cannot be established.
   for (const verdict of EPISODE_VERDICTS) {
     assert.doesNotMatch(verdict, /evict|expiry-unload|post-ttl/i, `"${verdict}" overclaims`);
   }
@@ -85,10 +84,9 @@ test('NO episode verdict names a TTL, an eviction or an expiry', () => {
 });
 
 test('a voided calibration says WHICH precondition failed, not that the prefill fell short', () => {
-  // The false string a wide review reproduced: a calibration whose prefill DID
-  // clear the bar but whose preconditions did not hold printed "Calibration did
-  // not establish a prefill clearing the shortened TTL", and pointed the operator
-  // at the one knob that was already fine.
+  // A calibration whose prefill DID clear the bar but whose preconditions did
+  // not hold must not blame the prefill, which points the operator at the one
+  // knob that was already fine.
   const { verdict, says } = summarize([], {
     calibrationCleared: false, calibrationFailures: ['sole-tenancy'], causes: [],
   });
@@ -112,9 +110,7 @@ test('a voided calibration says WHICH precondition failed, not that the prefill 
 
 test('an episode that obtained no response yields no verdict about the server', () => {
   // A refused --max-tokens, an unreachable server or a materialization throw all
-  // exit non-zero having dispatched nothing. This happened for real: an
-  // accidental run of the withdrawn draft reported `inconclusive-failure` — a
-  // claim about the mechanism — from a run in which no request existed.
+  // exit non-zero having dispatched nothing.
   assert.equal(episodeVerdict({ ...ok, prefillMs: null, failed: true, obtainedResponse: false }), 'not-dispatched');
   const { verdict, says } = summarize(['survived-past-expiry', 'not-dispatched']);
   assert.equal(verdict, 'instrument-failed');
@@ -124,7 +120,7 @@ test('an episode that obtained no response yields no verdict about the server', 
 
 test('a broken precondition is NOT reported as a failure to dispatch', () => {
   // Both void the sweep, but printing "not-dispatched" for a competing model
-  // would be a false string — the defect class this whole feature is about.
+  // would be a false string.
   assert.equal(
     episodeVerdict({ ...ok, prefillMs: past, invalid: ['sole-tenancy'] }),
     'instrument-invalid',
@@ -137,12 +133,14 @@ test('a broken precondition is NOT reported as a failure to dispatch', () => {
 test('the validity checks name what failed, not merely that something did', () => {
   const clean = { appliedTtlMs: ttlMs, requestedTtlMs: ttlMs, competingModels: [], contradiction: null };
   assert.deepEqual(validityChecks(clean), []);
-  // G6 — read back from the server, never inferred from `lms load` exiting 0.
+  // The ttl-confirmed check — read back from the server, never inferred from
+  // `lms load` exiting 0.
   assert.deepEqual(validityChecks({ ...clean, appliedTtlMs: 3_600_000 }), ['ttl-confirmed']);
   assert.deepEqual(validityChecks({ ...clean, appliedTtlMs: null }), ['ttl-confirmed']);
-  // G2 — Auto-Evict from another model produces the same client-visible shape.
+  // The sole-tenancy check — Auto-Evict from another model produces the same
+  // client-visible shape.
   assert.deepEqual(validityChecks({ ...clean, competingModels: ['other'] }), ['sole-tenancy']);
-  // G8 — a record this module does not understand.
+  // The record-self-consistent check — a record this module does not understand.
   assert.deepEqual(validityChecks({ ...clean, contradiction: 'x' }), ['record-self-consistent']);
   assert.deepEqual(
     validityChecks({ appliedTtlMs: null, requestedTtlMs: ttlMs, competingModels: ['o'], contradiction: 'x' }),
@@ -169,9 +167,9 @@ test('calibration clears only on a MEASURED prefill from a request that answered
   const base = { obtainedResponse: true, failed: false, challengeTtlMs: ttlMs };
   assert.equal(calibrationCleared({ ...base, prefillMs: past }), true);
   assert.equal(calibrationCleared({ ...base, prefillMs: short }), false);
-  // The withdrawn draft used `firstTokenMs ?? durationMs`, so a calibration that
-  // timed out at 1,800s "cleared" a 180s bar without the model ever emitting a
-  // token — the gate reading a failure as proof of what it exists to establish.
+  // A null prefill never clears: falling back to `durationMs` would let a
+  // calibration that timed out at 1,800s clear a 180s bar without the model
+  // ever emitting a token.
   assert.equal(calibrationCleared({ ...base, prefillMs: null }), false);
   assert.equal(calibrationCleared({ ...base, failed: true, prefillMs: past }), false);
   assert.equal(calibrationCleared({ ...base, obtainedResponse: false, prefillMs: past }), false);
@@ -180,8 +178,7 @@ test('calibration clears only on a MEASURED prefill from a request that answered
 test('a failed calibration outranks the empty episode list it produces', () => {
   // Load-bearing ordering. The abort path writes its manifest with NO episodes,
   // so an empty-list check placed above the calibration branch would swallow the
-  // one state that must be reported — and the draft threw the record away
-  // entirely, leaving the disqualification on stderr only.
+  // one state that must be reported.
   const { verdict, says } = summarize([], { calibrationCleared: false, causes: ['prefill-short'] });
   assert.equal(verdict, 'instrument-failed');
   assert.match(says, /calibration cannot license this sweep/i);
@@ -244,8 +241,6 @@ test('any failure leaves the sweep inconclusive, never confirming', () => {
 
 test('a sweep where nothing was exposed refutes nothing, and counts rather than asserts', () => {
   assert.match(summarize(['no-exposure', 'no-exposure']).says, /0 of 2 episode\(s\) stayed in flight/);
-  // The false sentence the draft printed: "No episode stayed in flight past
-  // expiry" for a sweep in which one had.
   const mixed = summarize(['survived-past-expiry', 'no-exposure', 'no-exposure']);
   assert.equal(mixed.verdict, 'no-exposure');
   assert.match(mixed.says, /1 of 3 episode\(s\) stayed in flight/);

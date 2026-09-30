@@ -19,12 +19,10 @@ import { COMPANION, completion, modelList, respondJson, startFakeServer, tempDir
 // TWO instruments, and the difference is the point.
 //
 // The first is a REAL runtime without the module, and HOW we get one is itself
-// decided by capability rather than by version — the same mistake this feature
-// exists to correct, made once in its own harness. `--no-experimental-sqlite`
-// only exists from Node 22.5, so hard-coding it made `npm test` die at
-// `node: bad option:` on 18.18–22.4, which is precisely the range this feature
-// restores: the change proving the plugin runs on old runtimes could not itself
-// be run on one. So: ask whether THIS runtime has `node:sqlite`, and pass the
+// decided by capability rather than by version. `--no-experimental-sqlite` only
+// exists from Node 22.5, so hard-coding it would make `npm test` die at
+// `node: bad option:` on 18.18–22.4 — the very runtimes these tests are about.
+// So: ask whether THIS runtime has `node:sqlite`, and pass the
 // flag only if it does. Where the parent already lacks it, no flag is needed —
 // the child is a real runtime without the module for free.
 //
@@ -33,10 +31,7 @@ import { COMPANION, completion, modelList, respondJson, startFakeServer, tempDir
 // and never the flag path; from 22.13 they exercise the flag.
 //
 // The ESM hook is kept for the one shape no real runtime produces on purpose — a
-// failure this plugin does not recognise — and for nothing else. An earlier
-// version of these tests used it to drive a second "unavailable" code as well,
-// and a review proved no runtime can raise that code: the fixture had invented
-// the evidence for the branch that consumed it. Both are gone.
+// failure this plugin does not recognise — and for nothing else.
 let parentHasSqlite = true;
 try {
   await import('node:sqlite');
@@ -61,9 +56,8 @@ const REGISTER_SKIP =
 /**
  * The companion, spawned at its real path.
  *
- * Spawned rather than imported, because the defect this guards is a LINK-time
- * one: it happens before any of this build's code runs, so nothing that imports a
- * module can observe it. Async `execFile` only — a synchronous spawn deadlocks
+ * The defect this guards is a LINK-time one: it happens before any of this
+ * build's code runs. Async `execFile` only — a synchronous spawn deadlocks
  * against the in-process fake server the rest of this suite uses, and
  * `tests/structure.test.js` forbids it outright.
  */
@@ -108,8 +102,7 @@ test('a runtime without node:sqlite loses background jobs and nothing else', asy
 // connection error — but that conflates "refused before probing" with "could not
 // connect", and it made the assertion the test exists for unfalsifiable: the
 // refusal-message assertion above it fails FIRST in the regressed build, so
-// nothing downstream is ever evaluated. Proved by positive control, not by
-// reading it.
+// nothing downstream is ever evaluated.
 //
 // Against a server that answers, the sqlite refusal appears either way — the gate
 // only changes WHEN. So the server's own request log is the one witness that
@@ -161,13 +154,11 @@ test('an unrecognised import failure is never relabelled, and never spreads', { 
 // The claim four documents and the refusal hint all make, EXECUTED rather than
 // inferred from the import graph.
 //
-// Each assertion carries a POSITIVE witness that the command actually ran. A
-// first version of this test invoked `--help`, which none of these commands
-// accept: all three exited at the argument parser, and the "must not see the
-// runtime gap" assertions passed because nothing had run. That is the same
-// cannot-fail class this feature deleted twice elsewhere, written minutes after
-// deleting them — so each case now proves it reached the command's own logic
-// before it proves what it did not see.
+// Each assertion carries a POSITIVE witness that the command actually ran. None
+// of these commands accepts `--help`: invoked that way, all three exit at the
+// argument parser, and a "must not see the runtime gap" assertion passes because
+// nothing ran — so each case proves it reached the command's own logic before it
+// proves what it did not see.
 test('the commands that never open a database work on a runtime without node:sqlite', async () => {
   const setup = await companion(REAL_RUNTIME_WITHOUT_SQLITE, ['setup', '--json']);
   assert.equal(setup.code, 0, 'setup succeeds outright');
@@ -176,13 +167,10 @@ test('the commands that never open a database work on a runtime without node:sql
   // load — the banner is the witness that dispatch got into the command.
   // `--file`, NOT `--diff-only`. This case runs the companion with no `cwd`, so it
   // inherits whatever directory the suite was invoked from, and `--diff-only` asks
-  // that directory for uncommitted changes. The whole suite therefore passed only
-  // while this repo was dirty, and the commit gate's own commit is what makes it
-  // clean: measured at 630/2 in a copy with this feature committed, failing here
-  // with `Nothing to review: uncommitted changes is empty`. A check that holds only
-  // until the action it gates is performed is not a gate. `--file` reaches the same
-  // provider probe — the banner below is the actual witness — while depending on
-  // nothing outside the repo's own tracked contents.
+  // that directory for uncommitted changes, so a case using it passes only while
+  // this repo is dirty and fails on a clean checkout with
+  // `Nothing to review: uncommitted changes is empty`. `--file` reaches the same
+  // provider probe — the banner below is the actual witness.
   for (const argv of [
     ['review', '--file', 'package.json', '--base-url', 'http://127.0.0.1:9/v1'],
     ['task', '--base-url', 'http://127.0.0.1:9/v1', 'summarise this'],

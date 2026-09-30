@@ -4,8 +4,8 @@
 // These exist because the first implementation bounded *bytes*, and bytes are
 // the wrong unit: a keepalive comment is socket activity that proves nothing
 // about generation, so a server emitting one forever would have held the budget
-// open forever while the plugin reported it armed. That is the defect class this
-// whole feature exists to remove, so it gets a test rather than a comment.
+// open forever while the plugin reported it armed. That is the defect class the
+// stream budgets exist to remove, so it gets a test rather than a comment.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { completion, deltaFrame, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
@@ -71,10 +71,10 @@ test('a server that emits a role-only frame and then nothing is stopped too', as
 });
 
 test('a server refusing BOTH stream_options and streaming still gets an answer', async () => {
-  // The first shape of the ladder returned the second rung's retry from inside
-  // the first rung's catch, so a `stream` rejection arriving *after*
-  // stream_options had been dropped escaped with no fallback at all — breaking
-  // exactly the providers the ladder exists to keep working.
+  // A `stream` rejection arriving *after* stream_options has been dropped must
+  // still reach the next rung — a retry issued from inside the first rung's catch
+  // would let it escape with no fallback at all, breaking exactly the providers
+  // the ladder exists to keep working.
   const seen = [];
   const server = await startFakeServer((record, response) => {
     if (record.url.includes('/models')) return respondJson(response, modelList('test-model'));

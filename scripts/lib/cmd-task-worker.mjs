@@ -126,10 +126,10 @@ async function runJob(job) {
  *
  * **This function returns rather than throws, and its caller rethrows.** A
  * `throw` raised inside a `catch` block REPLACES the pending rethrow, so a
- * storage failure here escaped as itself and the caller's `throw error` never
- * ran — erasing the model-failure diagnosis from the only channel still carrying
- * it, since the row write that would have carried it is exactly what failed. A
- * job that died of a bad credential was logged as contention.
+ * storage failure thrown here would escape as itself and the caller's `throw
+ * error` would never run — erasing the model-failure diagnosis from the only
+ * channel still carrying it, since the row write that would have carried it is
+ * exactly what failed.
  *
  * That claim is **guarded rather than asserted**: the report itself is a write to
  * a real file descriptor — this worker's stderr is its job log — and a write can
@@ -139,10 +139,9 @@ async function runJob(job) {
  * descriptor, so on the only path where this fires there is no channel left for
  * either error to arrive on.
  *
- * It does NOT test `isBusy`, and that is the second half of the same lesson: a
- * first version caught only the busy and rethrew everything else, which fixed
- * the exhausted lock and left a disk error, a corrupt file or a schema fault
- * reproducing the identical loss. Which storage fault it was does not change
+ * It does NOT test `isBusy`: catching only the busy and rethrowing everything
+ * else would leave a disk error, a corrupt file or a schema fault reproducing
+ * the identical loss. Which storage fault it was does not change
  * what a reader needs — the reason the JOB failed — so both errors are kept:
  * this one by message on stderr, which is the job log, and the diagnosis by the
  * caller propagating it. `error.cause` is deliberately not used;
@@ -186,8 +185,7 @@ function publishFailure(db, seq, error) {
  * no schema and adds no reader: it writes to the descriptor this worker was
  * spawned with — `job-spawn.mjs` opens the job log once and passes it as both
  * stdout and stderr — which is a channel the process already owns. A real
- * fallback store would need a lifecycle, retention and something that reads it,
- * and none of that was in this feature's plan.
+ * fallback store would need a lifecycle, retention and something that reads it.
  *
  * The prefix is the whole point. This log also carries the progress heartbeat
  * and the model's own chatter, so an unmarked JSON dump would be recoverable in
@@ -300,10 +298,8 @@ export async function runTaskWorker(argv) {
   // indistinguishable from one that never started, and anything queued behind a
   // long run would be collected as abandoned.
   // Retried, because this caller handles the false RETURN and has no catch at
-  // all: a busy here killed the worker before it had sent anything, and the job
-  // it was spawned for simply never ran. An earlier draft of the exclusion list
-  // in `job-busy.mjs` claimed this caller "treats a throw as the answer" — it
-  // does not, and review caught the claim rather than the code.
+  // all: an unretried busy here would kill the worker before it had sent
+  // anything, and the job it was spawned for would simply never run.
   if (!withBusyRetry(() => registerWaiter(db, seq, process.pid, now()))) {
     // Arrived too late: the row was reconciled away, or another worker holds it.
     // Exiting here is the point — nothing has been sent, and nothing will be.
