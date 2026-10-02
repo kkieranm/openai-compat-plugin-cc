@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
-import { RETAIN } from '../scripts/lib/job-retention.mjs';
+import { RETAIN } from '../plugins/oai/scripts/lib/job-retention.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, readJobs, stateDir, waitForState, withStore } from './job-helpers.mjs';
 import { assertCorruptAndReachable, fillTerminal, logPath, runSweep, writeLog } from './retention-helpers.mjs';
 

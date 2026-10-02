@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadConfig, normalizeBaseUrl, resolveProfile } from '../scripts/lib/config.mjs';
+import { loadConfig, normalizeBaseUrl, resolveProfile } from '../plugins/oai/scripts/lib/config.mjs';
 import { writeConfig } from './helpers.mjs';
 
 /** Load the config with a scratch OAI_PLUGIN_CONFIG, restoring the env var after. */

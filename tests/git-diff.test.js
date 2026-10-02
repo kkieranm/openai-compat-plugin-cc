@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { collectTarget } from '../scripts/lib/git-diff.mjs';
+import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
 import { createRepo, git, tempDir } from './helpers.mjs';
 
 test('the default target is uncommitted work, including untracked files', async () => {

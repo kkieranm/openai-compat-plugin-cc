@@ -13,7 +13,7 @@ Clone it and load it into a Claude Code session:
 
 ```sh
 git clone https://github.com/kkieranm/openai-compat-plugin-cc.git
-claude --plugin-dir ./openai-compat-plugin-cc -p "/oai:setup"    # try it in one session
+claude --plugin-dir ./openai-compat-plugin-cc/plugins/oai -p "/oai:setup"    # try it in one session
 ```
 
 Or add it as a plugin marketplace and install from there:

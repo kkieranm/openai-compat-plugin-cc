@@ -100,7 +100,7 @@ test('the FAILED terminal write survives a transient busy', { skip: NEEDS_SQLITE
       return original.call(this, sql, ...rest);
     };
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     // It rethrows the model failure after recording it; the recording is what is
     // under test, so the throw is expected and swallowed here.
     await assert.rejects(() => runTaskWorker(['--seq', String(seq)]));
@@ -146,7 +146,7 @@ test('the COMPLETED terminal write survives a transient busy', { skip: NEEDS_SQL
       return original.call(this, sql, ...rest);
     };
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await runTaskWorker(['--seq', String(seq)]);
   } finally {
     DatabaseSync.prototype.prepare = original;
@@ -177,9 +177,9 @@ test('a busy beat in the QUEUE wait loop does not kill a waiting worker', { skip
     insertSynthetic(state, { id: 'holder', state: 'running', workerPid: process.pid, waiterPid: process.pid, beatAgoMs: 0 });
     const seq = insertSynthetic(state, { id: 'waiter' });
     process.env.OAI_PLUGIN_STATE = state;
-    const { openStore } = await import('../scripts/lib/job-store.mjs');
-    const { awaitTurn } = await import('../scripts/lib/job-queue.mjs');
-    const { jobBySeq, registerWaiter } = await import('../scripts/lib/job-record.mjs');
+    const { openStore } = await import('../plugins/oai/scripts/lib/job-store.mjs');
+    const { awaitTurn } = await import('../plugins/oai/scripts/lib/job-queue.mjs');
+    const { jobBySeq, registerWaiter } = await import('../plugins/oai/scripts/lib/job-record.mjs');
     const db = openStore();
     try {
       registerWaiter(db, seq, process.pid, new Date().toISOString());
@@ -229,9 +229,9 @@ test('the QUEUE-TIMEOUT terminal write survives a transient busy', { skip: NEEDS
     withStore(state, (db) => db.prepare('UPDATE jobs SET max_wait_ms = 1 WHERE seq = ?').run(seq));
     process.env.OAI_PLUGIN_STATE = state;
 
-    const { openStore } = await import('../scripts/lib/job-store.mjs');
-    const { awaitTurn } = await import('../scripts/lib/job-queue.mjs');
-    const { jobBySeq, registerWaiter } = await import('../scripts/lib/job-record.mjs');
+    const { openStore } = await import('../plugins/oai/scripts/lib/job-store.mjs');
+    const { awaitTurn } = await import('../plugins/oai/scripts/lib/job-queue.mjs');
+    const { jobBySeq, registerWaiter } = await import('../plugins/oai/scripts/lib/job-record.mjs');
     const db = openStore();
     try {
       registerWaiter(db, seq, process.pid, new Date().toISOString());

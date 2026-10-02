@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { abandonDecision } from '../scripts/lib/job-abandon.mjs';
+import { abandonDecision } from '../plugins/oai/scripts/lib/job-abandon.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';
 import { breakStamps } from './blocker-helpers.mjs';
 
@@ -175,7 +175,7 @@ test('every refusal the decision can return has something to say', { skip: NEEDS
   // `REFUSALS` is a lookup, so a reason added to `abandonDecision` without an
   // entry beside it is a TypeError and exit 2 rather than a message. Pinned
   // against the decision's own vocabulary rather than a hand-copied list.
-  const source = readFileSync(new URL('../scripts/lib/job-abandon.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../plugins/oai/scripts/lib/job-abandon.mjs', import.meta.url), 'utf8');
   const reasons = new Set([...source.matchAll(/reason: '([a-z-]+)'/g)].map((match) => match[1]));
   reasons.delete('operator-abandoned'); // the failure envelope's reason, not a refusal
   reasons.delete('forced');
@@ -194,7 +194,7 @@ test('every refusal the decision can return has something to say', { skip: NEEDS
     'the refusal vocabulary changed: add the new reason here and to REFUSALS',
   );
 
-  const table = readFileSync(new URL('../scripts/lib/cmd-abandon.mjs', import.meta.url), 'utf8');
+  const table = readFileSync(new URL('../plugins/oai/scripts/lib/cmd-abandon.mjs', import.meta.url), 'utf8');
   const covered = new Set([...table.matchAll(/^ {2}'?([a-z-]+)'?: \(job\)/gm)].map((match) => match[1]));
   covered.add('gone'); // intercepted before the table: "no such job" is not a refusal to abandon
   assert.deepEqual([...reasons].filter((reason) => !covered.has(reason)), []);

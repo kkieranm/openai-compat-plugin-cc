@@ -11,8 +11,8 @@ import { chmodSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UserError } from '../scripts/lib/errors.mjs';
-import { DEFAULT_CONFIG, configPath, loadConfig } from '../scripts/lib/config.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
+import { DEFAULT_CONFIG, configPath, loadConfig } from '../plugins/oai/scripts/lib/config.mjs';
 import { tempDir } from './helpers.mjs';
 
 function modeOf(path) {
@@ -145,7 +145,7 @@ test('a pre-existing config at the target path is read and repaired, not treated
  * satisfy a match identically to the real code).
  */
 function normalizedLoadConfigSource() {
-  const source = readFileSync(fileURLToPath(new URL('../scripts/lib/config.mjs', import.meta.url)), 'utf8');
+  const source = readFileSync(fileURLToPath(new URL('../plugins/oai/scripts/lib/config.mjs', import.meta.url)), 'utf8');
   const fn = source.slice(source.indexOf('export function loadConfig('), source.indexOf('\nfunction validateConfig('));
   return fn.replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ');
 }

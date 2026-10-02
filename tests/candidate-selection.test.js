@@ -5,8 +5,8 @@
 // CANDIDATE within one channel's text wins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFindings } from '../scripts/lib/structured.mjs';
-import { findingsShaped } from '../scripts/lib/findings-candidate.mjs';
+import { parseFindings } from '../plugins/oai/scripts/lib/structured.mjs';
+import { findingsShaped } from '../plugins/oai/scripts/lib/findings-candidate.mjs';
 
 import { FINDING } from './findings-fixtures.mjs';
 

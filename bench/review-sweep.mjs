@@ -18,15 +18,15 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from '../scripts/lib/args.mjs';
-import { UserError } from '../scripts/lib/errors.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { classify, isOutage } from './lib/sweep-outcome.mjs';
 import { resolveDeadline, resolvePin } from './lib/sweep-window.mjs';
 import { envelopeFor, openLedger } from './lib/sweep-ledger.mjs';
 import { writeSweep } from './lib/sweep-report.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const COMPANION = join(ROOT, 'scripts', 'oai-companion.mjs');
+const COMPANION = join(ROOT, 'plugins', 'oai', 'scripts', 'oai-companion.mjs');
 
 // Exported so the tests can drive the REAL argv through the REAL spec. A test
 // that rebuilds this object proves only that its own copy is consistent, which
@@ -41,7 +41,8 @@ export const SPEC = {
 };
 
 const DEFAULTS = {
-  include: ['scripts', 'bench', 'tests'],
+  // `scripts` is where the runtime lived before `plugins/oai/scripts`; history still has those commits.
+  include: ['scripts', 'plugins/oai/scripts', 'bench', 'tests'],
   maxCommits: 40,
   scanLimit: 200,
   // 900 lost half the corpus to deadline-timeout; raising the cap alone recovers

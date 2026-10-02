@@ -4,8 +4,8 @@
 // and because these are only useful to the background tests.
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { databasePath, openStore } from '../scripts/lib/job-store.mjs';
-import { jobById, listJobs } from '../scripts/lib/job-record.mjs';
+import { databasePath, openStore } from '../plugins/oai/scripts/lib/job-store.mjs';
+import { jobById, listJobs } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { COMPANION, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 // `node:sqlite` is a capability, not a given: it is absent on Node 18.18–22.12,

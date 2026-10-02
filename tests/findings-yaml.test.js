@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findingsInYaml } from '../scripts/lib/findings-yaml.mjs';
-import { parseFindings } from '../scripts/lib/structured.mjs';
+import { findingsInYaml } from '../plugins/oai/scripts/lib/findings-yaml.mjs';
+import { parseFindings } from '../plugins/oai/scripts/lib/structured.mjs';
 import { payload } from './findings-fixtures.mjs';
 
 test('the reproduced ticket shape parses to a findings list', () => {

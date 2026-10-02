@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RETAIN, sweep } from '../scripts/lib/job-retention.mjs';
+import { RETAIN, sweep } from '../plugins/oai/scripts/lib/job-retention.mjs';
 import { NEEDS_SQLITE, insertSynthetic, stateDir, withStore } from './job-helpers.mjs';
 import { ackPath, fillTerminal, logPath, runSweep, writeLog } from './retention-helpers.mjs';
 

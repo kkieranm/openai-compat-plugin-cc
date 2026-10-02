@@ -13,14 +13,14 @@
 // executor so a test can drive the whole loop without a model.
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { parseArgs } from '../scripts/lib/args.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { ARMS, attachmentArgs, loadTaskCases } from './lib/task-corpus.mjs';
 import { MARKER_LIMITS, scoreAnswer, tallyArm } from './lib/task-score.mjs';
 import { persist } from './lib/record.mjs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
+const COMPANION = join(ROOT, 'plugins/oai/scripts/oai-companion.mjs');
 
 export const TASK_BENCH_SPEC = {
   valueFlags: ['runs', 'provider', 'model', 'max-seconds', 'max-attempts'],

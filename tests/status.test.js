@@ -63,7 +63,7 @@ test('a job with attachments shows what was asked, not the first file it was giv
     // `buildMessages` puts file blocks *before* the prompt, so the naive "first
     // line of the last user message" reads `--- FILE: … ---` — a wrong answer
     // that looks like a right one, and one every attached-file job would show.
-    const submit = await scenario.submit(['--file', 'scripts/lib/errors.mjs']);
+    const submit = await scenario.submit(['--file', 'plugins/oai/scripts/lib/errors.mjs']);
     assert.equal(submit.status, 0, submit.stderr);
     const id = submit.stdout.trim();
     await waitForState(scenario.state, id, ['completed', 'failed']);
@@ -71,7 +71,7 @@ test('a job with attachments shows what was asked, not the first file it was giv
     const status = await scenario.run(['status', id]);
     assert.match(status.stdout, /request\s+do it/);
     assert.doesNotMatch(status.stdout, /request\s+--- FILE/);
-    assert.match(status.stdout, /attachments\s+scripts\/lib\/errors\.mjs/);
+    assert.match(status.stdout, /attachments\s+plugins\/oai\/scripts\/lib\/errors\.mjs/);
   } finally {
     await scenario.server.close();
   }

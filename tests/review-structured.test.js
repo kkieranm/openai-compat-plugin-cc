@@ -24,7 +24,7 @@ import {
   reviewScenario as scenario,
   runCompanion,
 } from './helpers.mjs';
-import { MAX_FINDINGS } from '../scripts/lib/review-schema.mjs';
+import { MAX_FINDINGS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',

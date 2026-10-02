@@ -8,12 +8,12 @@
     {
       "name": "oai",
       "description": "Delegate work from Claude Code to local models on any OpenAI-compatible server (LM Studio, oMLX, Unsloth Studio, ...).",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "author": {
         "name": "kkieranm"
       },
-      "source": "./"
+      "source": "./plugins/oai"
     }
   ]
 }

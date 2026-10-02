@@ -8,7 +8,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isAlive } from '../scripts/lib/job-liveness.mjs';
+import { isAlive } from '../plugins/oai/scripts/lib/job-liveness.mjs';
 import { insertSynthetic } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

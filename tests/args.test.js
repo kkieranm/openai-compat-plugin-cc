@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertNoFlagsInPrompt, parseArgs, parseCommandLine, splitBlob } from '../scripts/lib/args.mjs';
+import { assertNoFlagsInPrompt, parseArgs, parseCommandLine, splitBlob } from '../plugins/oai/scripts/lib/args.mjs';
 
 const TASK_SPEC = {
   valueFlags: ['provider', 'base-url', 'model', 'prompt-file', 'system', 'timeout', 'max-tokens', 'temperature'],

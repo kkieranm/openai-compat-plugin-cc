@@ -7,8 +7,8 @@
 // runs one way only — `report.mjs` imports this, never the reverse — because the
 // obvious half-move, leaving the sampling helpers behind and importing them back,
 // is an import cycle waiting to happen.
-import { tokensPerSecond } from '../../scripts/lib/throughput.mjs';
-import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
+import { tokensPerSecond } from '../../plugins/oai/scripts/lib/throughput.mjs';
+import { reasoningWitness } from '../../plugins/oai/scripts/lib/reasoning-witness.mjs';
 import { answeringAttempt } from './attempt-rows.mjs';
 import { analysisCutRuns, scoredRuns, truncatedRuns, unreadableRuns } from './run-buckets.mjs';
 

@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { probeProvider } from '../scripts/lib/cmd-setup.mjs';
+import { probeProvider } from '../plugins/oai/scripts/lib/cmd-setup.mjs';
 
 test('a buildProfile failure never echoes a query-embedded credential', async () => {
   const previous = process.env.OAI_SETUP_TEST_KEY;

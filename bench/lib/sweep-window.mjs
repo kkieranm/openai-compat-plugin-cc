@@ -8,7 +8,7 @@
 // commits". Enumerating from `HEAD` meant a commit landing between arms silently
 // shifted the window and the arms were no longer comparable — so what is
 // recorded here is the RESOLVED commit, never the text the caller typed.
-import { UserError } from '../../scripts/lib/errors.mjs';
+import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
 
 /**
  * When to stop STARTING work.

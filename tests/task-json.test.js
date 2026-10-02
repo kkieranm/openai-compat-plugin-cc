@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { templateNotes } from '../scripts/lib/task-template.mjs';
+import { templateNotes } from '../plugins/oai/scripts/lib/task-template.mjs';
 
 async function serverAnswering(text, { status = 200 } = {}) {
   return startFakeServer((request, response) => {

@@ -9,8 +9,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chatRequests, completion, respondJson, runCompanion, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
-import { requestTextOf } from '../scripts/lib/prompt.mjs';
-import { TEMPLATES } from '../scripts/lib/task-template.mjs';
+import { requestTextOf } from '../plugins/oai/scripts/lib/prompt.mjs';
+import { TEMPLATES } from '../plugins/oai/scripts/lib/task-template.mjs';
 
 const ADVISOR = TEMPLATES.advisor;
 
@@ -63,7 +63,7 @@ test('the skeleton stays out of the user message even when files are attached', 
   const server = await serverAnswering('STRONGEST OBJECTION: none.');
   try {
     const result = await runTask(server, [
-      '--template', 'advisor', '--file', 'scripts/lib/errors.mjs', 'I plan to delete UserError',
+      '--template', 'advisor', '--file', 'plugins/oai/scripts/lib/errors.mjs', 'I plan to delete UserError',
     ]);
     assert.equal(result.status, 0, result.stderr);
 

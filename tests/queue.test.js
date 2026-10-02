@@ -6,7 +6,7 @@
 // machine's memory ceiling cannot take.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { finish } from '../scripts/lib/job-record.mjs';
+import { finish } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { NEEDS_SQLITE, queueScenario, readJob, waitForState, withStore } from './job-helpers.mjs';
 
 /** A queued job whose worker has registered — "waiting", not merely "recorded". */

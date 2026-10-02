@@ -12,7 +12,7 @@
 // record does not quote it, a deliberate scope decision.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { abandonRow } from '../scripts/lib/job-abandon.mjs';
+import { abandonRow } from '../plugins/oai/scripts/lib/job-abandon.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, withStore } from './job-helpers.mjs';
 
 const STALE = 90_000; // past STALE_BEAT_MS (60s)

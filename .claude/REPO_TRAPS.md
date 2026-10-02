@@ -1058,7 +1058,7 @@ it survived four review passes that were all looking at the code.
 Found 2026-08-05, in a fix the *previous* review pass had just introduced — which is the
 whole reason it is written down here.
 
-`agents/oai-delegate.md` canonicalises each attachment path so it can refuse one that resolves
+`plugins/oai/agents/oai-delegate.md` canonicalises each attachment path so it can refuse one that resolves
 outside the tree. Pass 3 wrote that check with `readlink -f`; pass 4 replaced it with node, to drop a
 GNU-utility assumption from a plugin that is generic by construction:
 
@@ -1233,7 +1233,7 @@ used to, without terminating the whole process.
 A follow-up pass applied the same fix to four sibling sites found by call-graph review of every
 `process.exit(` call in the repo's CLI surface (`bench/run.mjs`, `bench/recover-sweep.mjs`,
 `bench/task-run.mjs`, `bench/ttl-challenge.mjs` — the last of these has two call sites, one on its
-success path). Two files were deliberately left alone: `scripts/lib/job-heartbeat.mjs`'s
+success path). Two files were deliberately left alone: `plugins/oai/scripts/lib/job-heartbeat.mjs`'s
 `process.exit(0)` is not this defect — the exit's side effect (closing the model socket to stop
 generation server-side) is the point, not an accident — and `bench/task-cases/prototype-lookup/witness.mjs`
 is corpus data, not production CLI surface.
@@ -1242,7 +1242,7 @@ is corpus data, not production CLI surface.
 process.exit()", scanning an explicit `CLI_ENTRYPOINTS` list (rather than a repo-wide ban, which
 would have to grow the same allowlist by hand) with comments stripped first — this defect class's own
 explanatory prose, including this entry's own reference implementation
-(`scripts/oai-companion.mjs`), inherently mentions the banned call by name.
+(`plugins/oai/scripts/oai-companion.mjs`), inherently mentions the banned call by name.
 
 ## A rendered claim about a state transition, pinned only by a surrogate predicate
 

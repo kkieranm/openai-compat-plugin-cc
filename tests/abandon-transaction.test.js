@@ -7,9 +7,9 @@
 // both to change either.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { abandonRow } from '../scripts/lib/job-abandon.mjs';
-import { tryAcquire } from '../scripts/lib/job-queue.mjs';
-import { beat, jobById } from '../scripts/lib/job-record.mjs';
+import { abandonRow } from '../plugins/oai/scripts/lib/job-abandon.mjs';
+import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
+import { beat, jobById } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, withStore } from './job-helpers.mjs';
 
 const STALE = 90_000; // past STALE_BEAT_MS (60s)

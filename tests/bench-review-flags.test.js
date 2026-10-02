@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { reviewFlags } from '../bench/run.mjs';
-import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // THE GUARD THAT GUARDS THE GUARD.

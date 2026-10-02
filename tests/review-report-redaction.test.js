@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { errorReport } from '../scripts/lib/review-report.mjs';
+import { errorReport } from '../plugins/oai/scripts/lib/review-report.mjs';
 
 // `errorReport()`'s return value is what `publishFailure` persists
 // into `jobs.db`'s `row.failure`, and later shown to any reader of

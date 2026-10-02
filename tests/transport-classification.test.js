@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { NON_RETRYABLE_TRANSPORT, TRANSPORT, isRetryable } from '../scripts/lib/failure-shape.mjs';
-import { transportError } from '../scripts/lib/http-errors.mjs';
-import { bodyStream, requestErrorHandler, send } from '../scripts/lib/http.mjs';
-import { request } from '../scripts/lib/provider.mjs';
+import { NON_RETRYABLE_TRANSPORT, TRANSPORT, isRetryable } from '../plugins/oai/scripts/lib/failure-shape.mjs';
+import { transportError } from '../plugins/oai/scripts/lib/http-errors.mjs';
+import { bodyStream, requestErrorHandler, send } from '../plugins/oai/scripts/lib/http.mjs';
+import { request } from '../plugins/oai/scripts/lib/provider.mjs';
 
 /** The rejection, or a failure saying nothing was thrown. */
 async function caught(promise) {

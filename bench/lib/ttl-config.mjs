@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { REVIEW_MIN_TOKENS } from '../../scripts/lib/review-request.mjs';
+import { REVIEW_MIN_TOKENS } from '../../plugins/oai/scripts/lib/review-request.mjs';
 
 /**
  * The protocol the TTL challenge runs under, and the only place a default lives.

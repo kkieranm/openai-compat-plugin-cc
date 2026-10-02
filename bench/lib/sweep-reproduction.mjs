@@ -28,7 +28,7 @@
 import { basename } from 'node:path';
 import { readLedger, ledgerStampFrom } from './sweep-ledger.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
-import { UserError } from '../../scripts/lib/errors.mjs';
+import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
 
 // The two shapes an axis value takes, mirroring `compare-model.mjs`'s own
 // known/unknown machinery: a proven value that two runs can be equated on, or an

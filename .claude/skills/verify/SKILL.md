@@ -20,15 +20,17 @@ deadlocks against that in-process server.
 ## 2. Plugin surface
 
 Structural guards (`tests/plugin.test.js`) already check that the manifests parse, that every command
-declares `allowed-tools: Bash(node:*)`, and that referenced scripts exist. Then load it for real:
+declares `allowed-tools: Bash(node:*)`, and that referenced scripts exist. Then load it for real. The
+session override enables the checkout's copy (`oai@inline`) and disables any installed
+`oai@openai-compat`, so the checkout's copy is the one that answers:
 
 ```sh
-claude --plugin-dir . -p "/oai:setup"   # from the repository root
+claude --plugin-dir plugins/oai --settings '{"enabledPlugins":{"oai@inline":true,"oai@openai-compat":false}}' \
+  -p "/oai:setup"   # from the repository root
 ```
 
 Expect a provider table. With no server running, every provider shows "connection refused" plus its
-remediation line — that is a pass for this step, since it proves the command loaded and the
-companion ran.
+remediation line — that is a pass for this step.
 
 ## 3. Delegation round trip
 
@@ -37,14 +39,14 @@ server on :1234 answering `/v1/models` and `/v1/chat/completions`.
 
 ```sh
 node <scratchpad>/stub-server.mjs &
-claude --plugin-dir . \
-  -p "/oai:task --file scripts/lib/errors.mjs what does this file define?"
+claude --plugin-dir plugins/oai --settings '{"enabledPlugins":{"oai@inline":true,"oai@openai-compat":false}}' \
+  -p "/oai:task --file plugins/oai/scripts/lib/errors.mjs what does this file define?"
 ```
 
 Expect the answer, then a footer naming provider, model, duration and token counts. Read the answer
 back — do not judge success from an exit code. Kill the stub afterwards (`pkill -f stub-server.mjs`).
 
-**A stub pass is not a live pass.** It proves command → script → HTTP → render, not that a real
+**A stub pass is not a live pass.** It proves script → HTTP → render, not that a real
 server speaks the dialect we assume.
 
 ## 4. Live check (the real thing)

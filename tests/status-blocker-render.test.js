@@ -5,8 +5,8 @@
 // question: which row gets named at all.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderList } from '../scripts/lib/job-render.mjs';
-import { statusView } from '../scripts/lib/job-view.mjs';
+import { renderList } from '../plugins/oai/scripts/lib/job-render.mjs';
+import { statusView } from '../plugins/oai/scripts/lib/job-view.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, stateDir, waitForState, withStore } from './job-helpers.mjs';
 import { ELSEWHERE, HERE, TEN_MINUTES, THERE, breakStamps, myJob, realWorkspace, theirHead, viewHere } from './blocker-helpers.mjs';
 

@@ -54,7 +54,7 @@ export function isBusy(error) {
  * Counting them, outside this module: seven `withBusyRetry` call sites, and
  * five `isBusy` call sites. The two sets are DISJOINT. No total is stated even
  * so, and neither number appears without its noun.
- * `tests/busy-site-count.test.js` counts both from `scripts/lib` and reddens if
+ * `tests/busy-site-count.test.js` counts both from `plugins/oai/scripts/lib` and reddens if
  * either sentence here disagrees.
  *
  * **What is deliberately NOT wrapped, so nobody reads the list above as a

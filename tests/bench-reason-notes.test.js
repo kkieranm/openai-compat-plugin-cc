@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { attemptRows } from '../bench/lib/attempt-rows.mjs';
-import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
+import { createLedger } from '../plugins/oai/scripts/lib/attempt-ledger.mjs';
 import { REASON_PARAGRAPHS, RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
 import { CASE, failedAttempt } from './bench-report-fixtures.mjs';

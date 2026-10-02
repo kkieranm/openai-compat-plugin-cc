@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, waitForState } from './job-helpers.mjs';
-import { RENDER_CONSUMED_FIELDS } from '../scripts/lib/cmd-result.mjs';
+import { RENDER_CONSUMED_FIELDS } from '../plugins/oai/scripts/lib/cmd-result.mjs';
 import { tempDir } from './helpers.mjs';
 
 const workspace = (tag) => tempDir(`oai-res-${tag}-`);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chatRequests, deltaFrame, runCompanion, scriptOf, startFakeServer, writeConfig } from './helpers.mjs';
-import { errorFrame } from '../scripts/lib/completion.mjs';
+import { errorFrame } from '../plugins/oai/scripts/lib/completion.mjs';
 
 // A refusal the server puts INSIDE an HTTP 200 stream. LM Studio delivers a
 // context overflow or a rejected sampling value this way: one `event: error`

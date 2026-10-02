@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { UserError } from '../../scripts/lib/errors.mjs';
+import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
 
 const NUL = String.fromCharCode(0);
 

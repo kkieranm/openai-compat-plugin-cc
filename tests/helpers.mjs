@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const COMPANION = fileURLToPath(new URL('../scripts/oai-companion.mjs', import.meta.url));
+export const COMPANION = fileURLToPath(new URL('../plugins/oai/scripts/oai-companion.mjs', import.meta.url));
 
 const TRACKED_TEMP_DIRS = [];
 let exitCleanupRegistered = false;

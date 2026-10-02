@@ -19,8 +19,8 @@ ephemeral port) and requires **`zsh`** on your `PATH`. No real model server is n
 
 - `npm test` must pass.
 - Match the surrounding code's style; there is no separate linter or formatter to run.
-- If your change touches the command surface, keep the markdown in `commands/` in step with the flag
-  definitions in `scripts/lib/cmd-*.mjs` — `tests/plugin.test.js` checks they agree.
+- If your change touches the command surface, keep the markdown in `plugins/oai/commands/` in step with
+  the flag definitions in `plugins/oai/scripts/lib/cmd-*.mjs` — `tests/plugin.test.js` checks they agree.
 - Prefer turning a recurring class of bug into a structural test in `tests/structure.test.js` rather
   than only fixing the one instance.
 - Write a comment only where the *why* is non-obvious; a comment should describe current behaviour,

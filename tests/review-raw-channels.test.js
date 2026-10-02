@@ -8,7 +8,7 @@
 // branch returns the content text too.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jsonReport } from '../scripts/lib/review-report.mjs';
+import { jsonReport } from '../plugins/oai/scripts/lib/review-report.mjs';
 
 const CONTENT = 'I had a look and I am not sure.';
 const REASONING = '{"analysis":"a","findings":[{"file":"a.js"}],"summary":"s"}';

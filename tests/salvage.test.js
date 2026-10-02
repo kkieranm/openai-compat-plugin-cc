@@ -11,8 +11,8 @@ import assert from 'node:assert/strict';
 import { createRepo, reviewScenario, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { findingsFirst, schemaInstruction } from '../scripts/lib/structured.mjs';
-import { estimateTokens } from '../scripts/lib/context-guard.mjs';
+import { findingsFirst, schemaInstruction } from '../plugins/oai/scripts/lib/structured.mjs';
+import { estimateTokens } from '../plugins/oai/scripts/lib/context-guard.mjs';
 
 const DRIP_MS = 40;
 /** Comfortably over SALVAGE_MIN_REASONING_CHARS (500) before the cap fires. */

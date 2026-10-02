@@ -48,7 +48,7 @@ function* sourceFiles(dir) {
 // nothing else in this repo produces it.
 test('no doc comment is orphaned from the thing it documents', () => {
   const offenders = [];
-  for (const dir of ['scripts', 'bench']) {
+  for (const dir of ['plugins/oai/scripts', 'bench']) {
     for (const file of sourceFiles(join(ROOT, dir))) {
       const lines = readFileSync(file, 'utf8').split('\n');
       let closedAt = -1;
@@ -165,7 +165,7 @@ test('no test creates a temp dir except through tests/helpers.mjs\'s tempDir', (
 // configured `timeoutSeconds: 1800` was therefore decoration, and 14 of 18
 // benchmark runs died at the 300s wall while the config advertised half an hour.
 // The defect is an invisible default, so the call site is what this forbids;
-// scripts/lib/http.mjs owns the request on node:http and makes every budget an
+// plugins/oai/scripts/lib/http.mjs owns the request on node:http and makes every budget an
 // argument. There are no exemptions: http.mjs itself has no reason to call fetch.
 test('nothing calls the global fetch — every request goes through http.mjs', () => {
   // Comments are stripped first, because the modules that replaced fetch have to
@@ -179,18 +179,18 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
   for (const file of sourceFiles(ROOT)) {
     if (/\bfetch\s*\(/.test(withoutComments(readFileSync(file, 'utf8')))) offenders.push(relative(ROOT, file));
   }
-  assert.deepEqual(offenders, [], 'use send() from scripts/lib/http.mjs, which requires an explicit budget');
+  assert.deepEqual(offenders, [], 'use send() from plugins/oai/scripts/lib/http.mjs, which requires an explicit budget');
 });
 
 // process.exit() tears the process down before queued stdio writes drain, truncating
 // a large stdout or stderr payload at the pipe buffer. process.exitCode plus a natural return
 // lets Node drain first. Scoped to this repo's actual CLI entrypoints rather than banned
-// repo-wide: scripts/lib/job-heartbeat.mjs has a deliberate process.exit(0) whose
+// repo-wide: plugins/oai/scripts/lib/job-heartbeat.mjs has a deliberate process.exit(0) whose
 // side effect (closing the model socket to stop generation server-side) is the
 // point, and bench/task-cases/prototype-lookup/witness.mjs is corpus data, not
 // production CLI surface.
 const CLI_ENTRYPOINTS = [
-  'scripts/oai-companion.mjs', // the one file always run directly; no self-invocation guard needed
+  'plugins/oai/scripts/oai-companion.mjs', // the one file always run directly; no self-invocation guard needed
   'bench/run.mjs', // process.argv[1] self-invocation guard
   'bench/review-sweep.mjs', // process.argv[1] self-invocation guard
   'bench/recover-sweep.mjs', // process.argv[1] self-invocation guard
@@ -201,7 +201,7 @@ const CLI_ENTRYPOINTS = [
 ];
 test('CLI entrypoints use process.exitCode, never process.exit()', () => {
   // Comments are stripped first: this defect class's own explanatory comments
-  // (including the one above this test, and scripts/oai-companion.mjs's own)
+  // (including the one above this test, and plugins/oai/scripts/oai-companion.mjs's own)
   // inherently mention the banned call by name.
   const offenders = [];
   for (const rel of CLI_ENTRYPOINTS) {
@@ -255,7 +255,7 @@ function occurrences(haystack, needle) {
 }
 
 test('the wall-clock cap is checked before a ledger entry is minted, not after', () => {
-  const body = functionBody('scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
+  const body = functionBody('plugins/oai/scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
 
   const cap = body.indexOf('capBudgets(');
   const begin = body.indexOf('.begin(');
@@ -280,8 +280,8 @@ test('the wall-clock cap is checked before a ledger entry is minted, not after',
  * clock, and fails if `postChat` recomputes. This pins where the rule lives.
  */
 test('the cap is evaluated exactly once per dispatch, and that evaluation is what the transport gets', () => {
-  const degrade = functionBody('scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
-  const post = functionBody('scripts/lib/chat.mjs', /^async function postChat\b/);
+  const degrade = functionBody('plugins/oai/scripts/lib/chat.mjs', /^export async function postWithDegrade\b/);
+  const post = functionBody('plugins/oai/scripts/lib/chat.mjs', /^async function postChat\b/);
 
   assert.equal(
     occurrences(degrade, 'capBudgets('),
@@ -334,7 +334,7 @@ test('the cap is evaluated exactly once per dispatch, and that evaluation is wha
  * this line still reads `{ delivered: true }`.
  */
 test('the body-stream catch classifies its failures as delivered, whatever code Node attached', () => {
-  const body = functionBody('scripts/lib/http.mjs', /^export async function\* bodyStream\b/);
+  const body = functionBody('plugins/oai/scripts/lib/http.mjs', /^export async function\* bodyStream\b/);
 
   assert.match(
     body,
@@ -363,20 +363,20 @@ test('the body-stream catch classifies its failures as delivered, whatever code 
 // config/counters, not server response content, which is why that gap was
 // accepted rather than closed.
 const RESPONSE_BOUNDARY_FILES = [
-  'scripts/lib/http.mjs',
-  'scripts/lib/http-errors.mjs',
-  'scripts/lib/provider.mjs',
-  'scripts/lib/body.mjs',
-  'scripts/lib/sse.mjs',
+  'plugins/oai/scripts/lib/http.mjs',
+  'plugins/oai/scripts/lib/http-errors.mjs',
+  'plugins/oai/scripts/lib/provider.mjs',
+  'plugins/oai/scripts/lib/body.mjs',
+  'plugins/oai/scripts/lib/sse.mjs',
   // Builds a UserError from an error frame the server streamed (the refusal
   // text goes on `.responseBody`), so it sits at the same boundary.
-  'scripts/lib/stream-collect.mjs',
+  'plugins/oai/scripts/lib/stream-collect.mjs',
   // Not transport-layer, but the same server-payload risk: `finish_reason`
   // (completion.mjs's applyFrame/applyCompletion) is read off the server's
   // JSON with no validation, and both files construct a UserError from it —
   // missed by earlier sweeps that stayed inside the transport layer.
-  'scripts/lib/completion.mjs',
-  'scripts/lib/client.mjs',
+  'plugins/oai/scripts/lib/completion.mjs',
+  'plugins/oai/scripts/lib/client.mjs',
 ];
 
 const TAINTED_SUBSTRINGS = [
@@ -511,7 +511,7 @@ test('no server-controlled value reaches a UserError message at the response bou
       "(-> jobs.db) and by oai-companion.mjs's top-level catch (-> a background worker's job log). " +
       'If this is a new, genuinely safe interpolation, add it to SAFE_MESSAGE_EXPRESSIONS by hand. ' +
       'Scoped to RESPONSE_BOUNDARY_FILES only — not a repo-wide guarantee; ' +
-      'scripts/lib/model-selection.mjs / delegate.mjs carry a related, lower-severity gap ' +
+      'plugins/oai/scripts/lib/model-selection.mjs / delegate.mjs carry a related, lower-severity gap ' +
       '(a server-reported model id can reach a UserError message, but only pre-submission, never on ' +
       'the background persistence path this guard protects).',
   );

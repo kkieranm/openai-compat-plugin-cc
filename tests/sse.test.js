@@ -5,8 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startFakeServer } from './helpers.mjs';
-import { send } from '../scripts/lib/http.mjs';
-import { createSseParser, readSse } from '../scripts/lib/sse.mjs';
+import { send } from '../plugins/oai/scripts/lib/http.mjs';
+import { createSseParser, readSse } from '../plugins/oai/scripts/lib/sse.mjs';
 
 /** Drive the parser directly — no socket, so a case is a list of strings. */
 function parse(...chunks) {

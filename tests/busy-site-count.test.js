@@ -4,7 +4,7 @@
 // A site count in prose drifts, because a number in prose has nothing holding it
 // to the code it describes.
 //
-// The numbers are NOT hardcoded here. They are counted from `scripts/lib`, spelled
+// The numbers are NOT hardcoded here. They are counted from `plugins/oai/scripts/lib`, spelled
 // out, and the resulting sentence is required to appear in each document. Change
 // the code and the required sentence changes with it, so the docs redden until
 // they agree — which is the whole point, and is what a hardcoded expectation
@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const LIB = join(ROOT, 'scripts/lib');
+const LIB = join(ROOT, 'plugins/oai/scripts/lib');
 
 /** The module that DEFINES these helpers is not a call site of them. */
 const DEFINITION = 'job-busy.mjs';
@@ -63,7 +63,7 @@ test('every stated count of contention sites matches the code', () => {
     `${SPELLED[counts.isBusy]} \`isBusy\` call sites`,
   ];
 
-  const documents = ['scripts/lib/job-busy.mjs'];
+  const documents = ['plugins/oai/scripts/lib/job-busy.mjs'];
   const failures = [];
   for (const relative of documents) {
     const text = readFileSync(join(ROOT, relative), 'utf8');

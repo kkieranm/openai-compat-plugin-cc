@@ -10,7 +10,7 @@
 // numbers and fixed words; every untrusted value is wrapped at its interpolation.
 import { safeInline, displayReason } from './markdown-safe.mjs';
 import { pct } from './caveats.mjs';
-import { formatRate } from '../../scripts/lib/throughput.mjs';
+import { formatRate } from '../../plugins/oai/scripts/lib/throughput.mjs';
 
 // `found/opp = pct`, metacharacter-free so safeInline leaves it intact.
 const recallText = (found, opp) => (opp > 0 ? found + '/' + opp + ' = ' + pct(found, opp) : '—');

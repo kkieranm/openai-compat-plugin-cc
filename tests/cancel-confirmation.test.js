@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { closeSync, constants, existsSync, openSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
-import { writeCancelAck } from '../scripts/lib/cancel-ack.mjs';
+import { writeCancelAck } from '../plugins/oai/scripts/lib/cancel-ack.mjs';
 import { ackPath, ackPayload, deadRunning, logPath, makeFifo, waitForExit } from './cancel-helpers.mjs';
 import { NEEDS_SQLITE, queueScenario, readJob, waitForState } from './job-helpers.mjs';
 

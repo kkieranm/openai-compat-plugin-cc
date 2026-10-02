@@ -9,13 +9,16 @@ This file orients an agent or contributor working in the repo. User-facing behav
 
 ## Architecture
 
-Providers are **config data, never code paths**. `commands/*.md` shell out to
-`scripts/oai-companion.mjs`, which resolves a profile from `~/.config/oai-plugin/providers.json` and
-makes one `fetch` call. Adding a provider is a config edit, not a code change.
+Providers are **config data, never code paths**. `plugins/oai/commands/*.md` shell out to
+`plugins/oai/scripts/oai-companion.mjs`, which resolves a profile from
+`~/.config/oai-plugin/providers.json` and makes one `fetch` call. Adding a provider is a config edit,
+not a code change.
 
 There is no build step: the plugin is markdown command definitions + JSON manifests + ESM scripts.
+The installed plugin is `plugins/oai/` alone — the marketplace `source` names it, so `tests/` and
+`bench/` never reach the plugin cache; `tests/plugin.test.js` pins what may live there.
 
-Key modules under `scripts/lib/`:
+Key modules under `plugins/oai/scripts/lib/`:
 
 - **`config.mjs`** — loads and normalises `providers.json`; `normalizeBaseUrl` validates the endpoint
   (a bare `host:port` is *not* a valid base URL — the protocol must be http(s)).
@@ -51,8 +54,8 @@ model server.
 - **Benchmark the reviewer:** `npm run bench` (opt-in, needs a real model).
 - **Compare benchmark runs:** `npm run bench:compare`.
 - **Overnight review sweep:** `npm run review-sweep -- --minutes N` (opt-in, needs a real model).
-- **Load the plugin in a scratch session:** `claude --plugin-dir . -p "/oai:setup"` (from the repo
-  root).
+- **Load the plugin in a scratch session:** `claude --plugin-dir plugins/oai -p "/oai:setup"` (from
+  the repo root).
 
 ## Session footguns (repeat offenders)
 

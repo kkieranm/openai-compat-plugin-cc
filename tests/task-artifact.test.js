@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { artifactNote, checkDiff, extractDiff } from '../scripts/lib/task-artifact.mjs';
+import { artifactNote, checkDiff, extractDiff } from '../plugins/oai/scripts/lib/task-artifact.mjs';
 import { tempDir } from './helpers.mjs';
 
 // Async, because tests/structure.test.js refuses a synchronous spawn outright
@@ -99,7 +99,7 @@ test('checking never touches the working tree', async () => {
 test('the verdict is computed where every other run fact is, so a job can carry it', async () => {
   // Computed at RENDER time, the verdict would never reach /oai:result — and the
   // delegate agent's only submission is a background one, read back through it.
-  const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
+  const { artifactFor } = await import('../plugins/oai/scripts/lib/task-artifact.mjs');
   const dir = await repoWith('one\ntwo\nthree\n');
   const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: dir });
   assert.equal(verdict.state, 'applies');
@@ -111,7 +111,7 @@ test('the verdict is computed where every other run fact is, so a job can carry 
 test('a cwd that is not a work tree is UNAVAILABLE, and that branch is reachable', async () => {
   // Matching a stderr string `git apply --check` never emits would leave this
   // branch unable to fire. Driven against a real non-repo dir.
-  const { artifactFor } = await import('../scripts/lib/task-artifact.mjs');
+  const { artifactFor } = await import('../plugins/oai/scripts/lib/task-artifact.mjs');
   const notARepo = tempDir('oai-norepo-');
   const verdict = artifactFor({ template: 'patch', answer: GOOD, cwd: notARepo });
   assert.equal(verdict.state, 'unavailable');

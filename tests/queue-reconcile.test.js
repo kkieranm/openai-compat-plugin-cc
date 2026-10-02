@@ -8,13 +8,13 @@
 // them eats a job.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { abandonDecision } from '../scripts/lib/job-abandon.mjs';
-import { livenessOf } from '../scripts/lib/job-liveness.mjs';
-import { renderList } from '../scripts/lib/job-render.mjs';
-import { registerWaiter } from '../scripts/lib/job-record.mjs';
-import { statusView } from '../scripts/lib/job-view.mjs';
+import { abandonDecision } from '../plugins/oai/scripts/lib/job-abandon.mjs';
+import { livenessOf } from '../plugins/oai/scripts/lib/job-liveness.mjs';
+import { renderList } from '../plugins/oai/scripts/lib/job-render.mjs';
+import { registerWaiter } from '../plugins/oai/scripts/lib/job-record.mjs';
+import { statusView } from '../plugins/oai/scripts/lib/job-view.mjs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, queueScenario, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
-import { STARTUP_GRACE_MS } from '../scripts/lib/job-liveness.mjs';
+import { STARTUP_GRACE_MS } from '../plugins/oai/scripts/lib/job-liveness.mjs';
 
 const THREE_MINUTES = 180_000;
 

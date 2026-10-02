@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = fileURLToPath(new URL('../scripts/', import.meta.url));
+const ROOT = fileURLToPath(new URL('../plugins/oai/scripts/', import.meta.url));
 
 function sourceFiles(dir = ROOT) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

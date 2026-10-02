@@ -6,8 +6,8 @@ import test from 'node:test';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { stateDir } from './job-helpers.mjs';
-import { logPathFor, logsPath } from '../scripts/lib/job-store.mjs';
-import { spawnWorker } from '../scripts/lib/job-spawn.mjs';
+import { logPathFor, logsPath } from '../plugins/oai/scripts/lib/job-store.mjs';
+import { spawnWorker } from '../plugins/oai/scripts/lib/job-spawn.mjs';
 
 // Not gated on NEEDS_SQLITE: spawnWorker's log-file open happens before any
 // database is touched, so this test's exercised path has no SQLite

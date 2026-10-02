@@ -10,8 +10,8 @@ import test from 'node:test';
 
 import { respondJson, startFakeServer, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, readJob, stateDir, waitForState } from './job-helpers.mjs';
-import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
-import { submitTask } from '../scripts/lib/task-submit.mjs';
+import { TASK_SPEC } from '../plugins/oai/scripts/lib/cmd-task.mjs';
+import { submitTask } from '../plugins/oai/scripts/lib/task-submit.mjs';
 
 /** Answers the probe, then one non-streaming completion. */
 function modelsAndChat(id = 'test-model') {

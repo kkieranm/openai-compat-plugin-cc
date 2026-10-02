@@ -14,9 +14,9 @@ import test from 'node:test';
 
 import { respondJson, startFakeServer, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJobs, stateDir, withStore } from './job-helpers.mjs';
-import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
-import { submitTask } from '../scripts/lib/task-submit.mjs';
-import { finish, registerWaiter } from '../scripts/lib/job-record.mjs';
+import { TASK_SPEC } from '../plugins/oai/scripts/lib/cmd-task.mjs';
+import { submitTask } from '../plugins/oai/scripts/lib/task-submit.mjs';
+import { finish, registerWaiter } from '../plugins/oai/scripts/lib/job-record.mjs';
 
 /** Answers the probe, then one non-streaming completion. */
 function modelsAndChat(id = 'test-model') {
@@ -170,7 +170,7 @@ test('a TRANSIENT busy on the launch-outcome write is retried, not lost', { skip
 // server, a config and a spawn around one `catch` would test everything except
 // the thing in question.
 test('a report that throws does not replace the launch error it accompanies', async () => {
-  const { terminalizeSpawnFailure } = await import('../scripts/lib/job-launch-outcome.mjs');
+  const { terminalizeSpawnFailure } = await import('../plugins/oai/scripts/lib/job-launch-outcome.mjs');
   const launchError = new Error('EACCES: permission denied');
   const db = { prepare() { throw new Error('SQLITE_CORRUPT: malformed database schema'); } };
 
@@ -252,7 +252,7 @@ test('a failing terminal write leaves the launch error intact and the row unwrit
 // sharing the event loop (repo footgun), and there is no reason to risk it.
 test('the DEFAULT report reaches fd 2 of a real process', async () => {
   const { spawn } = await import('node:child_process');
-  const module = new URL('../scripts/lib/job-launch-outcome.mjs', import.meta.url).href;
+  const module = new URL('../plugins/oai/scripts/lib/job-launch-outcome.mjs', import.meta.url).href;
   // No `report` option: this is the production call. The db throws SQLITE_CORRUPT,
   // which is NOT a busy error — so `withBusyRetry` rethrows it on the first attempt
   // rather than exhausting a budget, and the reporting path is reached immediately.

@@ -16,9 +16,9 @@ import test from 'node:test';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { withBusyRetry } from '../scripts/lib/job-busy.mjs';
-import { isAlive } from '../scripts/lib/job-liveness.mjs';
-import { sweep } from '../scripts/lib/job-retention.mjs';
+import { withBusyRetry } from '../plugins/oai/scripts/lib/job-busy.mjs';
+import { isAlive } from '../plugins/oai/scripts/lib/job-liveness.mjs';
+import { sweep } from '../plugins/oai/scripts/lib/job-retention.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
 /**

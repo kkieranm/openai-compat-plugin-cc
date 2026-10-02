@@ -7,7 +7,7 @@
 // preserving rather than merely green.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractJson } from '../scripts/lib/json-scan.mjs';
+import { extractJson } from '../plugins/oai/scripts/lib/json-scan.mjs';
 
 test('JSON is found bare, fenced, or wrapped in prose', () => {
   assert.equal(extractJson('{"a":1}').a, 1);

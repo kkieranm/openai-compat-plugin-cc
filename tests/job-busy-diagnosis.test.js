@@ -61,7 +61,7 @@ test('an exhausted FAILED write does not replace the diagnosis with the contenti
     let jumps = 0;
     performance.now = () => (advancing ? originalNow() + (jumps += 1) * 60_000 : originalNow());
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     // The assertion is the REJECTION REASON, not that it rejected: both defects
     // reject, and only one of them says what actually went wrong.
     await assert.rejects(
@@ -116,7 +116,7 @@ test('a NON-BUSY failure of the failed write also leaves the diagnosis propagati
       return statement;
     };
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await assert.rejects(
       () => runTaskWorker(['--seq', String(seq)]),
       (error) => {

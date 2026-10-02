@@ -6,7 +6,7 @@
 //
 // Distinct from `run-buckets.mjs`, which classifies a run once it exists. This
 // file is what produces the record that file then sorts.
-import { substitution } from '../../scripts/lib/model-identity.mjs';
+import { substitution } from '../../plugins/oai/scripts/lib/model-identity.mjs';
 
 /**
  * Why a run failed, in the command's own vocabulary — or null when it did not say.

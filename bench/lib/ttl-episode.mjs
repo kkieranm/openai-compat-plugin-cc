@@ -94,7 +94,7 @@ function childEnv(config) {
  */
 export function runEpisode(config, caseDef, label, root, spawnImpl = spawn) {
   const { dir, args } = materialize(caseDef, root);
-  const companion = join(root, 'scripts', 'oai-companion.mjs');
+  const companion = join(root, 'plugins', 'oai', 'scripts', 'oai-companion.mjs');
   const startedAt = Date.now();
   const sampler = startSampler(config, startedAt);
   return new Promise((resolve) => {

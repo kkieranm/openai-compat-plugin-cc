@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { buildComparison, isReviewRecord, normalizeReviewRecord } from '../bench/lib/compare-model.mjs';
 import { renderComparison } from '../bench/lib/compare-report.mjs';
 import { compare } from '../bench/compare.mjs';
-import { UserError } from '../scripts/lib/errors.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { tempDir } from './helpers.mjs';
 
 // ---- fixtures: build real review-record shapes caseRows can read ----

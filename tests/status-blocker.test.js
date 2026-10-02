@@ -11,9 +11,9 @@
 // What the display then SAYS about that row lives in `status-blocker-render`.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tryAcquire } from '../scripts/lib/job-queue.mjs';
-import { registerWaiter } from '../scripts/lib/job-record.mjs';
-import { renderList } from '../scripts/lib/job-render.mjs';
+import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
+import { registerWaiter } from '../plugins/oai/scripts/lib/job-record.mjs';
+import { renderList } from '../plugins/oai/scripts/lib/job-render.mjs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, stateDir, withStore } from './job-helpers.mjs';
 import { HERE, TEN_MINUTES, THERE, breakStamps, myJob, theirHead, viewHere } from './blocker-helpers.mjs';
 

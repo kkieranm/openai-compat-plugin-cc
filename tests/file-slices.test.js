@@ -9,8 +9,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildMessages, parseFileArg, readFileBlocks } from '../scripts/lib/prompt.mjs';
-import { excerptOf } from '../scripts/lib/job-render.mjs';
+import { buildMessages, parseFileArg, readFileBlocks } from '../plugins/oai/scripts/lib/prompt.mjs';
+import { excerptOf } from '../plugins/oai/scripts/lib/job-render.mjs';
 import { tempDir } from './helpers.mjs';
 
 function fileWith(lines) {

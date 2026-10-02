@@ -1,9 +1,9 @@
 // The size estimate itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkContextBudget, CONSERVATIVE_NOTE, estimateTokens, typicalTokens } from '../scripts/lib/context-guard.mjs';
-import { prepareRequest } from '../scripts/lib/delegate.mjs';
-import { buildMessages, DEFAULT_SYSTEM_PROMPT } from '../scripts/lib/prompt.mjs';
+import { checkContextBudget, CONSERVATIVE_NOTE, estimateTokens, typicalTokens } from '../plugins/oai/scripts/lib/context-guard.mjs';
+import { prepareRequest } from '../plugins/oai/scripts/lib/delegate.mjs';
+import { buildMessages, DEFAULT_SYSTEM_PROMPT } from '../plugins/oai/scripts/lib/prompt.mjs';
 
 test('the estimate assumes code density, not prose density', () => {
   // Measured live against LM Studio on two real diffs: 3.61 and 3.48

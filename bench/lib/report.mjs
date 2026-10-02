@@ -9,7 +9,7 @@
 // The split worth stating is the last one. A number and the sentence explaining
 // what it does not mean have different reasons to change, and keeping them in
 // one file is how the sentence quietly stops matching the number.
-import { formatRate } from '../../scripts/lib/throughput.mjs';
+import { formatRate } from '../../plugins/oai/scripts/lib/throughput.mjs';
 import { caseRows } from './case-rows.mjs';
 import { reliabilitySection } from './reliability-report.mjs';
 import { caveats, pct } from './caveats.mjs';

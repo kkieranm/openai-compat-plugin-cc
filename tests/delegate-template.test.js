@@ -2,7 +2,7 @@
 //
 // Split from `tests/task-template.test.js` at the size ratchet, and the seam is
 // real: that file tests what a template *is*, and this one tests the one place
-// that decides a template is *used*. `agents/oai-delegate.md` is the agent built
+// that decides a template is *used*. `plugins/oai/agents/oai-delegate.md` is the agent built
 // to be the advisor's caller, so a broker that silently stopped passing the flag
 // would leave the template reachable only by typing it out by hand — the feature
 // would be present and unreachable.
@@ -21,7 +21,7 @@ import { readFileSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { TEMPLATES } from '../scripts/lib/task-template.mjs';
+import { TEMPLATES } from '../plugins/oai/scripts/lib/task-template.mjs';
 import { tempDir } from './helpers.mjs';
 
 // Async, like every other child in this suite. A synchronous spawn blocks the
@@ -51,7 +51,7 @@ test('zsh is present, because it is the shell this suite exists to cover', async
  * pair of snippets proves the snippets work, not that the recipe does.
  */
 function recipeBlock() {
-  const source = readFileSync(new URL('../agents/oai-delegate.md', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../plugins/oai/agents/oai-delegate.md', import.meta.url), 'utf8');
   const start = source.indexOf('  set --\n  case "$template" in');
   const end = source.indexOf('  id=$(node ', start);
   assert.ok(start !== -1, 'the recipe must open its argument list with `set --` then the template case');
@@ -760,7 +760,7 @@ test('the recipe ships with NO template selected by default', async () => {
   // supplies its own value — so nothing here would notice if the shipped default
   // silently became `advisor` and every delegated analysis started being framed
   // as a second opinion.
-  const source = readFileSync(new URL('../agents/oai-delegate.md', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../plugins/oai/agents/oai-delegate.md', import.meta.url), 'utf8');
   assert.match(source, /^ {2}template=''$/m, "the recipe's default must be the empty template");
   assert.doesNotMatch(source, /^ {2}template='advisor'$/m);
 });

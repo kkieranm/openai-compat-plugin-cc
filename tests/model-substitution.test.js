@@ -7,7 +7,7 @@
 // whole wall clock on a model it does not claim to test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { substitution, substitutionNotice } from "../scripts/lib/model-identity.mjs";
+import { substitution, substitutionNotice } from "../plugins/oai/scripts/lib/model-identity.mjs";
 import {
   completion,
   completionFrames,

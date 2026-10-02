@@ -13,8 +13,8 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from '../scripts/lib/args.mjs';
-import { UserError } from '../scripts/lib/errors.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { buildComparison, isReviewRecord, normalizeReviewRecord } from './lib/compare-model.mjs';
 import { renderComparison } from './lib/compare-report.mjs';
 

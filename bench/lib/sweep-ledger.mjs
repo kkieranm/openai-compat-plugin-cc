@@ -25,7 +25,7 @@
 // descriptor, `O_APPEND`, returning only once the write has been made.
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { UserError } from '../../scripts/lib/errors.mjs';
+import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
 
 /**
  * Beside the artifacts it will become, sharing their stamp.

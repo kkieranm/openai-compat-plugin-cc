@@ -12,8 +12,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { send } from '../scripts/lib/http.mjs';
-import { readText } from '../scripts/lib/body.mjs';
+import { send } from '../plugins/oai/scripts/lib/http.mjs';
+import { readText } from '../plugins/oai/scripts/lib/body.mjs';
 
 async function serve(handler) {
   const server = createServer(handler);
@@ -100,7 +100,7 @@ test('the accepted budget ceiling is one a timer can actually express', async ()
   // the flags — so nothing but this asserts they agree. If the constant is ever
   // raised without checking the unit, the flags start accepting a value Node
   // clamps to 1ms, which is the immediate-fire bug the ceiling exists to prevent.
-  const { MAX_BUDGET_SECONDS } = await import('../scripts/lib/http-budgets.mjs');
+  const { MAX_BUDGET_SECONDS } = await import('../plugins/oai/scripts/lib/http-budgets.mjs');
   assert.ok(
     MAX_BUDGET_SECONDS * 1000 <= 2 ** 31 - 1,
     `${MAX_BUDGET_SECONDS}s is ${MAX_BUDGET_SECONDS * 1000}ms, above what setTimeout can express`,
@@ -113,7 +113,7 @@ test('an unrecognised budget name fails as a bug, not as a crash past the UserEr
   // `undefined` and threw a TypeError — which is not a UserError, so it escaped
   // cmd-setup.mjs's and delegate.mjs's `instanceof` gates and turned one
   // mistyped constant into an exit-2 crash of the whole provider report.
-  const { budgetError } = await import('../scripts/lib/http-errors.mjs');
+  const { budgetError } = await import('../plugins/oai/scripts/lib/http-errors.mjs');
   assert.throws(
     () => budgetError('wall-clock', 1000, 0, 'example.test'),
     (error) => error instanceof Error && /unknown budget/.test(error.message),

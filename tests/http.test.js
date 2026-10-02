@@ -6,10 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { closedPort } from './helpers.mjs';
-import { isRetryable } from '../scripts/lib/failure-shape.mjs';
-import { mediaType, send } from '../scripts/lib/http.mjs';
-import { readJson, readText } from '../scripts/lib/body.mjs';
-import { readSse } from '../scripts/lib/sse.mjs';
+import { isRetryable } from '../plugins/oai/scripts/lib/failure-shape.mjs';
+import { mediaType, send } from '../plugins/oai/scripts/lib/http.mjs';
+import { readJson, readText } from '../plugins/oai/scripts/lib/body.mjs';
+import { readSse } from '../plugins/oai/scripts/lib/sse.mjs';
 
 /** A server whose reply each test dictates. */
 async function serve(handler) {

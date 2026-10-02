@@ -3,7 +3,7 @@
 // observed) and the never-throw contract its persistence-path callers rely on.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reasoningWitness } from '../scripts/lib/reasoning-witness.mjs';
+import { reasoningWitness } from '../plugins/oai/scripts/lib/reasoning-witness.mjs';
 
 const usage = (reasoning_tokens) => ({
   prompt_tokens: 100,

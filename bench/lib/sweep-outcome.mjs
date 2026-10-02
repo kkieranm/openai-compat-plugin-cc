@@ -22,7 +22,7 @@
 // serve — "a fact changing what the reader should believe cannot live on one
 // path alone". Reading `findings` and none of them would report a truncated
 // analysis as `clean`.
-import { COMPLETION_SHAPES, NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../../scripts/lib/failure-shape.mjs';
+import { COMPLETION_SHAPES, NON_RETRYABLE_TRANSPORT, TRANSPORT } from '../../plugins/oai/scripts/lib/failure-shape.mjs';
 import { outcomeFor, partialFrom, pickRunContext, reasonFrom, requestedModelFrom, runContextFrom } from './outcome.mjs';
 
 /** Outcomes that mean a model actually read the commit and reported on it. */

@@ -6,7 +6,7 @@
 // driven here rather than argued about in a comment.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { abandonDecision } from '../scripts/lib/job-abandon.mjs';
+import { abandonDecision } from '../plugins/oai/scripts/lib/job-abandon.mjs';
 import { NEEDS_SQLITE } from './job-helpers.mjs';
 
 const STALE = 90_000; // past STALE_BEAT_MS (60s)

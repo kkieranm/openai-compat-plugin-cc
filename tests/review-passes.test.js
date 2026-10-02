@@ -4,8 +4,8 @@
 // multi-pass review exists to produce.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allFailedError, caveatUnion, contextCheckedAll, mergePasses, partitionPasses, passesEnvelope, passesText, servedModelFailure, totalDuration } from '../scripts/lib/review-passes.mjs';
-import { lensDirective, parseReviewLenses } from '../scripts/lib/review.mjs';
+import { allFailedError, caveatUnion, contextCheckedAll, mergePasses, partitionPasses, passesEnvelope, passesText, servedModelFailure, totalDuration } from '../plugins/oai/scripts/lib/review-passes.mjs';
+import { lensDirective, parseReviewLenses } from '../plugins/oai/scripts/lib/review.mjs';
 
 const finding = (over = {}) => ({ file: 'a.js', line: 10, severity: 'medium', summary: 'a bug', evidence: '', ...over });
 const readablePass = (findings) => ({ ok: true, parsed: { findings } });

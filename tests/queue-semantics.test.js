@@ -7,8 +7,8 @@
 // the transaction-critical half, where a test that cannot fail is worth least.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tryAcquire } from '../scripts/lib/job-queue.mjs';
-import { jobBySeq, rowsInState } from '../scripts/lib/job-record.mjs';
+import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
+import { jobBySeq, rowsInState } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, stateDir, withStore } from './job-helpers.mjs';
 import { HERE, THERE } from './blocker-helpers.mjs';
 

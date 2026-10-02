@@ -24,7 +24,7 @@ test('zsh is present, because it is the shell this suite exists to cover', async
   assert.ok(SHELL, 'zsh not found — install it; these recipes run under the user shell, which is zsh here');
 });
 
-const AGENT_SOURCE = readFileSync(new URL('../agents/oai-delegate.md', import.meta.url), 'utf8');
+const AGENT_SOURCE = readFileSync(new URL('../plugins/oai/agents/oai-delegate.md', import.meta.url), 'utf8');
 
 /**
  * The dir/root preamble through the attachment guard, unstubbed: `canon` and

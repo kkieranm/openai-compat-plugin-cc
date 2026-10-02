@@ -20,7 +20,7 @@ import {
   reviewScenario as scenario,
   runCompanion,
 } from './helpers.mjs';
-import { REVIEW_MAX_TOKENS } from '../scripts/lib/review-request.mjs';
+import { REVIEW_MAX_TOKENS } from '../plugins/oai/scripts/lib/review-request.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',

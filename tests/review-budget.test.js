@@ -17,8 +17,8 @@ import {
   runCompanion,
   sentAnalysisCap,
 } from './helpers.mjs';
-import { REVIEW_MAX_TOKENS, REVIEW_MIN_TOKENS } from '../scripts/lib/review-request.mjs';
-import { analysisCapFor, MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
+import { REVIEW_MAX_TOKENS, REVIEW_MIN_TOKENS } from '../plugins/oai/scripts/lib/review-request.mjs';
+import { analysisCapFor, MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 const FINDINGS = JSON.stringify({
   analysis: 'walked each changed hunk',

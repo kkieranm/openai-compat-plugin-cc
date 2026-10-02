@@ -16,7 +16,7 @@ import { promisify } from 'node:util';
 
 // A module URL, not a filesystem path: it is imported by the child below, and a
 // decoded path would break on a `#` or `%` in the checkout path.
-const HEARTBEAT = new URL('../scripts/lib/job-heartbeat.mjs', import.meta.url).href;
+const HEARTBEAT = new URL('../plugins/oai/scripts/lib/job-heartbeat.mjs', import.meta.url).href;
 const run = promisify(execFile);
 
 /**

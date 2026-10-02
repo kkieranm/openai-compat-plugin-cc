@@ -16,7 +16,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync,
 import { fileURLToPath } from 'node:url';
 
 import { NEEDS_SQLITE, stateDir, withStore } from './job-helpers.mjs';
-import { databasePath, logsPath, openStore, openStoreForReading, refuseSymlink, statePath } from '../scripts/lib/job-store.mjs';
+import { databasePath, logsPath, openStore, openStoreForReading, refuseSymlink, statePath } from '../plugins/oai/scripts/lib/job-store.mjs';
 
 function modeOf(path) {
   return statSync(path).mode & 0o777;
@@ -208,7 +208,7 @@ test('a symlinked logs/ directory is refused, not followed and "repaired"', { sk
 // nothing else runs between a check and its use, which no string search can
 // prove — so a future edit that drops or reorders one goes red here.
 test('openOnce re-checks state, in order, before repairDir(logs) and before opening the database', () => {
-  const source = readFileSync(fileURLToPath(new URL('../scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
+  const source = readFileSync(fileURLToPath(new URL('../plugins/oai/scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
   const withComments = source.slice(source.indexOf('function openOnce('), source.indexOf('\n}\n', source.indexOf('function openOnce(')));
   // Strip `//` line comments before searching — an occurrence of the exact
   // call syntax inside PROSE (documenting what the code below it does, say)
@@ -237,7 +237,7 @@ test('openOnce re-checks state, in order, before repairDir(logs) and before open
 // The same structural pin as above, for openStoreForReading's own re-check
 // across its existsSync call.
 test('openStoreForReading re-checks state, in order, before existsSync and before opening the database', () => {
-  const source = readFileSync(fileURLToPath(new URL('../scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
+  const source = readFileSync(fileURLToPath(new URL('../plugins/oai/scripts/lib/job-store.mjs', import.meta.url)), 'utf8');
   const withComments = source.slice(source.indexOf('function openStoreForReading('), source.indexOf('\n}\n', source.indexOf('function openStoreForReading(')));
   const body = withComments.replace(/\/\/.*$/gm, '');
 

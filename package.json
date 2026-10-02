@@ -1,6 +1,6 @@
 {
   "name": "openai-compat-plugin-cc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "MIT",
   "description": "Claude Code plugin that delegates work to any OpenAI-compatible model server (LM Studio, oMLX, Unsloth Studio, or a remote compatible endpoint).",

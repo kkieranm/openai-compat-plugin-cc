@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isBusy, withBusyRetry } from '../scripts/lib/job-busy.mjs';
+import { isBusy, withBusyRetry } from '../plugins/oai/scripts/lib/job-busy.mjs';
 
 /** The shape SQLite raises, as `isBusy` recognises it. */
 function busyError() {

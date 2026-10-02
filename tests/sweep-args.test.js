@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { SPEC, optionsFrom } from '../bench/review-sweep.mjs';
-import { parseArgs } from '../scripts/lib/args.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 
 const TOOL_ROOT = '/tool/root';
 const from = (argv, root = TOOL_ROOT) => optionsFrom(parseArgs(argv, SPEC).options, 0, root);
@@ -50,7 +50,7 @@ test('a stray token strands every flag after it, which is why main refuses one',
 test('with no --repo, options.repo is this tool and DEFAULTS.include still applies', () => {
   const options = from(['--minutes', '10']);
   assert.equal(options.repo, TOOL_ROOT);
-  assert.deepEqual(options.include, ['scripts', 'bench', 'tests']);
+  assert.deepEqual(options.include, ['scripts', 'plugins/oai/scripts', 'bench', 'tests']);
 });
 
 // The default `include` is THIS repo's own layout. Silently inheriting it for
@@ -77,7 +77,7 @@ test('--repo with --include resolves and runs rooted at the foreign path', () =>
 test('--repo naming this tool itself is a no-op — defaults still apply, no --include required', () => {
   const options = from(['--minutes', '10', '--repo', TOOL_ROOT]);
   assert.equal(options.repo, TOOL_ROOT);
-  assert.deepEqual(options.include, ['scripts', 'bench', 'tests']);
+  assert.deepEqual(options.include, ['scripts', 'plugins/oai/scripts', 'bench', 'tests']);
 });
 
 // `--repo` given an empty value used to be silently read as "not given"

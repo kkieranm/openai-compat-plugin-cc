@@ -2,8 +2,8 @@
 // findings at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFindings } from '../scripts/lib/structured.mjs';
-import { REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
+import { parseFindings } from '../plugins/oai/scripts/lib/structured.mjs';
+import { REVIEW_SCHEMA } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 import { FINDING, payload } from './findings-fixtures.mjs';
 

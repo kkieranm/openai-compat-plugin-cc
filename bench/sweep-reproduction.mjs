@@ -9,8 +9,8 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from '../scripts/lib/args.mjs';
-import { UserError } from '../scripts/lib/errors.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { readRuns } from './lib/sweep-reproduction.mjs';
 import { renderReproduction } from './lib/sweep-reproduction-report.mjs';
 

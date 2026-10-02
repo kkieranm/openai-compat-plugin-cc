@@ -12,8 +12,8 @@
 // `compare-report.mjs` renders; this decides what the comparison IS.
 import { caseRows, lensLabel } from './case-rows.mjs';
 import { scoredRuns } from './run-buckets.mjs';
-import { reasoningWitness } from '../../scripts/lib/reasoning-witness.mjs';
-import { parseReviewLenses } from '../../scripts/lib/review.mjs';
+import { reasoningWitness } from '../../plugins/oai/scripts/lib/reasoning-witness.mjs';
+import { parseReviewLenses } from '../../plugins/oai/scripts/lib/review.mjs';
 import { reportIdentity } from './record.mjs';
 
 // A review record is `{ runsPerCase, options, warmed, results }` — never a sweep
@@ -66,7 +66,7 @@ const unknown = (reason) => ({ state: 'unknown', reason });
 // A numeric value flag: absence is a definite "default" (compared as null); a
 // finite number, or a non-empty numeric string, compares numerically. The string
 // grammar is the writer's own — `Number()` + `Number.isFinite`, per
-// `scripts/lib/parse-number.mjs` — so every form the CLI persists ("1", "1.0",
+// `plugins/oai/scripts/lib/parse-number.mjs` — so every form the CLI persists ("1", "1.0",
 // ".5", "1e2", "+5") reads as a known number and two records made with the same
 // option are not falsely divergent. The `typeof` gate stays load-bearing: it
 // runs FIRST so a hostile array/object/boolean is UNKNOWN rather than coerced

@@ -11,8 +11,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { writeFileSync } from 'node:fs';
-import { authPolicyFor, queryCommitment, querySalt, resolveCredential } from '../scripts/lib/job-auth.mjs';
-import { finish } from '../scripts/lib/job-record.mjs';
+import { authPolicyFor, queryCommitment, querySalt, resolveCredential } from '../plugins/oai/scripts/lib/job-auth.mjs';
+import { finish } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
@@ -728,7 +728,7 @@ test('a hand-edited row carrying queryHash under auth.mode "none" fails closed r
       auth: JSON.stringify({ mode: 'none' }),
     });
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await assert.rejects(
       () => runTaskWorker(['--seq', String(seq)]),
       /credential-unavailable: job hand-edited needs its query re-resolved but none came back/,
@@ -776,7 +776,7 @@ test('a v1 row with a raw query and a key is still executed correctly by a real 
       auth: JSON.stringify({ mode: 'profile', profile: 'vendor', authorizedOrigin: new URL(server.baseUrl).origin }),
     });
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await runTaskWorker(['--seq', String(seq)]);
 
     const row = readJob(state, 'v1-raw-query');

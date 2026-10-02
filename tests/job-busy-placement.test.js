@@ -10,8 +10,8 @@ import { rmSync } from 'node:fs';
 
 import { respondJson, startFakeServer, writeConfig } from './helpers.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
-import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
-import { submitTask } from '../scripts/lib/task-submit.mjs';
+import { TASK_SPEC } from '../plugins/oai/scripts/lib/cmd-task.mjs';
+import { submitTask } from '../plugins/oai/scripts/lib/task-submit.mjs';
 
 /** The shape SQLite raises, as `isBusy` recognises it. */
 function busyError() {
@@ -76,7 +76,7 @@ test('a storage failure on the COMPLETED write is never republished as a task fa
       return statement;
     };
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await assert.rejects(() => runTaskWorker(['--seq', String(seq)]), /disk I\/O error/);
   } finally {
     DatabaseSync.prototype.prepare = originalPrepare;
@@ -126,7 +126,7 @@ test('a busy while REGISTERING as the waiter does not silently lose the job', { 
       return originalPrepare.call(this, sql, ...rest);
     };
 
-    const { runTaskWorker } = await import('../scripts/lib/cmd-task-worker.mjs');
+    const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
     await runTaskWorker(['--seq', String(seq)]);
   } finally {
     DatabaseSync.prototype.prepare = originalPrepare;

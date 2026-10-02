@@ -13,7 +13,7 @@
 // writer leaves in a column SQLite does not type-check.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAlive, livenessOf, pidLiveness } from '../scripts/lib/job-liveness.mjs';
+import { isAlive, livenessOf, pidLiveness } from '../plugins/oai/scripts/lib/job-liveness.mjs';
 import { deadPid } from './job-helpers.mjs';
 
 /**

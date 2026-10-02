@@ -15,12 +15,12 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from '../scripts/lib/args.mjs';
-import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../scripts/lib/delegate.mjs';
-import { MAX_BUDGET_SECONDS } from '../scripts/lib/http-budgets.mjs';
-import { MIN_REVIEW_RESERVE_TOKENS } from '../scripts/lib/review-schema.mjs';
-import { parseReviewLenses } from '../scripts/lib/review.mjs';
-import { UserError } from '../scripts/lib/errors.mjs';
+import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
+import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
+import { MAX_BUDGET_SECONDS } from '../plugins/oai/scripts/lib/http-budgets.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
+import { parseReviewLenses } from '../plugins/oai/scripts/lib/review.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
 import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
 import { boundNote } from './lib/sweep-ledger.mjs';
@@ -30,7 +30,7 @@ import { recall, scoreRun } from './lib/score.mjs';
 import { runWithWarmUp, warmUpPair } from './lib/warm-up.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const COMPANION = join(ROOT, 'scripts/oai-companion.mjs');
+const COMPANION = join(ROOT, 'plugins/oai/scripts/oai-companion.mjs');
 
 const SPEC = {
   valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note', 'passes', 'lens'],
@@ -66,7 +66,7 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   // starve the model — could not be run under a schema at all, leaving no way
   // to establish whether the schema causes the transport drops or fixes token
   // exhaustion. The flag exists to ask that question,
-  // NOT because a schema is a fix: `commands/review.md` records that on this
+  // NOT because a schema is a fix: `plugins/oai/commands/review.md` records that on this
   // backend the grammar exhausts its lexer after ~14k generated tokens and takes
   // the model process with it. An arm run with this on is measuring one failure
   // class against the other, and its report says so.

@@ -1,9 +1,16 @@
 # Changelog
 
 All notable changes to this project are documented here, loosely following the
-[Keep a Changelog](https://keepachangelog.com) convention. This is the first public release.
+[Keep a Changelog](https://keepachangelog.com) convention.
 
-## Unreleased
+## 0.1.1
+
+### Changed
+
+- The installed plugin is now only its runtime — commands, agent, scripts, manifest and licence —
+  instead of the whole repository with its tests and benchmark fixtures (adding the marketplace still
+  clones the repository). The plugin lives in `plugins/oai/`; to load a checkout directly, use
+  `claude --plugin-dir <checkout>/plugins/oai`.
 
 ### Fixed
 

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sweep } from '../scripts/lib/job-retention.mjs';
+import { sweep } from '../plugins/oai/scripts/lib/job-retention.mjs';
 import { insertSynthetic, withStore } from './job-helpers.mjs';
 
 // Stated independently of `logPathFor`, so a test cannot agree with the code

@@ -133,7 +133,7 @@ test('the prose still says what happened, so a human loses nothing to the field'
 // the wholly-blank shape the retry layer already catches as
 // 'blank-completion') is now intercepted inside review-request.mjs's
 // unconstrained(), before it ever reaches requireAnswer on this path — see
-// scripts/lib/client.mjs's isReasoningOnly. This fixture's reasoning (28
+// plugins/oai/scripts/lib/client.mjs's isReasoningOnly. This fixture's reasoning (28
 // chars) is well under SALVAGE_MIN_REASONING_CHARS, so trySalvage declines
 // without ever sending a follow-up request, and the original error still
 // rethrows via the same ledger-carrying path — this test is what pins that

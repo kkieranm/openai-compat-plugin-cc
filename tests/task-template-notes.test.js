@@ -7,8 +7,8 @@
 // apart rather than being the tail of an integration suite.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { persistRequest } from '../scripts/lib/job-request.mjs';
-import { TEMPLATES, resolveTemplate, templateNotes } from '../scripts/lib/task-template.mjs';
+import { persistRequest } from '../plugins/oai/scripts/lib/job-request.mjs';
+import { TEMPLATES, resolveTemplate, templateNotes } from '../plugins/oai/scripts/lib/task-template.mjs';
 
 const ADVISOR = TEMPLATES.advisor;
 

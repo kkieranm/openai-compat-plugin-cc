@@ -4,26 +4,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { TERMINAL_STATES } from '../scripts/lib/job-record.mjs';
-import { renderDetail } from '../scripts/lib/job-render.mjs';
-import { viewOf } from '../scripts/lib/job-view.mjs';
-import { ABANDON_SPEC } from '../scripts/lib/cmd-abandon.mjs';
-import { CANCEL_SPEC } from '../scripts/lib/cmd-cancel.mjs';
-import { RESULT_SPEC } from '../scripts/lib/cmd-result.mjs';
-import { REVIEW_SPEC } from '../scripts/lib/cmd-review.mjs';
-import { SETUP_SPEC } from '../scripts/lib/cmd-setup.mjs';
-import { STATUS_SPEC } from '../scripts/lib/cmd-status.mjs';
-import { TASK_SPEC } from '../scripts/lib/cmd-task.mjs';
+import { TERMINAL_STATES } from '../plugins/oai/scripts/lib/job-record.mjs';
+import { renderDetail } from '../plugins/oai/scripts/lib/job-render.mjs';
+import { viewOf } from '../plugins/oai/scripts/lib/job-view.mjs';
+import { ABANDON_SPEC } from '../plugins/oai/scripts/lib/cmd-abandon.mjs';
+import { CANCEL_SPEC } from '../plugins/oai/scripts/lib/cmd-cancel.mjs';
+import { RESULT_SPEC } from '../plugins/oai/scripts/lib/cmd-result.mjs';
+import { REVIEW_SPEC } from '../plugins/oai/scripts/lib/cmd-review.mjs';
+import { SETUP_SPEC } from '../plugins/oai/scripts/lib/cmd-setup.mjs';
+import { STATUS_SPEC } from '../plugins/oai/scripts/lib/cmd-status.mjs';
+import { TASK_SPEC } from '../plugins/oai/scripts/lib/cmd-task.mjs';
 import { fileURLToPath } from 'node:url';
+import { git, tempDir } from './helpers.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const COMMANDS_DIR = join(ROOT, 'commands');
-const AGENTS_DIR = join(ROOT, 'agents');
+const PLUGIN_ROOT = join(ROOT, 'plugins/oai');
+const COMMANDS_DIR = join(PLUGIN_ROOT, 'commands');
+const AGENTS_DIR = join(PLUGIN_ROOT, 'agents');
 
-// `agents/oai-delegate.md` drives the job lifecycle from a shell recipe written
+// `plugins/oai/agents/oai-delegate.md` drives the job lifecycle from a shell recipe written
 // in prose, so two things this repo owns are load-bearing *for a markdown file*:
 // the words that mean "finished", and the shape of the line the recipe reads
 // them off. Both are pinned below against the code that produces them.
@@ -31,9 +33,7 @@ const DELEGATE = join(AGENTS_DIR, 'oai-delegate.md');
 
 // The parser's flag list is the definition; the markdown is the only
 // description a user ever sees. Hand-keeping them in agreement is exactly the
-// pairing that drifts silently, so it is checked instead — this guard was
-// written after finding /oai:task had accepted --system with no mention of it
-// anywhere in commands/task.md.
+// pairing that drifts silently, so it is checked instead.
 const SPECS = {
   'abandon.md': ABANDON_SPEC,
   'cancel.md': CANCEL_SPEC,
@@ -63,13 +63,117 @@ function frontmatter(source) {
 }
 
 test('plugin and marketplace manifests parse and agree', () => {
-  const plugin = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8'));
+  const plugin = JSON.parse(readFileSync(join(PLUGIN_ROOT, '.claude-plugin/plugin.json'), 'utf8'));
   const marketplace = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/marketplace.json'), 'utf8'));
 
   assert.equal(plugin.name, 'oai');
   const entry = marketplace.plugins.find((candidate) => candidate.name === plugin.name);
   assert.ok(entry, 'marketplace must list the plugin');
   assert.equal(entry.version, plugin.version, 'marketplace and plugin versions must not drift');
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(pkg.version, plugin.version, 'package.json and plugin versions must not drift');
+  // An install copies whatever directory `source` names; at the repo root that
+  // is tests/ and bench/ too.
+  assert.equal(resolve(ROOT, entry.source), resolve(PLUGIN_ROOT), 'marketplace source must name plugins/oai, not the repo root');
+});
+
+// Tracked files only: a git-hosted marketplace installs what git tracks.
+const PAYLOAD_SHAPES = [
+  /^\.claude-plugin\/plugin\.json$/,
+  /^LICENSE$/,
+  /^commands\/[^/]+\.md$/,
+  /^agents\/[^/]+\.md$/,
+  /^scripts\/(?!.*\.test\.mjs$).+\.mjs$/,
+];
+test('the plugin directory ships only the runtime payload', async () => {
+  const files = (await git(['ls-files', '-z', '--', '.'], PLUGIN_ROOT)).split('\0').filter(Boolean);
+  assert.ok(files.includes('scripts/oai-companion.mjs'), 'git ls-files listed no payload — is this a git checkout?');
+  const strays = files.filter((file) => !PAYLOAD_SHAPES.some((shape) => shape.test(file)));
+  assert.deepEqual(strays, [], 'only runtime files belong under plugins/oai; tests and fixtures stay outside it');
+});
+
+// An import that leaves plugins/oai still resolves in the repo, where tests/ and
+// bench/ exist, so every other test stays green while the installed copy —
+// plugins/oai alone — fails to load. Static imports are checked by Node itself:
+// the tracked payload is copied into an empty directory, at the same depth it
+// sits in the repo, and every module is imported there. Anything resolved only
+// at run time is invisible to that load, so every `import(`, `import.meta`,
+// `require(` or `createRequire` in the payload's modules is refused unless it is
+// part of an exact expression listed for that file in RUNTIME_RESOLUTIONS,
+// reviewed to stay inside the plugin. The guarantee covers those expressions,
+// not what later code composes from their results (a `dirname` or `join` of an
+// allowed path), nor paths built from `process.cwd()`, `process.argv` or a bare
+// relative path handed to `fs`. The scan skips lines that start with `//` and
+// block comments that open a line (inside a string too); a comment inside a
+// token (`import/**/.meta`) hides it, and a comment trailing code is still
+// scanned.
+const RUNTIME_RESOLUTIONS = [
+  { file: 'scripts/lib/job-spawn.mjs', expression: "fileURLToPath(new URL('../oai-companion.mjs', import.meta.url))" },
+  { file: 'scripts/lib/job-store.mjs', expression: "import('node:sqlite')" },
+];
+const RUNTIME_RESOLUTION = /\bimport\s*\(|\bimport\s*\.\s*meta\b|\brequire\s*\(|\bcreateRequire\b/g;
+const LOAD_EVERY_MODULE = `
+const results = [];
+for (const file of JSON.parse(process.argv[1])) {
+  try { await import('./' + file); results.push({ file }); }
+  catch (error) { results.push({ file, error: String(error?.message ?? error) }); }
+}
+process.stdout.write(JSON.stringify(results));
+// The entry module runs its CLI on import and, given no command, sets exitCode 1.
+process.exitCode = 0;
+`;
+test('the plugin loads from its installed layout, with nothing outside it', async () => {
+  const tracked = (await git(['ls-files', '-z', '--', '.'], PLUGIN_ROOT)).split('\0').filter(Boolean);
+  const modules = tracked.filter((file) => file.startsWith('scripts/') && file.endsWith('.mjs'));
+  const copy = join(tempDir('oai-installed-'), 'plugins', 'oai');
+  for (const file of tracked) {
+    mkdirSync(dirname(join(copy, file)), { recursive: true });
+    copyFileSync(join(PLUGIN_ROOT, file), join(copy, file));
+  }
+  // SIGKILL because a module could trap SIGTERM; stdin is closed so a read at
+  // import returns rather than waiting out the timeout.
+  const child = promisify(execFile)(process.execPath, ['--input-type=module', '-e', LOAD_EVERY_MODULE, JSON.stringify(modules)], { cwd: copy, timeout: 20_000, killSignal: 'SIGKILL' });
+  child.child.stdin.end();
+  const stdout = await child.then(
+    (result) => result.stdout,
+    (error) => {
+      if (!error.killed) throw error;
+      assert.fail(error.stdout
+        ? 'every module was attempted, but something keeps the process alive past 20s'
+        : 'the payload did not finish importing within 20s');
+    },
+  );
+  const results = JSON.parse(stdout);
+  assert.deepEqual(results.map((result) => result.file), modules, 'every tracked module must be attempted exactly once');
+  assert.deepEqual(results.filter((result) => result.error).map((result) => `${result.file}: ${result.error}`), [], 'fails to load from the installed layout');
+
+  const problems = [];
+  const unused = new Set(RUNTIME_RESOLUTIONS);
+  for (const file of modules) {
+    const allowed = RUNTIME_RESOLUTIONS.filter((entry) => entry.file === file);
+    let text = readFileSync(join(copy, file), 'utf8')
+      .replace(/^\s*\/\*[\s\S]*?\*\//gm, (comment) => comment.replace(/[^\n]/g, ''))
+      .split('\n')
+      .map((line) => (/^\s*\/\//.test(line) ? '' : line))
+      .join('\n');
+    for (const entry of allowed) {
+      if (text.includes(entry.expression)) unused.delete(entry);
+      text = text.split(entry.expression).join('');
+    }
+    for (const match of text.matchAll(RUNTIME_RESOLUTION)) {
+      const line = text.slice(0, match.index).split('\n').length;
+      problems.push(`${file}:${line}: unreviewed run-time resolution "${match[0].replace(/\s+/g, ' ')}"`);
+    }
+  }
+  for (const entry of unused) problems.push(`${entry.file}: allowed expression no longer appears — update RUNTIME_RESOLUTIONS: ${entry.expression}`);
+  assert.deepEqual(problems, [], 'run-time resolution must be one of the reviewed RUNTIME_RESOLUTIONS expressions');
+});
+
+test('the shipped LICENSE is the repository LICENSE', () => {
+  assert.ok(
+    readFileSync(join(PLUGIN_ROOT, 'LICENSE')).equals(readFileSync(join(ROOT, 'LICENSE'))),
+    'plugins/oai/LICENSE must stay byte-identical to the root LICENSE',
+  );
 });
 
 test('every command declares a description and can run the companion script', () => {
@@ -161,7 +265,7 @@ test('every script path an agent references exists', () => {
     const references = [...source.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?\.mjs)/g)].map((match) => match[1]);
     assert.ok(references.length > 0, `${file}: expected at least one companion script reference`);
     for (const reference of references) {
-      assert.ok(existsSync(join(ROOT, reference)), `${file}: references missing script ${reference}`);
+      assert.ok(existsSync(join(PLUGIN_ROOT, reference)), `${file}: references missing script ${reference}`);
     }
   }
 });
@@ -216,7 +320,7 @@ test('every script path a command references exists', () => {
     const references = [...source.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/(\S+?\.mjs)/g)].map((match) => match[1]);
     assert.ok(references.length > 0, `${file}: expected at least one companion script reference`);
     for (const reference of references) {
-      assert.ok(existsSync(join(ROOT, reference)), `${file}: references missing script ${reference}`);
+      assert.ok(existsSync(join(PLUGIN_ROOT, reference)), `${file}: references missing script ${reference}`);
     }
   }
 });

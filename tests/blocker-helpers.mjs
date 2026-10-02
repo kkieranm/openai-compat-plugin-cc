@@ -5,7 +5,7 @@
 // WHAT it says about it. They are split rather than allowlisted, so neither
 // suite has to be read whole to change the other.
 import { realpathSync } from 'node:fs';
-import { statusView } from '../scripts/lib/job-view.mjs';
+import { statusView } from '../plugins/oai/scripts/lib/job-view.mjs';
 import { tempDir } from './helpers.mjs';
 import { insertSynthetic, withStore } from './job-helpers.mjs';
 

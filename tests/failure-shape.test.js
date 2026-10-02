@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
-import { SHAPE_REJECTED } from '../scripts/lib/attempt-outcome.mjs';
-import { createNegotiation, postWithDegrade } from '../scripts/lib/chat.mjs';
-import { emptyAnswer, finishAnswer } from '../scripts/lib/completion.mjs';
-import { COMPLETION_SHAPES, STREAM_ERROR_FRAME, isRetryable } from '../scripts/lib/failure-shape.mjs';
+import { createLedger } from '../plugins/oai/scripts/lib/attempt-ledger.mjs';
+import { SHAPE_REJECTED } from '../plugins/oai/scripts/lib/attempt-outcome.mjs';
+import { createNegotiation, postWithDegrade } from '../plugins/oai/scripts/lib/chat.mjs';
+import { emptyAnswer, finishAnswer } from '../plugins/oai/scripts/lib/completion.mjs';
+import { COMPLETION_SHAPES, STREAM_ERROR_FRAME, isRetryable } from '../plugins/oai/scripts/lib/failure-shape.mjs';
 
 // The rules in isolation. `retry.test.js` drives these through the real
 // CLI; these pin the two decisions that a request-count assertion cannot see —

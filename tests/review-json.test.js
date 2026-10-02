@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_FINDINGS, analysisCapFor } from '../scripts/lib/review-schema.mjs';
+import { MAX_FINDINGS, analysisCapFor } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import {
   chatRequests,
   completionFrames,
@@ -52,7 +52,7 @@ test('--json emits one object carrying the findings and every caveat field', asy
   // key reads as `undefined`, which is falsy and therefore silently reassuring.
   for (const key of [
     'dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'usage', 'finishReason',
-    // The text footer says when the size guard did not run, and commands/review.md
+    // The text footer says when the size guard did not run, and plugins/oai/commands/review.md
     // promises --json carries every caveat the text report does.
     'contextChecked', 'contextNote',
     // The measurement behind analysisCut. Recording only the flag made the

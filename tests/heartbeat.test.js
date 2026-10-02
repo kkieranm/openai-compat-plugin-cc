@@ -6,8 +6,8 @@
 // system. A derived state that is always true is not a state.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { startHeartbeat } from '../scripts/lib/job-heartbeat.mjs';
-import { openStore } from '../scripts/lib/job-store.mjs';
+import { startHeartbeat } from '../plugins/oai/scripts/lib/job-heartbeat.mjs';
+import { openStore } from '../plugins/oai/scripts/lib/job-store.mjs';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

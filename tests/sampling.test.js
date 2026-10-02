@@ -4,9 +4,9 @@
 // failure path.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SAMPLING_PARAMS, applySampling, parseSampling } from '../scripts/lib/sampling.mjs';
-import { persistRequest, reconstructRequest } from '../scripts/lib/job-request.mjs';
-import { errorReport } from '../scripts/lib/review-report.mjs';
+import { SAMPLING_PARAMS, applySampling, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
+import { persistRequest, reconstructRequest } from '../plugins/oai/scripts/lib/job-request.mjs';
+import { errorReport } from '../plugins/oai/scripts/lib/review-report.mjs';
 import {
   chatRequests, completionFrames, modelList, reasoningFrames, respondJson, respondStream, runCompanion,
   startFakeServer, writeConfig,

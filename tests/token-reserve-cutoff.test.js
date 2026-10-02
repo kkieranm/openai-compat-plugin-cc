@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { createRepo, reviewScenario, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { collectStream } from '../scripts/lib/stream-collect.mjs';
+import { collectStream } from '../plugins/oai/scripts/lib/stream-collect.mjs';
 
 /** One reasoning delta frame, 51 characters. */
 function reasoningFrame() {

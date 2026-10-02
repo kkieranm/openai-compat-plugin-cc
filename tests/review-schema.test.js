@@ -13,10 +13,10 @@ import {
   RESERVED_CHARS,
   reviewSchemaFor,
   REVIEW_SCHEMA,
-} from '../scripts/lib/review-schema.mjs';
-import { CHARS_PER_TOKEN } from '../scripts/lib/context-guard.mjs';
-import { REVIEW_MIN_TOKENS } from '../scripts/lib/review-request.mjs';
-import { parseFindings } from '../scripts/lib/structured.mjs';
+} from '../plugins/oai/scripts/lib/review-schema.mjs';
+import { CHARS_PER_TOKEN } from '../plugins/oai/scripts/lib/context-guard.mjs';
+import { REVIEW_MIN_TOKENS } from '../plugins/oai/scripts/lib/review-request.mjs';
+import { parseFindings } from '../plugins/oai/scripts/lib/structured.mjs';
 
 const payload = (analysis) => JSON.stringify({ analysis, findings: [], summary: 'none' });
 

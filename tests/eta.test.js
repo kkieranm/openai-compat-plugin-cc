@@ -7,7 +7,7 @@
 // means an invented one is worse than none.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NO_RATE_NOTE, estimateNote, estimateRun } from '../scripts/lib/eta.mjs';
+import { NO_RATE_NOTE, estimateNote, estimateRun } from '../plugins/oai/scripts/lib/eta.mjs';
 
 const MEASURED = { prefillTokensPerSecond: 700, generationTokensPerSecond: 80 };
 

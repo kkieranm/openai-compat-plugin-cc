@@ -6,11 +6,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { outcomeFor } from '../bench/lib/outcome.mjs';
 import { scoreRun } from '../bench/lib/score.mjs';
-import { passEnvelope, sumUsage } from '../scripts/lib/review-report.mjs';
-import { caveatUnion } from '../scripts/lib/review-passes.mjs';
+import { passEnvelope, sumUsage } from '../plugins/oai/scripts/lib/review-report.mjs';
+import { caveatUnion } from '../plugins/oai/scripts/lib/review-passes.mjs';
 import { truncatedRuns } from '../bench/lib/run-buckets.mjs';
 import { attemptRows } from '../bench/lib/attempt-rows.mjs';
-import { LENSES } from '../scripts/lib/review.mjs';
+import { LENSES } from '../plugins/oai/scripts/lib/review.mjs';
 import { completionFrames, modelList, reasoningFrames, respondJson, respondStream, reviewScenario as scenario, runCompanion, scriptOf } from './helpers.mjs';
 
 const clean = JSON.stringify({

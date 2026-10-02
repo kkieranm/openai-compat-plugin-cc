@@ -8,10 +8,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { failedRun } from '../bench/run.mjs';
 import { MAX_NOTE, boundNote } from '../bench/lib/sweep-ledger.mjs';
-import { persistRequest } from '../scripts/lib/job-request.mjs';
-import { CONTEXT_SOURCES, describeModels, effectiveWindow } from '../scripts/lib/model-info.mjs';
-import { errorReport } from '../scripts/lib/review-report.mjs';
-import { attachRunContext, reconstructServerConfig, serverConfigFrom } from '../scripts/lib/run-context.mjs';
+import { persistRequest } from '../plugins/oai/scripts/lib/job-request.mjs';
+import { CONTEXT_SOURCES, describeModels, effectiveWindow } from '../plugins/oai/scripts/lib/model-info.mjs';
+import { errorReport } from '../plugins/oai/scripts/lib/review-report.mjs';
+import { attachRunContext, reconstructServerConfig, serverConfigFrom } from '../plugins/oai/scripts/lib/run-context.mjs';
 import {
   completionFrames, modelList, respondJson, respondStream, reviewScenario, runCompanion, startFakeServer, writeConfig,
 } from './helpers.mjs';

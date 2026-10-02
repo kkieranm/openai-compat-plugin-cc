@@ -7,11 +7,11 @@ import {
   matchesSchema,
   parseFindings,
   responseFormatFor,
-} from '../scripts/lib/structured.mjs';
-import { MAX_FINDINGS, REVIEW_SCHEMA } from '../scripts/lib/review-schema.mjs';
+} from '../plugins/oai/scripts/lib/structured.mjs';
+import { MAX_FINDINGS, REVIEW_SCHEMA } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 import { FINDING, payload } from './findings-fixtures.mjs';
-import { emptyFindingsDocument } from '../scripts/lib/findings-empty.mjs';
+import { emptyFindingsDocument } from '../plugins/oai/scripts/lib/findings-empty.mjs';
 
 test('a strict schema declares every property required and forbids extras', () => {
   // OpenAI's strict mode rejects a schema with an optional property, so an

@@ -4,8 +4,8 @@
 // looked applied and was inert.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startProgress } from '../scripts/lib/progress.mjs';
-import { withProgress } from '../scripts/lib/progress.mjs';
+import { startProgress } from '../plugins/oai/scripts/lib/progress.mjs';
+import { withProgress } from '../plugins/oai/scripts/lib/progress.mjs';
 
 /** A clock that advances a fixed step per read, so output is deterministic. */
 function fakeClock(stepMs) {

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createLedger } from '../scripts/lib/attempt-ledger.mjs';
-import { EMPTY_COMPLETION, TRANSPORT } from '../scripts/lib/failure-shape.mjs';
-import { request } from '../scripts/lib/provider.mjs';
+import { createLedger } from '../plugins/oai/scripts/lib/attempt-ledger.mjs';
+import { EMPTY_COMPLETION, TRANSPORT } from '../plugins/oai/scripts/lib/failure-shape.mjs';
+import { request } from '../plugins/oai/scripts/lib/provider.mjs';
 import { closedPort } from './helpers.mjs';
 
 // `serverResponded` answers ONE question — did an HTTP response arrive —

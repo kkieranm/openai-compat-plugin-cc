@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeModels, probeRoot, windowFor } from '../scripts/lib/model-info.mjs';
-import { chatCandidates } from '../scripts/lib/model-selection.mjs';
+import { describeModels, probeRoot, windowFor } from '../plugins/oai/scripts/lib/model-info.mjs';
+import { chatCandidates } from '../plugins/oai/scripts/lib/model-selection.mjs';
 import { respondJson, startFakeServer } from './helpers.mjs';
 
 const OPENAI_MODELS = { object: 'list', data: [{ id: 'chat-a', object: 'model', owned_by: 'x' }] };
