@@ -154,6 +154,10 @@ export async function resolveTarget(profile, options) {
   };
 }
 
+// How much larger the typical-count reserve must be before the conservative
+// count is said to have cut the reply budget.
+const MATERIAL_RESERVE_SHARE = 0.1;
+
 /**
  * Assemble the request and prove it fits the window before anything is sent.
  */
@@ -171,6 +175,7 @@ export function prepareRequest({
   const messages = buildMessages({ system: system ?? DEFAULT_SYSTEM_PROMPT, prompt, files });
   const text = messages.map((message) => message.content).join('\n');
   const estimatedTokens = estimateTokens(text);
+  const typical = typicalTokens(text);
 
   // With a floor set, the reply budget yields to the input rather than the
   // input being refused. A generous fixed reserve otherwise withholds the
@@ -178,11 +183,12 @@ export function prepareRequest({
   // and refuses work that would have fit comfortably with a shorter answer.
   // Never below the floor: past that the reply is too small to be worth having,
   // and the refusal should name the floor so it describes the real limit.
-  let reserve = maxTokens;
-  if (minReserve && contextLength && maxTokens) {
-    const available = contextLength - estimatedTokens;
-    if (available < maxTokens) reserve = Math.max(minReserve, available);
-  }
+  const reserveAfter = (tokens) => {
+    if (!(minReserve && contextLength && maxTokens)) return maxTokens;
+    const available = contextLength - tokens;
+    return available < maxTokens ? Math.max(minReserve, available) : maxTokens;
+  };
+  const reserve = reserveAfter(estimatedTokens);
 
   const budget = checkContextBudget({
     estimatedTokens,
@@ -191,10 +197,17 @@ export function prepareRequest({
     providerName: profile.name,
     model,
     oversizeHint,
-    typicalTokens: typicalTokens(text),
+    typicalTokens: typical,
   });
 
-  return { messages, estimatedTokens, budget, reserve };
+  // Whether the conservative non-ASCII charge itself cut the reply budget
+  // materially: the reserve sized from the typical count is never sent, only
+  // compared. The share keeps a few stray non-ASCII characters — the system
+  // prompt's own punctuation, a name in a diff — from flagging every review
+  // whose reserve shrank for size alone.
+  const conservativeReserveCut = reserveAfter(typical) - reserve >= reserve * MATERIAL_RESERVE_SHARE;
+
+  return { messages, estimatedTokens, budget, reserve, conservativeReserveCut };
 }
 
 /**

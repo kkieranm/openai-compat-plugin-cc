@@ -65,6 +65,12 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
     };
   };
 
+  // The cause the hunks rung records: `'unsized-window'` when the whole-file
+  // rung was never attempted because nothing could size the window;
+  // `'conservative-count'` when it was refused and a typical count of the
+  // non-ASCII text would have fitted; otherwise `null`, never `false` — there
+  // was nothing to withhold, or the refusal held at any count.
+  let skipped = null;
   if (windowKnown && target.changed.length > 0) {
     try {
       return { ...prepareRequest({ ...shared, ...build(true) }), hunksOnly: false, rung: 'whole', skipped: null };
@@ -72,7 +78,10 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
       // Only the oversize refusal is retryable by sending less; anything else
       // is a different failure and must not be laundered into "too big".
       if (error.reason !== 'oversize') throw error;
+      if (error.conservative) skipped = 'conservative-count';
     }
+  } else if (target.changed.length > 0) {
+    skipped = 'unsized-window';
   }
   // The reader's caveat is about what the model saw, not about why: no changed
   // file went whole, whether they did not fit, were not asked for, or were
@@ -84,15 +93,11 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // where the report is built would agree only by construction, so removing the
   // guard above would leave the report asserting a skip while whole bodies went
   // on the wire. The predicate is evaluated once, at the branch that acts on it.
-  //
-  // `null`, never `false`, where the rung was taken deliberately: a known-window
-  // oversize fallback reaches this line having been sized and shed, and `false`
-  // would assert a determination about a cause nobody evaluated.
   return {
     ...prepareRequest({ ...shared, ...build(false) }),
     hunksOnly: hasDiff,
     rung: 'hunks',
-    skipped: !windowKnown && target.changed.length > 0 ? 'unsized-window' : null,
+    skipped,
   };
 }
 

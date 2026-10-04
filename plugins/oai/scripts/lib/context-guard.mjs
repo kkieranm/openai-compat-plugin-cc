@@ -173,10 +173,13 @@ export function checkContextBudget({
 
   const budget = contextLength - reserve;
   if (estimatedTokens > budget) {
-    throw new UserError(
+    // One boolean for the note and the tag, so a caller recovering from this
+    // refusal never discloses a cause the message did not.
+    const conservative = typical !== undefined && typical <= budget;
+    const refusal = new UserError(
       `Input is roughly ${formatTokens(estimatedTokens)} tokens but ${model} on "${providerName}" has a ${formatTokens(contextLength)} window ` +
         `(${formatTokens(budget)} usable after reserving ${formatTokens(reserve)} for the reply).` +
-        (typical !== undefined && typical <= budget ? ` ${CONSERVATIVE_NOTE}` : ''),
+        (conservative ? ` ${CONSERVATIVE_NOTE}` : ''),
       {
         // The caller knows what its input actually is. A review's input is a
         // diff chosen by --base/--commit, so "send fewer files" is advice for a
@@ -189,6 +192,10 @@ export function checkContextBudget({
         reason: 'oversize',
       },
     );
+    // Only this refusal carries the tag: it marks the conservative non-ASCII
+    // count as a possible cause, so a caller that recovers can say so.
+    refusal.conservative = conservative;
+    throw refusal;
   }
 
   return {

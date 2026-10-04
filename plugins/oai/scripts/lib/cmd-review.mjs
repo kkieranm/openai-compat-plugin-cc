@@ -221,7 +221,7 @@ async function reviewFlow(options, instructions, terminated, sampling) {
     process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name}...\n`);
     // A review is the long silent run this exists for: whole-file passes measured
     // 38–245s before, and a cold prefill alone is minutes.
-    const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress((onProgress) =>
+    const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, conservativeReserveCut, salvaged, salvageTrim } = await withProgress((onProgress) =>
       requestFindings(profile, { ...plan, onProgress }),
     );
 
@@ -238,6 +238,7 @@ async function reviewFlow(options, instructions, terminated, sampling) {
       target,
       hunksOnly,
       skipped,
+      conservativeReserveCut,
       salvaged: Boolean(salvaged),
       salvageTrim: salvageTrim ?? null,
       // What was ASKED for, beside `structured` which is what was obtained. Only
@@ -295,7 +296,7 @@ async function runMultiPass({ passCount, lenses = [], profile, options, instruct
     const startedAt = Date.now();
     process.stderr.write(`Reviewing ${target.label} with ${model} on ${profile.name} (pass ${index + 1}/${passCount})...\n`);
     try {
-      const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, salvaged, salvageTrim } = await withProgress(
+      const { result, structured, schema, budget, estimatedTokens, hunksOnly, skipped, conservativeReserveCut, salvaged, salvageTrim } = await withProgress(
         (onProgress) => requestFindings(profile, { ...plan, onProgress }),
       );
       // No per-pass substitution notice here, unlike the single-pass path: a
@@ -323,6 +324,7 @@ async function runMultiPass({ passCount, lenses = [], profile, options, instruct
         estimatedTokens,
         hunksOnly,
         skipped,
+        conservativeReserveCut,
         salvaged: Boolean(salvaged),
         salvageTrim: salvageTrim ?? null,
         durationMs: Date.now() - startedAt,

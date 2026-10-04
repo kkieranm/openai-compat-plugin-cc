@@ -8,17 +8,38 @@
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
-import { renderFindings, unreadableNote, unsizedWindowNote } from './review.mjs';
+import { causeNotes, renderFindings, unreadableNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
 import { substitution } from './model-identity.mjs';
 import { reasoningWitness } from './reasoning-witness.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
-function reportFindings(parsed, { result, structured, profile, model, target, hunksOnly, skipped, salvaged, ledger }) {
+/**
+ * The request-narrowing causes as the report fields name them. `skipped` is read
+ * off the rung the ladder took, never recomputed from the inputs that chose it:
+ * a second copy of the premise can outlive the branch. `skippedConservativeCount`
+ * means the whole-file rung was refused and a typical count of the non-ASCII
+ * text would have fitted it; `conservativeReserveCut`, that the conservative
+ * count cut the reply budget materially below what a typical count would leave.
+ * On a salvaged review all three describe the original request, whose reasoning
+ * the follow-up concluded from; a `token-reserve-cutoff` or `reasoning-only`
+ * follow-up is sent with its own small fixed reserve.
+ */
+function causeFlags({ skipped, conservativeReserveCut }) {
+  return {
+    skippedUnsizedWindow: skipped === 'unsized-window',
+    skippedConservativeCount: skipped === 'conservative-count',
+    conservativeReserveCut: Boolean(conservativeReserveCut),
+  };
+}
+
+function reportFindings(parsed, context) {
+  const { result, structured, profile, model, target, hunksOnly, salvaged, ledger } = context;
+  const causes = causeFlags(context);
   if (parsed) {
     process.stdout.write(
       renderFindings(
-        { ...parsed, hunksOnly, unreadable: target.unreadable, skippedUnsizedWindow: skipped === 'unsized-window', salvaged },
+        { ...parsed, hunksOnly, unreadable: target.unreadable, ...causes, salvaged },
         // The model that ANSWERED, not the one requested. This block heads the
         // report and the footer closes it; handing one the requested id and the
         // other the served id would produce a single report naming two different
@@ -41,7 +62,7 @@ function reportFindings(parsed, { result, structured, profile, model, target, hu
         'model ran out of time reasoning, not the original findings-first pass. Treat it as less ' +
         'reliable than an ordinary review.'
       : null,
-    unsizedWindowNote(skipped === 'unsized-window', profile),
+    ...causeNotes(causes, profile),
     unreadableNote(target.unreadable),
   ].filter(Boolean);
   process.stdout.write(
@@ -144,12 +165,12 @@ function parseFields(parsed, result, context) {
  * Exported for the tests that pin those fields; the command calls `report`.
  */
 export function jsonReport(parsed, context) {
-  const { result, profile, model, target, hunksOnly, skipped, budget, estimatedTokens, durationMs, structured, ledger, salvaged, salvageTrim } = context;
+  const { result, profile, model, target, hunksOnly, budget, estimatedTokens, durationMs, structured, ledger, salvaged, salvageTrim } = context;
   return {
     label: target.label,
     provider: profile.name,
     // A context-derived fact, not something read off the model's own reply —
-    // same shape as `hunksOnly`/`skippedUnsizedWindow` below.
+    // same shape as `hunksOnly` and the cause flags below.
     // Non-negotiable: a salvaged review must never
     // read as an ordinary complete one, so this rides beside `findings` on
     // every path that can set it, never inferred from anything else here.
@@ -190,10 +211,8 @@ export function jsonReport(parsed, context) {
     modelReported: result.modelReported ?? false,
     ...parseFields(parsed, result, context),
     hunksOnly,
-    // The CAUSE `hunksOnly` cannot carry — it is equally true of `--diff-only`.
-    // Read off the rung the ladder actually took, never recomputed from the
-    // inputs that chose it: a second copy of the premise can outlive the branch.
-    skippedUnsizedWindow: skipped === 'unsized-window',
+    // The CAUSES `hunksOnly` cannot carry — it is equally true of `--diff-only`.
+    ...causeFlags(context),
     unreadable: target.unreadable,
     usage: result.usage ?? null,
     // The reasoning state OBSERVED in this reply — `reasoning-observed` /
@@ -387,6 +406,7 @@ function perPassContext(pass, shared) {
     target: shared.target,
     hunksOnly: pass.hunksOnly,
     skipped: pass.skipped,
+    conservativeReserveCut: pass.conservativeReserveCut,
     budget: pass.budget,
     estimatedTokens: pass.estimatedTokens,
     durationMs: pass.durationMs,
@@ -496,11 +516,15 @@ export function passEnvelope(pass, index, context) {
     // own `passes[]` entry (never the top-level OR). `degraded` derives from the
     // same formula `runTimings` uses, `Boolean()`-wrapped to stay identical. The
     // thrown branch below cannot carry these — an `ok: false` outcome holds only
-    // `{error, ledger, durationMs}`, so fabricating them there would assert a fact
+    // `{lens, error, ledger, durationMs}`, so fabricating them there would assert a fact
     // nothing recorded; a thrown pass's salvage attempt survives only in `attempts`.
     entry.salvaged = Boolean(pass.salvaged);
     entry.salvageTrim = pass.salvageTrim ?? null;
     entry.degraded = Boolean(context.structuredOutput) && !pass.structured;
+    // What this pass's request was, beside the reply nobody could read: the
+    // state and its causes, exactly as a readable entry carries them.
+    entry.hunksOnly = pass.hunksOnly;
+    Object.assign(entry, causeFlags(pass));
   } else if (pass.error) {
     // A THROWN pass (no `pass.result`) may still carry the reply's usage on its
     // error — `error.usage` for a failure with no reply envelope (token-exhaustion),

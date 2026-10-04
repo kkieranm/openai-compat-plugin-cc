@@ -15,9 +15,10 @@ import { SEVERITY_ORDER, renderFindings } from './review.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
 // A pass OUTCOME as the loop in `cmd-review.mjs` records it:
-//   { ok: true, parsed, result, budget, estimatedTokens, hunksOnly, skipped,
-//     salvaged, salvageTrim, structured, durationMs, ledger }
-//   { ok: false, error, ledger }               (the request threw)
+//   { ok: true, lens, parsed, result, structured, budget, estimatedTokens,
+//     hunksOnly, skipped, conservativeReserveCut, salvaged, salvageTrim,
+//     durationMs, ledger }
+//   { ok: false, lens, error, ledger, durationMs }   (the request threw)
 // A pass is READABLE when it did not throw AND `parseFindings` returned a
 // findings object (an EMPTY `{findings: []}` is readable — the model looked and
 // found nothing, an observed no-finding vote). A NON-OBSERVATION is a pass that
@@ -287,7 +288,8 @@ export function allFailedError(passes, profile) {
 /**
  * The caveat fields for the union, fail-closed. Every caveat is the OR across
  * readable passes — so a union in which ANY pass was truncated, salvaged, saw
- * only hunks, or skipped the unsized-window rung reads with that caveat, never as
+ * only hunks, skipped the whole-file rung for either recorded cause, or had its
+ * reply budget cut by the conservative count reads with that caveat, never as
  * a clean complete review — while `contextChecked` is the AND (checked only if
  * every pass checked). `dropped` sums, `unreadable` is the shared target's. The
  * per-pass originals stay in `passes[]`, so nothing is concealed; this is only
@@ -303,6 +305,8 @@ export function caveatUnion(readableReports, { unreadable }) {
     atCap: readableReports.some((report) => report.atCap === true),
     hunksOnly: readableReports.some((report) => report.hunksOnly),
     skippedUnsizedWindow: readableReports.some((report) => report.skippedUnsizedWindow),
+    skippedConservativeCount: readableReports.some((report) => report.skippedConservativeCount),
+    conservativeReserveCut: readableReports.some((report) => report.conservativeReserveCut),
     degraded: readableReports.some((report) => report.degraded),
     dropped: readableReports.reduce((sum, report) => sum + (report.dropped ?? 0), 0),
     unreadable,
@@ -393,7 +397,7 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
     .filter(Boolean)
     .join('\n');
   const body = renderFindings(
-    { findings: annotated, ...caveatFlags },
+    { findings: annotated, ...caveatFlags, multiPass: true },
     { label, profile, model },
   );
   return `${header}\n\n${body}`;

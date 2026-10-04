@@ -3,6 +3,16 @@
 All notable changes to this project are documented here, loosely following the
 [Keep a Changelog](https://keepachangelog.com) convention.
 
+## Unreleased
+
+### Fixed
+
+- `/oai:review` now says when the conservative count of non-ASCII text shaped an admitted review: when
+  the diff-covered changed files went as diff hunks only although a typical count of the non-ASCII
+  text would have fitted, and when the reply budget was cut materially further than a typical count
+  would have cut it. Both appear as notes in the text report and as `skippedConservativeCount` and
+  `conservativeReserveCut` in `--json`, including multi-pass runs. What is sent is unchanged.
+
 ## 0.1.1
 
 ### Changed

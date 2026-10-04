@@ -211,9 +211,9 @@ export function windowRemedy(profile) {
 /**
  * The whole-file rung was not attempted because the window could not be sized.
  *
- * Exported and shared for the same reason `unreadableNote` above is: the parsed
- * and unparseable paths both derive their output from this request, so both must
- * say it. A reply that came back as prose is not a reply that saw more.
+ * Shared through `causeNotes` for the same reason `unreadableNote` above is
+ * shared: the parsed and unparseable paths both derive their output from this
+ * request, so both must say it. A reply that came back as prose is not a reply that saw more.
  *
  * Says the CAUSE and the REMEDY, which is why it sits beside the `hunksOnly`
  * note rather than replacing it — that one is deliberately worded for the state
@@ -229,12 +229,55 @@ export function windowRemedy(profile) {
  * is still sent whole, so "the changed files were not sent whole" would be false
  * on a mixed target and would collide with the two-list rule this depends on.
  */
-export function unsizedWindowNote(skipped, profile) {
+function unsizedWindowNote(skipped, profile) {
   if (!skipped) return null;
   return (
     `NOTE: the context window for ${windowSource(profile)} could not be determined, so the diff-covered changed ` +
     `files were not sent whole — the model saw only their hunks. ${windowRemedy(profile)} to send them whole.`
   );
+}
+
+/**
+ * The whole-file rung was refused, and a typical count of the non-ASCII text
+ * would have fitted it. Shared by the parsed and unparsed paths, like
+ * `unsizedWindowNote`, and scoped to the diff-covered files for the same reason.
+ * No figures: a multi-pass union renders one note over several requests.
+ */
+function conservativeFallbackNote(skipped, scope) {
+  if (!skipped) return null;
+  return (
+    `NOTE: ${scope}the diff-covered changed files did not fit the window as counted, so they were not sent whole — ` +
+    'the model saw only their hunks. Non-ASCII text is counted conservatively, so they may in fact have ' +
+    "fitted; the real count cannot be known without the model's tokenizer."
+  );
+}
+
+/**
+ * The reply budget was cut further than a typical count of the non-ASCII text
+ * would have cut it. Shared by both paths; no figures, for the same reason.
+ */
+function conservativeReserveNote(cut, scope) {
+  if (!cut) return null;
+  return (
+    `NOTE: ${scope}the reply budget was reduced to make room for the input as counted. Non-ASCII text is counted ` +
+    'conservatively, so it may have been reduced more than the real input required, leaving the model ' +
+    'less room to reason and answer.'
+  );
+}
+
+/**
+ * Why the request was narrower than asked for, in reading order. One list for
+ * the parsed and unparsed paths, so a cause disclosed on one is never missing
+ * from the other. A multi-pass union ORs each fact across passes whose requests
+ * can differ, so there the conservative notes claim only "at least one pass".
+ */
+export function causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass }, profile) {
+  const scope = multiPass ? 'in at least one pass, ' : '';
+  return [
+    unsizedWindowNote(skippedUnsizedWindow, profile),
+    conservativeFallbackNote(skippedConservativeCount, scope),
+    conservativeReserveNote(conservativeReserveCut, scope),
+  ].filter(Boolean);
 }
 
 /**
@@ -245,7 +288,10 @@ export function unsizedWindowNote(skipped, profile) {
  * differs from the condition actually tested. Kept together because they are one
  * idea, and because a new one added beside them inherits the same scrutiny.
  */
-function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, salvaged }, profile) {
+function caveats(
+  { dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged },
+  profile,
+) {
   const notes = [];
 
   // First and loudest — these findings were not written in
@@ -292,8 +338,7 @@ function caveats({ dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUn
   // Directly after the state note it explains, and before the rest: a reader who
   // has just been told the model saw only hunks is owed the reason and the fix
   // in the next breath.
-  const unsized = unsizedWindowNote(skippedUnsizedWindow, profile);
-  if (unsized) notes.push(unsized);
+  notes.push(...causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass }, profile));
   const missing = unreadableNote(unreadable);
   if (missing) notes.push(missing);
   if (dropped > 0) {

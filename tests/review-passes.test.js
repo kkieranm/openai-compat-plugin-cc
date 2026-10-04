@@ -133,6 +133,15 @@ test('a caveat true on any readable pass is true for the union', () => {
   assert.equal(clean.analysisCut, false);
 });
 
+test('either conservative-count cause on any readable pass is true for the union', () => {
+  // Both OR like `skippedUnsizedWindow`: a union in which one pass saw only
+  // hunks, or had its reply budget cut, by the conservative count says so.
+  for (const key of ['skippedConservativeCount', 'conservativeReserveCut']) {
+    assert.equal(caveatUnion([{ [key]: false }, { [key]: true }], { unreadable: false })[key], true, key);
+    assert.equal(caveatUnion([{ [key]: false }, { [key]: false }], { unreadable: false })[key], false, key);
+  }
+});
+
 test('degraded on any readable pass makes the union degraded', () => {
   // The degraded OR: a union in which any readable pass ran degraded reads
   // degraded, so a bench degradation axis never mistakes it for clean.
