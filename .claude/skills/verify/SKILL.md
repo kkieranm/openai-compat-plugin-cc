@@ -26,11 +26,19 @@ session override enables the checkout's copy (`oai@inline`) and disables any ins
 
 ```sh
 claude --plugin-dir plugins/oai --settings '{"enabledPlugins":{"oai@inline":true,"oai@openai-compat":false}}' \
-  -p "/oai:setup"   # from the repository root
+  -p "/oai:setup" --output-format stream-json --verbose < /dev/null | node .claude/skills/verify/check-load.mjs oai:setup
+# from the repository root
 ```
 
-Expect a provider table. With no server running, every provider shows "connection refused" plus its
-remediation line — that is a pass for this step.
+The command's output does not show which copy ran, or whether the slash command ran at all: a session
+without the plugin can run the companion script itself and print the same table. `check-load.mjs`
+passes only when the session's init event shows the `oai` plugin loaded from `oai@inline` at this
+checkout with the command registered, and the session's transcript on disk shows the prompt was
+dispatched as that command; it then prints `LOADED: …` and the run's text. `NOT LOADED: …` is a fail,
+whatever the text would have said.
+
+Expect `LOADED` and a provider table. With no server running, every provider shows "connection
+refused" plus its remediation line — that is a pass for this step.
 
 ## 3. Delegation round trip
 
@@ -40,11 +48,13 @@ server on :1234 answering `/v1/models` and `/v1/chat/completions`.
 ```sh
 node <scratchpad>/stub-server.mjs &
 claude --plugin-dir plugins/oai --settings '{"enabledPlugins":{"oai@inline":true,"oai@openai-compat":false}}' \
-  -p "/oai:task --file plugins/oai/scripts/lib/errors.mjs what does this file define?"
+  -p "/oai:task --file plugins/oai/scripts/lib/errors.mjs what does this file define?" --output-format stream-json --verbose \
+  < /dev/null | node .claude/skills/verify/check-load.mjs oai:task
 ```
 
-Expect the answer, then a footer naming provider, model, duration and token counts. Read the answer
-back — do not judge success from an exit code. Kill the stub afterwards (`pkill -f stub-server.mjs`).
+Expect `LOADED`, the answer, then a footer naming provider, model, duration and token counts. Read the
+answer back — do not judge success from an exit code. Kill the stub afterwards
+(`pkill -f stub-server.mjs`).
 
 **A stub pass is not a live pass.** It proves script → HTTP → render, not that a real
 server speaks the dialect we assume.
@@ -58,8 +68,9 @@ curl -sf http://localhost:1234/v1/models    # LM Studio; oMLX :8000, Unsloth Stu
 curl -sf http://localhost:1234/api/v0/models  # also reports state + loaded_context_length
 ```
 
-Then rerun step 3 against the real provider and quote the model's actual answer. Expect roughly
-14s for a small file on a 35B MLX model, so do not mistake slowness for a hang.
+Then rerun step 3 against the real provider, through `check-load.mjs` as there, and quote the model's
+actual answer. Expect roughly 14s for a small file on a 35B MLX model, so do not mistake slowness for
+a hang.
 
 If the change touches the context guard, also prove the refusal with real numbers — build a file
 larger than the loaded window and confirm it is refused *before* any request is sent.
