@@ -620,15 +620,11 @@ reclassified as benign negotiation for a replacement that was never dispatched, 
 ledger entry for a request that never went on the wire.
 
 This is the sibling of the vacuous-ordering-test trap above, and the harder one. There the test
-existed and proved nothing. Here **no test existed at all**, because the two statements sit a few
-call frames apart and the window between them cannot be reached behaviourally: the transport arms
-the remaining cap as its own deadline, so a request can never *complete* after expiry, and any
-end-to-end test trying to land an expiry in that gap is a coin flip.
+existed and proved nothing. Here **no test existed at all**. (The window is reachable: see
+`tests/cap-ordering.test.js`.)
 
-- **When an invariant is carried by the ORDER of two adjacent statements, and the gap between them
-  is too small to reach behaviourally, write a structural guard** — a source-text assertion that one
-  precedes the other, in `tests/structure.test.js`. Timing cannot pin it and a behavioural test that
-  tries will be flaky, which is worse than none.
+- **When an invariant is carried by the ORDER of two adjacent statements, write a structural
+  guard** — a source-text assertion that one precedes the other, in `tests/structure.test.js`.
 - **Strip comments first** (`withoutComments`), or the guard matches the prose explaining the
   ordering and passes vacuously.
 - **Absence of either token must FAIL**, not silently pass. A rename has to break the guard, not
@@ -901,12 +897,8 @@ depends on a site *remembering* to set it, prefer a witness that is *derived fro
 text, which proves headers arrived without any site remembering anything. Redundancy that relies on
 discipline is not redundancy.
 
-**Guarded by** `tests/attempt-response-sites.test.js`, which drives **three** minting sites end to
-end — `http-errors.mjs`'s delivered-body path, `body.mjs`'s `bad-json` branch and `sse.mjs`'s
-`protocol` branch. Deleting any one of the three flag writes reddens exactly its own case, each
-verified by mutation. **Two further sites are named there as uncovered** and are not claimed:
-`http.mjs`'s `!response.complete` branch, which no fixture reaches, and `body.mjs`'s
-oversized-document branch, which needs 8,000,000 characters.
+**Guarded by** `tests/attempt-response-sites.test.js`, which drives the minting sites it lists end
+to end and names the sites it does not cover.
 
 **And the sting, which is why this entry has a second half.** The first version of that file made
 this exact error one round later. Its `http.mjs` case delivered model text before cutting the socket,
