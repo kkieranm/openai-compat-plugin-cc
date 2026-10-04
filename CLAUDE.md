@@ -50,7 +50,8 @@ model server.
 ## Commands
 
 - **Test:** `npm test` (`node --test` over `tests/**/*.test.js`). The `tests/**/*.test.js` scope is
-  load-bearing — see the footgun below. Requires `zsh` on PATH (see footguns).
+  load-bearing — see the footgun below. Requires `zsh` on PATH: `tests/delegate-containment.test.js`
+  runs the delegate recipes under zsh, the shell they meet in practice.
 - **Benchmark the reviewer:** `npm run bench` (opt-in, needs a real model).
 - **Compare benchmark runs:** `npm run bench:compare`.
 - **Overnight review sweep:** `npm run review-sweep -- --minutes N` (opt-in, needs a real model).
@@ -91,7 +92,6 @@ model server.
 
 - **A code comment states current behaviour, not the process that produced it.** Write a comment only
   when the *why* is non-obvious.
-- **Tests are network-free** and run against the in-process fake server; keep them so.
 - **Every recurring defect class graduates from a review note to a structural test** —
   `tests/structure.test.js` holds these, and `tests/plugin.test.js` guards the markdown command
   surface (a missing `allowed-tools` entry or a renamed script would otherwise break silently).
