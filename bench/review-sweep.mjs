@@ -18,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { classify, isOutage } from './lib/sweep-outcome.mjs';
@@ -362,7 +363,7 @@ function main() {
   process.stderr.write(`\nReport: ${reportPath}\nRecord: ${recordPath}\n`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     main();
   } catch (error) {

@@ -12,6 +12,9 @@ All notable changes to this project are documented here, loosely following the
   text would have fitted, and when the reply budget was cut materially further than a typical count
   would have cut it. Both appear as notes in the text report and as `skippedConservativeCount` and
   `conservativeReserveCut` in `--json`, including multi-pass runs. What is sent is unchanged.
+- The benchmark drivers (`bench/run.mjs`, `compare.mjs`, `review-sweep.mjs` and the rest) now run
+  when invoked through a path that contains a symlink, such as `node /tmp/<checkout>/bench/run.mjs` on
+  macOS; all but `task-run.mjs` previously exited 0 having done nothing.
 
 ## 0.1.1
 

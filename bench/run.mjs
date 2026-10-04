@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
 import { MAX_BUDGET_SECONDS } from '../plugins/oai/scripts/lib/http-budgets.mjs';
@@ -341,13 +342,10 @@ async function main() {
   process.stderr.write(`\nPer-run records: ${recordPath}\nRendered report: ${reportPath}\n`);
 }
 
-// GUARDED. `main()` ran on IMPORT, so the moment anything in `tests/` imported
-// this file to exercise a
-// pure function, `node --test` launched a full six-case benchmark against whatever
-// server was or was not up and wrote a report and a record into `bench/results/` —
-// artifacts indistinguishable from a real arm. `review-sweep.mjs:357` already had
-// this guard; this file is the one its header says it was written not to imitate.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Only when RUN, never when imported: `tests/` imports this file for its pure
+// functions, and a run on import would benchmark whatever server is up and write a
+// report and a record into `bench/results/` indistinguishable from a real arm.
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     if (error instanceof UserError) {
       process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);

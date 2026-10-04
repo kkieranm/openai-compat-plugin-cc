@@ -29,7 +29,7 @@
 // that it was true already.
 import { readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { readLedger, ledgerStampFrom } from './lib/sweep-ledger.mjs';
@@ -240,7 +240,7 @@ function main() {
   process.stderr.write(`Report: ${reportPath}\nRecord: ${recordPath}\n`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     main();
   } catch (error) {

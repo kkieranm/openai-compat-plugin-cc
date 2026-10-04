@@ -36,6 +36,7 @@ import {
   CONCLUSIVE, EXPOSURE_MARGIN, episodeVerdict, summarize, validityChecks,
 } from './lib/ttl-verdict.mjs';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /**
@@ -223,12 +224,9 @@ async function main(argv) {
   ));
 }
 
-// Only when RUN, never when imported. Without this guard `npm test` executes the
-// experiment: the decision rule is unit-tested, importing it to do so ran `main`,
-// and the suite spent 44 extra seconds driving LM Studio and wrote a junk record
-// into bench/results. A module that does work on import cannot be tested without
-// doing that work.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Only when RUN, never when imported: a run on import would drive LM Studio and
+// write a record into bench/results.
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

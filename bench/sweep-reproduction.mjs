@@ -8,7 +8,7 @@
 // — one has nothing to reproduce against.
 import { readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { readRuns } from './lib/sweep-reproduction.mjs';
@@ -94,7 +94,7 @@ function main() {
   process.stdout.write(reproduce(positionals));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     main();
   } catch (error) {

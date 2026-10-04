@@ -7,10 +7,9 @@
 // the review bench does: a harness that reimplemented the request would measure
 // a reimplementation and report the number as the command's.
 //
-// **Guarded main, same shape as `bench/run.mjs`'s own `process.argv[1]` guard.**
-// `warm-up.mjs` still had to take its loop as an injected parameter to test it
-// without a model. Everything here is importable, and `runSweep` takes its
-// executor so a test can drive the whole loop without a model.
+// **Guarded main, through the same `isMainModule` guard as every bench driver.**
+// Everything here is importable, and `runSweep` takes its executor so a test can
+// drive the whole loop without a model.
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
@@ -18,6 +17,7 @@ import { ARMS, attachmentArgs, loadTaskCases } from './lib/task-corpus.mjs';
 import { MARKER_LIMITS, scoreAnswer, tallyArm } from './lib/task-score.mjs';
 import { persist } from './lib/record.mjs';
 import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const COMPANION = join(ROOT, 'plugins/oai/scripts/oai-companion.mjs');
@@ -191,8 +191,7 @@ export async function main(argv) {
   process.stdout.write(`${markdown}\n`);
 }
 
-// Guarded, so importing this file for a test runs nothing.
-if (process.argv[1] && process.argv[1].endsWith('task-run.mjs')) {
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`${error?.stack ?? error}\n`);
     process.exitCode = 1;

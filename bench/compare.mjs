@@ -12,7 +12,7 @@
 // the same order recover-sweep.mjs uses.
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { buildComparison, isReviewRecord, normalizeReviewRecord } from './lib/compare-model.mjs';
@@ -62,7 +62,7 @@ function main() {
   process.stdout.write(compare(positionals, { baseline: options.baseline ?? null }) + '\n');
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try {
     main();
   } catch (error) {

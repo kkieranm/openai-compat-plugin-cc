@@ -3,9 +3,9 @@
 // `bench/run.mjs` drives the real CLI, so what it does or does not put on that
 // command line IS the experiment.
 //
-// `bench/run.mjs`'s `main()` only runs when invoked as the entry script (a
-// `process.argv[1]` guard), so importing it from here does not itself trigger
-// a benchmark run and write into `bench/results/`.
+// `bench/run.mjs`'s `main()` only runs when invoked as the entry script, so
+// importing it from here does not itself trigger a benchmark run and write into
+// `bench/results/`.
 //
 // Each assertion here has a NEGATIVE twin. A test that only checks a flag appears
 // when asked for cannot distinguish "forwarded correctly" from "always on", which

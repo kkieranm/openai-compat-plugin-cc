@@ -191,13 +191,13 @@ test('nothing calls the global fetch — every request goes through http.mjs', (
 // production CLI surface.
 const CLI_ENTRYPOINTS = [
   'plugins/oai/scripts/oai-companion.mjs', // the one file always run directly; no self-invocation guard needed
-  'bench/run.mjs', // process.argv[1] self-invocation guard
-  'bench/review-sweep.mjs', // process.argv[1] self-invocation guard
-  'bench/recover-sweep.mjs', // process.argv[1] self-invocation guard
-  'bench/task-run.mjs', // process.argv[1] self-invocation guard
-  'bench/ttl-challenge.mjs', // process.argv[1] self-invocation guard
-  'bench/compare.mjs', // process.argv[1] self-invocation guard
-  'bench/sweep-reproduction.mjs', // process.argv[1] self-invocation guard
+  'bench/run.mjs',
+  'bench/review-sweep.mjs',
+  'bench/recover-sweep.mjs',
+  'bench/task-run.mjs',
+  'bench/ttl-challenge.mjs',
+  'bench/compare.mjs',
+  'bench/sweep-reproduction.mjs',
 ];
 test('CLI entrypoints use process.exitCode, never process.exit()', () => {
   // Comments are stripped first: this defect class's own explanatory comments
@@ -209,6 +209,69 @@ test('CLI entrypoints use process.exitCode, never process.exit()', () => {
     if (/\bprocess\.exit\s*\(/.test(withoutComments(readFileSync(file, 'utf8')))) offenders.push(rel);
   }
   assert.deepEqual(offenders, [], 'use process.exitCode instead — see .claude/REPO_TRAPS.md');
+});
+
+// A driver that compares the raw `process.argv[1]` with its own path does nothing
+// when invoked through a symlink: Node resolves the link in `import.meta.url` and
+// not in `argv[1]`. Every bench driver guards `main` with the shared
+// `isMainModule`, which resolves both, and names `main` nowhere outside that guard
+// but its definition.
+//
+// Keyed on the identifier `main`: a driver must define `function main(`, so an
+// entry under another name is loud rather than unchecked. A text scan, not a
+// parser: brace depth is counted over comment-stripped source, so a brace or a
+// comment marker inside a string can mislead it (a block left open is reported
+// rather than trusted); an IIFE named `main` passes as a definition; and "the
+// guard calls main" means a `main(` token appears in its block.
+const GUARD = 'if (isMainModule(import.meta.url)) {';
+function mainGuardProblems(source) {
+  const code = withoutComments(source);
+  const problems = [];
+  if (!code.includes("import { isMainModule } from './lib/main-module.mjs'")) problems.push('no shared-helper import');
+  if (/process\.argv\[1\]/.test(code)) problems.push('reads process.argv[1]');
+  if (!/\bfunction main\(/.test(code)) problems.push('no function main(');
+  const at = code.indexOf(GUARD);
+  if (at === -1) return [...problems, 'no isMainModule guard'];
+  let depth = 0;
+  let end = -1;
+  for (let i = at + GUARD.length - 1; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}' && --depth === 0) {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return [...problems, 'guard block never closes'];
+  if (!/\bmain\s*\(/.test(code.slice(at, end + 1))) problems.push('guard never calls main');
+  const outside = code.slice(0, at) + code.slice(end + 1);
+  const stray = outside.replace(/\bfunction main\(/g, '').match(/\bmain\b(?!-module)/g);
+  if (stray) problems.push('main named outside the guard');
+  return problems;
+}
+
+test('every bench driver runs main only under the shared isMainModule guard', () => {
+  const drivers = readdirSync(join(ROOT, 'bench')).filter((name) => name.endsWith('.mjs')).map((name) => `bench/${name}`);
+  assert.ok(drivers.length > 0, 'no bench drivers found');
+  assert.deepEqual(drivers.filter((rel) => !CLI_ENTRYPOINTS.includes(rel)), [], 'a bench driver missing from CLI_ENTRYPOINTS is checked by nothing here');
+  const offenders = drivers
+    .map((rel) => [rel, mainGuardProblems(readFileSync(join(ROOT, rel), 'utf8'))])
+    .filter(([, problems]) => problems.length > 0);
+  assert.deepEqual(offenders, []);
+});
+
+test('the main-guard check rejects each listed escape form', () => {
+  const head = "import { isMainModule } from './lib/main-module.mjs';\nasync function main() {}\n";
+  const guarded = `${head}${GUARD}\n  main().catch((error) => {\n    process.exitCode = 1;\n  });\n}\n`;
+  assert.deepEqual(mainGuardProblems(guarded), [], 'negative control: a correctly guarded driver');
+  for (const escape of ['main();', 'await main();', 'void main();', 'export default main();', '  main();', 'main?.();', 'main ();', 'setImmediate(main);', 'const go = main;']) {
+    assert.deepEqual(mainGuardProblems(`${guarded}${escape}\n`), ['main named outside the guard'], escape);
+  }
+  assert.deepEqual(mainGuardProblems(`${head}${GUARD}\n  main(\`\${'{'}\`);\nmain();\n`), ['guard block never closes']);
+  assert.deepEqual(mainGuardProblems(head), ['no isMainModule guard']);
+  assert.deepEqual(mainGuardProblems(`${head}${GUARD}\n}\n`), ['guard never calls main']);
+  assert.deepEqual(mainGuardProblems(guarded.replace('async function main() {}', '')), ['no function main(']);
+  assert.deepEqual(mainGuardProblems(guarded.replace("import { isMainModule } from './lib/main-module.mjs';", '')), ['no shared-helper import']);
+  assert.deepEqual(mainGuardProblems(`${guarded}process.argv[1];\n`), ['reads process.argv[1]']);
 });
 
 // Defect class: `node --test` with no path walks the whole repo, so the

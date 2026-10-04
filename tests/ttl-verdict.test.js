@@ -18,10 +18,9 @@ const ok = { ttlMs, failed: false, unloadObserved: false, obtainedResponse: true
 test('importing the driver does not RUN the experiment', () => {
   // Calling `main()` at module scope would make importing the driver drive `lms`,
   // spawn a review and write a junk record into
-  // bench/results. The symptom is slow and quiet rather than red, so the guard is
-  // asserted rather than assumed.
+  // bench/results. The symptom is slow and quiet rather than red, so a top-level
+  // main() call at column 0 is asserted absent (the structure test covers the rest).
   const source = readFileSync(new URL('../bench/ttl-challenge.mjs', import.meta.url), 'utf8');
-  assert.match(source, /process\.argv\[1\] === fileURLToPath\(import\.meta\.url\)/);
   assert.doesNotMatch(source, /^main\(/m, 'main must not be called at module scope');
 });
 
