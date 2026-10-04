@@ -141,7 +141,7 @@ test('a failed run is machine-readable too, and still exits nonzero', async () =
     assert.equal(typeof envelope.message, 'string');
     assert.ok('reason' in envelope && 'attempts' in envelope && 'requestedModel' in envelope);
     // The task failure path reuses the shared review errorReport, so it carries
-    // the reasoning witness too — `unknown`, since no throw site sets `error.usage`.
+    // the reasoning witness too.
     assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
   } finally {
     await server.close();

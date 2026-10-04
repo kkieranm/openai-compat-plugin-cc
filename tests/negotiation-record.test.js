@@ -70,9 +70,8 @@ test('a stream_options refusal whose degraded request IS sent is recorded as neg
   assert.equal(report.attempts.length, 2);
   assert.equal(report.attempts[0].outcome, 'refused');
   assert.equal(report.attempts[1].outcome, 'answered');
-  // The rung changes only `stream_options`, leaving the messages byte-identical
-  // — but a refusal is returned at request validation, before any generation, so
-  // nothing was prefilled and this prefill is genuinely cold.
+  // The rung changes only `stream_options`, leaving the messages byte-identical,
+  // but a refused attempt does not make the next one warm-eligible.
   assert.equal(report.attempts[1].warmEligible, false);
 });
 

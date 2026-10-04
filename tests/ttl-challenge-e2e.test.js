@@ -129,9 +129,8 @@ test('a TTL the server never applied cannot be classified', async () => {
 });
 
 test('a calibration that never cleared the bar writes its record and exits non-zero', async () => {
-  // The withdrawn draft THREW here, discarding the evidence; an earlier one
-  // printed "ABORT" and ran the full sweep anyway, exiting 0 with a
-  // normal-looking record. The disqualification must be machine-readable.
+  // The disqualification must be machine-readable: not a throw that discards
+  // the evidence, and not a full sweep run afterwards that exits 0.
   const { result, manifest } = await runScenario({}, { extraArgs: ['--calibration-ttl', '60', '--challenge-ttl', '600'] });
 
   assert.equal(result.status, 1, 'a disqualified sweep must not exit 0');
@@ -146,9 +145,8 @@ test('a calibration that never cleared the bar writes its record and exits non-z
 });
 
 test('an episode that never got a response says NOTHING about the server', async () => {
-  // The state an accidental run of the withdrawn draft was in: no request
-  // existed, and it rendered `inconclusive-failure` — a verdict about the
-  // mechanism — anyway. The socket is destroyed before any headers, so
+  // No HTTP response was obtained, so no verdict about the mechanism (such as
+  // `inconclusive-failure`) may be rendered. The socket is destroyed before any headers, so
   // `serverResponded` stays false and this is not merely "a failure".
   //
   // Calibration must still clear, or the sweep would be disqualified one step

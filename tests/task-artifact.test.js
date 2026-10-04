@@ -1,7 +1,7 @@
 // Extracting a patch and checking whether it applies.
 //
 // The one template whose answer a machine can judge, so these tests are about
-// the judgement being honest rather than generous: three states instead of a
+// the judgement being honest rather than generous: four states instead of a
 // boolean, and an "applies" that refuses to imply "correct".
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

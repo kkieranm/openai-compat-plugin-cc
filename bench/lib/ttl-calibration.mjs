@@ -37,10 +37,7 @@ export function calibrationCauses({ obtainedResponse, failed, prefillMs, challen
 /**
  * Did the calibration establish a prefill that clears the challenge bar?
  *
- * A MEASURED first token, never a duration standing in for one: the withdrawn
- * draft used `firstTokenMs ?? durationMs`, so a calibration that timed out at
- * 1,800s "cleared" a 180s bar without the model ever emitting a token — the gate
- * reading a failure as proof of the very thing it exists to establish.
+ * A MEASURED first token, never a duration standing in for one.
  */
 export function calibrationCleared(input) {
   return calibrationCauses(input).length === 0;

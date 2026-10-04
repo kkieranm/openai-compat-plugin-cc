@@ -17,8 +17,7 @@ test('a capability degrade does not make the answering attempt warm-eligible', (
   // `stream_options` change — so a naive prompt-history check marks the request
   // that actually answers as warm-eligible. On a server that refuses
   // `stream_options` that is EVERY run, and the benchmark's cold prefill column
-  // empties itself with no caveat saying why. The prefill was genuinely cold:
-  // a refusal is returned at request validation, before any generation.
+  // empties itself with no caveat saying why.
   //
   // Computed from a real dispatch sequence rather than a hand-set fixture,
   // because a fixture cannot catch a rule about when the key is recorded.

@@ -651,8 +651,7 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
  * **Unconstrained is now the default:** `response_format` builds a
  * grammar whose lexer dies at ~14k generated tokens and takes the model process
  * with it, so the schema is opt-in via `--structured-output`. When it IS asked
- * for, the old fallback still stands — the retry is near-free, an unsupported
- * `response_format` being a validation error returned before any generation.
+ * for, the old fallback still stands.
  */
 export async function requestFindings(profile, plan) {
   const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;

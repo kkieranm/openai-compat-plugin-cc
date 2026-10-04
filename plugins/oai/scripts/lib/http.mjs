@@ -125,7 +125,7 @@ export async function* bodyStream(request, response, state, { url }) {
     // a raw `Error: aborted` escaped this module — past cmd-setup.mjs's and
     // delegate.mjs's `instanceof UserError` gates, turning one dropped
     // connection into a crash of the whole /oai:setup report. The
-    // `!response.complete` branch below cannot catch it either: the iterator
+    // `!response.complete` branch above cannot catch it either: the iterator
     // throws before the loop can exit normally.
     if (state.aborted) throw state.aborted;
     // `delivered`, unconditionally: this generator only runs once headers have

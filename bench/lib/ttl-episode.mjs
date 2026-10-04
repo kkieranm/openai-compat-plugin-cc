@@ -29,9 +29,8 @@ export const lms = (config, args) => execFileSync(config.lms, args, { encoding: 
  */
 export function startSampler(config, startedAt) {
   const samples = [];
-  // Stamped at collection, never inferred later from timestamps. Readers want
-  // different windows of the same series, and both window bugs in the withdrawn
-  // draft came from filtering a flat array by hand.
+  // Stamped at collection, never inferred later from timestamps: readers want
+  // different windows of the same series.
   let phase = 'pre-dispatch';
   const take = () => {
     let loaded = null;
@@ -187,8 +186,7 @@ export function runEpisode(config, caseDef, label, root, spawnImpl = spawn) {
         contradiction: recordContradiction(attempts),
         durationMs: Date.now() - startedAt,
         // From the ATTEMPT, not from a top-level field the FAILURE envelope does
-        // not carry. The withdrawn draft read `report.prefillMs`, so this was null
-        // on every failed episode — the ones this experiment is about.
+        // not carry: failed episodes are the ones this experiment is about.
         prefillMs: prefillFromAttempts(attempts),
         clientBudgetReason: clientBudgetReason(attempts),
         attempts,

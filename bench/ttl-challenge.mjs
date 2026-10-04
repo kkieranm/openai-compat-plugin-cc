@@ -174,8 +174,7 @@ function environmentOf(config) {
     startedAt: new Date().toISOString(),
     model: config.model,
     // `lms version` prints an ANSI banner, not a version. The commit is the only
-    // identifying string in it; the withdrawn draft recorded the whole banner,
-    // escape codes and ASCII art included.
+    // identifying string in it.
     lmsCommit: read(() => lms(config, ['version']).match(/CLI commit:\s*(\S+)/)?.[1] ?? null),
     // Named apart from the episode field of nearly the same name: this is a LIST
     // of resident models before anything ran, that one is a BOOLEAN about the
@@ -202,10 +201,8 @@ async function main(argv) {
 
   const calibration = await calibrate(config, caseDef);
   if (!calibration.cleared) {
-    // A RECORD, not a throw. The withdrawn draft threw, discarding the evidence
-    // for a disqualification that only ever reached stderr — and an earlier one
-    // printed "ABORT" and then ran the full sweep anyway, exiting 0 with a
-    // normal-looking record. Machine-readable, and nonzero.
+    // A RECORD, not a throw: a throw would discard the evidence for the
+    // disqualification. Machine-readable, and nonzero.
     return report(config, environment, calibration, [], summarize([], {
       calibrationCleared: false,
       // The REASON travels with the verdict. Without it the sweep asserts the

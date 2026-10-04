@@ -203,9 +203,9 @@ test('a prefill witness must be a MEASUREMENT, not merely a non-null', () => {
 test('a status refusal records a response WITHOUT marking the prompt cache-warm', () => {
   // The two questions `error.status` now answers, pinned apart. `obtainedResponse`
   // reads it as proof a response WAS obtained; `reachedTheModel` reads the same
-  // field as proof the model's prefill was NOT reached, because an HTTP refusal is
-  // returned before any generation. They sit adjacent in one file and disagree on
-  // purpose, which is precisely the shape a later editor folds into one helper.
+  // field as proof the model's prefill was NOT reached. They sit adjacent in one
+  // file and disagree on purpose, which is precisely the shape a later editor
+  // folds into one helper.
   //
   // Collapsing them would mark every degraded run's replacement warm-eligible and
   // so empty the benchmark's cold prefill column on any server that refuses

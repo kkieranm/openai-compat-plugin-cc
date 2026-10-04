@@ -171,10 +171,7 @@ async function postChat(profile, body, { onProgress, firstTokenMs, idleMs, reaso
   // Stamped per attempt, not per call. `postWithDegrade` retries this function
   // when a server refuses a capability, so an answer can cost two or three
   // requests — and timing from the *first* of them would charge the answering
-  // attempt for a round trip it never made. Each refused attempt is rejected at
-  // request validation before any generation (see the ladder above), so it
-  // neither prefills nor warms a cache, and the attempt that answers is the one
-  // whose cost is real.
+  // attempt for a round trip it never made.
   const startedAt = performance.now();
   const response = await request(profile, '/chat/completions', {
     method: 'POST',

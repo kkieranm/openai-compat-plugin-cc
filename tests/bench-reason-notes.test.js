@@ -82,9 +82,9 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // entirely.
   assert.match(para, /ENOTFOUND/, 'the exceptions must be named, not generalised away');
   assert.match(para, /ECONNREFUSED/);
-  // The withdrawn draft attributed the refusal's reset to the destination host,
-  // which neither POSIX nor the wire licenses — a local REJECT rule synthesizes
-  // the same errno with nothing ever sent.
+  // The refusal's reset may not be attributed to the destination host, which
+  // neither POSIX nor the wire licenses — a local REJECT rule synthesizes the
+  // same errno with nothing ever sent.
   assert.doesNotMatch(para, /host itself answering/);
   // Full-span on purpose: a pin ending at "middlebox" let the local-stack
   // clause — the half that licenses the whole hedge — be deleted unnoticed.
@@ -296,7 +296,7 @@ test('token-reserve-cutoff is explained as a client-side cutoff, never a server 
   const para = paragraphAbout(markdown, 'token-reserve-cutoff');
   assert.match(para, /\*\*client-side\*\* cutoff, not a server symptom/);
   assert.match(para, /never retried/);
-  // The withdrawn claim: a displayed cutoff row can belong to a salvage-RESCUED
+  // A displayed cutoff row can belong to a salvage-RESCUED
   // run (the failed original's row survives beside the winning follow-up), so
   // the paragraph may not assert every row is one nothing recovered.
   assert.doesNotMatch(para, /neither attempt could recover/);
@@ -322,7 +322,7 @@ test('token-exhaustion rows are salvage follow-ups, split from the run-level cod
   // The split that stops a reader conflating the two: the run-level code's
   // answering attempt keeps `answered`, so it never lands in this table.
   assert.match(para, /row stays `answered`/);
-  // The withdrawn attribution: a salvage follow-up accepted on partial
+  // A salvage follow-up accepted on partial
   // truncated content can itself be the answered attempt a run-level
   // token-exhaustion describes, so the paragraph may not pin the run-level
   // code on the original request.

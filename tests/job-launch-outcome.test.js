@@ -64,10 +64,10 @@ async function withSubmission(fn) {
 
 const submission = { spec: TASK_SPEC, options: { background: true }, inlinePrompt: 'summarise this', terminated: [] };
 
-// The ordering the containment design ADMITS, and the one every test above is
-// blind to: `spawnWorker` awaits the `'spawn'` event and only then closes its
-// copy of the log descriptor, so a throw from that close rejects after a
-// detached worker was created and may still be running. The queue-level tests in
+// The ordering the containment design ADMITS: `spawnWorker` awaits the
+// `'spawn'` event and only then closes its copy of the log descriptor, so a
+// throw from that close rejects after a detached worker was created and may
+// still be running. The queue-level tests in
 // `job-spawn-failure.test.js` all reject without ever creating a child, so none
 // of them can see a REGISTERED row being terminalized.
 //
@@ -98,8 +98,7 @@ test('a rejection against an already-REGISTERED row must not terminalize it', { 
 });
 
 test('POSITIVE CONTROL: the same row shape under `finish` IS destroyed', { skip: NEEDS_SQLITE }, async () => {
-  // What this control does and does NOT establish, stated because the first
-  // version of this comment claimed the larger thing.
+  // What this control does and does NOT establish.
   //
   // It establishes that the row shape above is REACHABLE and destructible: that
   // `not failed` is a real property of the verb rather than an artifact of a
@@ -108,8 +107,8 @@ test('POSITIVE CONTROL: the same row shape under `finish` IS destroyed', { skip:
   //
   // It does NOT establish that production attempted a guarded write at all — a
   // build that simply stopped calling `terminalizeSpawnFailure` would leave both
-  // tests green. That mutation is caught by the no-child test above, which
-  // requires the row to BE `failed`. The two together bracket it: one says the
+  // tests green. That mutation is caught by the no-child test in
+  // job-spawn-failure.test.js, which requires the row to BE `failed`. The two together bracket it: one says the
   // write happens, the other says it is guarded.
   await withSubmission(async ({ state }) => {
     const seq = insertSynthetic(state, { id: 'live-worker' });
