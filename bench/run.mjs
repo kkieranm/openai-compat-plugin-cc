@@ -21,6 +21,7 @@ import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../plugins/oa
 import { MAX_BUDGET_SECONDS } from '../plugins/oai/scripts/lib/http-budgets.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import { parseReviewLenses } from '../plugins/oai/scripts/lib/review.mjs';
+import { SAMPLING_FLAGS, SAMPLING_PARAMS, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { cleanup, loadCases, materialize } from './lib/corpus.mjs';
 import { attemptsFrom, outcomeFor, reasonFrom, requestedModelFrom, runContextFrom } from './lib/outcome.mjs';
@@ -34,7 +35,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMPANION = join(ROOT, 'plugins/oai/scripts/oai-companion.mjs');
 
 const SPEC = {
-  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note', 'passes', 'lens'],
+  valueFlags: ['runs', 'provider', 'model', 'timeout', 'max-seconds', 'max-tokens', 'temperature', 'max-attempts', 'note', 'passes', 'lens', ...SAMPLING_FLAGS],
   booleanFlags: ['diff-only', 'cold', 'warm-up', 'structured-output'],
   repeatableFlags: ['case'],
 };
@@ -49,6 +50,32 @@ const SPEC = {
  * that the server has never seen this prefix, and only uniqueness delivers that.
  */
 const INVOCATION = randomUUID();
+
+// The run's settings as the report states them. EXPORTED for
+// `tests/bench-review-flags.test.js`: what reaches the report is part of the
+// experiment's record, so it is tested at this seam rather than end to end.
+export function reportFlags(options) {
+  return {
+    diffOnly: Boolean(options['diff-only']),
+    cold: Boolean(options.cold),
+    // In the ARTIFACT, not just the command line: two arms differing only in
+    // whether a schema was enforced are not comparable, and a reader who cannot
+    // tell them apart will difference them anyway.
+    structuredOutput: Boolean(options['structured-output']),
+    timeoutSeconds: options.timeout,
+    maxSeconds: options['max-seconds'],
+    // Same reason as the budgets above: two arms differing only in a sampling
+    // knob must be tellable apart in the artifact, or a reader differences them
+    // anyway and credits the gap to the wrong cause.
+    maxTokens: options['max-tokens'],
+    temperature: options.temperature,
+    sampling: Object.fromEntries(SAMPLING_PARAMS.filter(({ flag }) => options[flag] !== undefined).map(({ flag, validate }) => [flag, validate(options[flag], flag)])),
+    // The pass strategy in the report title — a lens arm and a plain arm produce
+    // incomparable measurements and must be tellable apart in the artifact.
+    passes: options.passes,
+    lens: options.lens,
+  };
+}
 
 /**
  * The command line for one run of one case.
@@ -78,7 +105,7 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
   // The manifest may pin its own provider/model, so a case can name the model
   // it is a fair test of; the command line overrides it. This is what makes
-  // This is what makes a cross-model pass configuration rather than a rewrite.
+  // a cross-model pass configuration rather than a rewrite.
   const provider = options.provider ?? caseDef.provider;
   const model = options.model ?? caseDef.model;
   if (provider) flags.push('--provider', provider);
@@ -88,13 +115,22 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   // wait is a property of this invocation, not of the case. Command line only.
   if (options.timeout) flags.push('--timeout', options.timeout);
   if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
-  // The two sampling budgets `/oai:review` already accepts. `--max-tokens` is the
+  // `--max-tokens` and `--temperature`, threaded on their own. `--max-tokens` is the
   // one that made reviews complete on a starved model (a run that spent its whole
   // window reasoning and never answered), and `--temperature` is forwarded beside
   // it; `!== undefined` because `--temperature 0` is a legitimate deterministic
   // setting that a truthy check would silently drop.
-  if (options['max-tokens'] !== undefined) flags.push('--max-tokens', options['max-tokens']);
-  if (options.temperature !== undefined) flags.push('--temperature', options.temperature);
+  // One argument, `--flag=value`: as a separate argument an empty value (`--temperature=`,
+  // accepted by validation as 0) is dropped by the review's parser, which then refuses the flag
+  // or reads the next one as its value.
+  if (options['max-tokens'] !== undefined) flags.push(`--max-tokens=${options['max-tokens']}`);
+  if (options.temperature !== undefined) flags.push(`--temperature=${options.temperature}`);
+  // The rest of the review's sampling and reasoning knobs, from its own registry,
+  // so a flag the review gains reaches the bench without an edit here. Unset, a
+  // server samples with its own defaults, which may differ from server to server.
+  for (const flag of SAMPLING_FLAGS) {
+    if (options[flag] !== undefined) flags.push(`--${flag}=${options[flag]}`);
+  }
   // The control arm: `--max-attempts 1` reproduces the pre-retry behaviour, so
   // one corpus run can measure the failure rate with retry and another without.
   if (options['max-attempts']) flags.push('--max-attempts', options['max-attempts']);
@@ -270,6 +306,7 @@ function validateOptions(options) {
     parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: MIN_REVIEW_RESERVE_TOKENS });
   }
   if (options.temperature !== undefined) parseNumber(options.temperature, 'temperature', { min: 0, max: 2 });
+  parseSampling(options);
   // Same domain as the command it forwards to, for the reason stated above: an
   // out-of-range value here otherwise materializes every repo, spawns every
   // child, records each validation refusal as a failed run, and renders a table
@@ -318,23 +355,7 @@ async function main() {
   const markdown = renderReport(results, {
     runsPerCase,
     ...reportIdentity(results, options),
-    diffOnly: Boolean(options['diff-only']),
-    cold: Boolean(options.cold),
-    // In the ARTIFACT, not just the command line: two arms differing only in
-    // whether a schema was enforced are not comparable, and a reader who cannot
-    // tell them apart will difference them anyway.
-    structuredOutput: Boolean(options['structured-output']),
-    timeoutSeconds: options.timeout,
-    maxSeconds: options['max-seconds'],
-    // Same reason as the budgets above: two arms differing only in a sampling
-    // knob must be tellable apart in the artifact, or a reader differences them
-    // anyway and credits the gap to the wrong cause.
-    maxTokens: options['max-tokens'],
-    temperature: options.temperature,
-    // The pass strategy in the report title — a lens arm and a plain arm produce
-    // incomparable measurements and must be tellable apart in the artifact.
-    passes: options.passes,
-    lens: options.lens,
+    ...reportFlags(options),
   });
   const { recordPath, reportPath } = persist(ROOT, stamp, { runsPerCase, options, warmed, results }, markdown);
 

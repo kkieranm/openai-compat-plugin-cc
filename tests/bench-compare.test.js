@@ -171,6 +171,37 @@ test('flipping warm-up, timeout, temperature, max-attempts, max-seconds each sup
   }
 });
 
+test('flipping any sampling flag suppresses ranking, naming it; equal values rank', () => {
+  for (const [opt, axis] of [
+    [{ 'top-p': 0.9 }, 'top-p'],
+    [{ 'top-k': 20 }, 'top-k'],
+    [{ 'min-p': 0 }, 'min-p'],
+    [{ 'presence-penalty': -0.5 }, 'presence-penalty'],
+    [{ 'reasoning-effort': 'medium' }, 'reasoning-effort'],
+  ]) {
+    const comp = flip(opt);
+    assert.equal(comp.rankable, false, `${axis} should suppress`);
+    assert.ok(axisNames(comp).includes(axis), `${axis}: ${JSON.stringify(comp.divergences)}`);
+  }
+  const a = norm(baseRecord({ 'top-p': '0.9', 'reasoning-effort': ' high ' }), 'a.json', 'a');
+  const b = norm(baseRecord({ 'top-p': 0.9, 'reasoning-effort': 'high' }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.ok(!axisNames(comp).includes('top-p') && !axisNames(comp).includes('reasoning-effort'), JSON.stringify(comp.divergences));
+  assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
+});
+
+test('sampling values compare as the review would send them', () => {
+  // ' ' is accepted for --min-p and sent as 0, so it equals '0'.
+  const ranks = (oa, ob) => {
+    const comp = buildComparison([norm(baseRecord(oa), 'a.json', 'a'), norm(baseRecord(ob), 'b.json', 'b')]);
+    return axisNames(comp);
+  };
+  assert.ok(!ranks({ 'min-p': ' ' }, { 'min-p': '0' }).includes('min-p'));
+  // A value the review would refuse, or one of an unsupported type, is unknown — never equal.
+  assert.ok(ranks({ 'top-p': '7' }, { 'top-p': '7' }).includes('top-p'));
+  assert.ok(ranks({ 'top-k': true }, { 'top-k': true }).includes('top-k'));
+});
+
 test('an explicit --passes 1 does not diverge from a no-flag record (both single-pass)', () => {
   // Guards the `?? 1` normalize: an absent `passes` is the byte-identical
   // single-pass code path, so it must compare EQUAL to an explicit `--passes

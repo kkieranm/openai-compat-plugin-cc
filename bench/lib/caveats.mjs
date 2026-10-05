@@ -10,6 +10,7 @@
 // rate, a censored run read as a clean pass), and one definition sitting next to
 // its own caveats is harder to quote out of context than one sitting alone.
 
+import { safeInline } from './markdown-safe.mjs';
 import { degradedNote } from './schema-degrade.mjs';
 
 function pct(found, total) {
@@ -189,7 +190,7 @@ function schemaNote(structuredOutput, rows) {
  * report files would otherwise credit a difference to the reviewer that belongs
  * to a flag.
  */
-function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature }) {
+function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling = {} }) {
   const notes = [...schemaNote(structuredOutput, rows)];
   // The sampling knobs, stated whenever set for the same reason the budgets are:
   // both change completion rate and recall, so two arms differing only in one of
@@ -206,6 +207,13 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
     notes.push(
       `**\`--temperature ${temperature}\` was on**: this arm did not use the model's default sampling `
       + 'temperature, so its findings and their variance are not comparable to an arm run at the default.',
+    );
+  }
+  for (const [flag, value] of Object.entries(sampling)) {
+    notes.push(
+      `**\`--${flag} ${safeInline(value)}\` was requested**: an arm `
+      + 'run without it is not comparable to this one. Whether a server honours the request is not visible '
+      + 'from here.',
     );
   }
   // Stated whenever set, for the same reason --cold is: a reader comparing two

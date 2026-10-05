@@ -488,3 +488,19 @@ test('the table stays well-formed: header, delimiter and every data row have equ
   assert.equal(width(delimiter), width(header), 'the delimiter row must have as many cells as the header');
   for (const row of dataRows) assert.equal(width(row), width(header), `a data row is a different width than the header: ${row}`);
 });
+
+test('a requested sampling flag is stated in the report; an unset one is not', () => {
+  const report = render([goodRun()], { sampling: { 'top-p': '0.9', 'reasoning-effort': 'medium' } });
+  assert.match(report, /`--top-p 0\.9` was requested/);
+  assert.match(report, /`--reasoning-effort medium` was requested/);
+  assert.doesNotMatch(render([goodRun()]), /was requested/);
+});
+
+test('a requested sampling value is printed escaped', () => {
+  const report = render([goodRun()], { sampling: { 'reasoning-effort': 'a`b' } });
+  assert.doesNotMatch(report, /--reasoning-effort a`b`/, 'a backtick in the value must not close the code span');
+});
+
+test('a requested numeric sampling value is printed as the number', () => {
+  assert.match(render([goodRun()], { sampling: { 'top-p': 0.9 } }), /`--top-p 0\.9` was requested/);
+});

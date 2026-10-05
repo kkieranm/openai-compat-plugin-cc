@@ -7,6 +7,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Added
 
+- `npm run bench` accepts `/oai:review`'s sampling and reasoning flags — `--reasoning-effort`, `--top-p`,
+  `--top-k`, `--min-p`, `--presence-penalty` — forwards them to every review, states each one set in the
+  report, and declines to rank two runs that differ in any of them. Unset, each server uses its own
+  defaults, which may differ from server to server.
 - The context window is now detected on vMLX, from the prompt cap it enforces, so the size check works
   there without a `contextLength` in the config. The window is read only while vMLX has a model
   loaded, so checking it does not wake a sleeping vMLX into reloading its model (for a `baseUrl` at
@@ -15,6 +19,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `npm run bench -- --temperature=` (an empty value, accepted as 0) no longer makes every review fail: the bench
+  forwards `--max-tokens`, `--temperature` and the sampling flags as one `--flag=value` argument each,
+  which the review's parser does not drop.
 - `/oai:review` now says when the conservative count of non-ASCII text shaped an admitted review: when
   the diff-covered changed files went as diff hunks only although a typical count of the non-ASCII
   text would have fitted, and when the reply budget was cut materially further than a typical count

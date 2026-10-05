@@ -15,6 +15,7 @@ import { scoredRuns } from './run-buckets.mjs';
 import { reasoningWitness } from '../../plugins/oai/scripts/lib/reasoning-witness.mjs';
 import { parseReviewLenses } from '../../plugins/oai/scripts/lib/review.mjs';
 import { reportIdentity } from './record.mjs';
+import { SAMPLING_PARAMS } from '../../plugins/oai/scripts/lib/sampling.mjs';
 
 // A review record is `{ runsPerCase, options, warmed, results }` — never a sweep
 // or task record. A task record is `{ kind: 'task', options, ...sweep }`, so it
@@ -85,6 +86,21 @@ function numericAxis(raw) {
   return unknown(`non-numeric option value (${typeof raw})`);
 }
 
+// A sampling knob from the review's registry, compared as the review would send
+// it: through the registry's own validator, so two records that requested the
+// same value in different spellings (' 0' and 0, ' high ' and 'high') are equal.
+// Only a string or number reaches the validator — a coercing `Number()` inside it
+// would read `true` as 1 — and a value it refuses is unknown (fail-closed).
+function samplingAxis({ flag, validate }, raw) {
+  if (raw === undefined || raw === null) return known(null);
+  if (typeof raw !== 'string' && typeof raw !== 'number') return unknown(`unsupported ${flag} value type (${typeof raw})`);
+  try {
+    return known(JSON.stringify(validate(raw, flag)));
+  } catch {
+    return unknown(`${flag} value the review would refuse`);
+  }
+}
+
 // The wall-clock cap is CONFIG, never the outcome count `row.capped` (which is
 // how many runs hit a deadline). Three states: an explicit value compares; an
 // absent value with a capped run means a cap existed at an unknown value; an
@@ -100,7 +116,8 @@ function capAxis(options, rows) {
 // The comparability axes, sourced from the exact keys the writer persists (raw
 // `options` + top-level `runsPerCase`) — the same set `renderReport` threads as
 // "must be tellable apart". Booleans coerce with `Boolean` (absence = false, as
-// the writer reads them); values coerce numerically; the cap is three-state.
+// the writer reads them); numeric values coerce numerically; a sampling flag
+// compares as its registry validator returns it; the cap is three-state.
 function scalarAxes(record, rows) {
   const o = record.options;
   // Computed once and shared by the three pass-strategy axes below, so they cannot
@@ -123,6 +140,7 @@ function scalarAxes(record, rows) {
     timeout: numericAxis(o.timeout),
     'max-tokens': numericAxis(o['max-tokens']),
     temperature: numericAxis(o.temperature),
+    ...Object.fromEntries(SAMPLING_PARAMS.map((param) => [param.flag, samplingAxis(param, o[param.flag])])),
     'max-attempts': numericAxis(o['max-attempts']),
     // `/oai:review --passes`/`--lens`: a multi-pass record's findings are a
     // deduplicated union across N passes, not one pass's output, so ranking it

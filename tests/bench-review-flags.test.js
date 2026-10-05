@@ -14,8 +14,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { reviewFlags } from '../bench/run.mjs';
+import { reportFlags, reviewFlags } from '../bench/run.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
+import { SAMPLING_FLAGS, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
+import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
+import { PASSES_CEILING, parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
+import { REVIEW_SPEC } from '../plugins/oai/scripts/lib/cmd-review.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // THE GUARD THAT GUARDS THE GUARD.
@@ -74,23 +78,16 @@ test('--structured-output is ABSENT by default', () => {
 
 test('--max-tokens is forwarded with its value when asked for, absent by default', () => {
   // `--max-tokens` is the option that lets a starved review complete, so bench must forward it.
-  const flags = build({ 'max-tokens': '8192' });
-  const at = flags.indexOf('--max-tokens');
-  assert.ok(at !== -1, '--max-tokens must be forwarded');
-  assert.equal(flags[at + 1], '8192', 'the value must ride the flag');
-  assert.ok(!build({}).includes('--max-tokens'), 'absent when not asked for');
+  assert.ok(build({ 'max-tokens': '8192' }).includes('--max-tokens=8192'), 'the value must ride the flag');
+  assert.ok(!build({}).some((arg) => arg.startsWith('--max-tokens')), 'absent when not asked for');
 });
 
 test('--temperature is forwarded, and 0 is not dropped', () => {
-  const flags = build({ temperature: '0.2' });
-  const at = flags.indexOf('--temperature');
-  assert.ok(at !== -1 && flags[at + 1] === '0.2');
+  assert.ok(build({ temperature: '0.2' }).includes('--temperature=0.2'));
   // The negative twin AND the edge case: 0 is a legitimate deterministic setting a
   // truthy check would silently drop, so it must still be forwarded.
-  const zero = build({ temperature: 0 });
-  const zat = zero.indexOf('--temperature');
-  assert.ok(zat !== -1 && String(zero[zat + 1]) === '0', 'temperature 0 must forward');
-  assert.ok(!build({}).includes('--temperature'), 'absent when not asked for');
+  assert.ok(build({ temperature: 0 }).includes('--temperature=0'), 'temperature 0 must forward');
+  assert.ok(!build({}).some((arg) => arg.startsWith('--temperature')), 'absent when not asked for');
 });
 
 test('the review subcommand and --json envelope are always present', () => {
@@ -119,27 +116,40 @@ test('--cold mints a cache-buster unique to the case and run', () => {
   assert.ok(!build({}).includes('--cache-buster'));
 });
 
+// A bench that gets past validation would run the whole corpus and write a record
+// into this checkout, so the child is killed at its first case and the test learns
+// that a case started rather than waiting for one.
+const spawnBench = async (args) => {
+  const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
+  const child = spawn(process.execPath, [runPath, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
+  let out = '';
+  let startedCase = false;
+  const read = (d) => {
+    out += d;
+    if (!startedCase && /run \d+\/\d+/.test(out)) {
+      startedCase = true;
+      child.kill('SIGKILL');
+    }
+  };
+  child.stdout.on('data', read);
+  child.stderr.on('data', read);
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
+  clearTimeout(timer);
+  return { code, signal, out, startedCase };
+};
+
 test('bench refuses --max-tokens below the review reserve floor BEFORE materializing', async () => {
   // The whole point of validating up front (like the budgets): a value in
   // [1, MIN_REVIEW_RESERVE_TOKENS) passes /oai:review's parse but is refused by
   // every child's reserveFor, so without this floor a multi-case sweep would
   // materialize every repo and record predictable failures. The refusal must
   // name the floor and cost milliseconds, not repos.
-  const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
-  const child = spawn(process.execPath, [runPath, '--max-tokens', '100'], {
-    cwd: fileURLToPath(new URL('..', import.meta.url)),
-  });
-  let err = '';
-  child.stdout.on('data', (d) => { err += d; });
-  child.stderr.on('data', (d) => { err += d; });
-  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
-  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
-  clearTimeout(timer);
-  assert.equal(signal, null, `child was killed (${signal}), proving nothing: ${err.slice(0, 300)}`);
-  assert.notEqual(code, 0, `a below-floor --max-tokens must be refused: ${err.slice(0, 300)}`);
-  assert.match(err, new RegExp(String(MIN_REVIEW_RESERVE_TOKENS)), 'the refusal must name the real floor');
-  // No case was materialized: the refusal is a validation message, not a per-run failure record.
-  assert.doesNotMatch(err, /run \d+\/\d+/, 'must refuse before running any case');
+  const { code, signal, out, startedCase } = await spawnBench(['--max-tokens', '100']);
+  assert.equal(startedCase, false, `validation let --max-tokens 100 through and a case started: ${out.slice(0, 300)}`);
+  assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
+  assert.notEqual(code, 0, `a below-floor --max-tokens must be refused: ${out.slice(0, 300)}`);
+  assert.match(out, new RegExp(String(MIN_REVIEW_RESERVE_TOKENS)), 'the refusal must name the real floor');
 });
 
 // ---------------------------------------------------------------------------
@@ -170,17 +180,6 @@ test('neither --passes nor --lens by default', () => {
   assert.ok(!flags.includes('--lens'));
 });
 
-const spawnBench = async (args) => {
-  const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
-  const child = spawn(process.execPath, [runPath, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
-  let out = '';
-  child.stdout.on('data', (d) => { out += d; });
-  child.stderr.on('data', (d) => { out += d; });
-  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
-  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
-  clearTimeout(timer);
-  return { code, signal, out };
-};
 
 test('bench refuses --lens + --passes together BEFORE materializing any case', async () => {
   const { code, signal, out } = await spawnBench(['--lens', 'security', '--passes', '2']);
@@ -203,4 +202,57 @@ test('bench refuses an over-ceiling --passes BEFORE materializing any case', asy
   assert.equal(signal, null, out.slice(0, 300));
   assert.notEqual(code, 0, out.slice(0, 300));
   assert.doesNotMatch(out, /run \d+\/\d+/, 'refused before running any case');
+});
+
+// ---------------------------------------------------------------------------
+// SAMPLING. Every knob in the review's own registry is forwarded when set, so a
+// cross-server arm can pin what each server would otherwise choose for itself.
+
+test('every sampling flag in the review registry is forwarded with its value, and absent by default', () => {
+  const values = { 'reasoning-effort': 'medium', 'top-p': '0.9', 'top-k': '20', 'min-p': '0', 'presence-penalty': '-0.5' };
+  assert.deepEqual(Object.keys(values).sort(), [...SAMPLING_FLAGS].sort(), 'the test covers the whole registry');
+  for (const [flag, value] of Object.entries(values)) {
+    assert.ok(build({ [flag]: value }).includes(`--${flag}=${value}`), `--${flag} carries its value`);
+    assert.ok(!build({}).some((arg) => arg.startsWith(`--${flag}`)), `--${flag} is absent when not asked for`);
+  }
+  // Zero and negative values are settings, not absence.
+  assert.ok(build({ 'min-p': 0 }).includes('--min-p=0'));
+});
+
+test('forwarded values reach the review as the bench validated them, empty ones included', () => {
+  // Through the review's own parser: a value forwarded as a separate, empty
+  // argument is dropped there, and the review then refuses the flag or reads the
+  // next one as its value.
+  const asReviewed = (options) => parseCommandLine(build(options).slice(1), REVIEW_SPEC).options;
+  for (const options of [
+    { 'min-p': '' }, { 'top-p': ' ' }, { 'presence-penalty': '-0.5' }, { 'reasoning-effort': 'a=b' }, { 'top-k': 20 },
+  ]) {
+    assert.deepEqual(parseSampling(asReviewed(options)), parseSampling(options), JSON.stringify(options));
+  }
+  assert.equal(parseNumber(asReviewed({ temperature: '' }).temperature, 'temperature', { min: 0, max: 2 }), 0);
+  assert.equal(asReviewed({ 'max-tokens': '8192' })['max-tokens'], '8192');
+});
+
+test('bench refuses an out-of-range sampling value BEFORE materializing any case', async () => {
+  const { code, signal, out, startedCase } = await spawnBench(['--top-p', '7']);
+  assert.equal(startedCase, false, `validation let --top-p 7 through and a case started: ${out.slice(0, 300)}`);
+  assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
+  assert.notEqual(code, 0, `an out-of-range --top-p must be refused: ${out.slice(0, 300)}`);
+  assert.match(out, /top-p/);
+});
+
+test('the report is told which sampling flags were set, and only those', () => {
+  assert.deepEqual(reportFlags({ 'top-p': '0.9', 'reasoning-effort': ' high ' }).sampling, { 'top-p': 0.9, 'reasoning-effort': 'high' });
+  assert.deepEqual(reportFlags({}).sampling, {});
+});
+
+test('bench accepts a valid sampling flag on its command line', async () => {
+  // Refused for --passes, which is checked after the sampling flags are validated:
+  // reaching that refusal proves --top-p was both parsed and accepted. The match is
+  // on the refusal's own sentence — an unknown-flag hint also names --passes.
+  const { code, signal, out, startedCase } = await spawnBench(['--top-p', '0.9', '--passes', '99']);
+  assert.equal(startedCase, false, out.slice(0, 300));
+  assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
+  assert.notEqual(code, 0);
+  assert.match(out, new RegExp(`--passes must be an integer between 1 and ${PASSES_CEILING}`), `--top-p must be accepted: ${out.slice(0, 300)}`);
 });

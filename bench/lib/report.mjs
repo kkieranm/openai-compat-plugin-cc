@@ -156,7 +156,7 @@ function table(rows) {
   return lines;
 }
 
-export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, passes, lens }) {
+export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling, passes, lens }) {
   const rows = caseRows(results, { cold });
   const lines = [
     `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`
@@ -171,7 +171,7 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
     ...table(rows),
     '',
   ];
-  for (const note of caveats(rows, runsPerCase, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature })) lines.push(note, '');
+  for (const note of caveats(rows, runsPerCase, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling })) lines.push(note, '');
 
   lines.push(...supplements(results));
   return lines.join('\n');
