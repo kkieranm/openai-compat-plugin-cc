@@ -15,7 +15,7 @@
  * failure the size guard exists to prevent.
  */
 
-import { readJson } from './body.mjs';
+import { readJson, readText } from './body.mjs';
 import { authHeaders } from './client.mjs';
 import { send } from './http.mjs';
 import { planSelection } from './model-selection.mjs';
@@ -71,7 +71,8 @@ const SOURCE_LMSTUDIO = 'LM Studio /api/v0/models';
 const SOURCE_LLAMACPP = 'llama.cpp /props n_ctx';
 const SOURCE_TGI = 'TGI /info max_total_tokens';
 const SOURCE_OMLX = 'oMLX /v1/models/status';
-export const CONTEXT_SOURCES = new Set([SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX]);
+const SOURCE_VMLX = 'vMLX max_prompt_tokens';
+export const CONTEXT_SOURCES = new Set([SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX, SOURCE_VMLX]);
 
 /** vLLM puts the served length on the standard model object. Costs no extra request. */
 function readVllm(payload) {
@@ -145,6 +146,99 @@ function readOmlx(payload) {
   return models.length > 0 ? { models, source: SOURCE_OMLX } : null;
 }
 
+/**
+ * `/health`, reporting whether the reply was conclusive: `{ conclusive, payload }`.
+ * A non-2xx status is conclusive (unless `send()` refuses the reply first), and
+ * so is a 2xx body read to its end, JSON or not (`payload` is null when it is
+ * not JSON). A request that fails, or a body that is cut, stalls or cannot be
+ * decoded, is not: it says nothing about what is listening. The body is read
+ * whole, under the probe's own time budget, because a truncated read would pass
+ * for a complete non-JSON one.
+ */
+async function probeHealth(url, { headers, timeoutMs }) {
+  let response;
+  try {
+    response = await send(url, { headers, firstByteMs: timeoutMs, totalMs: timeoutMs });
+  } catch {
+    return { conclusive: false, payload: null };
+  }
+  if (response.status < 200 || response.status >= 300) {
+    response.dispose();
+    return { conclusive: true, payload: null };
+  }
+  let text;
+  try {
+    text = await readText(response);
+  } catch {
+    return { conclusive: false, payload: null };
+  }
+  try {
+    return { conclusive: true, payload: JSON.parse(text) };
+  } catch {
+    return { conclusive: true, payload: null };
+  }
+}
+
+/**
+ * vMLX, read from `/health` so that probing does not wake it. The desktop app's
+ * gateway reloads a sleeping model for a request it routes to a session —
+ * `/v1/capabilities` and `/props` among them — while it answers `/health` and
+ * `/v1/models` itself; on a machine that holds one model at a time, a probe that
+ * loads a model is not a read. So a recognised vMLX ends the probe chain whether
+ * or not a window was found, and `/health` is sent without the profile's query
+ * string, which would turn it into a routed request. The guarantee is for a
+ * baseUrl that reaches the gateway at its own root without a query string: with
+ * a query, `fetchModels` has already sent `/v1/models?…`, which the gateway
+ * routes.
+ *
+ * The other native probes run only on evidence that the server is not vMLX: a
+ * non-2xx `/health`, or a complete one of another shape. A `/health` that fails
+ * or breaks off ends probing with the window unknown for this run — so a server
+ * whose `/health` never completes in time loses its detected window every run.
+ *
+ * Two shapes. The gateway lists its sessions as backends with a status; it is
+ * asked for `/v1/capabilities` only when every listed backend is `running`,
+ * because remote sessions are listed alongside local ones without a type, and a
+ * standby local session would be woken. A backend can still idle into standby
+ * between the two requests; that race is not visible from outside vMLX. The
+ * bare engine (`vmlx-serve`) carries the figure in `/health` itself, valid only
+ * while `model_loaded`: an engine in standby still reports the last value.
+ *
+ * `max_prompt_tokens` is the prompt cap vMLX enforces before prefill — estimated
+ * from free memory when the model loads and clamped to the model's declared
+ * context, or set by `--max-prompt-tokens`. Using a prompt cap as the whole
+ * window is conservative: whatever the guard admits has a prompt under it. An
+ * explicit `--max-prompt-tokens` above the model's declared context is published
+ * unclamped and cannot be caught here, since vMLX publishes no declared context;
+ * by default vMLX refuses those prompts (`prompt_too_long`). An absent or null
+ * cap leaves the window unknown.
+ *
+ * Returns null to let the other probes run, otherwise `{ detected }`, where
+ * `detected` is null when no window and model id could be read without waking
+ * the server.
+ */
+async function probeVmlx(root, { headers, timeoutMs, query = '' }) {
+  const { conclusive, payload: health } = await probeHealth(`${root}/health`, { headers, timeoutMs });
+  const vmlx = (window, id) => ({
+    detected: window && typeof id === 'string' && id ? { models: [{ id, window }], source: SOURCE_VMLX } : null,
+  });
+  if (!conclusive) return vmlx();
+
+  if (typeof health?.model_loaded === 'boolean' && typeof health?.engine_type === 'string') {
+    const window = health.model_loaded ? positiveInteger(health.max_prompt_tokens) : undefined;
+    return vmlx(window, health.served_model_name || health.model_name);
+  }
+
+  if (Array.isArray(health?.backends) && health?.gateway_port !== undefined) {
+    const running = health.backends.length > 0 && health.backends.every((backend) => backend?.status === 'running');
+    if (!running) return vmlx();
+    const capabilities = await probeJson(`${root}/v1/capabilities${query}`, { headers, timeoutMs });
+    return vmlx(positiveInteger(capabilities?.max_prompt_tokens), capabilities?.loaded_model || capabilities?.id);
+  }
+
+  return null;
+}
+
 // Tried in order; the first recognisable shape wins. Each entry is a path
 // relative to the probe root plus the reader for that dialect.
 const NATIVE_PROBES = [
@@ -169,6 +263,15 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
 
   const root = probeRoot(profile.baseUrl);
   const headers = authHeaders(profile);
+  // First, because a recognised vMLX must receive no other native probe.
+  const vmlx = await probeVmlx(root, { headers, timeoutMs, query: profile.query ?? '' });
+  if (vmlx) {
+    if (!vmlx.detected) return unrecognised(ids);
+    // The one model vMLX reports is not a catalogue to refuse other names
+    // against: its gateway matches a requested name loosely.
+    const { catalogueIds, ...described } = merge(ids, vmlx.detected);
+    return described;
+  }
   for (const probe of NATIVE_PROBES) {
     const payload = await probeJson(`${root}${probe.path}${profile.query ?? ''}`, { headers, timeoutMs });
     if (!payload) continue;
@@ -176,6 +279,10 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
     if (detected) return merge(ids, detected);
   }
 
+  return unrecognised(ids);
+}
+
+function unrecognised(ids) {
   return { models: ids.map((id) => ({ id })), source: null };
 }
 

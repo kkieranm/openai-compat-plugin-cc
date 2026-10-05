@@ -110,11 +110,15 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   size is an estimate. Non-ASCII text (accented Latin, CJK, emoji, …) is counted conservatively —
   about threefold for Chinese prose — so input dense in it can be refused before the window is
   actually full; the refusal usually notes when that may be the cause.
-- **The window is detected automatically** on LM Studio, vLLM, llama.cpp and TGI, and `/oai:setup`
-  shows where the number came from. Only the window a server is *actually serving* counts — a
-  model's theoretical ceiling is ignored, since guarding on it would admit input the server rejects.
-  Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on a
-  profile overrides detection. An undetected window is not treated as a large one: `/oai:review`
+- **The window is detected automatically** on LM Studio, oMLX, vMLX, vLLM, llama.cpp and TGI, and
+  `/oai:setup` shows where the number came from. On vMLX it is the server's prompt cap, for the model
+  under the name the server lists (another name the server also accepts gets none), read only while
+  a model is loaded so that probing does not wake a sleeping vMLX (for a `baseUrl` at the server's
+  root without a query string); a cap set with `--max-prompt-tokens` above the model's own context is
+  taken as given, so set `contextLength` in that case. Only the window a server is *actually serving*
+  counts — a model's theoretical ceiling is ignored, since guarding on it would admit input the server
+  rejects. Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on
+  a profile overrides detection. An undetected window is not treated as a large one: `/oai:review`
   stops sending the diff-covered changed files whole rather than shipping a request it cannot size,
   and reports the skip. Files covered by no diff still go whole — see the review command's docs.
 - **Review findings are claims, not conclusions.** They come from a small model asked to report

@@ -5,6 +5,14 @@ All notable changes to this project are documented here, loosely following the
 
 ## Unreleased
 
+### Added
+
+- The context window is now detected on vMLX, from the prompt cap it enforces, so the size check works
+  there without a `contextLength` in the config. The window is read only while vMLX has a model
+  loaded, so checking it does not wake a sleeping vMLX into reloading its model (for a `baseUrl` at
+  the server's root without a query string). A cap set with `--max-prompt-tokens` above the model's
+  own context is taken as given; set `contextLength` in that case.
+
 ### Fixed
 
 - `/oai:review` now says when the conservative count of non-ASCII text shaped an admitted review: when
