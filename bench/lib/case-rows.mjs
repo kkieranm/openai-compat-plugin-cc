@@ -264,7 +264,7 @@ function buckets(runs) {
 }
 
 /**
- * WHAT THE SERVER DID ABOUT THE SCHEMA, not what the operator asked for.
+ * WHETHER THE SCHEMA WAS IN FORCE FOR EVERY ANSWER, not what the operator asked for.
  *
  * `--structured-output` is a REQUEST. `review-request.mjs` falls back to the
  * unconstrained path when a server rejects `response_format`, and the CLI
@@ -273,7 +273,7 @@ function buckets(runs) {
  *
  * Counted per RUN, not collapsed to a boolean — a case can degrade on some runs and not others, and a
  * boolean would replace one caption that cannot see the failure with another. `reported` is the
- * denominator (runs that came back with an envelope at all), so the count is read against what was
+ * denominator (runs that came back with an answer), so the count is read against what was
  * actually observed rather than against runs that never answered.
  *
  * 
@@ -333,7 +333,7 @@ export function caseRows(results, { cold = false } = {}) {
       // `lens` because it is the same class of fact: what the review actually was,
       // not what it found.
       reasoning: reasoningSamples(runs),
-      // See `schemaDegrade` above. Per RUN, never a boolean.
+      // Per RUN, never a boolean — see `caseRows` above.
       reported: runs.filter((run) => run.report).length,
       degraded: runs.filter((run) => run.report?.degraded).length,
       tokens: promptSamples(runs),

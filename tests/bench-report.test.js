@@ -352,9 +352,9 @@ test('a schema arm says so in its header and its caveats, and an unconstrained o
 
   assert.match(on.split('\n')[0], /\(--structured-output\)/);
   assert.doesNotMatch(off.split('\n')[0], /--structured-output/);
-  assert.match(on, /was on: the reply shape was enforced by a `response_format` schema/);
+  assert.match(on, /`--structured-output` was on\*\*, which asks for the reply shape as a `response_format` schema/);
   assert.match(on, /one failure class\s+versus the other/, 'the note must name the trade, not just the flag');
-  assert.doesNotMatch(off, /the reply shape was enforced/);
+  assert.doesNotMatch(off, /asks for the reply shape/);
 });
 
 // `--max-tokens`/`--temperature` change completion rate and recall, so an

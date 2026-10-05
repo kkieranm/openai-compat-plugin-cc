@@ -67,10 +67,9 @@ All notable changes to this project are documented here, loosely following the
 - `--structured-output` opts into a strict JSON response schema for servers that support it well;
   the default instead asks for the shape in plain language, since a schema-enforcing grammar can
   crash or badly degrade some local servers.
-- If a model spends its whole reply budget reasoning and never writes a visible answer, one bounded
-  follow-up attempt tries to recover a real answer from the partial reasoning — clearly labeled as
-  recovered, not a normal result. This can occasionally make a review run a little past
-  `--max-seconds`.
+- A review that ends without a visible answer may get up to two bounded follow-up attempts per review
+  pass to recover a real answer from its reasoning — clearly labeled as recovered, not a normal
+  result. Salvage can add up to 600s per pass beyond `--max-seconds`.
 - Findings are read reliably regardless of small formatting differences in the model's reply — a
   JSON list, a differently-named field, a bare array, or a plain-language "no defects found" — rather
   than treating a real answer as unreadable.

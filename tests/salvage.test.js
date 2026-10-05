@@ -214,21 +214,16 @@ test('salvage sends a genuine multi-turn follow-up and reports it as salvaged, n
 
 test('--structured-output does not bypass salvage on a deadline-timeout, and the follow-up states the shape itself', async () => {
   // The schema-constrained request is a different branch of `requestFindings`
-  // (the `first`/`prepareLadder` path, not `unconstrained`'s `built`) — before
-  // the fix, a deadline-timeout there threw straight through `isFormatRejection`
-  // without ever calling `trySalvage`, because that check only ever guarded the
-  // `response_format`-refusal retry, not a plain timeout. This is the live proof.
+  // (the `first`/`prepareLadder` path, not `unconstrained`'s `built`): a
+  // deadline-timeout there must still reach `trySalvage`, not only the
+  // `response_format`-refusal retry.
   //
-  // A second, sharper gap surfaced on the very fix for the first: the
-  // structured-output rung's original request states its shape only via the
-  // `response_format` GRAMMAR, never in prose the model can see on a later
-  // turn — unlike `unconstrained()`'s own rung, whose messages always carry a
-  // prose schema instruction regardless of `--structured-output`. A follow-up
-  // that assumed "the shape already asked for" was therefore FALSE for this
-  // path specifically, and a fake server that answers correctly regardless of
-  // prompt content (as the assertions above alone would allow) cannot catch
-  // that — so this test also inspects the actual follow-up message and
-  // requires it to state the shape itself.
+  // That rung states its full shape only through the `response_format` GRAMMAR,
+  // never in prose the model can see on a later turn — unlike `unconstrained()`'s
+  // own rung, whose messages always carry a prose schema instruction. So the
+  // follow-up must state the shape itself, and a fake server that answers
+  // correctly regardless of prompt content cannot show that; this test inspects
+  // the actual follow-up message.
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     // All fields the schema actually requires, per-finding and at the top
@@ -257,6 +252,9 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
     assert.equal(result.status, 0, result.stderr);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.salvaged, true);
+    // The follow-up never sends `response_format`, so a salvaged structured run
+    // is degraded although the server never refused it.
+    assert.equal(envelope.degraded, true);
     assert.equal(envelope.findings.length, 1);
     assert.equal(envelope.findings[0].summary, 'concluded under --structured-output');
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
@@ -268,6 +266,9 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
     // schema missing required fields.
     const sentSchema = chatRequests[0].body.response_format.json_schema.schema;
     const expected = findingsFirst(sentSchema);
+
+    // The follow-up states the shape in prose and never sends the grammar.
+    assert.equal(chatRequests[1].body.response_format, undefined);
 
     const followUp = chatRequests[1].body.messages;
     // Pinned before indexing from the end, not just implied by the shape below:

@@ -577,8 +577,8 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
  * an assumption that `built.messages` already stated it.** The
  * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
  * appends the same instruction to every rung, schema or no). The
- * `--structured-output` call site does not: its first request relies purely
- * on the `response_format` grammar, which is not text the model can see or
+ * `--structured-output` call site does not: its first request states the full
+ * shape only through the `response_format` grammar, which is not text the model can see or
  * recall on a later turn — and reusing that rung's own `schema` here, rather
  * than growing that rung's messages to state it up front, is what avoids
  * resizing a request every other window-budget test is tuned against.

@@ -164,8 +164,8 @@ function schemaNote(structuredOutput, rows) {
   const degraded = rows.reduce((total, row) => total + row.degraded, 0);
   return [
     ...degradedNote(degraded, reported),
-    '**`--structured-output` was on: the reply shape was enforced by a `response_format` schema**, not '
-    + 'described in prose and parsed leniently. This is NOT the default path. **Measured on LM '
+    '**`--structured-output` was on**, which asks for the reply shape as a `response_format` schema. '
+    + 'This is NOT the default path. **Measured on LM '
     + "Studio's MLX backend**: the grammar built from the schema exhausted its lexer at "
     + '13,956–14,744 generated tokens and segfaulted the model process, which is the cause of the '
     + 'empty-completion and stream-drop failures recorded there. The other side of the trade '
