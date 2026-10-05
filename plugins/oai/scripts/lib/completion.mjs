@@ -1,5 +1,6 @@
 import { UserError } from './errors.mjs';
 import { BLANK_COMPLETION, EMPTY_COMPLETION, STREAM_UNFINISHED } from './failure-shape.mjs';
+import { declaredServedModel } from './model-identity.mjs';
 
 /**
  * Turning what a server sent into an answer — from streamed deltas or from a
@@ -137,6 +138,10 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
     // model yields requested === served, so it cannot report a substitution
     // that nothing observed.
     requestedModel,
+    // The id the provider's `servedModelIds` declares this server reports for
+    // `requestedModel`, or null. Carried together with the pair so every
+    // `substitution()` caller has all three.
+    declaredServedModel: declaredServedModel(profile, requestedModel),
     usage: answer.usage,
     finishReason: answer.finishReason,
     prefillMs,

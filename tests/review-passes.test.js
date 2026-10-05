@@ -112,6 +112,25 @@ test('two passes served different confirmed models fail closed as disagreement',
   assert.deepEqual(failure.servedModels, { served: ['modelX', 'modelY'] });
 });
 
+test('a pass naming the exact id and one naming its declared served id agree, in either order', () => {
+  // Both pass substitution() — one exactly, one through the declaration — so the
+  // cross-pass check must compare the model measured, not the id's spelling.
+  const exact = { ok: true, parsed: { findings: [] }, result: { model: 'org/qwen-27b', requestedModel: 'org/qwen-27b', declaredServedModel: 'qwen-27b', modelReported: true } };
+  const declared = { ok: true, parsed: { findings: [] }, result: { model: 'qwen-27b', requestedModel: 'org/qwen-27b', declaredServedModel: 'qwen-27b', modelReported: true } };
+  assert.equal(servedModelFailure([exact, declared]), null);
+  assert.equal(servedModelFailure([declared, exact]), null);
+});
+
+test('passes measuring different models still disagree, reporting the ids the server sent', () => {
+  // Each pass is clean on its own (one exact, one through its declaration), but
+  // they measured different models; the error names the raw served ids.
+  const a = { ok: true, parsed: { findings: [] }, result: { model: 'modelX', requestedModel: 'modelX', declaredServedModel: 'x-bare', modelReported: true } };
+  const b = { ok: true, parsed: { findings: [] }, result: { model: 'y-bare', requestedModel: 'modelY', declaredServedModel: 'y-bare', modelReported: true } };
+  const failure = servedModelFailure([a, b]);
+  assert.equal(failure?.reason, 'served-model-disagreement');
+  assert.deepEqual(failure.servedModels, { served: ['modelX', 'y-bare'] });
+});
+
 test('a substituted model fails closed with the ids off the message', () => {
   const pass = { ok: true, parsed: { findings: [] }, result: { model: 'other-model', requestedModel: 'qwen-27b', modelReported: true } };
   const failure = servedModelFailure([pass]);

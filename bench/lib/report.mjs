@@ -9,10 +9,13 @@
 // The split worth stating is the last one. A number and the sentence explaining
 // what it does not mean have different reasons to change, and keeping them in
 // one file is how the sentence quietly stops matching the number.
+import { declaredMatch } from '../../plugins/oai/scripts/lib/model-identity.mjs';
 import { formatRate } from '../../plugins/oai/scripts/lib/throughput.mjs';
 import { caseRows } from './case-rows.mjs';
 import { reliabilitySection } from './reliability-report.mjs';
 import { caveats, pct } from './caveats.mjs';
+import { safeInline } from './markdown-safe.mjs';
+import { scoredRuns } from './run-buckets.mjs';
 
 /**
  * A seconds range, and how much of the case it actually covers.
@@ -172,9 +175,47 @@ export function renderReport(results, { runsPerCase, model, provider, diffOnly, 
     '',
   ];
   for (const note of caveats(rows, runsPerCase, { diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling })) lines.push(note, '');
+  for (const note of declaredIdNotes(results)) lines.push(note, '');
 
   lines.push(...supplements(results));
   return lines.join('\n');
+}
+
+/**
+ * The requested → served id pairs a scored run matched only through the
+ * provider's `servedModelIds`, named whenever any did.
+ *
+ * Those runs are scored as the requested model because providers.json says the
+ * server reports that model under another id — an assertion by whoever wrote the
+ * config, not something the server confirmed. A reader crediting the row to the
+ * requested model is trusting that declaration, so it is stated where the row is.
+ *
+ * A multi-pass report's top-level ids are its first readable pass's, so each
+ * readable entry of `passes[]` is read too: a union of one exact pass and one
+ * declared pass names the pairing whichever came first. An unreadable pass
+ * (`ok: false`) contributed nothing to the score, so its ids are not read.
+ */
+function declaredIdNotes(results) {
+  const pairs = new Set();
+  for (const { runs } of results) {
+    for (const run of scoredRuns(runs)) {
+      const report = run.report ?? {};
+      const passes = Array.isArray(report.passes) ? report.passes.filter((pass) => pass?.ok !== false) : [];
+      const identities = [report, ...passes];
+      for (const identity of identities) {
+        if (declaredMatch(identity)) {
+          pairs.add(`\`${safeInline(identity.requestedModel) || '(not recorded)'}\` answered as \`${safeInline(identity.model)}\``);
+        }
+      }
+    }
+  }
+  if (pairs.size === 0) return [];
+  return [
+    `**Accepted through a declared served id: ${[...pairs].join(', ')}.** The server reported a different `
+    + 'id than the one requested, and these runs are scored as the requested model only because the '
+    + "provider's `servedModelIds` declares that pairing — an operator assertion in providers.json, not "
+    + 'something the server confirmed.',
+  ];
 }
 
 /**

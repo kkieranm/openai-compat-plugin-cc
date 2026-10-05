@@ -68,6 +68,7 @@ function isOptionalArtifact(value) {
 export const RENDER_CONSUMED_FIELDS = [
   { path: 'outcome.model', get: (job) => job.outcome?.model, valid: isOptionalString },
   { path: 'outcome.requestedModel', get: (job) => job.outcome?.requestedModel, valid: isOptionalString },
+  { path: 'outcome.declaredServedModel', get: (job) => job.outcome?.declaredServedModel, valid: isOptionalString },
   { path: 'outcome.finishReason', get: (job) => job.outcome?.finishReason, valid: isOptionalString },
   { path: 'outcome.artifact', get: (job) => job.outcome?.artifact, valid: isOptionalArtifact },
   { path: 'request.contextNote', get: (job) => job.request?.contextNote, valid: isOptionalString },
@@ -119,6 +120,7 @@ function writeAnswer(job) {
       providerName: job.transport?.name,
       model: outcome.model,
       requestedModel: outcome.requestedModel,
+      declaredServedModel: outcome.declaredServedModel,
       usage: outcome.usage,
       durationMs: outcome.durationMs,
       prefillMs: outcome.prefillMs,

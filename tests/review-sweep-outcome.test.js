@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { runSweep } from '../bench/review-sweep.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
+import { signatureOf } from '../bench/lib/sweep-reproduction.mjs';
 
 const ok = (findings, extra = {}) => ({
   status: 0,
@@ -252,7 +253,7 @@ test('an ineligible commit after an abort is skipped-no-code, not blamed on the 
 // `skippedUnsizedWindow` is the CAUSE `hunksOnly`
 // cannot carry, so a path keeping one and losing the other reports a diff-only
 // review with no way to tell a deliberate shed from an unmeasurable window.
-const CARRIED = ['model', 'modelReported', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];
+const CARRIED = ['model', 'requestedModel', 'modelReported', 'declaredServedModel', 'analysisCut', 'atCap', 'hunksOnly', 'skippedUnsizedWindow', 'dropped', 'salvaged'];
 
 test('a substituted model keeps the findings it produced, and every caveat', () => {
   const entry = classify(ok([{ file: 'a.mjs', line: 3, summary: 'a real defect' }], {
@@ -273,6 +274,37 @@ test('an unreadable reply keeps the caveats without inventing a findings list', 
   assert.equal(entry.outcome, 'unreadable');
   for (const key of CARRIED) assert.ok(key in entry, `unreadable dropped ${key}`);
   assert.equal(entry.findings, undefined, 'there was no array to carry');
+});
+
+// The record's VALUES, not just its keys: the reproduction reader judges
+// provenance from what `reported()` wrote, so a field hardcoded to null there
+// would pass the presence check above and change the verdict. Real classifier
+// output, through the real reader.
+const FULL_ID = 'lmstudio-community/Qwen3.8-27B-MLX-4bit';
+const BARE_ID = 'Qwen3.8-27B-MLX-4bit';
+const provenanceOf = (entry) => signatureOf({ header: {}, entries: [{ sha: 'a', ...entry }], gaps: [], discarded: 0 }).provenance;
+
+test('a reply accepted through a declared served id is recorded with both ids and reads provenance-unverified', () => {
+  const declared = classify(ok([], { model: BARE_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  assert.equal(declared.outcome, 'clean');
+  assert.equal(declared.requestedModel, FULL_ID);
+  assert.equal(declared.declaredServedModel, BARE_ID);
+  assert.equal(provenanceOf(declared), 'unverified');
+  // Control: the same confirmed reply with no declaration is a substitution whose
+  // reported model is verified — the declaration alone made it unverified.
+  const undeclared = classify(ok([], { model: BARE_ID, requestedModel: FULL_ID, declaredServedModel: null, modelReported: true }));
+  assert.equal(undeclared.declaredServedModel, null);
+  assert.equal(provenanceOf(undeclared), 'verified');
+});
+
+test('a reply under the exact requested id stays verified with a declaration present', () => {
+  const exact = classify(ok([], { model: FULL_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  assert.equal(exact.outcome, 'clean');
+  assert.equal(provenanceOf(exact), 'verified');
+  // A self-mapping {X: X}: exact too, which only the carried requested id can show.
+  const selfMapped = classify(ok([], { model: FULL_ID, requestedModel: FULL_ID, declaredServedModel: FULL_ID, modelReported: true }));
+  assert.equal(selfMapped.requestedModel, FULL_ID);
+  assert.equal(provenanceOf(selfMapped), 'verified');
 });
 
 // A tripwire, and no more than that: an alias or a destructure would satisfy this

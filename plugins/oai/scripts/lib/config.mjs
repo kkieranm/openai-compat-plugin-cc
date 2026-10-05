@@ -151,6 +151,7 @@ function validateConfig(config, path) {
         `Provider "${name}" in ${path} has "apiKeyEnv": ${JSON.stringify(profile.apiKeyEnv)} — expected a non-empty string.`,
       );
     }
+    if ('servedModelIds' in profile) validateServedModelIds(profile.servedModelIds, name, path);
     // "8k" would sail through every comparison in the size guard as NaN,
     // leaving it reporting an armed check that in fact tests nothing.
     for (const key of [
@@ -193,6 +194,27 @@ function validateConfig(config, path) {
           `Provider "${name}" in ${path} has "${key}": ${value} — above the ${MAX_BUDGET_SECONDS}s a timer can express.`,
         );
       }
+    }
+  }
+}
+
+/**
+ * `servedModelIds` maps a requested model id to the id the server reports for
+ * it in a reply. Every key and value must be a non-empty string: an empty or
+ * non-string id would declare nothing a reply could ever match, so it is
+ * refused rather than read as a declaration.
+ */
+function validateServedModelIds(ids, name, path) {
+  if (!ids || typeof ids !== 'object' || Array.isArray(ids)) {
+    throw new UserError(
+      `Provider "${name}" in ${path} has "servedModelIds": ${JSON.stringify(ids)} — expected an object mapping a requested model id to the id the server reports.`,
+    );
+  }
+  for (const [requested, served] of Object.entries(ids)) {
+    if (!requested || typeof served !== 'string' || !served) {
+      throw new UserError(
+        `Provider "${name}" in ${path} has "servedModelIds" entry ${JSON.stringify(requested)}: ${JSON.stringify(served)} — expected a non-empty model id for a non-empty key.`,
+      );
     }
   }
 }
@@ -306,6 +328,9 @@ export function buildProfile(name, rawProfile) {
     // no estimate is offered at all — see `eta.mjs`, which refuses to invent one.
     prefillTokensPerSecond: rawProfile.prefillTokensPerSecond,
     generationTokensPerSecond: rawProfile.generationTokensPerSecond,
+    // Requested id → the id this server reports for it. An operator assertion
+    // read by `declaredServedModel` (model-identity.mjs); nothing here checks it.
+    servedModelIds: rawProfile.servedModelIds,
     apiKey,
     credentialSource,
   };
@@ -343,11 +368,13 @@ export function resolveProfile(config, { provider, baseUrl } = {}) {
     // A credential belongs to the ENDPOINT it was configured for, not merely
     // its origin — a same-origin, different-path override on a
     // path-multiplexed gateway is a different tenant, not the same one with a
-    // longer URL.
+    // longer URL. So does a `servedModelIds` declaration: it describes what one
+    // server reports, not what another one at a different endpoint would.
     const crossEndpoint = named && !sameEndpoint(named.baseUrl, baseUrl);
     if (crossEndpoint) {
       delete overridden.apiKey;
       delete overridden.apiKeyEnv;
+      delete overridden.servedModelIds;
     }
     const profile = buildProfile(provider ?? AD_HOC_PROFILE_NAME, overridden);
     // Set HERE because this is the only branch that KNOWS it: a profile built at the

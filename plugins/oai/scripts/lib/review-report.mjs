@@ -194,13 +194,18 @@ export function jsonReport(parsed, context) {
     // request for a model it does not have with a normal completion from
     // whatever IS loaded.
     //
-    // No `substituted` boolean beside these: it is `model !== requestedModel`,
-    // and a stored copy of a derived fact is the mirror-don't-generate defect.
+    // No `substituted` boolean beside these: it is derived from them (and
+    // `declaredServedModel`), and a stored copy of a derived fact is the
+    // mirror-don't-generate defect.
     // Consumers call `substitution()`.
     // The `??` is unreachable — `finishAnswer` always returns it — and must stay
     // that way: were it ever taken, both fields would collapse and a reader
     // would see "checked, they matched" where nothing was determined.
     requestedModel: result.requestedModel ?? model,
+    // The provider's declared served id for `requestedModel`, or null — the
+    // third input `substitution()` takes, so a consumer of this envelope reaches
+    // the same verdict the footer did.
+    declaredServedModel: result.declaredServedModel ?? null,
     // Whether the SERVER named the model above, or it is the requested id echoed
     // back by `result.model`'s own `?? requestedModel` fallback (completion.mjs).
     // Mirrors task-report.mjs, and for the same reason: once the fallback has
@@ -311,6 +316,9 @@ export function errorReport(error) {
     // only place the id survives — without it the reliability table cannot
     // attribute an all-failed sweep to the model that failed.
     requestedModel: error?.requestedModel ?? null,
+    // Attached beside `requestedModel` by the same command-level catch, and null
+    // wherever that id is.
+    declaredServedModel: error?.declaredServedModel ?? null,
     // The sampling params the run was REQUESTED with, attached to the error by
     // the command-level catch — so a post-dispatch runaway records what it ran
     // under, and a pre-dispatch failure records what it would have. Not
@@ -385,6 +393,7 @@ export function report(parsed, context) {
       providerName: profile.name,
       model: result.model,
       requestedModel: result.requestedModel,
+      declaredServedModel: result.declaredServedModel,
       usage: result.usage,
       durationMs,
       prefillMs: result.prefillMs,
@@ -502,6 +511,7 @@ export function passEnvelope(pass, index, context) {
   if (pass.result) {
     entry.model = pass.result.model || context.model;
     entry.requestedModel = pass.result.requestedModel ?? context.model;
+    entry.declaredServedModel = pass.result.declaredServedModel ?? null;
     entry.modelReported = pass.result.modelReported ?? false;
     entry.usage = pass.result.usage ?? null;
     entry.reasoning = reasoningWitness(pass.result.usage);
@@ -552,7 +562,8 @@ function passSummary(pass, index, report) {
   if (report.ok !== false) {
     return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
   }
-  const substituted = pass.result?.modelReported === true && substitution(pass.result.requestedModel, pass.result.model);
+  const substituted = pass.result?.modelReported === true
+    && substitution(pass.result.requestedModel, pass.result.model, pass.result.declaredServedModel);
   return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
 }
 
@@ -607,6 +618,7 @@ export function reportPasses(passes, context) {
           label: context.target.label,
           provider: context.profile.name,
           requestedModel: readable[0].result.requestedModel,
+          declaredServedModel: readable[0].result.declaredServedModel ?? null,
           model,
           modelReported: readable[0].result.modelReported,
           perPassReports,

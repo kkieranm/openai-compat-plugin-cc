@@ -69,13 +69,14 @@ for the reviewer.
 ```
 
 Per-provider options: `defaultModel`, `contextLength`, `timeoutSeconds`, `prefillTokensPerSecond`,
-`generationTokensPerSecond`, and `apiKeyEnv` (name of an environment variable holding the key —
-preferred) or `apiKey`. All are optional: `contextLength` is detected where possible, and
-`defaultModel` is only needed when a server offers more than one chat model. Setting `contextLength`
-is worth it for `/oai:review`: without a window figure it sends the diff-covered changed files as
-hunks alone rather than building a request nothing can size, so a review is narrower than it needs to
-be (it says so when it does). Files covered by no diff — untracked, or given with `--file` — still go
-whole either way, because withholding the only copy of that code would review nothing.
+`generationTokensPerSecond`, `servedModelIds` (below), and `apiKeyEnv` (name of an environment variable
+holding the key — preferred) or `apiKey`. All are optional: `contextLength` is detected where possible,
+and `defaultModel` is only needed when a server offers more than one chat model. Setting
+`contextLength` is worth it for `/oai:review`: without a window figure it sends the diff-covered
+changed files as hunks alone rather than building a request nothing can size, so a review is narrower
+than it needs to be (it says so when it does). Files covered by no diff — untracked, or given with
+`--file` — still go whole either way, because withholding the only copy of that code would review
+nothing.
 
 The two rate options exist only so `/oai:task` can tell you roughly how long a request will take
 **before** it spends it — prefill is silent and can run to minutes on a large input, which is exactly
@@ -84,6 +85,28 @@ without them: a rate copied from someone else's hardware would be acted on as co
 one, so the plugin says nothing rather than guessing. Take them from a run's own footer, which
 reports prefill, generation and tokens separately. The seeded ports are each project's documented default; correct them if your server listens
 elsewhere.
+
+`servedModelIds` is for a server whose replies name a model under a different id than the one it
+lists. Unsloth Studio, for example, lists `lmstudio-community/Qwen3.8-27B-MLX-4bit` but every reply
+reports `Qwen3.8-27B-MLX-4bit`, so each run is reported as a substitution (and the benchmark excludes
+it). Map the requested id to the id the server reports:
+
+```json
+"unsloth": {
+  "baseUrl": "http://localhost:8888/v1",
+  "servedModelIds": { "lmstudio-community/Qwen3.8-27B-MLX-4bit": "Qwen3.8-27B-MLX-4bit" }
+}
+```
+
+A reply naming exactly the declared id for the requested id is then not a substitution; every other
+pair is still compared exactly. The mapping is your assertion that the two ids are the same model,
+not proof of it — nothing the plugin can query confirms it — so `--json` records it as
+`declaredServedModel` beside `requestedModel` and `model`, the benchmark and review-sweep reports
+name each pairing a scored run or sweep entry relied on, and the sweep reproduction reader discloses
+such a run as provenance-unverifiable. Declare only an id the server does not also list as a model of its
+own: if it does, a real swap to that model would be accepted as the requested one. The declaration
+describes the provider's own endpoint: it does not apply under `--base-url` to a different endpoint,
+or to a bare `--base-url` with no `--provider`.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
 `--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several

@@ -21,7 +21,10 @@
 // or a lost record (a gap, a discarded line, or a commit recorded twice — the
 // separate `integrity` axis). A record written before `modelReported` existed is
 // grouped on its bare `entry.model` but DISCLOSED as provenance-unverifiable, the
-// same legacy policy the soft axes take for a knob a ledger predates.
+// same legacy policy the soft axes take for a knob a ledger predates. So is a reply
+// accepted only through its provider's `servedModelIds` declaration (`declaredMatch`):
+// it groups on the id the server reported, which stands for the requested model on
+// the operator's assertion alone.
 //
 // This module computes; `sweep-reproduction-report.mjs` renders. It is a stateless
 // reader: the ledgers on disk ARE the history, consumed rather than replaced.
@@ -29,6 +32,7 @@ import { basename } from 'node:path';
 import { readLedger, ledgerStampFrom } from './sweep-ledger.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
 import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
+import { declaredMatch } from '../../plugins/oai/scripts/lib/model-identity.mjs';
 
 // The two shapes an axis value takes, mirroring `compare-model.mjs`'s own
 // known/unknown machinery: a proven value that two runs can be equated on, or an
@@ -128,17 +132,21 @@ function observedModel(entries) {
 }
 
 /**
- * Whether every answering reply CONFIRMED its model, or some record predates the
- * `modelReported` field. A run with an unconfirmed reply (`=== false`) never reaches
- * a comparable group — `observedModel` already made it ungroupable — so this only
- * distinguishes a fully-proven run from a legacy one grouped on its bare `entry.model`
- * and disclosed. `unverified` is any MODEL-BEARING entry not positively confirmed —
+ * Whether every answering reply CONFIRMED the model it was counted as, or some
+ * record predates the `modelReported` field or was accepted through a declared
+ * served id. A run with an unconfirmed reply (`=== false`) never reaches a
+ * comparable group — `observedModel` already made it ungroupable — so this only
+ * distinguishes a fully-proven run from one grouped on its `entry.model` and
+ * disclosed. `unverified` is any MODEL-BEARING entry not positively confirmed —
  * the same set `observedModel` reads its identity from, so the disclosure covers
- * exactly the entries whose model the group was equated on.
+ * exactly the entries whose model the group was equated on. That is an entry
+ * written before `modelReported` existed, or a `declaredMatch` one: accepted on
+ * the operator's `servedModelIds` assertion, not on the server naming the
+ * requested id. A confirmed exact reply stays `verified` whatever the declaration says.
  */
 function modelProvenance(entries) {
   const modelBearing = entries.filter((entry) => typeof entry.model === 'string' && entry.model !== '');
-  return modelBearing.every((entry) => entry.modelReported === true) ? 'verified' : 'unverified';
+  return modelBearing.every((entry) => entry.modelReported === true && !declaredMatch(entry)) ? 'verified' : 'unverified';
 }
 
 /**
@@ -195,9 +203,10 @@ export function signatureOf(ledger) {
     },
     soft: Object.fromEntries(SOFT_AXES.map((key) => [key, softAxis(header, key)])),
     // Not a hard axis (it never changes the group key) and not soft (it never
-    // suppresses): a legacy run and a confirmed run on the same model id are the
-    // same group, the legacy one merely disclosed. So it rides beside the axes as
-    // its own per-run marker, read in `reproductionOf` into a disclosure caveat.
+    // suppresses): an unverified run — a legacy one, or one accepted through a
+    // declared served id — groups with any confirmed run on the same observed model
+    // id, merely disclosed. So it rides beside the axes as its own per-run marker,
+    // read in `reproductionOf` into a disclosure caveat.
     provenance: modelProvenance(entries),
   };
 }
@@ -345,11 +354,12 @@ export function reproductionOf(group) {
   });
 
   // Provenance is a disclosure, never a suppression: a run grouped on a model id no
-  // server confirmed (a pre-`modelReported` ledger) is compared, but the reader is
-  // told its identity is unproven — the same posture the soft axes take for a knob a
-  // ledger predates. Appended to the soft-axis caveats under its own axis label.
-  const legacy = runs.filter((run) => run.signature.provenance === 'unverified').map((run) => run.stamp);
-  const caveats = legacy.length > 0 ? [...soft.caveats, { axis: 'model provenance', runs: legacy }] : soft.caveats;
+  // server confirmed (a pre-`modelReported` ledger), or on an id accepted only through
+  // the provider's declared served id, is compared, but the reader is told its
+  // identity is unproven — the same posture the soft axes take for a knob a ledger
+  // predates. Appended to the soft-axis caveats under its own axis label.
+  const unverified = runs.filter((run) => run.signature.provenance === 'unverified').map((run) => run.stamp);
+  const caveats = unverified.length > 0 ? [...soft.caveats, { axis: 'model provenance', runs: unverified }] : soft.caveats;
 
   return { suppressed: false, rows, aggregate, perRun, caveats, runs };
 }

@@ -5,6 +5,7 @@
 // live request object handed to `JSON.stringify` — those are not the same thing
 // and treating them as one changes what goes on the wire.
 import { resolveIdle, resolveMax, resolveRetryDelay, resolveTimeout } from './delegate.mjs';
+import { declaredServedModel } from './model-identity.mjs';
 
 /**
  * **The one rule, stated once so no call site re-invents it: a field whose
@@ -32,8 +33,9 @@ function withoutUndefined(fields) {
  * — it would be an instant on a clock that no longer exists. `maxMs` is stored
  * and the worker mints its own, exactly as the foreground path does.
  */
-export function persistRequest({ profile, numeric, messages, template, estimatedTokens, budget, sampling }) {
+export function persistRequest({ profile, model, numeric, messages, template, estimatedTokens, budget, sampling }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;
+  const declared = declaredServedModel(profile, model);
   return {
     messages,
     // Gated on the template, because `estimatedTokens` is ALWAYS in hand:
@@ -66,6 +68,12 @@ export function persistRequest({ profile, numeric, messages, template, estimated
       // an object of set params or absent. An older build reading a newer row
       // simply drops it and sends an unsampled request.
       sampling,
+      // The provider's declared served id for the RESOLVED model, frozen as the
+      // single entry the worker needs: the worker rebuilds its profile from the
+      // job's transport, which carries no config. Absent when nothing is
+      // declared; an older build reading a newer row drops it, and a reply under
+      // the declared id then reads as a substitution.
+      servedModelIds: declared ? { [model]: declared } : undefined,
       maxTokens,
       maxAttempts,
     }),

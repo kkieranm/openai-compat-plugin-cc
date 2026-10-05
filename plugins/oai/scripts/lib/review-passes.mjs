@@ -10,7 +10,7 @@
 // `review-report.mjs`'s `reportPasses`, keeping the repo's seam — `review.mjs`
 // and this file build strings/objects, `review-report.mjs` writes them.
 import { UserError } from './errors.mjs';
-import { substitution } from './model-identity.mjs';
+import { declaredMatch, substitution } from './model-identity.mjs';
 import { SEVERITY_ORDER, renderFindings } from './review.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
 
@@ -169,8 +169,8 @@ export function mergePasses(readable) {
  *     passes can both echo the requested id and `substitution()` see no
  *     mismatch though nothing was confirmed. An unconfirmed served model is not
  *     agreement.
- *   - Agreement: given confirmation, a substitution (served !== requested) or a
- *     served model that differs across passes fails closed — stricter than the
+ *   - Agreement: given confirmation, a substitution (`substitution()`) or a
+ *     measured model that differs across passes fails closed — stricter than the
  *     single-pass path, which only NOTICES a substitution. Over-suppression on
  *     the safe side: a silently mixed-model union is the thing this rules out.
  *
@@ -191,7 +191,7 @@ export function servedModelFailure(readable) {
         },
       );
     }
-    const swap = substitution(pass.result.requestedModel, pass.result.model);
+    const swap = substitution(pass.result.requestedModel, pass.result.model, pass.result.declaredServedModel);
     if (swap) {
       const error = new UserError(
         'A review pass was answered by a substituted model, so a multi-pass union would mix models.',
@@ -205,8 +205,13 @@ export function servedModelFailure(readable) {
       return error;
     }
   }
-  const served = [...new Set(readable.map((pass) => pass.result.model))];
-  if (served.length > 1) {
+  // Agreement is on the model each pass measured, not on the spelling of its id:
+  // a reply under the pass's own declared served id is the requested model (the
+  // per-pass check above already accepted it), so one pass naming the exact id
+  // and another the declared one agree.
+  const measured = new Set(readable.map(({ result }) => (declaredMatch(result) ? result.requestedModel : result.model)));
+  if (measured.size > 1) {
+    const served = [...new Set(readable.map((pass) => pass.result.model))];
     const error = new UserError(
       'Two review passes were served different models, so a multi-pass union would mix models.',
       {
@@ -408,8 +413,10 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
  * `JSON.parse(stdout)`), additive over the single-pass shape. `findings[]` is
  * the union (each carrying `agreement`, `readablePasses`, `summaries[]`);
  * `passes[]` preserves each pass's own record; the top-level `requestedModel` /
- * `model` pair is the confirmed shared model (the run failed closed before here
- * if the passes disagreed), so a consumer's substitution check stays meaningful.
+ * `model` / `declaredServedModel` are the first readable pass's (the run failed
+ * closed before here if the passes measured different models), so a consumer's
+ * substitution check stays meaningful — given all three, since passes can agree
+ * while one reported the exact id and another the declared one.
  * Caveat fields are the fail-closed OR across readable passes; `contextChecked`
  * is the AND. Per-pass originals stay in `passes[]`, so nothing is concealed.
  * `parsed: true` is hard-coded and honest — `reportPasses`'s precondition
@@ -425,7 +432,7 @@ function withoutAgreement(finding) {
   return rest;
 }
 
-export function passesEnvelope(merged, { label, provider, requestedModel, model, modelReported, perPassReports, usage, reasoning, sampling, contextWindow, contextSource, detectedWindow, serverConfig, durationMs, attempts, finishReason, caveatFlags, contextChecked, strategy = 'passes', lenses = [] }) {
+export function passesEnvelope(merged, { label, provider, requestedModel, declaredServedModel = null, model, modelReported, perPassReports, usage, reasoning, sampling, contextWindow, contextSource, detectedWindow, serverConfig, durationMs, attempts, finishReason, caveatFlags, contextChecked, strategy = 'passes', lenses = [] }) {
   return {
     kind: 'multi-pass-review',
     label,
@@ -442,6 +449,7 @@ export function passesEnvelope(merged, { label, provider, requestedModel, model,
     passCount: perPassReports.length,
     readablePasses: merged.readablePasses,
     requestedModel,
+    declaredServedModel,
     model,
     modelReported,
     // On the lens path each finding's per-finding `agreement`/`readablePasses` are

@@ -79,6 +79,7 @@ function outcomeOf(result, durationMs, template) {
     reasoning: result.reasoning ?? '',
     model: result.model ?? null,
     requestedModel: result.requestedModel ?? null,
+    declaredServedModel: result.declaredServedModel ?? null,
     usage: result.usage ?? null,
     finishReason: result.finishReason ?? null,
     prefillMs: result.prefillMs ?? null,
@@ -104,7 +105,9 @@ function outcomeOf(result, durationMs, template) {
 async function runJob(job) {
   const startedAt = Date.now();
   const ledger = createLedger();
-  const profile = transportProfile(job);
+  // The declaration frozen at submission, so `finishAnswer` reads it off the
+  // profile exactly as the foreground path does.
+  const profile = { ...transportProfile(job), servedModelIds: job.request?.servedModelIds };
   const request = reconstructRequest(job.request, { model: job.model, ledger });
 
   const result = await chatCompletion(profile, request);

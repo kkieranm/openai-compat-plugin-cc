@@ -40,6 +40,10 @@ function jsonTaskReport(outcome, answer) {
     //
     model: result.model || model,
     requestedModel: result.requestedModel ?? model,
+    // The provider's declared served id for `requestedModel`, or null. A reply
+    // naming it is not a substitution; it is the operator's assertion, recorded
+    // so a reader can tell a declared match from an exact one.
+    declaredServedModel: result.declaredServedModel ?? null,
     // **Whether `model` above is something the server SAID, or the requested id
     // echoed back.** `completion.mjs` collapses the two deliberately, so that a
     // server naming nothing cannot produce a substitution report nothing
@@ -110,6 +114,7 @@ function writeFooter({ result, profile, budget, durationMs }) {
       providerName: profile.name,
       model: result.model,
       requestedModel: result.requestedModel,
+      declaredServedModel: result.declaredServedModel,
       usage: result.usage,
       durationMs,
       prefillMs: result.prefillMs,

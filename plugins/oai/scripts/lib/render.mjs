@@ -155,7 +155,7 @@ function timingParts(durationMs, prefillMs) {
 }
 
 /**
- * What answered, and what was asked for when they differ.
+ * What answered, and what was asked for when `substitution()` finds they differ.
  *
  * Inside the `model:` part rather than on a line of its own: this is the field a
  * reader goes to in order to learn which model produced the output, so the
@@ -167,14 +167,14 @@ function timingParts(durationMs, prefillMs) {
  * it does not have with a normal completion from whatever is loaded. See
  * model-identity.mjs.
  */
-function modelPart(model, requestedModel) {
+function modelPart(model, requestedModel, declaredServedModel) {
   // `undefined` means the field is missing from the payload entirely — a
   // foreign `outcome` shape, never this build's own success path, which
   // always writes at least `null`. Left distinct from that legitimate `null`
   // case (a server that answered without naming a model), which this
   // function already renders as `model: null` today.
   if (model === undefined) return 'model: unknown';
-  const swap = substitution(requestedModel, model);
+  const swap = substitution(requestedModel, model, declaredServedModel);
   return swap ? `model: ${swap.served} (requested ${swap.requested})` : `model: ${model}`;
 }
 
@@ -190,9 +190,9 @@ function providerPart(providerName) {
 }
 
 export function renderTaskFooter({
-  providerName, model, requestedModel, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
+  providerName, model, requestedModel, declaredServedModel, usage, durationMs, prefillMs, generationMs, contextNote, finishReason,
 }) {
-  const parts = [providerPart(providerName), modelPart(model, requestedModel), ...timingParts(durationMs, prefillMs)];
+  const parts = [providerPart(providerName), modelPart(model, requestedModel, declaredServedModel), ...timingParts(durationMs, prefillMs)];
   // `Number.isFinite`, not `!== undefined`: a real API's `usage` object always
   // carries numbers here, so this rejects nothing legitimate — but `usage` is
   // an unvalidated field of a background job's persisted `outcome`, and an

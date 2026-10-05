@@ -137,6 +137,59 @@ test('a completed review does report which model answered it', () => {
   assert.match(out, /answered by/);
 });
 
+// A reply accepted through the provider's `servedModelIds` is not recorded as a
+// substitution yet is attributed "answered by" another id, so the report says on
+// whose word the two were equated. Per entry: on the provider default the record
+// names no requested model, so only the entry's own carries the pair.
+const FULL_ID = 'lmstudio-community/Qwen3.8-27B-MLX-4bit';
+const BARE_ID = 'Qwen3.8-27B-MLX-4bit';
+const DECLARED_LINE = /Accepted through a declared served id/;
+const renderRecord = (record, ...entries) => renderSweep({ ...base, ...record, enumerated: entries.length, entries });
+
+test('a provider-default sweep names the pair an entry was accepted under through a declared served id', () => {
+  const out = renderRecord({ requestedModel: null },
+    commit({ outcome: 'clean', findings: [], model: BARE_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  assert.match(out, /Model requested\*\* `\(provider default\)`/);
+  const line = out.split('\n').find((l) => DECLARED_LINE.test(l));
+  assert.ok(line, 'the declared pairing is disclosed');
+  assert.ok(line.includes(`\`${FULL_ID}\` answered as \`${BARE_ID}\``), line);
+  assert.match(line, /servedModelIds/);
+  assert.match(line, /operator assertion/);
+  // It sits after the header, before anything the entries render.
+  assert.ok(out.indexOf(line) < out.indexOf('## '), 'the line follows the header');
+});
+
+test('a truncated declared entry is named as not recorded as a substitution, never as a counted review', () => {
+  const out = renderRecord({ requestedModel: null },
+    commit({ outcome: 'truncated', findings: [], model: BARE_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  const line = out.split('\n').find((l) => DECLARED_LINE.test(l));
+  assert.ok(line, 'the declared pairing is disclosed');
+  assert.match(line, /not recorded as substitutions only because/);
+  assert.doesNotMatch(line, /reviews are counted/);
+});
+
+test('an unreadable declared entry is named too', () => {
+  const out = renderRecord({ requestedModel: null },
+    commit({ outcome: 'unreadable', model: BARE_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  const line = out.split('\n').find((l) => DECLARED_LINE.test(l));
+  assert.ok(line, 'the declared pairing is disclosed');
+  assert.ok(line.includes(`\`${FULL_ID}\` answered as \`${BARE_ID}\``), line);
+});
+
+test('no declared pairing line for an exact reply, a self-mapping, or a failed entry', () => {
+  const exact = renderRecord({ requestedModel: FULL_ID },
+    commit({ outcome: 'clean', findings: [], model: FULL_ID, requestedModel: FULL_ID, declaredServedModel: BARE_ID, modelReported: true }));
+  assert.doesNotMatch(exact, DECLARED_LINE);
+  const selfMapped = renderRecord({ requestedModel: null },
+    commit({ outcome: 'clean', findings: [], model: FULL_ID, requestedModel: FULL_ID, declaredServedModel: FULL_ID, modelReported: true }));
+  assert.doesNotMatch(selfMapped, DECLARED_LINE);
+  // A failure records the requested id under its own name and nothing answered,
+  // so it carries neither a model nor a declaration.
+  const failed = renderRecord({ requestedModel: null },
+    commit({ outcome: 'failed', reason: 'transport', requestedModel: FULL_ID }));
+  assert.doesNotMatch(failed, DECLARED_LINE);
+});
+
 // The control for the two above: same renderer, same section, opposite data.
 // Without it, "never claims a model answered" would also pass against a renderer
 // that had simply stopped printing models altogether.

@@ -399,3 +399,22 @@ test('the CLI needs at least two distinct ledgers and de-dupes a repeated path',
   // fabricated self-agreement.
   assert.throws(() => reproduce([led.path, led.path]), /at least two distinct ledgers/);
 });
+
+test('a run accepted through a declared served id is disclosed as provenance-unverified', () => {
+  const declared = run('DECLARED', { header: {}, entries: [{ ...reviewed('x', 'qwen'), modelReported: true, declaredServedModel: 'qwen' }] });
+  const exact = run('EXACT', { header: {}, entries: [{ ...reviewed('x', 'qwen'), modelReported: true, declaredServedModel: 'qwen-bare' }] });
+  assert.equal(declared.signature.provenance, 'unverified');
+  assert.equal(exact.signature.provenance, 'verified');
+  const group = groupRuns([declared, exact]).find((g) => g.groupable);
+  assert.deepEqual(reproductionOf(group).caveats.find((c) => c.axis === 'model provenance').runs, ['DECLARED']);
+});
+
+// An exact reply is never a declared match, whatever the declaration says —
+// including a self-mapping {X: X}, which only the entry's requested id can tell
+// apart from a declared one.
+test('an entry answered under the exact requested id stays verified with a declaration present', () => {
+  const exact = run('EXACT', { header: {}, entries: [{ ...reviewed('x', 'qwen-full'), requestedModel: 'qwen-full', modelReported: true, declaredServedModel: 'qwen-bare' }] });
+  const selfMapped = run('SELF', { header: {}, entries: [{ ...reviewed('x', 'qwen-full'), requestedModel: 'qwen-full', modelReported: true, declaredServedModel: 'qwen-full' }] });
+  assert.equal(exact.signature.provenance, 'verified');
+  assert.equal(selfMapped.signature.provenance, 'verified');
+});

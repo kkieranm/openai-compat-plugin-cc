@@ -7,6 +7,14 @@ All notable changes to this project are documented here, loosely following the
 
 ### Added
 
+- A provider in `providers.json` can declare `servedModelIds`, mapping a requested model id to the id its
+  server reports in replies — for Unsloth Studio, which lists `lmstudio-community/Qwen3.8-27B-MLX-4bit`
+  and answers as `Qwen3.8-27B-MLX-4bit`. A reply under the declared id is no longer reported as a
+  substitution by `/oai:task`, `/oai:review`, `/oai:result` or the benchmark; every other pair is still
+  compared exactly. The declaration is the operator's assertion, not a check: `--json` carries it as
+  `declaredServedModel`, the benchmark report names each pairing a scored run relied on, the review sweep's
+  report names each pairing an entry was accepted under, and the sweep reproduction reader
+  (`bench/sweep-reproduction.mjs`) counts a run accepted that way as provenance-unverified.
 - `/oai:task` and `/oai:review` take `--enable-thinking true|false`, sent as the chat template's thinking
   switch (`chat_template_kwargs.enable_thinking`). Checked with Qwen3.8-27B (MLX 4-bit): `false` turned
   thinking off on oMLX, vMLX and Unsloth Studio; on LM Studio `true` did not make the model think, and

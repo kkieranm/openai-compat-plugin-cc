@@ -216,12 +216,21 @@ function reported(report) {
   const findings = report?.findings;
   const caveats = {
     model: report?.model ?? null,
+    // The id this commit's review asked for, under its own name and never as
+    // `model` (see `failure`). Per entry, because the sweep's own requested model
+    // is null on the provider default; `declaredMatch` reads it beside
+    // `declaredServedModel` to tell a declared match from an exact reply.
+    requestedModel: report?.requestedModel ?? null,
     // Whether `model` above was NAMED by the server or is the requested id echoed
     // back (review-report.mjs). Carried so a cross-run reader can refuse to prove
     // one model answered two runs on an id neither server confirmed. `null` when
     // the report predates the field — a legacy record a reader discloses rather
     // than trusts, kept distinct from the boolean `false` a silent server writes.
     modelReported: report?.modelReported ?? null,
+    // The provider's declared served id for the requested model, or null. A run
+    // accepted only because the server reported this id is matched on the
+    // operator's assertion, not on the server's word.
+    declaredServedModel: report?.declaredServedModel ?? null,
     analysisCut: report?.analysisCut ?? null,
     atCap: report?.atCap ?? null,
     hunksOnly: report?.hunksOnly ?? null,

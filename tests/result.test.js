@@ -409,6 +409,7 @@ test('every RENDER_CONSUMED_FIELDS entry is actually enforced, not merely claime
   const BUILDERS = {
     'outcome.model': () => ({ outcome: { content: 'ok', model: HOSTILE } }),
     'outcome.requestedModel': () => ({ outcome: { content: 'ok', model: 'test-model', requestedModel: HOSTILE } }),
+    'outcome.declaredServedModel': () => ({ outcome: { content: 'ok', model: 'test-model', declaredServedModel: HOSTILE } }),
     'outcome.finishReason': () => ({ outcome: { content: 'ok', model: 'test-model', finishReason: HOSTILE } }),
     'outcome.artifact': () => ({ outcome: { content: 'ok', model: 'test-model', artifact: HOSTILE } }),
     'request.contextNote': () => ({

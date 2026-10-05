@@ -16,6 +16,7 @@
 // act, so a lead is never lost and a commit is never counted twice.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { declaredMatch } from '../../plugins/oai/scripts/lib/model-identity.mjs';
 import { incompleteness } from './sweep-notes.mjs';
 import { serverHealth } from './sweep-health.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
@@ -383,6 +384,33 @@ function header(record) {
 }
 
 /**
+ * The requested → served id pairs an entry was accepted under only through the
+ * provider's `servedModelIds`, named whenever any was.
+ *
+ * Such an entry is not recorded as a substitution, whatever its outcome, yet is
+ * attributed "answered by" an id other than the one requested; this line says on
+ * whose word the two were equated. Per entry, because `record.requestedModel`
+ * is null when the sweep runs on the provider default. A failed entry carries
+ * neither a model nor a declaration, so it never names a pair.
+ */
+function declaredPairings(entries) {
+  const pairs = new Set();
+  for (const entry of entries) {
+    if (declaredMatch(entry)) {
+      pairs.add(`\`${safeInline(entry.requestedModel) || '(not recorded)'}\` answered as \`${safeInline(entry.model)}\``);
+    }
+  }
+  if (pairs.size === 0) return [];
+  return [
+    '**Accepted through a declared served id: ' + [...pairs].join(', ') + '.** The server reported a different '
+    + 'id than the one requested, and these entries are not recorded as substitutions only because the '
+    + "provider's `servedModelIds` declares that pairing — an operator assertion in providers.json, not "
+    + 'something the server confirmed.',
+    '',
+  ];
+}
+
+/**
  * The caveat is part of the artifact, not decoration.
  *
  * These findings are unverified claims from a small local model, and nothing in
@@ -411,6 +439,7 @@ function caveats() {
 export function renderSweep(record) {
   return [
     ...header(record),
+    ...declaredPairings(record.entries),
     ...serverHealth(record.entries, record.abortAfter, record.timelineComplete !== false),
     ...findingsSection(record.entries),
     ...coverageSection(record.entries),

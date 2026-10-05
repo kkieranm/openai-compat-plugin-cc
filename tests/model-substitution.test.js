@@ -7,7 +7,7 @@
 // whole wall clock on a model it does not claim to test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { substitution, substitutionNotice } from "../plugins/oai/scripts/lib/model-identity.mjs";
+import { declaredMatch, declaredServedModel, substitution, substitutionNotice } from "../plugins/oai/scripts/lib/model-identity.mjs";
 import {
   completion,
   completionFrames,
@@ -50,6 +50,57 @@ test('substitution() reports a difference only when both ids are known', () => {
   assert.equal(substitution(undefined, 'answered'), null);
   assert.equal(substitution('asked', undefined), null);
   assert.equal(substitution('asked', ''), null);
+});
+
+test('a declared served id is not a substitution, and only for the pair it was declared for', () => {
+  const requested = 'lmstudio-community/Qwen3.8-27B-MLX-4bit';
+  const declared = 'Qwen3.8-27B-MLX-4bit';
+  assert.equal(substitution(requested, declared, declared), null);
+  // Declared, but the server answered as something else entirely: still a swap.
+  assert.deepEqual(substitution(requested, 'other-model', declared), { requested, served: 'other-model' });
+  // Exact otherwise: an empty or absent declaration changes nothing.
+  assert.deepEqual(substitution(requested, declared, ''), { requested, served: declared });
+  assert.deepEqual(substitution(requested, declared, null), { requested, served: declared });
+  assert.deepEqual(substitution(requested, declared), { requested, served: declared });
+  // A non-string declaration is not one.
+  assert.deepEqual(substitution(requested, declared, { [requested]: declared }), { requested, served: declared });
+  // The existing rules hold with a declaration present.
+  assert.equal(substitution(requested, requested, declared), null);
+  assert.equal(substitution(undefined, declared, declared), null);
+});
+
+// The one definition every reader of a declared match calls: the multi-pass
+// agreement, the bench note, sweep provenance and the sweep report's line.
+test('declaredMatch is true only for a reply under a non-empty declared id that differs from the requested one', () => {
+  const requested = 'lmstudio-community/Qwen3.8-27B-MLX-4bit';
+  const declared = 'Qwen3.8-27B-MLX-4bit';
+  // Exact: never a declared match, whatever the declaration says.
+  assert.equal(declaredMatch({ requestedModel: requested, model: requested, declaredServedModel: declared }), false);
+  // Declared.
+  assert.equal(declaredMatch({ requestedModel: requested, model: declared, declaredServedModel: declared }), true);
+  // An undeclared swap: the declaration names a different id.
+  assert.equal(declaredMatch({ requestedModel: requested, model: 'other-model', declaredServedModel: declared }), false);
+  // An empty or absent declaration is none — even when the model is equally empty or absent.
+  assert.equal(declaredMatch({ requestedModel: requested, model: declared, declaredServedModel: '' }), false);
+  assert.equal(declaredMatch({ requestedModel: requested, model: '', declaredServedModel: '' }), false);
+  assert.equal(declaredMatch({ requestedModel: requested, model: declared, declaredServedModel: null }), false);
+  assert.equal(declaredMatch({ requestedModel: requested, model: declared }), false);
+  assert.equal(declaredMatch({ requestedModel: requested }), false);
+  // A self-mapping {X: X}: the reply is exact, not declared.
+  assert.equal(declaredMatch({ requestedModel: requested, model: requested, declaredServedModel: requested }), false);
+  // No requested id recorded: the reply still rests on the declaration alone.
+  assert.equal(declaredMatch({ model: declared, declaredServedModel: declared }), true);
+  assert.equal(declaredMatch({ requestedModel: null, model: declared, declaredServedModel: declared }), true);
+});
+
+test('declaredServedModel reads only an own, non-empty string entry for the requested id', () => {
+  const profile = { servedModelIds: { asked: 'answered', blank: '' } };
+  assert.equal(declaredServedModel(profile, 'asked'), 'answered');
+  assert.equal(declaredServedModel(profile, 'blank'), null);
+  assert.equal(declaredServedModel(profile, 'other'), null);
+  assert.equal(declaredServedModel(profile, 'toString'), null, 'an inherited member is not a declaration');
+  assert.equal(declaredServedModel({}, 'asked'), null);
+  assert.equal(declaredServedModel(undefined, 'asked'), null);
 });
 
 test('a quantization suffix is a real difference, not a spelling of the same model', () => {
@@ -130,6 +181,8 @@ test('substitutionNotice is null unless there is something to say', () => {
   assert.equal(substitutionNotice({ requestedModel: 'a', model: 'a' }), null);
   assert.equal(substitutionNotice({ model: 'a' }), null);
   assert.match(substitutionNotice({ requestedModel: 'a', model: 'b' }), /asked for "a" but b answered/);
+  assert.equal(substitutionNotice({ requestedModel: 'a', model: 'b', declaredServedModel: 'b' }), null);
+  assert.match(substitutionNotice({ requestedModel: 'a', model: 'c', declaredServedModel: 'b' }), /asked for "a" but c answered/);
 });
 
 test('--json carries both ids, so a harness never has to infer the pair', async () => {

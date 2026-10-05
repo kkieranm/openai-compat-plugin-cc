@@ -174,3 +174,71 @@ test('a profile with no apiKeyEnv at all still loads — the check is presence-g
   const config = { providers: { p: { baseUrl: 'http://x.test/v1' } }, defaultProvider: 'p' };
   assert.doesNotThrow(() => tryLoadConfig(config));
 });
+
+// `servedModelIds`: requested id → the id the server reports for it.
+const UNSLOTH_IDS = { 'lmstudio-community/Qwen3.8-27B-MLX-4bit': 'Qwen3.8-27B-MLX-4bit' };
+
+test('a servedModelIds map loads and is carried onto the resolved profile', () => {
+  const config = {
+    providers: { unsloth: { baseUrl: 'http://x.test/v1', servedModelIds: UNSLOTH_IDS } },
+    defaultProvider: 'unsloth',
+  };
+  const { config: loaded } = tryLoadConfig(config);
+  assert.deepEqual(resolveProfile(loaded, {}).servedModelIds, UNSLOTH_IDS);
+  // The `--base-url` branch builds from the same raw profile.
+  assert.deepEqual(
+    resolveProfile(loaded, { provider: 'unsloth', baseUrl: 'http://x.test/v1' }).servedModelIds,
+    UNSLOTH_IDS,
+  );
+});
+
+test('a --base-url override to a different endpoint drops the declaration; the same endpoint keeps it', () => {
+  const config = {
+    providers: { unsloth: { baseUrl: 'http://x.test/v1', servedModelIds: UNSLOTH_IDS } },
+    defaultProvider: 'unsloth',
+  };
+  const { config: loaded } = tryLoadConfig(config);
+  const elsewhere = resolveProfile(loaded, { provider: 'unsloth', baseUrl: 'http://y.test/v1' });
+  assert.equal(elsewhere.servedModelIds, undefined);
+  assert.deepEqual(
+    resolveProfile(loaded, { provider: 'unsloth', baseUrl: 'http://x.test/v1/' }).servedModelIds,
+    UNSLOTH_IDS,
+  );
+});
+
+test('a bare --base-url carries no declaration, even onto the default provider\'s own endpoint', () => {
+  const config = {
+    providers: { unsloth: { baseUrl: 'http://x.test/v1', servedModelIds: UNSLOTH_IDS } },
+    defaultProvider: 'unsloth',
+  };
+  const { config: loaded } = tryLoadConfig(config);
+  assert.equal(resolveProfile(loaded, { baseUrl: 'http://x.test/v1' }).servedModelIds, undefined);
+});
+
+test('a profile without servedModelIds loads, and its profile carries none', () => {
+  const config = { providers: { p: { baseUrl: 'http://x.test/v1' } }, defaultProvider: 'p' };
+  const { config: loaded } = tryLoadConfig(config);
+  assert.equal(resolveProfile(loaded, {}).servedModelIds, undefined);
+});
+
+test('a servedModelIds that is not a plain object is refused at load, naming the provider', () => {
+  for (const value of [null, 'Qwen3.8-27B-MLX-4bit', ['a', 'b'], 7]) {
+    const config = { providers: { unsloth: { baseUrl: 'http://x.test/v1', servedModelIds: value } }, defaultProvider: 'unsloth' };
+    assert.throws(
+      () => tryLoadConfig(config),
+      /Provider "unsloth".*"servedModelIds".*expected an object/,
+      `servedModelIds: ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test('a servedModelIds entry with an empty key or a non-string or empty value is refused, naming the provider', () => {
+  for (const ids of [{ '': 'served' }, { requested: 7 }, { requested: '' }, { requested: null }, { requested: { id: 'x' } }]) {
+    const config = { providers: { unsloth: { baseUrl: 'http://x.test/v1', servedModelIds: ids } }, defaultProvider: 'unsloth' };
+    assert.throws(
+      () => tryLoadConfig(config),
+      /Provider "unsloth".*"servedModelIds" entry/,
+      `servedModelIds: ${JSON.stringify(ids)}`,
+    );
+  }
+});

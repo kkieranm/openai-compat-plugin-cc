@@ -118,7 +118,7 @@ function failureEnvelope(stdout) {
  */
 export function outcomeFor(stdout, diffOnly) {
   const report = JSON.parse(stdout);
-  const swap = substitution(report?.requestedModel, report?.model);
+  const swap = substitution(report?.requestedModel, report?.model, report?.declaredServedModel);
   if (!swap) return { diffOnly, report };
   return {
     diffOnly,
