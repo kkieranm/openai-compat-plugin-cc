@@ -504,3 +504,7 @@ test('a requested sampling value is printed escaped', () => {
 test('a requested numeric sampling value is printed as the number', () => {
   assert.match(render([goodRun()], { sampling: { 'top-p': 0.9 } }), /`--top-p 0\.9` was requested/);
 });
+
+test('a requested thinking switch is printed as its plain value', () => {
+  assert.match(render([goodRun()], { sampling: { 'enable-thinking': false } }), /`--enable-thinking false` was requested/);
+});

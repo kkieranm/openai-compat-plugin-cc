@@ -42,9 +42,11 @@ test('serverConfigFrom: temperature requested flips only that knob', () => {
   });
 });
 
-test('serverConfigFrom: thinking is always unobserved', () => {
+test('serverConfigFrom: thinking is requested only when the switch was sent, either way', () => {
   const both = serverConfigFrom({ sampling: { reasoningEffort: 'low' }, temperature: 0.5 });
   assert.equal(both.thinking, 'server-default-unobserved');
+  assert.equal(serverConfigFrom({ sampling: { enableThinking: false } }).thinking, 'requested');
+  assert.equal(serverConfigFrom({ sampling: { enableThinking: true } }).thinking, 'requested');
 });
 
 // --- attachRunContext --------------------------------------------------------

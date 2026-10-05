@@ -482,18 +482,18 @@ function divergencesOf(compatible) {
       }
     }
     // Reasoning: the observed thinking-channel state the SCORED runs ran under — a
-    // server-controlled input (`enable_thinking`, unreachable over the wire),
-    // the same class as lens. Compared over `n.reasoningScored` (the scored-run set),
-    // NOT the displayed `row.reasoning` (which spans `measurable` runs): a truncated
-    // run's reasoning state would otherwise inflate the set and could conceal a real
-    // scored-run difference. Fail-closed: among records that scored the case
-    // (a non-empty set — an empty one means `scored === 0`, coverage's job), a
-    // differing set suppresses, INCLUDING known-vs-unknown; two records both witnessing
-    // only `unknown` agree and rank through (suppressing that would make every provider
-    // that omits the reasoning detail unrankable). A scored run with no report classifies
-    // `unknown`, so it suppresses against a known state and ranks through only against
-    // another unknown. `n.reasoningScored` is sorted at derivation, so a bare
-    // `JSON.stringify` is canonical.
+    // server-controlled input (`enable_thinking`, which a server may ignore when asked
+    // to change it), the same class as lens. Compared over `n.reasoningScored` (the
+    // scored-run set), NOT the displayed `row.reasoning` (which spans `measurable`
+    // runs): a truncated run's reasoning state would otherwise inflate the set and
+    // could conceal a real scored-run difference. Fail-closed: among records that
+    // scored the case (a non-empty set — an empty one means `scored === 0`, coverage's
+    // job), a differing set suppresses, INCLUDING known-vs-unknown; two records both
+    // witnessing only `unknown` agree and rank through (suppressing that would make
+    // every provider that omits the reasoning detail unrankable). A scored run with no
+    // report classifies `unknown`, so it suppresses against a known state and ranks
+    // through only against another unknown. `n.reasoningScored` is sorted at
+    // derivation, so a bare `JSON.stringify` is canonical.
     for (const id of first.caseIds) {
       const observed = compatible
         .map((n) => n.reasoningScored.get(id))

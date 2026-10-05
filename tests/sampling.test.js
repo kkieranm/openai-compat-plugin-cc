@@ -31,6 +31,21 @@ test('each validator accepts a good value and rejects a bad one', () => {
   assert.deepEqual(parseSampling({ 'presence-penalty': '-2' }), { presencePenalty: -2 });
 });
 
+test('--enable-thinking takes true or false, in any case, and nothing else', () => {
+  assert.deepEqual(parseSampling({ 'enable-thinking': 'true' }), { enableThinking: true });
+  assert.deepEqual(parseSampling({ 'enable-thinking': ' False ' }), { enableThinking: false });
+  for (const bad of ['0', '1', 'no', 'yes', '', ' ']) {
+    assert.throws(() => parseSampling({ 'enable-thinking': bad }), /enable-thinking must be true or false/, JSON.stringify(bad));
+  }
+});
+
+test('--enable-thinking is sent as the chat template switch; the other knobs go as they are', () => {
+  const body = applySampling({}, { enableThinking: false, topP: 0.9 });
+  assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
+  assert.equal(body.top_p, 0.9);
+  assert.equal('chat_template_kwargs' in applySampling({}, { topP: 0.9 }), false);
+});
+
 test('parseSampling returns undefined when no flag is set, and only the set keys otherwise', () => {
   assert.equal(parseSampling({}), undefined);
   assert.equal(parseSampling({ temperature: '0.5', model: 'x' }), undefined);
@@ -63,9 +78,9 @@ test('no admitted wire field collides with a reserved body key', () => {
 test('sampling round-trips through the background-job DTO, and is absent when unset', () => {
   const base = { profile: {}, numeric: {}, messages: [], budget: { checked: true } };
 
-  const dto = persistRequest({ ...base, sampling: { topP: 0.8, reasoningEffort: 'low' } });
+  const dto = persistRequest({ ...base, sampling: { topP: 0.8, reasoningEffort: 'low', enableThinking: false } });
   const request = reconstructRequest(dto, { model: 'm', ledger: {} });
-  assert.deepEqual(request.sampling, { topP: 0.8, reasoningEffort: 'low' });
+  assert.deepEqual(request.sampling, { topP: 0.8, reasoningEffort: 'low', enableThinking: false });
 
   // No flags → absent, never null: withoutUndefined strips it, so the wire body
   // omits the field entirely rather than sending `"sampling": null`.
@@ -111,6 +126,20 @@ test('--reasoning-effort reaches the wire and the --json success envelope', asyn
 
     const envelope = JSON.parse(result.stdout);
     assert.deepEqual(envelope.sampling, { reasoningEffort: 'low', topP: 0.9 });
+  } finally {
+    await server.close();
+  }
+});
+
+test('--enable-thinking false reaches the wire as the template switch, and the --json echo as the plain value', async () => {
+  const server = await serverStreaming(completionFrames('the answer', { model: 'small' }));
+  try {
+    const result = await runCompanion(['task', '--json', '--enable-thinking', 'false', 'a question'], { configPath: configFor(server) });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(chatRequests(server)[0].body.chat_template_kwargs, { enable_thinking: false });
+    const envelope = JSON.parse(result.stdout);
+    assert.deepEqual(envelope.sampling, { enableThinking: false });
+    assert.equal(envelope.serverConfig.thinking, 'requested');
   } finally {
     await server.close();
   }

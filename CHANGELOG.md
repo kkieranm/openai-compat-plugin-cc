@@ -7,10 +7,15 @@ All notable changes to this project are documented here, loosely following the
 
 ### Added
 
+- `/oai:task` and `/oai:review` take `--enable-thinking true|false`, sent as the chat template's thinking
+  switch (`chat_template_kwargs.enable_thinking`). Checked with Qwen3.8-27B (MLX 4-bit): `false` turned
+  thinking off on oMLX, vMLX and Unsloth Studio; on LM Studio `true` did not make the model think, and
+  there it thought when `--reasoning-effort` was sent and not otherwise. The `--json` envelope records the
+  switch as requested, not as honoured: whether a reply reasoned is still read off the reply.
 - `npm run bench` accepts `/oai:review`'s sampling and reasoning flags — `--reasoning-effort`, `--top-p`,
-  `--top-k`, `--min-p`, `--presence-penalty` — forwards them to every review, states each one set in the
-  report, and declines to rank two runs that differ in any of them. Unset, each server uses its own
-  defaults, which may differ from server to server.
+  `--top-k`, `--min-p`, `--presence-penalty`, `--enable-thinking` — forwards them to every review, states
+  each one set in the report, and declines to rank two runs that differ in any of them. Unset, each server
+  uses its own defaults, which may differ from server to server.
 - The context window is now detected on vMLX, from the prompt cap it enforces, so the size check works
   there without a `contextLength` in the config. The window is read only while vMLX has a model
   loaded, so checking it does not wake a sleeping vMLX into reloading its model (for a `baseUrl` at

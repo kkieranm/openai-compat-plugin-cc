@@ -35,10 +35,23 @@ function validateReasoningEffort(raw, flag) {
 }
 
 /**
+ * `true` or `false`, in any case and with surrounding whitespace — nothing else,
+ * so a mistyped switch is refused rather than read as one setting or the other.
+ */
+function validateBoolean(raw, flag) {
+  const value = String(raw).trim().toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new UserError(`--${flag} must be true or false, got "${raw}".`);
+}
+
+/**
  * The admitted parameters, one row each. `flag` is the CLI flag (minus `--`) and
  * the key `options` is stored under; `key` is the camelCase field carried
- * through the code and the DTO; `wire` is the OpenAI body field; `validate`
- * turns the raw flag value into the coerced value or throws a `UserError`.
+ * through the code and the DTO; `wire` is the request body field; `validate`
+ * turns the raw flag value into the coerced value or throws a `UserError`; an
+ * optional `encode` builds the wire value from it, so the value every other
+ * reader sees (the `--json` echo, the job DTO, the bench) stays the plain one.
  *
  * Deliberately does NOT include `temperature`/`max_tokens`: those predate this
  * registry, are validated and threaded separately, and the closed-body property
@@ -51,6 +64,15 @@ export const SAMPLING_PARAMS = [
   { flag: 'top-k', key: 'topK', wire: 'top_k', validate: (raw, flag) => parseNumber(raw, flag, { integer: true, min: 1 }) },
   { flag: 'min-p', key: 'minP', wire: 'min_p', validate: (raw, flag) => parseNumber(raw, flag, { min: 0, max: 1 }) },
   { flag: 'presence-penalty', key: 'presencePenalty', wire: 'presence_penalty', validate: (raw, flag) => parseNumber(raw, flag, { min: -2, max: 2 }) },
+  // The chat template's thinking switch. A server decides whether to honour it;
+  // LM Studio did not, for the one model checked.
+  {
+    flag: 'enable-thinking',
+    key: 'enableThinking',
+    wire: 'chat_template_kwargs',
+    validate: validateBoolean,
+    encode: (value) => ({ enable_thinking: value }),
+  },
 ];
 
 /**
@@ -83,8 +105,8 @@ export function parseSampling(options) {
  * boundary that keeps `messages`/`stream` unreachable from caller sampling.
  */
 export function applySampling(body, sampling) {
-  for (const { key, wire } of SAMPLING_PARAMS) {
-    if (sampling?.[key] !== undefined) body[wire] = sampling[key];
+  for (const { key, wire, encode } of SAMPLING_PARAMS) {
+    if (sampling?.[key] !== undefined) body[wire] = encode ? encode(sampling[key]) : sampling[key];
   }
   return body;
 }

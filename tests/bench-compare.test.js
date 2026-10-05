@@ -178,6 +178,7 @@ test('flipping any sampling flag suppresses ranking, naming it; equal values ran
     [{ 'min-p': 0 }, 'min-p'],
     [{ 'presence-penalty': -0.5 }, 'presence-penalty'],
     [{ 'reasoning-effort': 'medium' }, 'reasoning-effort'],
+    [{ 'enable-thinking': 'false' }, 'enable-thinking'],
   ]) {
     const comp = flip(opt);
     assert.equal(comp.rankable, false, `${axis} should suppress`);
@@ -197,6 +198,8 @@ test('sampling values compare as the review would send them', () => {
     return axisNames(comp);
   };
   assert.ok(!ranks({ 'min-p': ' ' }, { 'min-p': '0' }).includes('min-p'));
+  assert.ok(!ranks({ 'enable-thinking': 'false' }, { 'enable-thinking': ' FALSE ' }).includes('enable-thinking'));
+  assert.ok(ranks({ 'enable-thinking': 'false' }, { 'enable-thinking': 'true' }).includes('enable-thinking'));
   // A value the review would refuse, or one of an unsupported type, is unknown — never equal.
   assert.ok(ranks({ 'top-p': '7' }, { 'top-p': '7' }).includes('top-p'));
   assert.ok(ranks({ 'top-k': true }, { 'top-k': true }).includes('top-k'));

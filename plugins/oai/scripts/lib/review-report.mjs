@@ -219,8 +219,8 @@ export function jsonReport(parsed, context) {
     // `no-reasoning-observed` / `unknown`, derived from `usage`'s
     // `reasoning_tokens`. A fact read off the reply, distinct from
     // `serverConfig` (what the request carried): the thinking channel is set by
-    // the server's chat template, unreachable over the wire, so the reply is the
-    // only place a run's actual reasoning state is visible.
+    // the server's chat template, and a server may ignore a request to change it,
+    // so the reply is the only place a run's actual reasoning state is visible.
     reasoning: reasoningWitness(result.usage),
     finishReason: result.finishReason ?? null,
     // The vendor sampling/reasoning params requested for this run, or null — a

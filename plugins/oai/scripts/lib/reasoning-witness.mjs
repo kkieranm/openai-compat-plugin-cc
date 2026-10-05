@@ -1,11 +1,13 @@
 // The observed reasoning state of one reply, read off its usage rather than off
 // the request. A reasoning model's thinking channel is set by the server's chat
-// template (`enable_thinking`), which no OpenAI-compatible request field reaches,
-// so a run cannot record what it ASKED for — but the reply reports what it DID:
+// template (`enable_thinking`). A request can ask for it (`--enable-thinking`,
+// sent as `chat_template_kwargs`), but a server may ignore that — LM Studio did,
+// for the one model checked — so what a run ASKED for does not settle what it
+// got. The reply reports what it DID:
 // `usage.completion_tokens_details.reasoning_tokens`. This turns that one number
-// into a labelled witness so a record self-describes which side of that switch it
-// ran on, instead of two runs reading identical while the deciding variable is
-// invisible.
+// into a labelled witness so a record self-describes which side of that switch
+// it ran on, instead of two runs reading identical while the deciding variable
+// is invisible.
 //
 // A separate axis from `run-context.mjs`'s `serverConfig`: that records what the
 // REQUEST carried (`requested` vs `server-default-unobserved`), built at

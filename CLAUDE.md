@@ -27,9 +27,9 @@ Key modules under `plugins/oai/scripts/lib/`:
 - **`model-selection.mjs`** — the single authority on which model a task uses: picks the server's
   loaded model when several are offered and none is named, and refuses an id no catalogue lists.
 - **`sampling.mjs`** — `SAMPLING_PARAMS` is the one registry of vendor sampling/reasoning parameters a
-  request may carry (`reasoning_effort`, `top_p`, `top_k`, `min_p`, `presence_penalty`); validation,
-  request-body assembly and the DTO all iterate that one table, so a parameter can't be admitted in
-  one place and dropped in another.
+  request may carry (`reasoning_effort`, `top_p`, `top_k`, `min_p`, `presence_penalty`,
+  `chat_template_kwargs`); validation, request-body assembly and the DTO all iterate that one table,
+  so a parameter can't be admitted in one place and dropped in another.
 - **`http.mjs` / `stream-collect.mjs`** — the only place the repo speaks HTTP: streamed chat
   completions read as SSE, with explicit first-token and idle budgets that mean "the model is
   working".

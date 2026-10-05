@@ -295,3 +295,21 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   // thrown — so it is the `unknown` witness: present, never absent.
   assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
 });
+
+test('--enable-thinking reaches the review request and the --json envelope; unset, neither carries it', async () => {
+  const { dir, server, configPath } = await scenario(replies(clean), { contextLength: 131_072 });
+  try {
+    const asked = parseReport(await runCompanion(['review', '--json', '--enable-thinking', 'false'], { configPath, cwd: dir }));
+    assert.deepEqual(chatRequests(server)[0].body.chat_template_kwargs, { enable_thinking: false });
+    assert.deepEqual(asked.sampling, { enableThinking: false });
+    assert.equal(asked.serverConfig.thinking, 'requested');
+
+    const plain = parseReport(await runCompanion(['review', '--json'], { configPath, cwd: dir }));
+    const last = chatRequests(server).at(-1).body;
+    assert.equal('chat_template_kwargs' in last, false);
+    assert.equal(plain.sampling, null);
+    assert.equal(plain.serverConfig.thinking, 'server-default-unobserved');
+  } finally {
+    await server.close();
+  }
+});

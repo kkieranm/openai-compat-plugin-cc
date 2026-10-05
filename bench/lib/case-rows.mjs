@@ -179,10 +179,10 @@ function lensSamples(runs) {
  * The distinct observed reasoning states a case's runs reviewed under —
  * `reasoning-observed`, `no-reasoning-observed`, `unknown` — first-seen order.
  *
- * The thinking channel is set by the server's chat template, unreachable over the
- * wire, so two models — or one model on two days — can differ on the one variable
- * that moved review capability most, with nothing in the record to show it. This
- * surfaces that per case, beside `lens`.
+ * The thinking channel is set by the server's chat template, and a server may
+ * ignore a request to change it, so two models — or one model on two days — can
+ * differ on the one variable that moved review capability most. This surfaces
+ * that per case, beside `lens`.
  *
  * Derived from `run.report.usage` (never a stored `reasoning` field) for the two
  * reasons the neighbouring sample helpers share: it is the raw source every record

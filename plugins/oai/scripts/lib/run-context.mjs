@@ -17,8 +17,9 @@ const UNOBSERVED = 'server-default-unobserved';
  * Per-knob status: `'requested'` when the run's request carried the knob, else
  * `'server-default-unobserved'` (the server's own default was in effect, and no
  * OpenAI-compatible endpoint exposes it). `'requested'` records only THAT the knob
- * was set: `reasoning_effort`'s value is recoverable from the `sampling` echo and
- * `temperature`'s from the operator's own command — neither value is re-echoed here.
+ * was set, not that the server honoured it: `reasoning_effort`'s and
+ * `enable_thinking`'s values are recoverable from the `sampling` echo and
+ * `temperature`'s from the operator's own command — no value is re-echoed here.
  *
  * Request-conditional, deliberately not a constant `'unknown'` stamp: a run
  * that set the knob reads `'requested'` rather than falsely claiming the
@@ -28,7 +29,7 @@ export function serverConfigFrom({ sampling, temperature } = {}) {
   return {
     reasoningEffort: sampling?.reasoningEffort !== undefined ? REQUESTED : UNOBSERVED,
     temperature: temperature !== undefined ? REQUESTED : UNOBSERVED,
-    thinking: UNOBSERVED,
+    thinking: sampling?.enableThinking !== undefined ? REQUESTED : UNOBSERVED,
   };
 }
 

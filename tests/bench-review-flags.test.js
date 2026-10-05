@@ -209,7 +209,7 @@ test('bench refuses an over-ceiling --passes BEFORE materializing any case', asy
 // cross-server arm can pin what each server would otherwise choose for itself.
 
 test('every sampling flag in the review registry is forwarded with its value, and absent by default', () => {
-  const values = { 'reasoning-effort': 'medium', 'top-p': '0.9', 'top-k': '20', 'min-p': '0', 'presence-penalty': '-0.5' };
+  const values = { 'reasoning-effort': 'medium', 'top-p': '0.9', 'top-k': '20', 'min-p': '0', 'presence-penalty': '-0.5', 'enable-thinking': 'false' };
   assert.deepEqual(Object.keys(values).sort(), [...SAMPLING_FLAGS].sort(), 'the test covers the whole registry');
   for (const [flag, value] of Object.entries(values)) {
     assert.ok(build({ [flag]: value }).includes(`--${flag}=${value}`), `--${flag} carries its value`);
@@ -226,6 +226,7 @@ test('forwarded values reach the review as the bench validated them, empty ones 
   const asReviewed = (options) => parseCommandLine(build(options).slice(1), REVIEW_SPEC).options;
   for (const options of [
     { 'min-p': '' }, { 'top-p': ' ' }, { 'presence-penalty': '-0.5' }, { 'reasoning-effort': 'a=b' }, { 'top-k': 20 },
+    { 'enable-thinking': ' FALSE ' },
   ]) {
     assert.deepEqual(parseSampling(asReviewed(options)), parseSampling(options), JSON.stringify(options));
   }
