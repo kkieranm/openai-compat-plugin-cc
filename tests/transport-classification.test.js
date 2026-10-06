@@ -385,3 +385,88 @@ test('an empty-body 400 with only a reason phrase still carries it on .responseB
   assert.equal(error.status, 400);
   assert.match(error.responseBody, /response_format unsupported/);
 });
+
+// A server refusing the reply budget — vMLX's 413 when `max_tokens` exceeds its
+// projected memory headroom — names the budget it could take. `assertOk` reports
+// both the refusal and that figure; deciding whether to retry, or what to tell
+// the user, is the caller's — only it knows the budget it sent.
+
+/** The refusal `request()` raises for one fixed non-2xx reply; a string body is sent as is. */
+async function refusalFor(status, body) {
+  const server = createServer((request_, response) => {
+    const raw = typeof body === 'string';
+    response.writeHead(status, { 'content-type': raw ? 'text/plain' : 'application/json' });
+    response.end(raw ? body : JSON.stringify(body));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
+  const error = await caught(request({ name: 'p', baseUrl }, '/chat/completions', { firstByteMs: 3_000 }));
+  await new Promise((resolve) => server.close(resolve));
+  return error;
+}
+
+const STATED_CAP_BODY = {
+  detail: 'Requested max output tokens exceed projected safe Metal headroom: requested=30848, safe_cap=26885. Reduce max_tokens.',
+};
+
+test('an HTTP 413 is reported as request-too-large, and a stated cap rides as a number', async () => {
+  const error = await refusalFor(413, STATED_CAP_BODY);
+
+  assert.equal(error.status, 413);
+  assert.equal(error.reason, 'request-too-large');
+  assert.equal(error.statedMaxTokens, 26885);
+  assert.equal(error.hint, undefined, 'the transport does not know the budget sent, so names no remedy');
+  assert.equal(isRetryable(error), false, 'resending the same budget is refused again');
+});
+
+test('a cap stated on a 400 or 422 is not read; the same body on a 413 is', async () => {
+  // A 400 or 422 is matched by body for the capability fallbacks, so a cap read
+  // there would let one refusal be both kinds. Only a 413 states a cap.
+  for (const status of [400, 422]) {
+    const error = await refusalFor(status, STATED_CAP_BODY);
+    assert.equal(error.status, status);
+    assert.match(error.responseBody, /safe_cap=26885/, 'the body must state the cap');
+    assert.match(error.responseBody, /max output tokens/i, 'beside a mention of max tokens');
+    assert.equal(error.statedMaxTokens, undefined, `a ${status} stated a cap`);
+    assert.equal(error.reason, undefined);
+  }
+
+  const control = await refusalFor(413, STATED_CAP_BODY);
+  assert.equal(control.statedMaxTokens, 26885, 'the same body on a 413 is read');
+});
+
+test('a refusal stating no cap carries none', async () => {
+  const bare = await refusalFor(413, { detail: 'Payload too large' });
+  assert.equal(bare.reason, 'request-too-large');
+  assert.equal(bare.statedMaxTokens, undefined);
+  assert.equal(bare.hint, undefined);
+
+  // `safe_cap` alone, with nothing about max tokens beside it, is not this statement.
+  const unrelated = await refusalFor(413, { detail: 'queue full: safe_cap=12' });
+  assert.equal(unrelated.statedMaxTokens, undefined);
+
+  // A zero is no budget at all.
+  const zero = await refusalFor(413, { detail: 'max_tokens too large: safe_cap=0' });
+  assert.equal(zero.statedMaxTokens, undefined);
+});
+
+test('a cap the 400-character read may have cut short is not read as stated', async () => {
+  // The body's 400th character is the `6` of `safe_cap=40960`, so the read text
+  // ends in `4096` — a real-looking cap, one tenth of the true one.
+  const lead = 'Requested max output tokens exceed projected safe Metal headroom. ';
+  const detailFor = (pad) => `${lead}${'x'.repeat(pad)} safe_cap=40960. Reduce max_tokens.`;
+  const prefix = '{"detail":"';
+  const pad = 400 - prefix.length - lead.length - ' safe_cap=4096'.length;
+
+  const cut = await refusalFor(413, { detail: detailFor(pad) });
+  assert.match(cut.responseBody, /safe_cap=4096$/, 'the read must end inside the number');
+  assert.equal(cut.statedMaxTokens, undefined);
+
+  // One character earlier the whole number fits, and a non-digit follows it.
+  const whole = await refusalFor(413, { detail: detailFor(pad - 2) });
+  assert.equal(whole.statedMaxTokens, 40960);
+
+  // A short body is read whole, so a number ending it is complete.
+  const short = await refusalFor(413, 'max_tokens exceeds headroom: safe_cap=4096');
+  assert.equal(short.statedMaxTokens, 4096);
+});

@@ -35,6 +35,7 @@ export const RECORD_FIELDS = [
   // "in characters", said out loud: this layer has no tokenizer, so a token
   // figure would be an estimate and the field is a character count.
   ['promptChars', 'the prompt\'s size in characters'],
+  ['maxTokens', 'the reply budget it asked for'],
   ['warmEligible', 'its warm-eligibility'],
   // "an HTTP response", never "a peer" or "a server". The field is true when
   // headers arrived and false when none did, which is a claim about what was
@@ -77,7 +78,7 @@ function recordList() {
  *
  * The opposite error is as easy: "The reason code is all an attempt record
  * carries" is false — `newEntry` also records `index`, `cause`, `promptChars`,
- * `warmEligible`, `waitedMs`, `serverResponded`, `outcome` and both timings. "The
+ * `maxTokens`, `warmEligible`, `waitedMs`, `serverResponded`, `outcome` and both timings. "The
  * record has no peer-reachability field" reads as narrow but is a universal
  * wearing a disguise: it quantifies over the *meaning* of every field
  * that might ever be added, so it can go false via a field named anything at all,
@@ -158,6 +159,15 @@ export const REASON_PARAGRAPHS = [
     + ' response**, before any content or reasoning text arrived — so it is neither a transport failure'
     + ' nor a dropped request, and it is **not retried**: this client classifies such a refusal as'
     + ' non-retryable. The row counts as a failed attempt and says nothing about server health.'],
+  ['request-too-large',
+    '`request-too-large` below is a request the server **refused as too large (HTTP 413) before'
+    + ' generating anything** — neither a transport failure nor a dropped request, and the transport'
+    + ' never re-sends one. When the server states a reply budget it can take below the one sent and'
+    + ' no lower than the 4,096 a review\'s reserve shrinks to, and time remains, the review initiates one'
+    + ' re-send at that cap, and the original is then counted as `refused`'
+    + ' rather than here. A row here is a refusal nothing replaced — the server stated no cap the'
+    + ' review could re-send at, say, or the deadline came first, or the row is that one re-send,'
+    + ' refused in turn.'],
   ['token-reserve-cutoff',
     '`token-reserve-cutoff` below is a **client-side** cutoff, not a server symptom: the model was'
     + ' actively generating reasoning and spending the request\'s own `max_tokens` pool on it, so the'

@@ -66,6 +66,10 @@ function newEntry(index, { body, cause, waitedMs }, dispatched) {
       // rather than tokens: this layer has no tokenizer, so a character count
       // is a measurement where a token figure would be an estimate.
       promptChars: serialized === 'null' ? null : serialized.length,
+      // The reply budget this request asked for, so a refused budget and the
+      // one that answered after it can be read side by side. `null` when the
+      // body named none.
+      maxTokens: body?.max_tokens ?? null,
       warmEligible: dispatched.has(key),
       // Time spent deliberately waiting before this request, so the cost of
       // pacing is visible in the record rather than hidden inside the run's

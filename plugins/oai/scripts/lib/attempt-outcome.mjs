@@ -139,9 +139,10 @@ function obtainedResponse(error, { prefillMs } = {}) {
  * is load-bearing rather than an omission. There is exactly ONE route in —
  * `pendUntilReplaced` → `pend` → `refusalSlot.settle()` in `attempt-ledger.mjs` →
  * here — and `pendUntilReplaced` has already written `true` unconditionally, so
- * every entry arriving here carries it. Writing the field again would be
- * deriving it from an error this layer does not have: `refuseLast()` forwards
- * none. If a second route to `markRefused` is ever added, it has to set the flag
+ * every entry arriving here carries it. Writing the field again would derive
+ * from the error the slot forwards what the outcome already settles, and that
+ * error may carry no status, or be absent — `refuseLast()` may be called without one.
+ * If a second route to `markRefused` is ever added, it has to set the flag
  * itself or mint `{outcome: 'refused', serverResponded: false}` — a record
  * claiming nothing answered a request that was answered with a refusal.
  */
@@ -191,11 +192,11 @@ export function pendUntilReplaced(entry, error, pend) {
   // the error. "Something", not "the model server": a proxy or gateway can
   // return a 400 without the server behind it ever seeing the request, which is
   // why the flag is worded as a response obtained and never as a peer reached.
-  // Deriving it would also be wrong twice over in practice:
-  // `refuseLast()` is called with no error at all, which would overwrite the
-  // `true` a preceding `fail()` correctly recorded from the 400's status, and a
-  // `refuse({ reason: null })` would mint a refused entry claiming nothing
-  // answered it.
+  // Deriving it would also make the record depend on what each caller forwards:
+  // a `refuseLast()` with no error — which it accepts, though both of its callers
+  // pass one — would overwrite the `true` a preceding `fail()` correctly recorded
+  // from the 400's status, and a `refuse({ reason: null })` would mint a refused
+  // entry claiming nothing answered it.
   entry.serverResponded = true;
   pend({ entry, error });
 }

@@ -646,19 +646,61 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
 }
 
 /**
+ * The reply budget to retry at when a server refused this one and stated the
+ * cap it could honour, or `undefined` when the refusal stands.
+ *
+ * Only a cap the rebuilt request can actually honour: at least
+ * `REVIEW_MIN_TOKENS`, the floor `prepareRequest` shrinks a reserve to, and
+ * below the `max_tokens` the refused request carried (`sentMaxTokens`) — not
+ * the ceiling it was planned under, which a large input shrinks the reserve
+ * beneath. An equal or larger cap would rebuild the request just refused.
+ */
+function statedCapRetry(error) {
+  const cap = error?.statedMaxTokens;
+  const sent = error?.sentMaxTokens;
+  return Number.isSafeInteger(cap) && cap >= REVIEW_MIN_TOKENS && cap < sent ? cap : undefined;
+}
+
+/**
+ * The review's own hint for a refusal that stated a cap, replacing the generic
+ * one `chat.mjs` attached: `--max-tokens` while the cap still holds a review
+ * reply, `/oai:task` once it cannot, and no budget remedy at all when the cap is
+ * no smaller than the budget the refused request sent.
+ */
+function withStatedCapHint(profile, error) {
+  const cap = error?.statedMaxTokens;
+  if (cap === undefined) return error;
+  if (error.sentMaxTokens !== undefined && cap >= error.sentMaxTokens) {
+    delete error.hint;
+    return error;
+  }
+  const stated = `${profile.name} states it can reply with at most ${cap} tokens`;
+  error.hint =
+    cap >= MIN_REVIEW_RESERVE_TOKENS
+      ? `${stated}. Pass --max-tokens ${cap}, or free memory on the server.`
+      : `${stated}, below the ${MIN_REVIEW_RESERVE_TOKENS} a review reply needs. ` +
+        'Free memory on the server, or use /oai:task for a smaller question.';
+  return error;
+}
+
+/**
  * Ask for findings — unconstrained by default, with a grammar only on request.
  *
  * **Unconstrained is now the default:** `response_format` builds a
  * grammar whose lexer dies at ~14k generated tokens and takes the model process
  * with it, so the schema is opt-in via `--structured-output`. When it IS asked
  * for, the old fallback still stands.
+ *
+ * A server that refuses the reply budget and states the cap it could honour
+ * (`statedMaxTokens`) gets the whole request once more, re-planned with that cap
+ * as its reserve ceiling — so the ladder, the watchdog's eligibility, the
+ * analysis ceiling and the salvage reserves all derive from the budget actually
+ * sent. Once: a second refusal is final.
  */
 export async function requestFindings(profile, plan) {
-  const { model, timeoutMs, idleMs, maxMs, temperature, reserve, contextLength, target, instructions, onProgress } = plan;
-  const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling, lens } = plan;
-  const shared = sharedRequest(profile, plan);
   // Minted once, here, because this function is the outermost layer that can
-  // retry a model call: the `response_format` catch below sends a *second*
+  // retry a model call: the stated-cap retry below re-runs the whole request,
+  // the `response_format` catch in `findingsWithin` sends a *second*
   // completion, and each of those may itself climb the capability ladder in
   // chat.mjs. A cap handed down as a duration would be re-armed whole at every
   // one of those attempts, so `--max-seconds 600` could run for 1,800s with
@@ -667,23 +709,67 @@ export async function requestFindings(profile, plan) {
   // It starts when the model work starts, not when the command did, so the flag
   // bounds what it says it bounds — git collection and model resolution are
   // outside it, and the docs say so.
-  const expiresAt = maxMs === undefined ? undefined : performance.now() + maxMs;
-  // `ledger` rides with the budgets and is shared by BOTH completion calls
-  // below, so the schema request and the degraded one after it land in one
-  // record with continuous indexes rather than each starting from 1.
+  const expiresAt = plan.maxMs === undefined ? undefined : performance.now() + plan.maxMs;
+  // `removed` is the shared capability-negotiation state, minted ONCE here and
+  // carried on `send` so every completion call that spreads `...send` — the
+  // schema request, the `response_format` fallback, its salvage follow-ups
+  // (trimmed then untrimmed), and the stated-cap retry — shares one Set. Without
+  // it a later call mints a fresh negotiation and re-offers a capability an
+  // earlier one already had refused, wasting a round trip and a slice of
+  // `--max-seconds`. Scoped to one `requestFindings`, so each `runMultiPass`
+  // pass gets its own Set and stays independent.
+  const removed = new Set();
+  // Whether this server refused `response_format`, minted beside `removed` for
+  // the same reason: the stated-cap retry must not offer the grammar a refused
+  // schema request already lost to.
+  const format = { rejected: false };
+  // An error that stated a cap — the first refusal, or the retry's — leaves
+  // with the review's hint, or none, in place of the generic one a review would
+  // refuse; any other error leaves unchanged.
+  try {
+    return await findingsOrRetry(profile, plan, { expiresAt, removed, format });
+  } catch (error) {
+    throw withStatedCapHint(profile, error);
+  }
+}
+
+/** The planned request, and the one stated-cap retry `requestFindings` allows. */
+async function findingsOrRetry(profile, plan, state) {
+  try {
+    return await findingsWithin(profile, plan, { ...state, ceiling: plan.reserve });
+  } catch (error) {
+    const cap = statedCapRetry(error);
+    if (cap === undefined) throw error;
+    // A deadline already spent sends nothing more, and the refusal is the
+    // failure to report — not a retry announced and then refused by the cap.
+    if (Number.isFinite(state.expiresAt) && performance.now() >= state.expiresAt) throw error;
+    process.stderr.write(
+      `${profile.name} refused a reply budget of ${error.sentMaxTokens} tokens and states it can take ${cap}. ` +
+        `Retrying once with ${cap}.\n`,
+    );
+    // Negotiation, like the `response_format` fallback: the refused entry reads
+    // as `refused` once the retry is dispatched, and stays a failure if it never is.
+    plan.ledger?.refuseLast(error);
+    return await findingsWithin(profile, plan, { ...state, ceiling: cap });
+  }
+}
+
+/**
+ * One planned request for findings, with its reserve capped at `ceiling`.
+ *
+ * `expiresAt`, `removed` and `format` come from `requestFindings`, which owns
+ * them for every run of this body a review makes.
+ */
+async function findingsWithin(profile, plan, { expiresAt, removed, format, ceiling }) {
+  const { model, timeoutMs, idleMs, maxMs, temperature, contextLength, target, instructions, onProgress } = plan;
+  const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling, lens } = plan;
+  const shared = sharedRequest(profile, { ...plan, reserve: ceiling });
+  // `ledger` rides with the budgets and is shared by every completion call a
+  // review makes, so the schema request and the degraded one after it land in
+  // one record with continuous indexes rather than each starting from 1.
   // `sampling` rides on `send` deliberately: it is spread into the salvage
   // follow-up too (unlike `reasoningReserveTokens`), because the user's chosen
   // sampling settings belong to that same logical request.
-  //
-  // `removed` is the shared capability-negotiation state, minted ONCE here and
-  // carried on `send` so every completion call that spreads `...send` — the
-  // schema request, the `response_format` fallback, and its salvage follow-ups
-  // (trimmed then untrimmed) — shares one Set. Without it the fallback mints a
-  // fresh negotiation and re-offers a capability the schema request already had
-  // refused, wasting a round trip and a slice of `--max-seconds`. Scoped to one
-  // `requestFindings`, so each `runMultiPass` pass gets its own Set and stays
-  // independent.
-  const removed = new Set();
   const send = { model, timeoutMs, idleMs, expiresAt, maxMs, temperature, sampling, maxAttempts, retryDelayMs, ledger, removed, onProgress };
   // `lens` rides the ladder object so every consumer that spreads `...ladder` —
   // `unconstrainedLadder`'s two sizing calls, the structured `first`, and the
@@ -692,8 +778,10 @@ export async function requestFindings(profile, plan) {
   const ladder = { target, instructions, windowKnown: Boolean(contextLength), lens };
 
   // No grammar unless one was asked for. Not a fallback here and not an error
-  // path: it is what an ordinary review does now.
-  if (!structuredOutput) return unconstrained({ profile, shared, ladder, send, ledger });
+  // path: it is what an ordinary review does now. Nor once the server has
+  // refused `response_format`: that refusal was already recorded and announced
+  // by the request that met it.
+  if (!structuredOutput || format.rejected) return unconstrained({ profile, shared, ladder, send, ledger });
 
   const first = prepareLadder(shared, ladder);
   // Sized from the reserve this rung actually got, which is the number about to
@@ -728,6 +816,7 @@ export async function requestFindings(profile, plan) {
     const salvaged = await trySalvage(profile, first, schema, shared, send, error);
     if (salvaged) return salvaged;
     if (!isFormatRejection(error)) throw error;
+    format.rejected = true;
     // The whole ladder is climbed again, not just the guard: the instruction
     // makes the prompt longer, so the rung that fit a moment ago may not now.
     return unconstrained({

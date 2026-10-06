@@ -63,10 +63,9 @@ test('a refused connection records that nothing responded — from a REAL ECONNR
 });
 
 test('a refusal reclassified by its replacement keeps the `true` its failure recorded', () => {
-  // `refuseLast()` forwards NO error — the negotiating layer knows a different
-  // shape is going out and has nothing to say about the one that was refused. So
-  // deriving the flag in `pendUntilReplaced` from that absent error, instead of
-  // setting it unconditionally, would overwrite the correct `true` the preceding
+  // This drives a bare `refuseLast()`, which forwards no error. Deriving the flag
+  // in `pendUntilReplaced` from that absent error, instead of setting it
+  // unconditionally, would overwrite the correct `true` the preceding
   // `fail()` read off the 400's status with a `false` claiming nothing answered a
   // request the server demonstrably answered. That regression is what this pins.
   const ledger = createLedger();
@@ -86,7 +85,7 @@ test('an entry reclassified to `refused` keeps the flag even with NO status behi
   // preserve anything. Here nothing wrote it but `pendUntilReplaced`'s
   // unconditional line, so this covers the composition the two rely on:
   // `markRefused` sets `outcome` and `reason` ONLY, and a future edit that had it
-  // derive the flag from the error it holds — there is none — would mint
+  // derive the flag from the error it holds — one with no status — would mint
   // `{outcome: 'refused', serverResponded: false}`: a record saying nothing
   // answered a request that was answered with a refusal.
   const ledger = createLedger();

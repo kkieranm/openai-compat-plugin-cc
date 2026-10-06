@@ -128,7 +128,7 @@ async function assertOk(profile, path, response) {
   // path there is no total deadline to catch it, so the degrade ladder that
   // depends on this error would never even start.
   response.setIdle(ERROR_BODY_IDLE_MS);
-  const detail = redirect ? '' : await readText(response, { limit: 400 }).catch(() => '');
+  const detail = redirect ? '' : await readText(response, { limit: ERROR_BODY_CHARS }).catch(() => '');
   if (redirect) response.dispose();
 
   const error = new UserError(
@@ -149,7 +149,40 @@ async function assertOk(profile, path, response) {
     const combined = [response.statusText, detail.trim()].filter(Boolean).join(': ');
     if (combined) error.responseBody = combined;
   }
+  if (response.status === 413) error.reason = 'request-too-large';
+  const cap = STATED_CAP_STATUSES.has(response.status) ? statedMaxTokens(detail) : undefined;
+  if (cap !== undefined) error.statedMaxTokens = cap;
   throw error;
+}
+
+/** How much of an error body is read: enough for a reason, never a whole page. */
+const ERROR_BODY_CHARS = 400;
+
+/**
+ * The statuses whose body is read for a stated reply-budget cap: 413 only. The
+ * capability and `response_format` fallbacks match a 400 or 422 by its body, so
+ * reading a cap there could make one refusal both a capability refusal and a
+ * budget one; by status the two cannot overlap, and every stated cap carries
+ * `request-too-large`.
+ */
+const STATED_CAP_STATUSES = new Set([413]);
+
+/**
+ * The reply budget a refusal says the server could have honoured, or
+ * `undefined` when the body states none.
+ *
+ * Matched on the shape of the statement — a `safe_cap=<N>` beside a mention of
+ * max tokens — never on a server's name, and returned as a parsed integer so
+ * nothing downstream interpolates the body itself.
+ */
+function statedMaxTokens(detail) {
+  if (!/max[\s_-]*(?:output[\s_-]*)?tokens/i.test(detail)) return undefined;
+  const match = /\bsafe_cap\s*=\s*(\d+)/.exec(detail);
+  // A number running to the end of a body cut at the read limit may itself be
+  // cut — `safe_cap=40960` read as 4096 — so it states nothing.
+  if (match && match.index + match[0].length === detail.length && detail.length >= ERROR_BODY_CHARS) return undefined;
+  const cap = match ? Number(match[1]) : NaN;
+  return Number.isSafeInteger(cap) && cap > 0 ? cap : undefined;
 }
 
 /**

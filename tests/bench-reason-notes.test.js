@@ -4,7 +4,7 @@ import { attemptRows } from '../bench/lib/attempt-rows.mjs';
 import { createLedger } from '../plugins/oai/scripts/lib/attempt-ledger.mjs';
 import { REASON_PARAGRAPHS, RECORD_FIELDS } from '../bench/lib/reason-notes.mjs';
 import { renderReport } from '../bench/lib/report.mjs';
-import { CASE, failedAttempt } from './bench-report-fixtures.mjs';
+import { CASE, failedAttempt, goodRun } from './bench-report-fixtures.mjs';
 
 // `Failures by reason` is a bare count table, and several of its codes are ones
 // a reader will misread in exactly the direction the attempt record exists to
@@ -96,7 +96,7 @@ test('non-retryable-transport claims a retry decision, never that a peer was or 
   // The enumeration itself, pinned label by label from the export — membership
   // in the prose, not the join's formatting. One label is vacuous here:
   // `serverResponded`'s reappears in the closing sentence, so its containment
-  // alone cannot prove the enumeration prints — the other nine carry that.
+  // alone cannot prove the enumeration prints — the other ten carry that.
   for (const [, label] of RECORD_FIELDS) {
     assert.ok(para.includes(label), `the record enumeration lost "${label}"`);
   }
@@ -207,7 +207,7 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
 
   assert.equal(entry.outcome, 'failed');
   assert.equal(entry.reason, 'non-retryable-transport');
-  // Against RECORD_FIELDS, not a second transcription of the same ten names —
+  // Against RECORD_FIELDS, not a second transcription of the same eleven names —
   // a literal list here would be one more mirror to drift. BOTH sides sorted,
   // so reordering the labels for readability cannot fail a test about nothing.
   assert.deepEqual(
@@ -217,10 +217,10 @@ test('the paragraph enumerates a closed record, and this is the list it enumerat
   );
 });
 
-test('every way an entry can close leaves the same ten fields, so the paragraph describes them all', () => {
+test('every way an entry can close leaves the same eleven fields, so the paragraph describes them all', () => {
   // The test above drives ONE path. The paragraph speaks for every row in the
   // table, so a closing path with a different key set would have it describing
-  // entries it never saw. That cannot happen — `newEntry` creates all ten up
+  // entries it never saw. That cannot happen — `newEntry` creates all eleven up
   // front and the closers only ASSIGN to them — but "cannot happen by
   // construction" is a claim, and this repo has been wrong three times about
   // what needs no test.
@@ -249,7 +249,7 @@ test('every way an entry can close leaves the same ten fields, so the paragraph 
 
   // The ENVELOPE the report actually walks, not just the ledger's own array.
   // `attemptRows` reads `run.report.attempts` (and `run.attempts` on the failure
-  // path), so the ten fields have to survive into THAT shape — the paragraph
+  // path), so the eleven fields have to survive into THAT shape — the paragraph
   // describes the rows a reader sees, which arrive this way and no other.
   const stats = attemptRows([{ caseDef: CASE, runs: [
     { diffOnly: false, report: { parsed: true, findings: [], attempts: serialized.slice(0, 2) } },
@@ -388,4 +388,68 @@ test('a sweep with several reason codes renders every matching paragraph, not ju
     { runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false },
   );
   for (const [code] of REASON_PARAGRAPHS) paragraphAbout(markdown, code);
+});
+
+// A refused entry is either a capability refusal, which records no reason, or a
+// reply budget a server refused with an HTTP 413 before generating, for which the
+// review initiated one re-send at the cap it stated, which carries
+// `request-too-large`. Only the first is shape negotiation, so only it may print
+// the capability paragraph.
+const refusedAttempt = (reason) => ({
+  index: 1, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
+  outcome: 'refused', reason, prefillMs: null, generationMs: null,
+});
+const CAPABILITY = 'refused for their shape';
+const BUDGET = 'refused for their reply budget';
+const renderRuns = (runs) => renderReport([{ caseDef: CASE, runs }], {
+  runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
+});
+
+test('a review recovered from a refused reply budget is scored, and its refusal is not called a capability', () => {
+  const run = goodRun();
+  run.report.attempts = [refusedAttempt('request-too-large'), {
+    index: 2, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
+    outcome: 'answered', reason: null, prefillMs: 500, generationMs: 1500,
+  }];
+  const markdown = renderRuns([run]);
+
+  assert.match(markdown, /1 logical run\(s\): 1 completed, 0 did not\./);
+  assert.match(markdown, /2 physical attempt\(s\): 1 answered, 0 failed \(0\.0%\)\./);
+  assert.ok(markdown.includes(BUDGET), 'the budget refusal is not explained');
+  assert.ok(!markdown.includes(CAPABILITY), 'a refused reply budget was reported as a refused capability');
+  assert.ok(!markdown.includes('`request-too-large` below'), 'nothing failed, so no failure reason is explained');
+});
+
+test('a reply budget refused twice explains the failure, and claims no capability refusal', () => {
+  const run = deadRunWith('request-too-large');
+  run.attempts = [refusedAttempt('request-too-large'), { ...failedAttempt('request-too-large'), index: 2 }];
+  const markdown = renderRuns([run]);
+
+  paragraphAbout(markdown, 'request-too-large');
+  assert.match(markdown, /\| `request-too-large` \| 1 \|/);
+  assert.ok(markdown.includes(BUDGET), 'the refused first request is not explained');
+  assert.ok(!markdown.includes(CAPABILITY), 'a refused reply budget was reported as a refused capability');
+  assert.doesNotMatch(markdown, /stream_options/);
+});
+
+test('a capability refusal still prints the capability paragraph, and no budget one', () => {
+  const run = goodRun();
+  run.report.attempts = [refusedAttempt(null), {
+    index: 2, cause: { answerAttempt: 1, degrade: null }, warmEligible: false, waitedMs: 0,
+    outcome: 'answered', reason: null, prefillMs: 500, generationMs: 1500,
+  }];
+  const markdown = renderRuns([run]);
+
+  assert.ok(markdown.includes(`1 attempt(s) were **${CAPABILITY}**`), 'the capability refusal is not explained');
+  assert.ok(!markdown.includes(BUDGET), 'a capability refusal was reported as a refused reply budget');
+});
+
+test('the refused tally is split by reason and kept out of the failure tally', () => {
+  const stats = attemptRows([{ caseDef: CASE, runs: [{
+    diffOnly: false, error: 'boom', reason: 'request-too-large', requestedModel: 'm',
+    attempts: [refusedAttempt('request-too-large'), refusedAttempt(null), failedAttempt('request-too-large')],
+  }] }]);
+  assert.equal(stats.refused, 2);
+  assert.deepEqual(stats.refusedByReason, [['request-too-large', 1], ['unclassified', 1]]);
+  assert.deepEqual(stats.byReason, [['request-too-large', 1]]);
 });

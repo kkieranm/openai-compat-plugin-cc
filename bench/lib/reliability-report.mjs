@@ -39,11 +39,18 @@ function countTable(title, pairs) {
  * attempt carried, so a code is present here exactly when it has a row in the
  * table below. Unnumbered deliberately: this said "the two" while there were
  * three, having been written before one was added and never re-read.
+ *
+ * The refused paragraphs read `refusedByReason` instead, because a refused entry
+ * never reaches `byReason`: one carrying `request-too-large` is a refused reply
+ * budget, and only the rest — capability refusals, which record no reason — are
+ * the shape negotiation the first paragraph describes.
  */
 function outcomeNotes(stats) {
   const sawReason = (code) => stats.byReason.some(([key]) => key === code);
+  const budget = stats.refusedByReason.find(([key]) => key === 'request-too-large')?.[1] ?? 0;
+  const capability = stats.refused - budget;
   const lines = [];
-  if (stats.refused > 0) {
+  if (capability > 0) {
     lines.push(
       // "Initiated", never "dispatched" or "sent". `refused` is written by
       // `ledger.begin` when the replacement's ENTRY is minted, which is several
@@ -51,13 +58,24 @@ function outcomeNotes(stats) {
       // serialize the body and `http.mjs` to validate the URL, and either can
       // throw. So neither the opening sentence nor the closing one reads the
       // entry as proof of the wire write.
-      `${stats.refused} attempt(s) were **refused for their shape**, not dropped — the server rejected a`
+      `${capability} attempt(s) were **refused for their shape**, not dropped — the server rejected a`
       + ' capability (`stream_options`, streaming, or a response schema), triggering a replacement request'
       + ' without it. The original is marked `refused` only once that replacement has its own attempt'
       + ' entry, so one always follows it in the same run. That is negotiation rather than'
       + ' unreliability, so those attempts are counted above but excluded from the failure rate.'
       + ' **It records an initiated replacement, not a guaranteed wire write** — and certainly not a'
       + ' successful one: if the replacement failed in turn, that failure is counted on its own row.',
+      '',
+    );
+  }
+  if (budget > 0) {
+    lines.push(
+      `${budget} attempt(s) were **refused for their reply budget**, not dropped — the server refused the`
+      + ' `max_tokens` they asked for before generating anything, and the review initiated one re-send'
+      + ' at the cap the server stated. Like a shape refusal, each is marked `refused` only once that'
+      + ' re-send has its own attempt entry, and is counted above but excluded from the failure'
+      + ' rate. It records an initiated re-send, not a successful one: if the re-send failed in turn,'
+      + ' that failure is counted on its own row.',
       '',
     );
   }

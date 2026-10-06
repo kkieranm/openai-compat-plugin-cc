@@ -74,7 +74,8 @@ export const MAX_RAW = 256_000;
  * `token-reserve-cutoff` (both the model's own budget, never the server's),
  * `oversize` and other input refusals (another commit may survive
  * them) — `stream-error-frame` among them, a refusal the server put inside
- * the stream, whose hint says it was not re-sent — `output-too-large`, which
+ * the stream, whose hint says it was not re-sent, and `request-too-large`, an
+ * HTTP 413 refused before generation — `output-too-large`, which
  * is THIS HARNESS's own capture ceiling —
  * counting it would have the sweep diagnose the server for its own limit —
  * and `reasoning-only`, which fires only after a clean, server-terminated

@@ -32,6 +32,15 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` retries once when a server refuses its reply budget with HTTP 413 and states a smaller
+  one it can take — vMLX's `safe_cap=<N>`. The review re-plans with that budget under the same deadline;
+  a second refusal is final, as is a stated budget below the 4,096 tokens a review's reserve shrinks
+  to or no smaller than the one refused. A refusal the retry answered is recorded as `refused`, not as
+  a failed attempt. `/oai:task` does not retry but names the budget to pass as `--max-tokens`, unless
+  the request already asked for no more than that. An HTTP 413 now carries the reason
+  `request-too-large` rather than none, and each attempt record carries the `maxTokens` it asked for;
+  the review sweep therefore no longer counts a commit refused with a 413 toward stopping the night
+  as a server outage.
 - `npm run bench -- --temperature=` (an empty value, accepted as 0) no longer makes every review fail: the bench
   forwards `--max-tokens`, `--temperature` and the sampling flags as one `--flag=value` argument each,
   which the review's parser does not drop.

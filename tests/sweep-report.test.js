@@ -348,6 +348,20 @@ test('a failed stream-error-frame commit is explained as an in-stream refusal, n
   assert.doesNotMatch(out, /the review failed/, 'the generic sentence must not print beside the specific one');
 });
 
+// An HTTP 413 carries `request-too-large`: a refusal of the request's size before
+// generation, which says nothing about the server's health. The reasonless
+// control is the failure `isOutage` does count, so the pairing cannot pass by
+// `isOutage` returning false for every failed entry.
+test('a failed request-too-large commit is explained as a refusal and is not an outage', () => {
+  assert.equal(isOutage({ outcome: 'failed' }), true, 'control: a reasonless failure is an outage');
+  assert.equal(isOutage({ outcome: 'failed', reason: 'request-too-large' }), false);
+  const out = render(commit({ outcome: 'failed', reason: 'request-too-large' }));
+  assert.ok(Object.hasOwn(FAILED_WHY, 'request-too-large'), 'request-too-large has no prose of its own');
+  assert.ok(out.includes(FAILED_WHY['request-too-large']), 'the row does not render its own prose');
+  assert.match(out, /\(`request-too-large`\)/, 'the code is still appended after the sentence');
+  assert.doesNotMatch(out, /the review failed/, 'the generic sentence must not print beside the specific one');
+});
+
 test('every FAILED_WHY entry is non-blank prose for a failed-not-starved reason, and renders itself', () => {
   // The non-vacuity anchor. Deleting the table's sole key would otherwise make
   // the loop below assert nothing and stay green.
@@ -386,6 +400,19 @@ test('an attempted stream-error-frame row resets any live outage streak, as its 
   const at = (n) => `2026-09-02T00:0${n}:00.000Z`;
   const outage = (n) => ({ outcome: 'failed', reason: 'transport', startedAt: at(n) });
   const replay = replayStreak([outage(1), { outcome: 'failed', reason: 'stream-error-frame', startedAt: at(2) }, outage(3)]);
+  assert.equal(replay.attempted, 3, 'all three rows carry startedAt, so all three are attempted');
+  assert.equal(replay.resets, 1, 'the refusal row zeroed the live streak');
+  assert.equal(replay.longest, 1, 'the two outages never joined into one streak');
+  assert.deepEqual(replay.outages.map((entry) => entry.reason), ['transport', 'transport']);
+});
+
+// The same transition for an HTTP 413: its prose claims it resets any live
+// outage streak, so an attempted request-too-large row between two outages
+// must zero it.
+test('an attempted request-too-large row resets any live outage streak, as its prose says', () => {
+  const at = (n) => `2026-09-02T00:0${n}:00.000Z`;
+  const outage = (n) => ({ outcome: 'failed', reason: 'transport', startedAt: at(n) });
+  const replay = replayStreak([outage(1), { outcome: 'failed', reason: 'request-too-large', startedAt: at(2) }, outage(3)]);
   assert.equal(replay.attempted, 3, 'all three rows carry startedAt, so all three are attempted');
   assert.equal(replay.resets, 1, 'the refusal row zeroed the live streak');
   assert.equal(replay.longest, 1, 'the two outages never joined into one streak');

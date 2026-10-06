@@ -38,11 +38,14 @@ export const STREAM_UNFINISHED = 'stream-unfinished';
  * In neither `RETRYABLE` nor `COMPLETION_SHAPES`, each for its own reason. Not
  * retryable because a refusal stated before generation begins is not a delivery
  * failure: it is the streaming twin of an HTTP error status, which `assertOk`
- * throws with no reason and which is never retried either — a resend is refused
- * again. Not a completion shape because no reply document was produced, and
- * bench's `serverUnwell` reads that set as server-health evidence, which a
- * refusal is not. An error frame after text has streamed is a different case
- * — a mid-generation failure a resend may survive — and stays `stream-unfinished`.
+ * throws with no reason (a 413 excepted, which carries `request-too-large`) and
+ * which the transport never resends either — an identical resend is refused
+ * again. (`/oai:review` re-plans once at a reply budget a 413 states, which is
+ * a different request.) Not a completion shape because no reply document was
+ * produced, and bench's `serverUnwell` reads that set as server-health
+ * evidence, which a refusal is not. An error frame after text has streamed is
+ * a different case — a mid-generation failure a resend may survive — and stays
+ * `stream-unfinished`.
  */
 export const STREAM_ERROR_FRAME = 'stream-error-frame';
 

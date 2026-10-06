@@ -110,6 +110,7 @@ export function attemptRows(results) {
   if (all.length === 0) return null;
 
   const failed = all.filter(({ attempt }) => attempt.outcome === 'failed');
+  const refused = all.filter(({ attempt }) => attempt.outcome === 'refused');
   return {
     total: all.length,
     failed: failed.length,
@@ -119,7 +120,13 @@ export function attemptRows(results) {
     // every time, and the plugin's next request succeeds. Folding these into the
     // failure rate would report a server answering every shaped request as
     // failing half of them.
-    refused: all.filter(({ attempt }) => attempt.outcome === 'refused').length,
+    refused: refused.length,
+    // Split by reason because a refused entry is one of two things: a capability
+    // refusal, which records no reason, or a reply budget the server refused
+    // before generating (`request-too-large`, read only off an HTTP 413) for which
+    // the review initiated a re-send at the cap the server stated. Kept apart from
+    // `byReason`, which counts failures only.
+    refusedByReason: tally(refused, ({ attempt }) => attempt.reason ?? 'unclassified'),
     // Never resolved, either — an attempt whose handle was never closed is a bug
     // in the ledger plumbing, and it is worth being able to see one.
     unresolved: all.filter(({ attempt }) => attempt.outcome === null).length,

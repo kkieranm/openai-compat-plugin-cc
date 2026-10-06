@@ -95,7 +95,7 @@ export async function postWithDegrade(profile, budgets, negotiation) {
       // `ledger.begin` and the socket can refuse the request any more.
       if (rung) handle?.refuse(error);
       else handle?.fail(error, error?.timings ?? {});
-      if (!rung) throw error;
+      if (!rung) throw withSentBudget(profile, error, negotiation.payload.max_tokens);
       negotiation.removed.add(rung.name);
       negotiation.lastRung = rung.name;
       // Said out loud, like the response_format retry beside it: a silent
@@ -105,6 +105,24 @@ export async function postWithDegrade(profile, budgets, negotiation) {
       negotiation.payload = rung.apply(negotiation.payload);
     }
   }
+}
+
+/**
+ * The refusal, carrying the reply budget the refused request asked for —
+ * `undefined` when it named none — so a caller can tell whether a cap the
+ * server stated would change anything.
+ *
+ * The `--max-tokens` hint is attached only where it does: a stated cap no
+ * smaller than the budget sent names a value the request already used.
+ */
+function withSentBudget(profile, error, sentMaxTokens) {
+  if (!error || typeof error !== 'object') return error;
+  error.sentMaxTokens = sentMaxTokens;
+  const cap = error.statedMaxTokens;
+  if (cap !== undefined && (sentMaxTokens === undefined || cap < sentMaxTokens)) {
+    error.hint = `${profile.name} states it can reply with at most ${cap} tokens — pass --max-tokens ${cap} or lower.`;
+  }
+  return error;
 }
 
 /**

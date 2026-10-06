@@ -133,6 +133,16 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   size is an estimate. Non-ASCII text (accented Latin, CJK, emoji, …) is counted conservatively —
   about threefold for Chinese prose — so input dense in it can be refused before the window is
   actually full; the refusal usually notes when that may be the cause.
+- **A refused reply budget is retried once, at the budget the server names.** A server can refuse a
+  request's `max_tokens` with HTTP 413 and state the largest it would take — vMLX sends
+  `safe_cap=<N>` when the budget exceeds its projected memory headroom, a figure that moves with load.
+  `/oai:review` then plans the whole request again with `N` as its reply budget, says so on stderr, and
+  sends it once, inside the same `--max-seconds` deadline. A second refusal is final, and so is a
+  stated budget below the 4,096 tokens a review's reserve shrinks to for a large input, or no smaller
+  than the one refused. `/oai:task` does not retry; its error names the budget to pass as
+  `--max-tokens`, unless the request already asked for no more than that. An HTTP 413 is reported
+  with the reason `request-too-large`, and each attempt in the `--json` record carries the
+  `maxTokens` it asked for. A cap stated with any other status is not read.
 - **The window is detected automatically** on LM Studio, oMLX, vMLX, vLLM, llama.cpp and TGI, and
   `/oai:setup` shows where the number came from. On vMLX it is the server's prompt cap, for the model
   under the name the server lists (another name the server also accepts gets none), read only while
