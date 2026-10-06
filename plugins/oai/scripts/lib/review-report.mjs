@@ -22,8 +22,8 @@ import { unparsedReply } from './review-unparsed.mjs';
  * text would have fitted it; `conservativeReserveCut`, that the conservative
  * count cut the reply budget materially below what a typical count would leave.
  * On a salvaged review all three describe the original request, whose reasoning
- * the follow-up concluded from; a `token-reserve-cutoff` or `reasoning-only`
- * follow-up is sent with its own small fixed reserve.
+ * the follow-up concluded from; the follow-up is sent with its own small
+ * fixed reserve.
  */
 function causeFlags({ skipped, conservativeReserveCut }) {
   return {
@@ -59,8 +59,8 @@ function reportFindings(parsed, context) {
   const notes = [
     salvaged
       ? 'WARNING: this reply came from a SALVAGE follow-up — a conclude-now request sent after the ' +
-        'model ran out of time reasoning, not the original findings-first pass. Treat it as less ' +
-        'reliable than an ordinary review.'
+        "model's reply held reasoning but no answer, not the original findings-first pass. Treat it as " +
+        'less reliable than an ordinary review.'
       : null,
     ...causeNotes(causes, profile),
     unreadableNote(target.unreadable),
@@ -180,9 +180,10 @@ export function jsonReport(parsed, context) {
     // what WE sent), never the analysisCap class (a fact read off the model's
     // reply). Deliberately JSON-only, same posture as analysisLength/analysisCap
     // above. `null` when no salvage happened. `{ applied: false, ... }` when
-    // salvage happened but trimming didn't apply — either the reason
-    // (deadline-timeout) was scoped out, or the reasoning already fit under the
-    // retention budget; this field alone doesn't distinguish the two.
+    // salvage happened but trimming didn't apply — the reasoning already fit
+    // under the retention budget, a trim would not have come out shorter, or
+    // the trimmed follow-up failed and the untrimmed one answered; this field
+    // alone doesn't distinguish them.
     salvageTrim: salvageTrim ?? null,
     // What answered, not what was asked for: a server may serve a different
     // build than the id requested, and the run belongs to the one that ran.

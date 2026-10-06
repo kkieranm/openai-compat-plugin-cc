@@ -65,6 +65,10 @@ test('a salvaged review carries its findings but is visibly flagged, never silen
   }));
   assert.match(out, /concluded from partial reasoning/, 'a lead recovered by salvage must not vanish from the artifact');
   assert.match(out, /SALVAGED/);
+  // Salvage follows a reasoning cutoff or a reasoning-only reply, never a
+  // spent deadline or token budget.
+  const [warning] = out.match(/SALVAGED:[^\n]*/);
+  assert.doesNotMatch(warning, /ran out of|out of time|out of tokens|budget|deadline/i);
 });
 
 test('a clean review that only saw the diff says so, though it never reaches coverage', () => {

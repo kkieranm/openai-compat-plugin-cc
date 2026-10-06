@@ -174,11 +174,16 @@ export const REASON_PARAGRAPHS = [
     + ' watchdog disposed the stream at a conservative character threshold intended to preserve the'
     + ' answer reserve, with no answer yet written. It is unrelated to `*-timeout` reasons and the cut'
     + ' attempt is never retried as-is — instead a follow-up "conclude from what you have" salvage'
-    + ' attempt (`trySalvage`, up to two tries: trimmed, then untrimmed) is attempted afterwards, and'
-    + ' each follow-up actually sent appears as its own row. A row carrying this reason says this'
+    + ' attempt (`trySalvage`, up to two tries: trimmed, then untrimmed — none after a follow-up refused'
+    + ' as `request-too-large`) is attempted afterwards, and'
+    + ' each follow-up actually sent appears as its own row. A follow-up a deadline ends is a'
+    + ' `deadline-timeout` row, whether its own cap or the review\'s ended it; when the review\'s'
+    + ' deadline ends salvage, no further follow-up is sent and the run itself fails as'
+    + ' `deadline-timeout`. A row carrying this reason says this'
     + ' attempt was cut off, nothing more: the run it belongs to may have been answered by a follow-up,'
     + ' the follow-up may itself have failed, or none may have been sent at all — a follow-up grown'
-    + ' past the context window is refused before the wire.'],
+    + ' past the context window, or one the review\'s spent deadline leaves no time for, is refused before'
+    + ' the wire.'],
   ['reasoning-only',
     '`reasoning-only` below is a reply that finished cleanly with no non-whitespace answer content but'
     + ' non-whitespace reasoning — classified by this client after a successful request, streamed or'

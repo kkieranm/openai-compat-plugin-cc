@@ -1,18 +1,34 @@
-// Salvage: what happens to a review that hit --max-seconds mid-reasoning.
+// Salvage: what happens to a review whose reply held reasoning but no answer.
 //
 // Tier 1 (keep the partial answer instead of discarding it) and tier 2 (a bounded
 // follow-up asking the model to conclude from it) both live in this one file
-// because they share one fixture shape — a server that streams reasoning_content
-// forever, the same class endless-stream fixture tests/deadline.test.js already
-// uses for the cap itself, but with reasoning_content in place of content so the
-// salvage trigger's "substantial reasoning, empty content" gate actually fires.
+// because they share fixture shapes — servers that stream reasoning_content and
+// never reach content. A review that hits --max-seconds mid-reasoning keeps tier
+// 1 but never gets tier 2: a follow-up runs inside the review's deadline, and
+// that deadline is spent. Tier 2 runs on a reasoning cutoff or a reasoning-only
+// reply, and inside whatever the deadline has left.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRepo, reviewScenario, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { createLedger } from '../plugins/oai/scripts/lib/attempt-ledger.mjs';
+import { requestFindings } from '../plugins/oai/scripts/lib/review-request.mjs';
+import {
+  chatRequests as chatRequestsOf,
+  completionFrames,
+  createRepo,
+  modelList,
+  respondJson,
+  respondStream,
+  reviewScenario,
+  runCompanion,
+  startFakeServer,
+  writeConfig,
+} from './helpers.mjs';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { findingsFirst, schemaInstruction } from '../plugins/oai/scripts/lib/structured.mjs';
 import { estimateTokens } from '../plugins/oai/scripts/lib/context-guard.mjs';
+import { failedRun } from '../bench/run.mjs';
+import { caseRows } from '../bench/lib/case-rows.mjs';
+import { CASE } from './bench-report-fixtures.mjs';
 
 const DRIP_MS = 40;
 /** Comfortably over SALVAGE_MIN_REASONING_CHARS (500) before the cap fires. */
@@ -96,12 +112,10 @@ function endlessReasoningThenFollowUp(onFollowUp) {
   return { handler, stop: () => timers.forEach(clearInterval) };
 }
 
-test('a deadline-timeout keeps the partial reasoning instead of discarding it', async () => {
-  // No follow-up expected in THIS test's assertions — the fixture answers one
-  // anyway (real findings, fast) since a real run would try tier 2. What the
-  // assertions below actually check is the tier-2 success envelope; tier 1's
-  // own guarantee is inferred from it rather than asserted directly — see the
-  // comment at the assertions for why that inference holds.
+test('a deadline-timeout keeps the partial reasoning instead of discarding it, and is not salvaged', async () => {
+  // The fixture would answer a follow-up (real findings, fast), so a salvage
+  // attempt would turn this run into a success — the failure below shows none
+  // was made.
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({ findings: [], summary: 'salvaged, nothing found' })));
@@ -110,13 +124,13 @@ test('a deadline-timeout keeps the partial reasoning instead of discarding it', 
   const { dir, server, configPath } = await reviewScenario(handler);
   try {
     const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
-    // The run succeeded via salvage (tier 2) — covered on its own below — but
-    // tier 1's own guarantee (attach `.answer` in stream-collect.mjs) is what
-    // made tier 2 possible in the first place; a bare status:0 here already
-    // proves reasoning was captured, not thrown away, at the point of failure.
-    assert.equal(result.status, 0);
-    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.salvaged, undefined);
+    // Tier 1: the reasoning was captured, not thrown away, at the point of failure.
+    assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
   } finally {
     stop();
     await server.close();
@@ -165,7 +179,7 @@ test('a deadline-timeout with no salvage attempted still reports the reason plai
   }
 });
 
-test('salvage sends a genuine multi-turn follow-up and reports it as salvaged, never as an ordinary review', async () => {
+test('a deadline-timeout sends no salvage follow-up, even to a server that would answer one', async () => {
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({
@@ -177,59 +191,28 @@ test('salvage sends a genuine multi-turn follow-up and reports it as salvaged, n
   const { dir, server, configPath } = await reviewScenario(handler);
   try {
     const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
-    assert.equal(result.status, 0);
+    assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.salvaged, undefined);
 
-    // Reported honestly — this must never look like an ordinary complete review.
-    assert.equal(envelope.salvaged, true);
-    assert.equal(envelope.findings.length, 1);
-    assert.equal(envelope.findings[0].summary, 'concluded from partial reasoning');
-
-    // The follow-up's actual wire shape: original system+user, unchanged, then
-    // an assistant turn carrying the partial reasoning, then a new user ask.
-    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
-    assert.equal(chatRequests.length, 2, 'exactly one salvage attempt, on top of the original');
-    const followUp = chatRequests[1].body.messages;
-    assert.equal(followUp.length, 4);
-    assert.equal(followUp[0].role, 'system');
-    assert.equal(followUp[1].role, 'user');
-    assert.equal(followUp[2].role, 'assistant');
-    assert.ok(followUp[2].content.includes(REASONING_CHUNK.trim()), 'the assistant turn must carry the real partial reasoning');
-    assert.equal(followUp[3].role, 'user');
-    // Same original system+user turns, byte for byte — reused rather than
-    // rebuilt, so the server's own prefix cache (if any) can still apply.
-    const original = chatRequests[0].body.messages;
-    assert.equal(followUp[0].content, original[0].content);
-    assert.equal(followUp[1].content, original[1].content);
-    // The reason-keyed budget branch must leave a deadline-timeout
-    // salvage untouched: the follow-up's own max_tokens stays the original
-    // built.reserve, never dropped to the token-reserve-cutoff branch's
-    // smaller flat reserve.
-    assert.equal(chatRequests[1].body.max_tokens, chatRequests[0].body.max_tokens);
+    // Nothing but the original on the wire, and nothing else in the record.
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
+    assert.equal(envelope.attempts.length, 1);
+    assert.equal(envelope.attempts[0].reason, 'deadline-timeout');
   } finally {
     stop();
     await server.close();
   }
 });
 
-test('--structured-output does not bypass salvage on a deadline-timeout, and the follow-up states the shape itself', async () => {
+test('--structured-output: a deadline-timeout is reported with its partial, not salvaged', async () => {
   // The schema-constrained request is a different branch of `requestFindings`
-  // (the `first`/`prepareLadder` path, not `unconstrained`'s `built`): a
-  // deadline-timeout there must still reach `trySalvage`, not only the
-  // `response_format`-refusal retry.
-  //
-  // That rung states its full shape only through the `response_format` GRAMMAR,
-  // never in prose the model can see on a later turn — unlike `unconstrained()`'s
-  // own rung, whose messages always carry a prose schema instruction. So the
-  // follow-up must state the shape itself, and a fake server that answers
-  // correctly regardless of prompt content cannot show that; this test inspects
-  // the actual follow-up message.
+  // (the `first`/`prepareLadder` path, not `unconstrained`'s `built`). A
+  // deadline-timeout there is not a rejected schema, so it propagates as the
+  // failure it is, with no follow-up.
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
-    // All fields the schema actually requires, per-finding and at the top
-    // level (`analysis`, `findings[].evidence`) — a fixture missing them would
-    // pass through the lenient prose parser regardless of what shape the
-    // follow-up asked for.
     response.write(finishFrame(JSON.stringify({
       analysis: 'concluded from the salvaged reasoning',
       findings: [{
@@ -249,68 +232,21 @@ test('--structured-output does not bypass salvage on a deadline-timeout, and the
       ['review', '--json', '--structured-output', '--max-seconds', '1'],
       { configPath, cwd: dir },
     );
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 1, result.stderr);
     const envelope = JSON.parse(result.stdout);
-    assert.equal(envelope.salvaged, true);
-    // The follow-up never sends `response_format`, so a salvaged structured run
-    // is degraded although the server never refused it.
-    assert.equal(envelope.degraded, true);
-    assert.equal(envelope.findings.length, 1);
-    assert.equal(envelope.findings[0].summary, 'concluded under --structured-output');
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.salvaged, undefined);
+    assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
-    assert.equal(chatRequests.length, 2);
-
-    // The ORIGINAL request's own schema, straight off the wire — the source of
-    // truth the follow-up's restated shape must actually match, not just
-    // resemble. A regex alone would accept the wrong rung, stale caps, or a
-    // schema missing required fields.
-    const sentSchema = chatRequests[0].body.response_format.json_schema.schema;
-    const expected = findingsFirst(sentSchema);
-
-    // The follow-up states the shape in prose and never sends the grammar.
-    assert.equal(chatRequests[1].body.response_format, undefined);
-
-    const followUp = chatRequests[1].body.messages;
-    // Pinned before indexing from the end, not just implied by the shape below:
-    // a stray extra turn appended after `ask` would silently become the new
-    // "last message" and slip past every assertion that follows, which all
-    // index relative to the end rather than an absolute position.
-    assert.equal(followUp.length, 4);
-    const ask = followUp[followUp.length - 1];
-    assert.equal(ask.role, 'user');
-    // FULL equality on the entire turn, not `.includes()` plus a separate
-    // slice-from-first-'{' check — that combination still leaves a gap:
-    // `.includes()` proves the override sentence is present
-    // somewhere, but not that nothing else was inserted between it and the
-    // schema instruction, since the schema check independently re-anchors on
-    // the first '{' regardless of what precedes it. This turn is entirely
-    // static (unlike the assistant turn before it, which carries the
-    // non-deterministic streamed reasoning), so nothing here is exempt from an
-    // exact match — reconstructed from the same production pieces so the
-    // expectation cannot itself drift from what trySalvage actually sends.
-    assert.equal(
-      ask.content,
-      'Your previous response was cut off before it finished. Based only on your analysis above, state '
-        + 'your findings now. Do not reason further — conclude from what you already have. '
-        + 'Ignore any earlier instruction to work through "analysis" before "findings": there is no '
-        + 'schema enforcing that order here, and this reply must carry its findings even if it runs '
-        + 'out of room, so findings come FIRST. '
-        + schemaInstruction(expected),
-      'the follow-up turn must be exactly the override sentence immediately followed by ' +
-        'findingsFirst() of the schema actually sent on the wire — no gap, no insertion, no drift',
-    );
+    assert.equal(chatRequests.length, 1);
+    assert.ok(chatRequests[0].body.response_format, 'the one request was the schema-constrained one');
   } finally {
     stop();
     await server.close();
   }
 });
 
-test('a successful salvage reports retried: true — it cost at least two physical requests', async () => {
-  // `retried` used to read off the salvage call's OWN `requestCount`, which is
-  // always 1 for a first-try salvage success (it never retries itself) — so a
-  // review that failed once and then salvaged reported `retried: false` despite
-  // the ledger holding two entries. This is the live proof, on the ledger the
-  // whole review actually shares.
+test('a deadline-timeout records one physical request — the deadline leaves no follow-up to make', async () => {
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({ findings: [], summary: 'salvaged, nothing found' })));
@@ -319,20 +255,21 @@ test('a successful salvage reports retried: true — it cost at least two physic
   const { dir, server, configPath } = await reviewScenario(handler);
   try {
     const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
-    assert.equal(envelope.salvaged, true);
-    assert.equal(envelope.retried, true, 'the original failed attempt plus the salvage follow-up are two physical requests');
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.salvaged, undefined);
+    assert.deepEqual(envelope.attempts.map((attempt) => [attempt.outcome, attempt.reason]), [['failed', 'deadline-timeout']]);
   } finally {
     stop();
     await server.close();
   }
 });
 
-test('a salvage attempt that itself fails falls back to the ordinary deadline-timeout report, partial still attached', async () => {
+test('a deadline-timeout is reported plainly, partial still attached, and the follow-up handler is never reached', async () => {
+  let followUps = 0;
   const { handler, stop } = endlessReasoningThenFollowUp((record, response) => {
-    // The follow-up itself fails fast (a malformed body) rather than a real
-    // timeout, which would cost the full salvage budget for no test value —
-    // this exercises the identical fallback branch either way.
+    followUps += 1;
     response.writeHead(500, { 'content-type': 'application/json' });
     response.end('not json');
   });
@@ -343,65 +280,12 @@ test('a salvage attempt that itself fails falls back to the ordinary deadline-ti
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
     assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
-    // Tier 1's guarantee held even though tier 2 was tried and failed.
+    // Tier 1's guarantee holds without tier 2.
     assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
-    // Exactly two requests: the original, and the one failed salvage attempt —
-    // never a third. `trySalvage` does not retry itself and does not recurse.
-    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 2);
+    assert.equal(followUps, 0);
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
   } finally {
     stop();
-    await server.close();
-  }
-});
-
-function contentFrame() {
-  return `data: ${JSON.stringify({
-    id: 'chatcmpl-test',
-    object: 'chat.completion.chunk',
-    model: 'test-model',
-    choices: [{ index: 0, delta: { content: '{"findings": [' }, finish_reason: null }],
-  })}\n\n`;
-}
-
-test('a deadline-timeout with content already underway is not eligible for salvage, even with substantial reasoning too', async () => {
-  // The rarer shape this repo deliberately does not attempt: findings JSON
-  // already underway when the cap fired. Salvage must not fire here at all —
-  // and this must be true even when reasoning ALONE would have been enough to
-  // trigger it, so both frame kinds are sent, well over
-  // SALVAGE_MIN_REASONING_CHARS, to isolate this gate from the reasoning-length
-  // one (a version of this test sending only content passed even with the
-  // content check deleted, for the wrong reason — the length gate alone was
-  // already blocking it, since no reasoning had streamed at all).
-  const timers = new Set();
-  let chatRequestCount = 0;
-  const handler = (record, response) => {
-    if (!record.url.includes('/chat/completions')) {
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
-      return;
-    }
-    chatRequestCount += 1;
-    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
-    for (let i = 0; i < 12; i += 1) response.write(reasoningFrame());
-    response.write(contentFrame());
-    const timer = setInterval(() => response.write(contentFrame()), DRIP_MS);
-    timer.unref?.();
-    timers.add(timer);
-  };
-  const { dir, server, configPath } = await reviewScenario(handler);
-  try {
-    const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
-    assert.equal(result.status, 1);
-    const envelope = JSON.parse(result.stdout);
-    assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
-    // Only the original request — no salvage follow-up for a content-in-progress failure.
-    assert.equal(chatRequestCount, 1);
-    // Tier 1 still captured BOTH fields, even though tier 2 correctly declined it.
-    assert.ok(envelope.partial?.content?.length > 0);
-    assert.ok(envelope.partial?.reasoning?.length >= 500);
-  } finally {
-    timers.forEach(clearInterval);
     await server.close();
   }
 });
@@ -440,47 +324,72 @@ test('a failure with no stream progress at all still reports an empty partial, w
   }
 });
 
+/**
+ * CJK reasoning, so the two counts that matter here disagree on purpose: the
+ * reserve watchdog counts characters (3 per token), while the window check
+ * charges each of these characters its 3 UTF-8 bytes as 3 tokens. 130 frames
+ * of 50 characters (6,500) clear the 6,144-character cutoff an 8,192-token
+ * window sets, and even the trimmed 6,000 characters estimate at ~18,000
+ * tokens — far past that window once appended to the follow-up.
+ */
+const CJK_CHUNK = '推理'.repeat(25);
+const CJK_FRAMES = 130;
+
 test('a salvage follow-up grown past the context window is refused, not sent unchecked', async () => {
-  // Appending the partial reasoning back in as an assistant turn can push an
-  // already-near-window request over the top — exactly the class of review
-  // most likely to have hit the deadline in the first place. A tiny
-  // contextLength here is what forces this: the ORIGINAL request (a small
-  // file plus a modest instruction) fits comfortably, but the reasoning
-  // alone — well over SALVAGE_MIN_REASONING_CHARS, per the trigger gate —
-  // does not fit alongside it once appended.
-  const { handler, stop } = endlessReasoningThenFollowUp(() => {
-    throw new Error('the follow-up must never be sent when the grown prompt does not fit the window');
-  });
-  // 2000: comfortably fits the original request (a small seed file plus the
-  // review system prompt, ~350-470 tokens against a 1000-token budget here),
-  // but not the ~1300+ tokens the grown follow-up reaches once 2s of streamed
-  // reasoning is appended back in as an assistant turn.
-  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: 2000 });
+  // Appending the partial reasoning back in as an assistant turn can push a
+  // request that fit over the top. Every other gate passes here — a cutoff is
+  // a salvage reason, the reasoning is far past the minimum, and no deadline
+  // is set — so the window check is the only thing that can stop the
+  // follow-up, trimmed or untrimmed.
+  let requestCount = 0;
+  const handler = (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+      return;
+    }
+    requestCount += 1;
+    // A follow-up that did go out would be answered, turning the run into a
+    // salvaged success the assertions below refuse.
+    if (requestCount > 1) {
+      response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+      response.end(finishFrame(JSON.stringify({ findings: [], summary: 'salvaged, nothing found' })));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    for (let i = 0; i < CJK_FRAMES; i += 1) {
+      response.write(`data: ${JSON.stringify({
+        id: 'chatcmpl-test',
+        object: 'chat.completion.chunk',
+        model: 'test-model',
+        choices: [{ index: 0, delta: { reasoning_content: CJK_CHUNK }, finish_reason: null }],
+      })}\n\n`);
+    }
+    // No end() — the reserve watchdog is what stops this stream.
+  };
+  const { dir, server, configPath } = await reviewScenario(handler);
   try {
-    const result = await runCompanion(['review', '--json', '--max-seconds', '2'], { configPath, cwd: dir });
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
-    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.reason, 'token-reserve-cutoff');
     assert.equal(envelope.salvaged, undefined);
     // Tier 1 still preserved the original partial, even though tier 2
     // correctly declined to send an oversized follow-up.
-    assert.ok(envelope.partial?.reasoning?.length >= 500);
-    // Exactly one request — the follow-up was refused BEFORE it was sent, per
-    // the assertion inside the handler above (which would have failed this
-    // test with a different error if reached).
+    assert.ok(envelope.partial?.reasoning?.length >= 6_144);
+    // Exactly one request — both follow-ups were refused BEFORE being sent.
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
+    assert.equal(envelope.attempts.length, 1);
   } finally {
-    stop();
     await server.close();
   }
 });
 
 // --- the salvage reasoning trim ------------------------------------------
 //
-// `token-reserve-cutoff` and `reasoning-only` get the smaller flat
-// TOKEN_RESERVE_TOKENS reserve AND a head+tail trim of the
-// reasoning fed back into the follow-up; `deadline-timeout` keeps both its
-// full reserve and its full untouched reasoning.
+// A salvage follow-up gets the smaller flat TOKEN_RESERVE_TOKENS reserve AND a
+// head+tail trim of the reasoning fed back into it; a `deadline-timeout` gets
+// no follow-up at all, and its partial reasoning is reported whole.
 //
 // A WIDE context window (matching tests/token-reserve-cutoff.test.js's own
 // WIDE_CONTEXT_LENGTH/cutoffChars derivation) is needed for all three
@@ -653,6 +562,101 @@ test('a long reasoning-only reasoning is trimmed to head+tail before the salvage
   }
 });
 
+/** review-request.mjs's SALVAGE_MIN_REASONING_CHARS: the shortest reasoning a follow-up is sent for. */
+const SALVAGE_MIN_REASONING_CHARS = 500;
+
+/** A first request that ends reasoning-only with exactly `reasoningText`; every later request answers. */
+function exactReasoningOnlyThenAnswer(reasoningText) {
+  let requestCount = 0;
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+    requestCount += 1;
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.end(requestCount === 1
+      ? reasoningOnlyEmptyContentFrames(reasoningText)
+      : finishFrame(JSON.stringify({
+        findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from minimal reasoning' }],
+        summary: 'salvaged',
+      })));
+  };
+}
+
+test('reasoning exactly SALVAGE_MIN_REASONING_CHARS long is salvaged', async () => {
+  const reasoning = 'x'.repeat(SALVAGE_MIN_REASONING_CHARS);
+  const { dir, server, configPath } = await reviewScenario(exactReasoningOnlyThenAnswer(reasoning));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.findings[0].summary, 'concluded from minimal reasoning');
+    const chats = chatRequestsOf(server);
+    assert.equal(chats.length, 2, 'the original plus one follow-up');
+    assert.equal(chats[1].body.messages[2].content, reasoning, 'the follow-up carries the reasoning whole');
+  } finally {
+    await server.close();
+  }
+});
+
+// --- the SALVAGED warning's wording ----------------------------------------
+//
+// Salvage follows a reasoning cutoff or a reasoning-only reply, never a spent
+// deadline or token budget, so the warning must not say the model ran out of
+// either.
+const SALVAGE_WARNING_FORBIDDEN = /ran out of|out of time|out of tokens|budget|deadline/i;
+
+/** The text report of a review salvaged by a follow-up answering `followUpContent`. */
+async function salvagedTextReport(followUpContent) {
+  let requestCount = 0;
+  const { dir, server, configPath } = await reviewScenario((record, response) => {
+    if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+    requestCount += 1;
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.end(requestCount === 1 ? reasoningOnlyEmptyContentFrames('x'.repeat(SALVAGE_MIN_REASONING_CHARS)) : finishFrame(followUpContent));
+  });
+  try {
+    const result = await runCompanion(['review'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(chatRequestsOf(server).length, 2, 'the original plus one follow-up');
+    return result.stdout;
+  } finally {
+    await server.close();
+  }
+}
+
+test('a salvaged review with findings warns it was salvaged, without saying the model ran out of time or budget', async () => {
+  const stdout = await salvagedTextReport(JSON.stringify({
+    findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from minimal reasoning' }],
+    summary: 'salvaged',
+  }));
+  const warning = stdout.split('\n\n').find((paragraph) => paragraph.startsWith('WARNING: this review was SALVAGED.'));
+  assert.ok(warning, stdout);
+  assert.doesNotMatch(warning, SALVAGE_WARNING_FORBIDDEN);
+});
+
+test('a salvaged review whose reply was prose warns it was salvaged, without saying the model ran out of time or budget', async () => {
+  const stdout = await salvagedTextReport('Nothing stands out in this change.');
+  assert.match(stdout, /did not return findings in the requested shape/);
+  const warning = stdout.split('\n\n').find((paragraph) => paragraph.startsWith('WARNING: this reply came from a SALVAGE follow-up'));
+  assert.ok(warning, stdout);
+  assert.doesNotMatch(warning, SALVAGE_WARNING_FORBIDDEN);
+});
+
+test('reasoning one character short of SALVAGE_MIN_REASONING_CHARS is not salvaged', async () => {
+  const { dir, server, configPath } = await reviewScenario(exactReasoningOnlyThenAnswer('x'.repeat(SALVAGE_MIN_REASONING_CHARS - 1)));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'reasoning-only');
+    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.partial?.reasoning, 'x'.repeat(SALVAGE_MIN_REASONING_CHARS - 1));
+    assert.equal(chatRequestsOf(server).length, 1, 'no follow-up is sent');
+  } finally {
+    await server.close();
+  }
+});
+
 const DEADLINE_BURST_CHUNKS = 200; // 200 * 51 = 10,200 chars, written SYNCHRONOUSLY (no interval, no
   // await) so it all accumulates well before a 1-second --max-seconds deadline fires. Comfortably
   // over the 6,000-char trim budget, and comfortably under WIDE_CONTEXT_LENGTH's 70,656
@@ -678,7 +682,7 @@ function deadlineBurstThenFollowUp(onFollowUp) {
   };
 }
 
-test('a long deadline-timeout reasoning is fed back to the salvage follow-up untouched', async () => {
+test('a long deadline-timeout reasoning is reported whole as the partial, with no follow-up', async () => {
   const handler = deadlineBurstThenFollowUp((record, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
     response.write(finishFrame(JSON.stringify({
@@ -690,17 +694,22 @@ test('a long deadline-timeout reasoning is fed back to the salvage follow-up unt
   const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
   try {
     const result = await runCompanion(['review', '--json', '--max-seconds', '1'], { configPath, cwd: dir });
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 1, result.stderr);
     const envelope = JSON.parse(result.stdout);
-    assert.equal(envelope.salvaged, true);
-    assert.equal(envelope.salvageTrim.applied, false);
-    assert.equal(envelope.salvageTrim.originalChars, envelope.salvageTrim.retainedChars);
-    assert.ok(envelope.salvageTrim.originalChars > 6_000, 'must actually exceed the trim budget to be a real test of "not trimmed"');
-
-    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
-    const sent = chatRequests[1].body.messages[2].content;
-    assert.equal(sent.length, envelope.salvageTrim.originalChars);
-    assert.ok(!sent.includes('characters of reasoning omitted'));
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(envelope.salvaged, undefined);
+    // The cap's own error, word for word — never rewritten as a salvage the
+    // deadline ended, which this reason never reaches.
+    const host = new URL(server.baseUrl).host.replaceAll('.', '\\.');
+    assert.match(envelope.message, new RegExp(`^${host} did not finish within the 1\\.0s cap, after \\d+ bytes\\.$`));
+    assert.equal(
+      envelope.hint,
+      'The stream was still open when the cap fired. Bytes on the wire are not evidence the model was '
+        + 'generating — a keepalive moves that counter — so this says the run was cut, not that it was '
+        + 'productive. Raise --max-seconds, or send a smaller request.',
+    );
+    assert.ok(envelope.partial?.reasoning?.length > 6_000, 'past the trim budget, and still reported whole');
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
   } finally {
     await server.close();
   }
@@ -1131,4 +1140,412 @@ test('a surrogate pair straddling either trim boundary is never split in the sen
   } finally {
     await server.close();
   }
+});
+
+// --- a follow-up refused as too large -----------------------------------
+
+test('a trimmed follow-up refused as request-too-large ends salvage: no untrimmed resend, the original failure reported', async () => {
+  const handler = wideReasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(413, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: { message: 'prompt is too large for this server' } }));
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    const envelope = JSON.parse(result.stdout);
+    // The ORIGINAL failure, with its tier-1 partial — never the follow-up's refusal.
+    assert.equal(envelope.reason, 'token-reserve-cutoff');
+    assert.equal(envelope.salvaged, undefined);
+    assert.ok(envelope.partial?.reasoning?.length >= 70_656);
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    // The follow-up really was trimmed, so an untrimmed resend was due had the
+    // refusal not ended salvage.
+    const sent = chatRequests[1].body.messages[2].content;
+    const marker = sent.match(/\n\n\[\.\.\.(\d+) characters of reasoning omitted\.\.\.\]\n\n/);
+    assert.ok(marker, 'the follow-up carried the trimmed reasoning');
+    assert.equal(sent.length - marker[0].length, 6_000);
+    assert.equal(chatRequests.length, 2, 'the original and the one trimmed follow-up — no untrimmed resend');
+
+    assert.deepEqual(
+      envelope.attempts.map((attempt) => [attempt.outcome, attempt.reason]),
+      [['failed', 'token-reserve-cutoff'], ['failed', 'request-too-large']],
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+// --- salvage inside the review's deadline --------------------------------
+//
+// In-process, where the clock can be moved at the instant the original request
+// is served. `capBudgets` and `requestFindings` read the bare
+// `performance.now()`, while the stream's own timers run on the real clock, so
+// moving it spends the review's deadline without cutting the original stream.
+
+async function withClock(body) {
+  const real = globalThis.performance;
+  let offset = 0;
+  globalThis.performance = { now: () => real.now() + offset };
+  try {
+    return await body((ms) => {
+      offset += ms;
+    });
+  } finally {
+    globalThis.performance = real;
+  }
+}
+
+const caught = (promise) => promise.then(() => assert.fail('expected a rejection'), (error) => error);
+
+/** reserve 30,848 on this window: the watchdog cuts at (30,848 - 2,048) * 3 = 86,400 characters. */
+const DEADLINE_WINDOW = 61_696;
+const DEADLINE_RESERVE = 30_848;
+
+function deadlinePlan(ledger, maxMs) {
+  return {
+    model: 'test-model',
+    contextLength: DEADLINE_WINDOW,
+    reserve: DEADLINE_RESERVE,
+    target: { label: 'the edit', diff: 'diff --git a/seed.txt b/seed.txt\n+edited\n', files: [], changed: [], unreadable: [] },
+    timeoutMs: 5_000,
+    idleMs: 5_000,
+    maxMs,
+    maxAttempts: 1,
+    retryDelayMs: 0,
+    structuredOutput: false,
+    ledger,
+  };
+}
+
+/** Streams reasoning past the cutoff, after `beforeStream` has run; never ends. */
+function cutoffStream(response, beforeStream) {
+  beforeStream();
+  response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+  for (let i = 0; i < 90; i += 1) {
+    response.write(`data: ${JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'test-model',
+      choices: [{ index: 0, delta: { reasoning_content: 'r'.repeat(1_000) }, finish_reason: null }],
+    })}\n\n`);
+  }
+}
+
+const salvagedFindings = JSON.stringify({ findings: [], summary: 'salvaged, nothing found' });
+
+/**
+ * A review whose deadline ended salvage: a `deadline-timeout` worded from the
+ * review's own cap, naming the original reason, with the original partial
+ * answer and the attempt record attached.
+ */
+function assertDeadlineEndedSalvage(error, { ledger, cap, originalReason }) {
+  assert.equal(error.reason, 'deadline-timeout');
+  assert.equal(
+    error.message,
+    `p did not finish within the ${cap / 1000}s cap: its reply held reasoning but no answer (${originalReason}), `
+      + 'and the cap ran out before a follow-up asking it to conclude from that reasoning could answer.',
+  );
+  assert.equal(error.hint, 'Raise --max-seconds (or maxSeconds in the provider config) to leave the follow-up time to answer.');
+  assert.deepEqual(error.attemptRecords, ledger.entries());
+}
+
+test('the follow-up to a cutoff runs inside the review deadline, not on a fresh 300s, and the deadline ending it fails the review', async () => {
+  // 300ms of a 10s cap remain when the follow-up goes out, and the follow-up
+  // takes 1.5s to answer: it must be cut off at the review's deadline, and
+  // the review then fails on that deadline. A follow-up armed with its own
+  // fresh budget would answer, and the review would come back salvaged.
+  const cap = 10_000;
+  await withClock(async (advance) => {
+    let chats = 0;
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      chats += 1;
+      if (chats === 1) return cutoffStream(response, () => advance(cap - 300));
+      return setTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+    });
+    try {
+      const ledger = createLedger();
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, cap)));
+
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'token-reserve-cutoff' });
+      assert.ok(error.answer?.reasoning?.length >= 86_400, 'with the original partial reasoning');
+      // The trimmed follow-up was dispatched with time remaining; the review's
+      // deadline ended it, so no untrimmed fallback was attempted.
+      assert.equal(chatRequestsOf(server).length, 2, 'the follow-up was dispatched');
+      assert.equal(chatRequestsOf(server)[1].body.max_tokens, 2048);
+      assert.deepEqual(
+        ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+        [['failed', 'token-reserve-cutoff'], ['failed', 'deadline-timeout']],
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('a cutoff whose review deadline is already spent dispatches no follow-up', async () => {
+  const cap = 10_000;
+  await withClock(async (advance) => {
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      if (chatRequestsOf(server).length === 1) return cutoffStream(response, () => advance(cap * 2));
+      // Answered if it ever went out, so a dispatched follow-up salvages the review.
+      return respondStream(response, completionFrames(salvagedFindings));
+    });
+    try {
+      const ledger = createLedger();
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, cap)));
+
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'token-reserve-cutoff' });
+      assert.ok(error.answer?.reasoning?.length >= 86_400, 'with the original partial reasoning');
+      assert.equal(chatRequestsOf(server).length, 1);
+      assert.deepEqual(ledger.entries().map((entry) => [entry.outcome, entry.reason]), [['failed', 'token-reserve-cutoff']]);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('a trimmed follow-up the review deadline ends sends no untrimmed resend, even if the clock has not caught up', async () => {
+  // The follow-up's timer runs on the real clock and can fire a hair before
+  // `performance.now()` reaches the deadline; moving the clock back 50ms while
+  // the trimmed follow-up is in flight reproduces that every time. An
+  // untrimmed resend would then be admitted with what little remains, and
+  // answered at once.
+  const cap = 10_000;
+  await withClock(async (advance) => {
+    let chats = 0;
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      chats += 1;
+      if (chats === 1) return cutoffStream(response, () => advance(cap - 300));
+      if (chats === 2) {
+        advance(-50);
+        return setTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+      }
+      return respondStream(response, completionFrames(salvagedFindings));
+    });
+    try {
+      const ledger = createLedger();
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, cap)));
+
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'token-reserve-cutoff' });
+      assert.ok(error.answer?.reasoning?.length >= 86_400, 'with the original partial reasoning');
+      const chatRequests = chatRequestsOf(server);
+      // The follow-up really was trimmed, so an untrimmed resend was due had
+      // the deadline not ended salvage.
+      const sent = chatRequests[1].body.messages[2].content;
+      const marker = sent.match(/\n\n\[\.\.\.(\d+) characters of reasoning omitted\.\.\.\]\n\n/);
+      assert.ok(marker, 'the follow-up carried the trimmed reasoning');
+      assert.equal(sent.length - marker[0].length, 6_000);
+      assert.equal(chatRequests.length, 2, 'the original and the one trimmed follow-up — no untrimmed resend');
+      assert.deepEqual(
+        ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+        [['failed', 'token-reserve-cutoff'], ['failed', 'deadline-timeout']],
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('a reasoning-only reply too short to trim, whose one follow-up the review deadline ends, fails on that deadline', async () => {
+  // Under the trim threshold, so the single follow-up carries the reasoning
+  // whole and no untrimmed fallback could follow it either way.
+  const cap = 10_000;
+  const reasoning = 'x'.repeat(2_000);
+  await withClock(async (advance) => {
+    let chats = 0;
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      chats += 1;
+      if (chats === 1) {
+        advance(cap - 300);
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+        return response.end(reasoningOnlyEmptyContentFrames(reasoning));
+      }
+      return setTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+    });
+    try {
+      const ledger = createLedger();
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, cap)));
+
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'reasoning-only' });
+      assert.equal(error.answer?.reasoning, reasoning, 'with the original partial reasoning');
+      const chatRequests = chatRequestsOf(server);
+      assert.equal(chatRequests.length, 2, 'the original and the one follow-up');
+      assert.equal(chatRequests[1].body.messages[2].content, reasoning, 'the follow-up carried the reasoning untrimmed');
+      assert.deepEqual(
+        ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+        [['failed', 'reasoning-only'], ['failed', 'deadline-timeout']],
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('an untrimmed fallback the review deadline ends fails on that deadline', async () => {
+  // The trimmed follow-up answers empty with time to spare, so the untrimmed
+  // one goes out — with 300ms of the 10s cap left, against a 1.5s reply.
+  const cap = 10_000;
+  await withClock(async (advance) => {
+    let chats = 0;
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      chats += 1;
+      if (chats === 1) return cutoffStream(response, () => {});
+      if (chats === 2) {
+        advance(cap - 300);
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+        return response.end(reasoningOnlyEmptyContentFrames('nothing to conclude'));
+      }
+      return setTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+    });
+    try {
+      const ledger = createLedger();
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, cap)));
+
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'token-reserve-cutoff' });
+      assert.ok(error.answer?.reasoning?.length >= 86_400, 'with the original partial reasoning');
+      const chatRequests = chatRequestsOf(server);
+      assert.equal(chatRequests.length, 3, 'the original, the trimmed follow-up and the untrimmed one');
+      assert.match(chatRequests[1].body.messages[2].content, /characters of reasoning omitted/);
+      assert.equal(chatRequests[2].body.messages[2].content, error.answer.reasoning, 'the fallback carried it whole');
+      assert.deepEqual(
+        ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+        [['failed', 'token-reserve-cutoff'], ['failed', 'reasoning-only'], ['failed', 'deadline-timeout']],
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('a run whose follow-up the review deadline ends is counted capped by the bench', async () => {
+  // End to end: the companion's own --json envelope, read the way the bench
+  // reads a failed run. Counted as a model failure, it would set a harness
+  // limit beside the reviewer's results.
+  const handler = wideReasoningPastThresholdThenFollowUp(() => {
+    // Never answered: the review's 2s deadline ends the follow-up.
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { contextLength: WIDE_CONTEXT_LENGTH });
+  try {
+    const result = await runCompanion(['review', '--json', '--max-seconds', '2'], { configPath, cwd: dir });
+    assert.equal(result.status, 1, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.reason, 'deadline-timeout');
+    assert.equal(
+      envelope.message,
+      'local did not finish within the 2.0s cap: its reply held reasoning but no answer (token-reserve-cutoff), '
+        + 'and the cap ran out before a follow-up asking it to conclude from that reasoning could answer.',
+    );
+    assert.ok(envelope.partial?.reasoning?.length >= 70_656, 'with the original partial reasoning');
+    assert.deepEqual(
+      envelope.attempts.map((attempt) => [attempt.outcome, attempt.reason]),
+      [['failed', 'token-reserve-cutoff'], ['failed', 'deadline-timeout']],
+    );
+
+    const run = failedRun({ stdout: result.stdout, stderr: result.stderr, message: 'exit 1' }, CASE, {}, false);
+    const [row] = caseRows([{ caseDef: CASE, runs: [run] }]);
+    assert.equal(row.failed, 1);
+    assert.equal(row.capped, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+/**
+ * A trimmed follow-up that runs out its own 300s cap, under the review deadline
+ * `maxMs` (or none), must still get the untrimmed resend. Timers of 200s to
+ * 300s — only the follow-ups' own 300s caps here — fire after 300ms instead; the
+ * 5s first-token and idle budgets and a review's longer total budget are left
+ * alone.
+ */
+async function assertOwnCapStillResends(maxMs) {
+  const realSetTimeout = globalThis.setTimeout;
+  let chats = 0;
+  const server = await startFakeServer((request, response) => {
+    if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+    chats += 1;
+    if (chats === 1) return cutoffStream(response, () => {});
+    if (chats === 2) return realSetTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+    return respondStream(response, completionFrames(salvagedFindings));
+  });
+  try {
+    globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms >= 200_000 && ms <= 300_000 ? 300 : ms, ...rest);
+    const ledger = createLedger();
+    const result = await requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, maxMs));
+
+    assert.equal(result.salvaged, true);
+    // The untrimmed resend answered: it carried the whole cut reasoning.
+    const { originalChars } = result.salvageTrim;
+    assert.ok(originalChars >= 86_400);
+    assert.deepEqual(result.salvageTrim, { applied: false, originalChars, retainedChars: originalChars });
+    const chatRequests = chatRequestsOf(server);
+    assert.equal(chatRequests.length, 3, 'the original, the trimmed follow-up and the untrimmed resend');
+    assert.match(chatRequests[1].body.messages[2].content, /characters of reasoning omitted/);
+    assert.equal(chatRequests[2].body.messages[2].content.length, originalChars);
+    assert.deepEqual(
+      ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+      [['failed', 'token-reserve-cutoff'], ['failed', 'deadline-timeout'], ['answered', null]],
+    );
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    await server.close();
+  }
+}
+
+test('a trimmed follow-up that runs out its own 300s cap, with no review deadline, still gets the untrimmed resend', async () => {
+  // The follow-up's own cap is reported as `deadline-timeout` too, but no
+  // review deadline was spent, so the untrimmed resend is still due.
+  await assertOwnCapStillResends(undefined);
+});
+
+test('a trimmed follow-up that runs out its own 300s cap, under a longer review deadline, still gets the untrimmed resend', async () => {
+  // With an hour of review deadline left, the follow-up's own 300s cap is the
+  // one that binds; the review's deadline is not spent, so the resend is due.
+  await assertOwnCapStillResends(3_600_000);
+});
+
+/**
+ * Both follow-ups run out their own 300s cap (shortened as above), under the
+ * review deadline `maxMs` (or none): no review deadline ended salvage, so the
+ * review reports its original failure.
+ */
+async function assertOwnCapKeepsOriginalReason(maxMs) {
+  const realSetTimeout = globalThis.setTimeout;
+  let chats = 0;
+  const server = await startFakeServer((request, response) => {
+    if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+    chats += 1;
+    if (chats === 1) return cutoffStream(response, () => {});
+    return realSetTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+  });
+  try {
+    globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms >= 200_000 && ms <= 300_000 ? 300 : ms, ...rest);
+    const ledger = createLedger();
+    const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, deadlinePlan(ledger, maxMs)));
+
+    assert.equal(error.reason, 'token-reserve-cutoff', 'the original failure is reported');
+    assert.ok(error.answer?.reasoning?.length >= 86_400);
+    assert.equal(chatRequestsOf(server).length, 3, 'the original, the trimmed follow-up and the untrimmed resend');
+    assert.deepEqual(
+      ledger.entries().map((entry) => [entry.outcome, entry.reason]),
+      [['failed', 'token-reserve-cutoff'], ['failed', 'deadline-timeout'], ['failed', 'deadline-timeout']],
+    );
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    await server.close();
+  }
+}
+
+test('both follow-ups running out their own 300s cap, with no review deadline, leave the original reason', async () => {
+  await assertOwnCapKeepsOriginalReason(undefined);
+});
+
+test('both follow-ups running out their own 300s cap, under a longer review deadline, leave the original reason', async () => {
+  await assertOwnCapKeepsOriginalReason(3_600_000);
 });

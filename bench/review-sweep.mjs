@@ -46,10 +46,11 @@ const DEFAULTS = {
   include: ['scripts', 'plugins/oai/scripts', 'bench', 'tests'],
   maxCommits: 40,
   scanLimit: 200,
-  // 900 lost half the corpus to deadline-timeout; raising the cap alone recovers
-  // only the commits that merely needed more time, not the ones whose
-  // reasoning has no natural end on this server — salvage is what turns THOSE
-  // into real findings instead of a wasted 3600s. Read them as complementary.
+  // 900 lost half the corpus to deadline-timeout; raising the cap recovers
+  // the commits that merely needed more time. A commit whose reasoning has no
+  // natural end on this server still times out here unless the reasoning
+  // watchdog cuts it first — salvage runs inside this cap, so it rescues a
+  // cutoff or a reasoning-only reply, never a deadline-timeout.
   maxSeconds: 3600,
   // 2 rather than 1: the starvation path records no attempts, so what
   // that ceiling costs there is unmeasured rather than known-idle.
@@ -139,10 +140,8 @@ function invoke(args, cwd = ROOT) {
  * whether to begin, so it is read at the last moment before the thing it
  * authorises. A review already in flight is never truncated. Overshoot is not
  * bounded by the per-commit `--max-seconds` alone: target collection and model
- * resolution (`cmd-review.mjs`) run before its deadline is minted, and a
- * salvage follow-up (`trySalvage`) runs on its own `SALVAGE_MAX_MS` budget
- * outside `--max-seconds` entirely — up to two such attempts (trimmed, then
- * untrimmed) on one commit.
+ * resolution (`cmd-review.mjs`) run before its deadline is minted. A salvage
+ * follow-up (`trySalvage`) runs inside it.
  *
  * **Aborting never shortens the record.** Every commit that was enumerated
  * appears in `entries` whatever happens, because the coverage section's whole

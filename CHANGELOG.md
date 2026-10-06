@@ -30,6 +30,18 @@ All notable changes to this project are documented here, loosely following the
   the server's root without a query string). A cap set with `--max-prompt-tokens` above the model's
   own context is taken as given; set `contextLength` in that case.
 
+### Changed
+
+- `/oai:review --max-seconds` (or a profile's `maxSeconds`) now bounds salvage follow-ups too: each runs
+  inside the review's deadline instead of on a fresh 300s budget of its own, so salvage no longer adds up
+  to 600s per pass beyond the cap. A `deadline-timeout` is therefore no longer salvaged — it is reported
+  with its partial reasoning — and a review whose deadline ends a salvage follow-up is reported as a
+  `deadline-timeout` too, keeping the original reply's partial reasoning and naming its original reason;
+  salvage still recovers a reasoning-cutoff or reasoning-only reply. A salvage follow-up the
+  server refuses as too large (`request-too-large`) now ends salvage — no larger, untrimmed follow-up is
+  sent after it — and the review reports its original failure, with the refusal kept in the attempt
+  record.
+
 ### Fixed
 
 - `/oai:review` retries once when a server refuses its reply budget with HTTP 413 and states a smaller

@@ -90,19 +90,18 @@ function armedReserve(reserve) {
  * follow-up. Deterministic and dumb on purpose — no second model call to
  * summarize, which risks the exact starvation this exists to avoid.
  *
- * `applied: false` when `apply` is false (deadline-timeout), the reasoning
- * already fits inside the combined budget, or the trimmed candidate would not
- * actually come out shorter (see the length check below) —
- * tests/salvage.test.js's existing short-fixture tests pass through
+ * `applied: false` when the reasoning already fits inside the combined budget,
+ * or the trimmed candidate would not actually come out shorter (see the length
+ * check below) — tests/salvage.test.js's short-fixture tests pass through
  * unmodified either way.
  *
  * Only ever reads `reasoning`; never mutates it and never touches
  * `fallbackError.answer` — tier 1's partial stays exactly what it was,
  * whether or not tier 2 trims its own copy of it.
  */
-function trimReasoning(reasoning, { apply, headChars = SALVAGE_TRIM_HEAD_CHARS, tailChars = SALVAGE_TRIM_TAIL_CHARS } = {}) {
+function trimReasoning(reasoning, { headChars = SALVAGE_TRIM_HEAD_CHARS, tailChars = SALVAGE_TRIM_TAIL_CHARS } = {}) {
   const originalChars = reasoning.length;
-  if (!apply || originalChars <= headChars + tailChars) {
+  if (originalChars <= headChars + tailChars) {
     return { text: reasoning, applied: false, originalChars, retainedChars: originalChars };
   }
 
@@ -279,6 +278,30 @@ function salvageEmptyFailure(profile, result) {
 }
 
 /**
+ * The failure a review reports when its own deadline ends salvage: a
+ * `deadline-timeout`, because the configured cap is what stopped the run, and
+ * the bench's capped count and the sweep's classifier read that reason as
+ * such. Worded from the review's cap (`send.maxMs`), never the follow-up's
+ * SALVAGE_MAX_MS, and naming the original reason, whose partial answer it
+ * carries.
+ */
+function salvageDeadlineFailure(profile, send, original) {
+  const seconds = send.maxMs < 10_000 ? (send.maxMs / 1000).toFixed(1) : Math.round(send.maxMs / 1000);
+  const failure = new UserError(
+    `${profile.name} did not finish within the ${seconds}s cap: its reply held reasoning but no answer `
+      + `(${original.reason}), and the cap ran out before a follow-up asking it to conclude from that `
+      + 'reasoning could answer.',
+    {
+      reason: 'deadline-timeout',
+      hint: 'Raise --max-seconds (or maxSeconds in the provider config) to leave the follow-up time to answer.',
+    },
+  );
+  failure.answer = original.answer;
+  failure.serverResponded = true;
+  return failure;
+}
+
+/**
  * The request with no grammar behind it — the shape asked for in prose.
  *
  * **The default, and still the fallback after
@@ -327,7 +350,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // or budget failure — chatCompletion succeeded — but it is not an answer
     // either. Thrown here, not returned, so it lands in THIS function's own
     // catch below where `built` is already in scope for a salvage attempt,
-    // exactly like `deadline-timeout`/`token-reserve-cutoff`. Never applies to
+    // exactly like `token-reserve-cutoff`. Never applies to
     // the `--structured-output` path: under a response_format grammar the
     // reasoning channel legitimately carries the answer (see `client.mjs`'s
     // `requireAnswer` docstring), so that branch has no counterpart check.
@@ -346,22 +369,24 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
   } catch (fallbackError) {
     // Salvage tier 2: at most two bounded attempts (trimmed, then untrimmed
     // once — see `trySalvage`'s own docstring for why) to conclude from
-    // whatever reasoning the deadline cut short, before giving up. `built` is
+    // reasoning that never reached an answer, before giving up. `built` is
     // undefined when the ladder itself refused (nothing streamed, nothing to
     // salvage).
     const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
-    if (salvaged) return salvaged;
-    throw withLedger(fallbackError, ledger);
+    if (salvaged?.result) return salvaged;
+    throw withLedger(salvaged?.failure ?? fallbackError, ledger);
   }
 }
 
 /**
- * How long a salvage follow-up gets, once. Sized for "conclude now", not
+ * The most a salvage follow-up gets, once. Sized for "conclude now", not
  * "review the commit" — the estimate is ~2-4 minutes given
  * prefill-is-cheap economics (the original system+user turns should hit the
  * server's prefix cache, so only the new turns cost fresh compute). Generous
  * headroom over that estimate, not a measured ceiling: a fixed constant for
- * now rather than a flag, since nothing has asked to tune it yet.
+ * now rather than a flag, since nothing has asked to tune it yet. Under a
+ * review deadline the follow-up ends at that deadline if it comes first —
+ * see `attemptSalvage`.
  */
 const SALVAGE_MAX_MS = 300_000;
 
@@ -373,8 +398,7 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
 
 /**
  * How much of the model's own reasoning gets fed back into a salvage
- * follow-up, in characters, when trimming is scoped in (see
- * SALVAGE_SMALL_RESERVE_REASONS below).
+ * follow-up, in characters.
  *
  * ~6,000 chars total (1,500 head + 4,500 tail) — derived, not picked blind:
  * TOKEN_RESERVE_TOKENS (2,048), the budget already shown by its own 17-run
@@ -394,8 +418,7 @@ const SALVAGE_MIN_REASONING_CHARS = 500;
  * Named risk, unresolved: a fixed trim can discard the one span — likely
  * mid-transcript — that anchors the eventual finding. Not measured against a
  * head+tail shape yet, only against feeding back everything; this is the
- * first trial, and TOKEN_RESERVE_TOKENS/SALVAGE_MAX_MS stay unchanged so
- * transcript size is the only variable it isolates.
+ * first trial, meant to isolate transcript size as the one variable.
  *
  * That isolation claim was
  * already weaker than stated, and the untrimmed fallback (see `trySalvage`)
@@ -413,28 +436,19 @@ const SALVAGE_TRIM_HEAD_CHARS = 1_500;
 const SALVAGE_TRIM_TAIL_CHARS = 4_500;
 
 /**
- * The two failure reasons whose salvage reserve is already the smaller flat
- * TOKEN_RESERVE_TOKENS (see salvageReserve below) — and the
- * only two whose fed-back reasoning gets trimmed. `deadline-timeout` keeps
- * both its full built.reserve and its full untouched reasoning: that
- * combination was never observed failing to rescue in the measured data, so
- * it is deliberately left alone rather than changed on the same trial as the
- * other two. One Set, reused by both branches, so the two decisions cannot
- * silently drift apart.
- */
-const SALVAGE_SMALL_RESERVE_REASONS = new Set(['token-reserve-cutoff', 'reasoning-only']);
-
-/**
  * The reasons `trySalvage` will attempt to recover from
- * (`deadline-timeout`, `token-reserve-cutoff`, `reasoning-only`). The first
- * two leave the model actively working when the cut happens; `reasoning-only`
- * is discovered post-hoc — the stream already finished cleanly — but the same
+ * (`token-reserve-cutoff`, `reasoning-only`). A cutoff leaves the model
+ * actively working when the client stops the stream; `reasoning-only` is
+ * discovered post-hoc — the stream already finished cleanly — but the same
  * logic applies: real reasoning exists, the model simply never transitioned to
  * an answer, and a "conclude now" ask can plausibly still answer it.
  * `idle-timeout` and a raw transport drop mean the SERVER stalled or died;
  * asking it to continue is asking the thing that already stopped answering.
+ * A `deadline-timeout` means the review's own deadline is spent, and a
+ * follow-up runs inside that deadline (see `attemptSalvage`), so there is
+ * nothing left for one to run in.
  */
-const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 'reasoning-only']);
+const SALVAGE_REASONS = new Set(['token-reserve-cutoff', 'reasoning-only']);
 
 /**
  * One physical salvage follow-up: build the messages carrying `reasoningText`
@@ -446,8 +460,11 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 're
  * call, never reusing another attempt's.
  *
  * Returns `{ result, budget, estimatedTokens }` on a genuine answer
- * (non-empty content) and `null` on anything that does not count as one — an
- * oversized follow-up refused before it is sent, a follow-up that itself
+ * (non-empty content), `{ tooLarge: true }` when the server refused the
+ * follow-up as `request-too-large`, `{ deadlineSpent: true }` when the
+ * review's own deadline ended the follow-up or refused it before dispatch,
+ * and `null` on anything else that does not count as one — an oversized
+ * follow-up refused before it is sent, a follow-up that itself
  * lands empty-handed (`chatCompletion` succeeding only means the transport
  * worked, not that the model answered — left unchecked this would return as
  * a success and fail much later at `requireAnswer`, which tags nothing, so
@@ -460,7 +477,7 @@ const SALVAGE_REASONS = new Set(['deadline-timeout', 'token-reserve-cutoff', 're
  * RECORDED as follows the reply's shape, though — see `salvageEmptyFailure`
  * above, which owns that dispatch.
  */
-async function attemptSalvage(profile, built, schema, shared, send, salvageReserve, reasoningText) {
+async function attemptSalvage(profile, built, schema, shared, send, reasoningText) {
   const messages = [
     ...built.messages,
     { role: 'assistant', content: reasoningText },
@@ -477,18 +494,26 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
 
   // The grown prompt must clear the SAME window check every other request
   // path clears before going out — appending the partial reasoning back in as
-  // an assistant turn can push an already-near-window request over the top,
-  // exactly the class of review most likely to have hit the deadline in the
-  // first place. `checkContextBudget` throws rather than truncating silently;
+  // an assistant turn can push an already-near-window request over the top.
+  // `checkContextBudget` throws rather than truncating silently;
   // a follow-up that cannot fit is not attempted at all, the same fallback
   // contract every other unmet condition in this function already follows.
+  //
+  // The reserve is the small flat TOKEN_RESERVE_TOKENS, never the original
+  // `built.reserve`: a `token-reserve-cutoff` already consumed
+  // `built.reserve - TOKEN_RESERVE_TOKENS` tokens of reasoning on the ORIGINAL
+  // request, and appending that reasoning back in while re-reserving the full
+  // `built.reserve` would very likely overrun the window this check enforces,
+  // reproducing the original starvation one request later. `reasoning-only` is
+  // the same shape by a different route: the model spent most or all of
+  // `built.reserve` producing that reasoning before the stream ended cleanly.
   const estimatedTokens = estimateTokens(messages.map((message) => message.content).join('\n'));
   let budget;
   try {
     budget = checkContextBudget({
       estimatedTokens,
       contextLength: shared.contextLength,
-      reserveTokens: salvageReserve,
+      reserveTokens: TOKEN_RESERVE_TOKENS,
       providerName: profile.name,
       model: send.model,
       oversizeHint: shared.oversizeHint,
@@ -497,6 +522,14 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
     return null;
   }
 
+  // Inside the review's own deadline, never past it: `--max-seconds` bounds
+  // all of a review's model work, salvage included. A deadline already spent
+  // is refused by `capBudgets` before anything is recorded or sent, and lands
+  // in the catch below like any other unsuccessful follow-up. `maxMs` only
+  // words the follow-up's own timeout error, which is never reported: the
+  // catch turns it into `null` or `deadlineSpent`, and a review whose deadline
+  // ended salvage reports a failure worded from its own cap instead.
+  const capped = performance.now() + SALVAGE_MAX_MS;
   try {
     // No `reasoningReserveTokens` here — the salvage follow-up never re-arms
     // the watchdog against itself (`send` never carries the field; see
@@ -506,9 +539,9 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
     const result = await chatCompletion(profile, {
       ...send,
       messages,
-      maxTokens: salvageReserve,
+      maxTokens: TOKEN_RESERVE_TOKENS,
       maxMs: SALVAGE_MAX_MS,
-      expiresAt: performance.now() + SALVAGE_MAX_MS,
+      expiresAt: Number.isFinite(send.expiresAt) ? Math.min(send.expiresAt, capped) : capped,
       maxAttempts: 1,
     });
     if (!result.content.trim()) {
@@ -522,7 +555,20 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
       return null;
     }
     return { result, budget, estimatedTokens };
-  } catch {
+  } catch (error) {
+    // Both told apart so `trySalvage` sends no untrimmed follow-up after them.
+    // A `request-too-large` refusal: the untrimmed one is larger still, at the
+    // same reserve. A `deadline-timeout` when the review's deadline, not the
+    // follow-up's own SALVAGE_MAX_MS, was the cap it ran under: that deadline
+    // is spent, and the request's total-budget timer can fire a hair before
+    // `performance.now()` reaches it, which would otherwise admit a resend
+    // with next to no time left. Either failure, once dispatched, stays in the
+    // ledger as the failed attempt it is; a follow-up `capBudgets` refused
+    // before dispatch was never recorded.
+    if (error?.reason === 'request-too-large') return { tooLarge: true };
+    if (error?.reason === 'deadline-timeout' && Number.isFinite(send.expiresAt) && send.expiresAt <= capped) {
+      return { deadlineSpent: true };
+    }
     return null;
   }
 }
@@ -531,32 +577,37 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
  * Ask the model to conclude from reasoning a cut short, instead of
  * discarding it (salvage tier 2).
  *
- * **Only a reason in `SALVAGE_REASONS`.**
- * **Only substantial reasoning with STRICTLY empty content** — the gate below
- * trims content first and disqualifies anything left over, however short —
- * matching the documented
- * majority shape (findings JSON is emitted only after reasoning completes, per
- * measurement: 87-98% of every completion is reasoning). A cut mid-CONTENT is
- * a different, rarer shape — resuming a
- * truncated JSON array reliably is a harder prompting problem than
- * "conclude from pure reasoning", and is deliberately not attempted here;
- * tier 1 still preserves that answer on the ordinary failure path.
+ * **Only a reason in `SALVAGE_REASONS`, with substantial reasoning.** Both
+ * reasons already guarantee empty content: the reserve watchdog fires only
+ * while `content` is still empty and stops the stream at once, and
+ * `isReasoningOnly` requires it. A cut mid-CONTENT — findings JSON already
+ * underway — is never salvaged: resuming a truncated JSON array reliably is a
+ * harder prompting problem than "conclude from pure reasoning"; tier 1 still
+ * preserves that answer on the ordinary failure path.
  *
  * **At most two attempts, never recursed further: trimmed, then untrimmed
  * once.** The trimmed follow-up alone fails the one known-working case, so a
  * trimmed attempt's failure gets exactly one further attempt with the reasoning
  * fed back untouched (exactly as an untrimmed salvage sends it), but only when
  * trimming actually removed something (`trim.applied` — nothing to fall back
- * from otherwise, and `deadline-timeout`'s own attempt is already untrimmed, so
- * this never fires for it). A failure of both attempts (or of the single
- * attempt when trimming never applied) is swallowed — `null` — and the caller
- * falls back to reporting the ORIGINAL `fallbackError`, whose `.answer`
- * (tier 1) is untouched by any of this having been tried and failed.
+ * from otherwise), the server did not refuse the trimmed follow-up as
+ * `request-too-large` (the untrimmed one is larger still, at the same
+ * reserve), and the trimmed follow-up did not run out the review's own
+ * deadline (nothing is left for another to run in). When the review's own
+ * deadline ended salvage — the trimmed follow-up, the single one, or the
+ * untrimmed one — the return is `{ failure }`, a `deadline-timeout` (see
+ * `salvageDeadlineFailure`) carrying the original `.answer` (tier 1), which
+ * the caller reports in place of `fallbackError`. Any other failure of both
+ * attempts (or of the single attempt when no fallback follows) is swallowed —
+ * `null` — and the caller falls back to reporting the ORIGINAL
+ * `fallbackError`, whose `.answer` (tier 1) is untouched by any of this having
+ * been tried and failed.
  *
- * **Worst-case cost, stated plainly:** a case that fails both attempts
- * spends up to 2×`SALVAGE_MAX_MS` (600s) rather than 300s on the salvage
- * phase alone, on top of the original request. Accepted — the alternative
- * (no fallback) loses the known-working case above.
+ * **Worst-case cost, stated plainly:** with no review deadline, a case that
+ * fails both attempts spends up to 2×`SALVAGE_MAX_MS` (600s) rather than 300s
+ * on the salvage phase alone, on top of the original request. Under a review
+ * deadline both attempts end no later than that deadline. Accepted — the
+ * alternative (no fallback) loses the known-working case above.
  *
  * Returns a result shaped like `unconstrained`'s own success return, tagged
  * `salvaged: true` so nothing downstream can mistake this for an ordinary
@@ -573,18 +624,13 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
  * attempt won, and `originalChars` — the model received the full untrimmed
  * text — when the fallback did.
  *
- * **`schema` is the follow-up turn's OWN source of truth for the shape, never
- * an assumption that `built.messages` already stated it.** The
- * `unconstrained()` call site's `built` always does (`unconstrainedLadder`
- * appends the same instruction to every rung, schema or no). The
- * `--structured-output` call site does not: its first request states the full
- * shape only through the `response_format` grammar, which is not text the model can see or
- * recall on a later turn — and reusing that rung's own `schema` here, rather
- * than growing that rung's messages to state it up front, is what avoids
- * resizing a request every other window-budget test is tuned against.
+ * **`schema` is restated in the follow-up turn, findings-first.**
+ * `built.messages` already states the shape (`unconstrainedLadder` appends the
+ * same instruction to every rung), but in the order the original request asked
+ * for it.
  *
  * **Always findings-first, and said explicitly enough to override whatever the
- * inherited system turn said.** `built.messages`/`first.messages`'
+ * inherited system turn said.** `built.messages`'
  * unchanged system turn may be `ANALYSIS_FIRST` (`review.mjs`) — the ordering a
  * grammar-constrained rung needs, because that model has no scratchpad of its
  * own. This follow-up sends no grammar at all, so that reasoning does not
@@ -598,29 +644,13 @@ async function attemptSalvage(profile, built, schema, shared, send, salvageReser
 async function trySalvage(profile, built, schema, shared, send, fallbackError) {
   if (!SALVAGE_REASONS.has(fallbackError?.reason)) return null;
   const reasoning = fallbackError.answer?.reasoning?.trim() ?? '';
-  const content = fallbackError.answer?.content?.trim() ?? '';
-  if (reasoning.length < SALVAGE_MIN_REASONING_CHARS || content.length > 0) return null;
+  if (reasoning.length < SALVAGE_MIN_REASONING_CHARS) return null;
 
-  const trim = trimReasoning(reasoning, { apply: SALVAGE_SMALL_RESERVE_REASONS.has(fallbackError.reason) });
+  const trim = trimReasoning(reasoning);
 
-  // A `token-reserve-cutoff` already consumed `built.reserve - TOKEN_RESERVE_TOKENS`
-  // tokens of reasoning on the ORIGINAL request — appending that reasoning back
-  // into this follow-up and then re-reserving the full `built.reserve` again
-  // would very likely overrun the window this exact check exists to enforce,
-  // reproducing the original starvation one request later. `reasoning-only` is
-  // the same shape by a different route: the model spent most or all of
-  // `built.reserve` producing that reasoning before the stream ended cleanly,
-  // so it gets the same small reserve. `deadline-timeout` carries no such
-  // consumption and keeps its existing, previously re-verified `built.reserve`
-  // ceiling unchanged. Both attempts (trimmed and, on fallback, untrimmed)
-  // share this same reserve — only the fed-back reasoning text differs
-  // between them.
-  const salvageReserve = SALVAGE_SMALL_RESERVE_REASONS.has(fallbackError.reason)
-    ? TOKEN_RESERVE_TOKENS
-    : built.reserve;
-
-  const trimmed = await attemptSalvage(profile, built, schema, shared, send, salvageReserve, trim.text);
-  if (trimmed) {
+  const trimmed = await attemptSalvage(profile, built, schema, shared, send, trim.text);
+  if (trimmed?.deadlineSpent) return { failure: salvageDeadlineFailure(profile, send, fallbackError) };
+  if (trimmed?.result) {
     return {
       result: trimmed.result, structured: false, ...built, budget: trimmed.budget, estimatedTokens: trimmed.estimatedTokens,
       salvaged: true,
@@ -630,11 +660,13 @@ async function trySalvage(profile, built, schema, shared, send, fallbackError) {
 
   // Nothing to fall back from if the reasoning was never trimmed
   // in the first place — resending the identical text a second time would
-  // just repeat the same failure for no gain.
-  if (!trim.applied) return null;
+  // just repeat the same failure for no gain. Nor once the server refused the
+  // trimmed one as too large: the untrimmed one is larger.
+  if (!trim.applied || trimmed?.tooLarge) return null;
 
-  const fallback = await attemptSalvage(profile, built, schema, shared, send, salvageReserve, reasoning);
-  if (!fallback) return null;
+  const fallback = await attemptSalvage(profile, built, schema, shared, send, reasoning);
+  if (fallback?.deadlineSpent) return { failure: salvageDeadlineFailure(profile, send, fallbackError) };
+  if (!fallback?.result) return null;
   return {
     result: fallback.result, structured: false, ...built, budget: fallback.budget, estimatedTokens: fallback.estimatedTokens,
     salvaged: true,
@@ -808,13 +840,9 @@ async function findingsWithin(profile, plan, { expiresAt, removed, format, ceili
     });
     return { result, structured: true, schema, ...first };
   } catch (error) {
-    // Salvage tier 2, same as `unconstrained`'s own catch: a
-    // deadline-timeout here is a schema-constrained request that ran out of
-    // time reasoning, not a rejected schema — `isFormatRejection` would never
-    // be true for it, so without this the structured-output path fell straight
-    // through to `throw error` and salvage never got a chance to fire for it.
-    const salvaged = await trySalvage(profile, first, schema, shared, send, error);
-    if (salvaged) return salvaged;
+    // No salvage here: neither of `SALVAGE_REASONS` can arise on this request —
+    // the watchdog is never armed, and a reasoning-only reply is not refused,
+    // since under a grammar the reasoning channel carries the answer.
     if (!isFormatRejection(error)) throw error;
     format.rejected = true;
     // The whole ladder is climbed again, not just the guard: the instruction

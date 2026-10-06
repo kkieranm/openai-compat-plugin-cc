@@ -295,13 +295,13 @@ function caveats(
   const notes = [];
 
   // First and loudest — these findings were not written in
-  // the model's ordinary findings-first pass: its normal run hit the deadline
-  // mid-reasoning, and what is shown is a SECOND, separate request asking it
-  // to conclude from that cut-off reasoning. Non-negotiable: a salvaged
+  // the model's ordinary findings-first pass: its normal run produced
+  // reasoning but no answer, and what is shown is a SECOND, separate request
+  // asking it to conclude from that reasoning. Non-negotiable: a salvaged
   // review must never read as an ordinary complete one.
   if (salvaged) {
     notes.push(
-      'WARNING: this review was SALVAGED. The model ran out of time while reasoning; these findings ' +
+      "WARNING: this review was SALVAGED. The model's reply held reasoning but no answer; these findings " +
         'come from a follow-up request asking it to conclude from what it had already worked out, not ' +
         'from its ordinary findings-first pass. Treat this result as less reliable than an ordinary review.',
     );

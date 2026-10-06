@@ -12,6 +12,9 @@ import { createRepo, reviewScenario, runCompanion, startFakeServer, writeConfig 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectStream } from '../plugins/oai/scripts/lib/stream-collect.mjs';
+import { estimateTokens } from '../plugins/oai/scripts/lib/context-guard.mjs';
+import { findingsFirst, schemaInstruction } from '../plugins/oai/scripts/lib/structured.mjs';
+import { reviewSchemaFor } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 /** One reasoning delta frame, 51 characters. */
 function reasoningFrame() {
@@ -149,13 +152,53 @@ test('a reasoning stream that crosses the reserve threshold is cut and salvaged,
     assert.equal(envelope.salvaged, true);
     assert.equal(envelope.findings.length, 1);
     assert.equal(envelope.findings[0].summary, 'concluded from partial reasoning');
+    assert.equal(envelope.retried, true, 'the original failed attempt plus the salvage follow-up are two physical requests');
 
-    // Cause-neutral wording — this trigger has nothing to do with a deadline.
+    // The follow-up's actual wire shape: original system+user, unchanged, then
+    // an assistant turn carrying the partial reasoning, then a new user ask.
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
     assert.equal(chatRequests.length, 2, 'exactly one salvage attempt, on top of the original');
-    const ask = chatRequests[1].body.messages.at(-1);
-    assert.match(ask.content, /^Your previous response was cut off before it finished\./);
-    assert.doesNotMatch(ask.content, /ran out of time/, 'the deadline-specific wording must not leak into this trigger');
+    const followUp = chatRequests[1].body.messages;
+    assert.equal(followUp.length, 4);
+    assert.equal(followUp[0].role, 'system');
+    assert.equal(followUp[1].role, 'user');
+    assert.equal(followUp[2].role, 'assistant');
+    assert.ok(followUp[2].content.includes('still reasoning about this commit in great detail.'), 'the assistant turn must carry the real partial reasoning');
+    assert.equal(followUp[3].role, 'user');
+    // Same original system+user turns, byte for byte — reused rather than
+    // rebuilt, so the server's own prefix cache (if any) can still apply.
+    const original = chatRequests[0].body.messages;
+    assert.equal(followUp[0].content, original[0].content);
+    assert.equal(followUp[1].content, original[1].content);
+
+    // The shape the original request named, rebuilt from the reserve it was
+    // sent with — this window's half-window reserve (see the comment above
+    // CHUNKS_PAST_THRESHOLD).
+    const reserve = 4096;
+    assert.equal(chatRequests[0].body.max_tokens, reserve);
+    const expected = findingsFirst(reviewSchemaFor(reserve));
+
+    // FULL equality on the entire turn: the override sentence immediately
+    // followed by the findings-first shape, nothing inserted between them.
+    // This turn is entirely static, unlike the assistant turn before it, so
+    // nothing here is exempt from an exact match. Cause-neutral wording — this
+    // trigger has nothing to do with a deadline.
+    assert.equal(
+      followUp[3].content,
+      'Your previous response was cut off before it finished. Based only on your analysis above, state '
+        + 'your findings now. Do not reason further — conclude from what you already have. '
+        + 'Ignore any earlier instruction to work through "analysis" before "findings": there is no '
+        + 'schema enforcing that order here, and this reply must carry its findings even if it runs '
+        + 'out of room, so findings come FIRST. '
+        + schemaInstruction(expected),
+      'the follow-up turn must be exactly the override sentence immediately followed by ' +
+        'findingsFirst() of the schema the original request named — no gap, no insertion, no drift',
+    );
+    // The order itself, read back off the wire rather than from the helper
+    // that produced it.
+    const asked = JSON.parse(followUp[3].content.slice(followUp[3].content.indexOf('exactly:\n') + 'exactly:\n'.length));
+    assert.deepEqual(Object.keys(asked.properties), ['findings', 'analysis', 'summary']);
+    assert.deepEqual(asked.required, ['findings', 'analysis', 'summary']);
 
     // The salvage follow-up's OWN budget is the small reserve, not the
     // original (much larger) built.reserve — otherwise appending the
@@ -251,6 +294,47 @@ test('--structured-output never arms the watchdog — the answer legitimately li
     assert.equal(result.status, 1);
     assert.equal(envelope.reason, 'idle-timeout', 'the exclusion must have kept the watchdog off under --structured-output');
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1, 'no cutoff means no salvage follow-up either');
+  } finally {
+    await server.close();
+  }
+});
+
+// Sized so the trimmed salvage follow-up, measured the way attemptSalvage
+// measures it, lands strictly between the review's own 4,096 reserve and the
+// flat 2,048 one on the 8,192 window: it fits only because the follow-up
+// re-reserves TOKEN_RESERVE_TOKENS rather than built.reserve.
+const RESERVE_BAND_SEED = `seed\n${Array.from({ length: 70 }, (_, i) => `const line${String(i).padStart(2, '0')} = 'reviewed content for the band';\n`).join('')}`;
+
+test('a trimmed follow-up that fits the window only under the flat 2,048 reserve is still salvaged', async () => {
+  const handler = reasoningPastThresholdThenFollowUp((record, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    response.write(finishFrame(JSON.stringify({
+      findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'salvaged inside the band' }],
+      summary: 'salvaged',
+    })));
+    response.end();
+  });
+  const { dir, server, configPath } = await reviewScenario(handler, { seed: RESERVE_BAND_SEED });
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(envelope.salvaged, true);
+    assert.equal(envelope.salvageTrim.applied, true, 'the trimmed follow-up is the one that must fit');
+    assert.equal(envelope.findings[0].summary, 'salvaged inside the band');
+
+    const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
+    assert.equal(chatRequests.length, 2, 'the trimmed follow-up was sent, and answered, with no untrimmed resend');
+    assert.equal(chatRequests[0].body.max_tokens, 4096, 'the review reserve the band is measured against');
+    assert.equal(chatRequests[1].body.max_tokens, 2048);
+
+    // The band itself, measured on the wire: above the review's own reserve
+    // budget (8,192 - 4,096) and within the flat one's (8,192 - 2,048), so a
+    // prompt edit that moves the follow-up out of the band fails here rather
+    // than leaving this test unable to tell the two reserves apart.
+    const followUpTokens = estimateTokens(chatRequests[1].body.messages.map((message) => message.content).join('\n'));
+    assert.ok(followUpTokens > 8192 - 4096, `follow-up estimated at ${followUpTokens} tokens fits under the review reserve too`);
+    assert.ok(followUpTokens <= 8192 - 2048, `follow-up estimated at ${followUpTokens} tokens does not fit under the flat reserve`);
   } finally {
     await server.close();
   }
