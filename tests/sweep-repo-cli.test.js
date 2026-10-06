@@ -18,7 +18,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { closedPort, tempDir, writeConfig } from './helpers.mjs';
-import { safeInline } from '../bench/lib/markdown-safe.mjs';
+import { safeCodeSpan } from '../bench/lib/markdown-safe.mjs';
 import { fileURLToPath } from 'node:url';
 
 const run = promisify(execFile);
@@ -69,11 +69,10 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
   // name the repo they describe, or a foreign-repo artifact is unattributed
   // and indistinguishable from this tool's own history.
   assert.equal(record.repo, target);
-  // The rendered report escapes the repo path for display (it is untrusted operator/foreign
-  // data in a code span — a backtick would break out); the raw path stays in the JSON record
-  // above. Attribution survives escaping, which is what this asserts.
-  const shownRepo = safeInline(target);
-  assert.match(readReport(outDir), new RegExp(`Repository.*${shownRepo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  // The repo path sits in a code span, which renders it literally, so only a backtick, `|` or line
+  // break would be escaped: a temp path (with its `_`) prints exactly as the JSON record holds it.
+  assert.equal(safeCodeSpan(target), target);
+  assert.ok(readReport(outDir).includes(`- **Repository** \`${target}\``), readReport(outDir).slice(0, 400));
 });
 
 // The test above proves enumeration is rooted at the target repo, but every

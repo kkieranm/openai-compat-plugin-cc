@@ -1,6 +1,6 @@
 import { START_HINTS } from './config.mjs';
 import { formatTokens } from './context-guard.mjs';
-import { substitution } from './model-identity.mjs';
+import { declaredMatch, substitution } from './model-identity.mjs';
 import { effectiveWindow } from './model-info.mjs';
 import { listModelIds, planSelection } from './model-selection.mjs';
 import { UNKNOWN as REASONING_UNKNOWN, reasoningWitness } from './reasoning-witness.mjs';
@@ -155,7 +155,8 @@ function timingParts(durationMs, prefillMs) {
 }
 
 /**
- * What answered, and what was asked for when `substitution()` finds they differ.
+ * What answered, and what was asked for when `substitution()` finds they differ
+ * or `declaredMatch()` finds the reply accepted through `servedModelIds`.
  *
  * Inside the `model:` part rather than on a line of its own: this is the field a
  * reader goes to in order to learn which model produced the output, so the
@@ -175,7 +176,13 @@ function modelPart(model, requestedModel, declaredServedModel) {
   // function already renders as `model: null` today.
   if (model === undefined) return 'model: unknown';
   const swap = substitution(requestedModel, model, declaredServedModel);
-  return swap ? `model: ${swap.served} (requested ${swap.requested})` : `model: ${model}`;
+  if (swap) return `model: ${swap.served} (requested ${swap.requested})`;
+  // Accepted only on the operator's `servedModelIds` word, so the footer says the
+  // pairing rests on that declaration rather than reading as an exact match.
+  if (declaredMatch({ requestedModel, model, declaredServedModel })) {
+    return `model: ${model} (declared for ${requestedModel ?? 'unknown'})`;
+  }
+  return `model: ${model}`;
 }
 
 /**

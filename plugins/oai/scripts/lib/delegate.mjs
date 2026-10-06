@@ -3,8 +3,8 @@
 import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens, typicalTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
-import { MAX_BUDGET_SECONDS } from './http-budgets.mjs';
 import { describeModels, effectiveWindow } from './model-info.mjs';
+import { NUMERIC_BOUNDS } from './numeric-bounds.mjs';
 import { parseNumber } from './parse-number.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
 
@@ -14,24 +14,6 @@ export const PROBE_TIMEOUT_MS = 5000;
 // pulling that file into this one's `client.mjs` import (which would close a
 // cycle). The public name stays here so existing callers are unaffected.
 export { parseNumber };
-
-/**
- * A ceiling on `--max-attempts`, for the reason `MAX_BUDGET_SECONDS` exists.
- *
- * Retries multiply an already-unbounded wall clock: without `--max-seconds` a
- * single attempt is up to the first-token budget plus generation that only the
- * idle budget bounds, so a large attempt count is a run nobody can wait out.
- */
-export const MAX_ATTEMPTS_CEILING = 10;
-
-/**
- * A ceiling on `/oai:review --passes`, the multi-pass count. Bounded above for
- * the same reason as `--max-attempts`: each pass is a full model call, so
- * `--passes 1e9` is a typo whose honest response is a refusal in milliseconds,
- * not a run nobody can stop. `--passes` is a `/oai:review`-only flag; `/oai:task`
- * never reads it, and an undefined value here means single-pass.
- */
-export const PASSES_CEILING = 10;
 
 /**
  * Validate every numeric flag before any network work, so a bad flag fails in
@@ -44,18 +26,18 @@ export function parseNumericOptions(options) {
     maxTokens:
       options['max-tokens'] === undefined
         ? undefined
-        : parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: 1 }),
+        : parseNumber(options['max-tokens'], 'max-tokens', NUMERIC_BOUNDS['max-tokens']),
     temperature:
-      options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', { min: 0, max: 2 }),
+      options.temperature === undefined ? undefined : parseNumber(options.temperature, 'temperature', NUMERIC_BOUNDS.temperature),
     // Both bounded above, for the reason MAX_BUDGET_SECONDS states.
     timeoutSeconds:
       options.timeout === undefined
         ? undefined
-        : parseNumber(options.timeout, 'timeout', { min: 1, max: MAX_BUDGET_SECONDS }),
+        : parseNumber(options.timeout, 'timeout', NUMERIC_BOUNDS.timeout),
     maxSeconds:
       options['max-seconds'] === undefined
         ? undefined
-        : parseNumber(options['max-seconds'], 'max-seconds', { min: 1, max: MAX_BUDGET_SECONDS }),
+        : parseNumber(options['max-seconds'], 'max-seconds', NUMERIC_BOUNDS['max-seconds']),
     // How long a queued job will wait for its turn, as distinct from how long
     // its own run may take. Two different clocks: a job that cannot tolerate
     // sitting behind a forty-minute run says so here, and gives up cleanly
@@ -63,7 +45,7 @@ export function parseNumericOptions(options) {
     maxWaitSeconds:
       options['max-wait'] === undefined
         ? undefined
-        : parseNumber(options['max-wait'], 'max-wait', { min: 1, max: MAX_BUDGET_SECONDS }),
+        : parseNumber(options['max-wait'], 'max-wait', NUMERIC_BOUNDS['max-wait']),
     // Answer attempts, not physical requests — the two differ, and deliberately.
     // A capability degrade already costs an extra request inside one answer
     // attempt, so capping physical requests at 1 would disable the degrade
@@ -77,13 +59,13 @@ export function parseNumericOptions(options) {
     maxAttempts:
       options['max-attempts'] === undefined
         ? undefined
-        : parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING }),
+        : parseNumber(options['max-attempts'], 'max-attempts', NUMERIC_BOUNDS['max-attempts']),
     // `/oai:review` only; undefined means single-pass. Each pass is a full model
     // call, so this is bounded above like `--max-attempts`.
     passes:
       options.passes === undefined
         ? undefined
-        : parseNumber(options.passes, 'passes', { integer: true, min: 1, max: PASSES_CEILING }),
+        : parseNumber(options.passes, 'passes', NUMERIC_BOUNDS.passes),
   };
 }
 

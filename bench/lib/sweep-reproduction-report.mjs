@@ -11,7 +11,7 @@
 // and the ` ⚑` flag are fixed trusted text, not untrusted values. compare-report.mjs
 // shares that column-header residual; its data rows go further and concatenate wholly,
 // where this file's data row keeps sha/n/k as scanned sinks.
-import { safeInline, displayReason } from './markdown-safe.mjs';
+import { safeCodeSpan, safeInline, displayReason } from './markdown-safe.mjs';
 import { groupRuns, reproductionOf } from './sweep-reproduction.mjs';
 
 // The short-sha width the sibling sweep reports (sweep-report.mjs, sweep-health.mjs)
@@ -81,13 +81,13 @@ function comparableSection(group, index) {
   if (result.suppressed) {
     lines.push('', '**Ranking withheld — the runs are not like-for-like:**');
     for (const s of result.suppressions) {
-      lines.push(`- \`${safeInline(s.axis)}\` differs across runs: ${safeInline(s.values.join(', '))}`);
+      lines.push(`- \`${safeCodeSpan(s.axis)}\` differs across runs: ${safeInline(s.values.join(', '))}`);
     }
     return lines;
   }
 
   for (const caveat of result.caveats) {
-    lines.push('', `> ⚠ \`${safeInline(caveat.axis)}\` is unverifiable for: ${safeInline(caveat.runs.join(', '))} — reproduction is reported despite it.`);
+    lines.push('', `> ⚠ \`${safeCodeSpan(caveat.axis)}\` is unverifiable for: ${safeInline(caveat.runs.join(', '))} — reproduction is reported despite it.`);
   }
 
   const { aggregate, rows, perRun } = result;

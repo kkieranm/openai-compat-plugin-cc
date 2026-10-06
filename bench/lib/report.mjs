@@ -14,7 +14,7 @@ import { formatRate } from '../../plugins/oai/scripts/lib/throughput.mjs';
 import { caseRows } from './case-rows.mjs';
 import { reliabilitySection } from './reliability-report.mjs';
 import { caveats, pct } from './caveats.mjs';
-import { safeInline } from './markdown-safe.mjs';
+import { safeCodeSpan } from './markdown-safe.mjs';
 import { scoredRuns } from './run-buckets.mjs';
 
 /**
@@ -151,7 +151,7 @@ function table(rows) {
     ];
     const failedCell = why.length > 0 ? `${row.failed} (${why.join(', ')})` : `${row.failed}`;
     lines.push(
-      `| \`${row.id}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
+      `| \`${safeCodeSpan(row.id)}\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ${recallCell(row)} | ${row.unresolved} `
       + `| ${row.anchored} | ${unmatchedCell(row)} | ${scoredCell} | ${row.truncated} | ${row.unreadable} | ${failedCell} `
       + `| ${setCell(row.lens)} | ${setCell(row.reasoning)} | ${tokenCell(row.tokens)} | ${rangeCell(row.prefill)} | ${rangeCell(row.generation)} | ${rateCell(row.rate)} |`,
     );
@@ -204,7 +204,7 @@ function declaredIdNotes(results) {
       const identities = [report, ...passes];
       for (const identity of identities) {
         if (declaredMatch(identity)) {
-          pairs.add(`\`${safeInline(identity.requestedModel) || '(not recorded)'}\` answered as \`${safeInline(identity.model)}\``);
+          pairs.add(`\`${safeCodeSpan(identity.requestedModel) || '(not recorded)'}\` answered as \`${safeCodeSpan(identity.model)}\``);
         }
       }
     }
@@ -233,7 +233,7 @@ function supplements(results) {
     // and the whole reason to keep a residue is to be able to eyeball what the
     // scorer is missing before trusting the number above it.
     for (const { caseId, finding } of unmatched) {
-      lines.push(`- \`${caseId}\` **${finding.file}${finding.line ? `:${finding.line}` : ''}** (${finding.severity}) — ${finding.summary}`);
+      lines.push(`- \`${safeCodeSpan(caseId)}\` **${finding.file}${finding.line ? `:${finding.line}` : ''}** (${finding.severity}) — ${finding.summary}`);
       if (finding.evidence) lines.push(`  > ${finding.evidence.split('\n')[0].trim().slice(0, 160)}`);
     }
     lines.push('');
@@ -264,15 +264,15 @@ function failureSections(results) {
   const lines = [];
   const failures = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.error && run.reason !== 'model-substituted').flatMap((run) => [
-      `- \`${caseDef.id}\`:`,
+      `- \`${safeCodeSpan(caseDef.id)}\`:`,
       ...String(run.error).split('\n').map((line) => `      ${line}`),
     ]));
   if (failures.length > 0) lines.push('## Logical runs that did not complete', '', ...failures, '');
 
   const substituted = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.reason === 'model-substituted')
-      .map((run) => `- \`${caseDef.id}\`: asked for \`${run.report?.requestedModel}\`, `
-        + `\`${run.report?.model}\` answered.`));
+      .map((run) => `- \`${safeCodeSpan(caseDef.id)}\`: asked for \`${safeCodeSpan(run.report?.requestedModel)}\`, `
+        + `\`${safeCodeSpan(run.report?.model)}\` answered.`));
   if (substituted.length > 0) {
     lines.push(
       '## Runs answered by a different model',

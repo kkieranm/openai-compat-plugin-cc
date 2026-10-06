@@ -13,8 +13,10 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { ARMS, attachmentArgs, loadTaskCases } from './lib/task-corpus.mjs';
 import { MARKER_LIMITS, scoreAnswer, tallyArm } from './lib/task-score.mjs';
+import { safeCodeSpan, safeInline } from './lib/markdown-safe.mjs';
 import { persist } from './lib/record.mjs';
 import { fileURLToPath } from 'node:url';
 import { isMainModule } from './lib/main-module.mjs';
@@ -122,13 +124,16 @@ export function runSweep(cases, options, { execute = invoke } = {}) {
  * asked for, or by one that never identified itself, must be visible in the
  * summary and not only in the record. `?` marks an id the server never confirmed
  * — `completion.mjs` echoes the requested one when the reply names none.
+ *
+ * Each id sits in a code span escaped with `safeCodeSpan`, so `q4_k_m` prints as
+ * itself and a `|` cannot end the cell; the `?` stays outside the span.
  */
 function modelCell(runs) {
   const seen = new Set();
   for (const run of runs) {
     const report = run.report ?? {};
     if (report.error) continue;
-    seen.add(`${report.model ?? 'unknown'}${report.modelReported === false ? '?' : ''}`);
+    seen.add(`\`${safeCodeSpan(report.model) || 'unknown'}\`${report.modelReported === false ? '?' : ''}`);
   }
   return seen.size === 0 ? '—' : [...seen].sort().join(', ');
 }
@@ -157,7 +162,7 @@ export function renderReport({ results, arms }) {
       const armRuns = runs.filter((run) => run.arm === arm);
       const { counts, failed } = tallyArm(armRuns);
       lines.push(
-        `| ${caseDef.id} | ${arm} | ${modelCell(armRuns)} | ${counts.exact} | ${counts.partial} | ` +
+        `| ${safeInline(caseDef.id)} | ${arm} | ${modelCell(armRuns)} | ${counts.exact} | ${counts.partial} | ` +
           `${counts.missed} | ${counts.contradicted} | ${failed} |`,
       );
     }
@@ -169,7 +174,13 @@ export function renderReport({ results, arms }) {
 }
 
 export async function main(argv) {
-  const { options } = parseArgs(argv, TASK_BENCH_SPEC);
+  const { options, positionals } = parseArgs(argv, TASK_BENCH_SPEC);
+  // This command takes no positional argument. `parseArgs` stops reading flags at
+  // the first non-`--` token and returns the rest as positionals, so a typo would
+  // otherwise run the whole corpus with every flag after it ignored.
+  if (positionals.length > 0) {
+    throw new UserError(`Refusing: ${positionals.map((token) => `"${token}"`).join(', ')} is not an option this command takes, and everything after it was ignored rather than parsed.`, { hint: 'Flags only, and every flag must start with --. Check for a typo or a missing --.' });
+  }
   const all = loadTaskCases(ROOT);
   // EVERY requested id must exist. Filtering silently dropped a typo whenever it
   // was mixed with a valid id, and the persisted record then looked like it had
@@ -193,7 +204,11 @@ export async function main(argv) {
 
 if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`${error?.stack ?? error}\n`);
+    if (error instanceof UserError) {
+      process.stderr.write(`${error.message}\n${error.hint ? `${error.hint}\n` : ''}`);
+    } else {
+      process.stderr.write(`${error?.stack ?? error}\n`);
+    }
     process.exitCode = 1;
   });
 }

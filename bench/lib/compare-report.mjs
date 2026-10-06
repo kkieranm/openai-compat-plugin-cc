@@ -8,7 +8,7 @@
 // metacharacter an untrusted model id, stamp, case id or reason carries. The
 // helpers build strings by concatenation (no `${…}`), and only compose trusted
 // numbers and fixed words; every untrusted value is wrapped at its interpolation.
-import { safeInline, displayReason } from './markdown-safe.mjs';
+import { safeCodeSpan, safeInline, displayReason } from './markdown-safe.mjs';
 import { pct } from './caveats.mjs';
 import { formatRate } from '../../plugins/oai/scripts/lib/throughput.mjs';
 
@@ -94,7 +94,7 @@ export function renderComparison(model) {
   lines.push('');
   lines.push('Records compared, in input order:');
   for (const r of records) {
-    lines.push(`- \`${safeInline(r.label)}\` — \`${safeInline(r.path)}\``);
+    lines.push(`- \`${safeCodeSpan(r.label)}\` — \`${safeCodeSpan(r.path)}\``);
   }
   lines.push('');
 
@@ -104,7 +104,7 @@ export function renderComparison(model) {
     lines.push('');
     lines.push('Excluded from every table below — not a review record this build can read:');
     for (const r of incompatible) {
-      lines.push(`- \`${safeInline(r.label)}\`: ${displayReason(r.reason)}`);
+      lines.push(`- \`${safeCodeSpan(r.label)}\`: ${displayReason(r.reason)}`);
     }
     lines.push('');
   }
@@ -173,7 +173,7 @@ export function renderComparison(model) {
     lines.push('## Per-case recall matrix');
     lines.push('');
     if (baselineLabel) {
-      lines.push(`Δ columns are found-count deltas against the baseline \`${safeInline(baselineLabel)}\`.`);
+      lines.push(`Δ columns are found-count deltas against the baseline \`${safeCodeSpan(baselineLabel)}\`.`);
       lines.push('');
     }
     const header = ['Case'];

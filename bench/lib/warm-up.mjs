@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { SAMPLING_FLAGS } from '../../plugins/oai/scripts/lib/sampling.mjs';
 
 /**
  * Paying the model load before the first measured case, rather than charging it
@@ -86,6 +87,15 @@ export function warmUpFlags({ provider, model }, options) {
   // its own trap, and one that would hang an arm before it measured anything.
   if (options.timeout) flags.push('--timeout', options.timeout);
   if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
+  // The measured requests' sampling and reasoning knobs, so the warm-up request
+  // is sent with the settings the cases are. One `--flag=value` argument each, as
+  // `reviewFlags` sends them: as a separate argument an empty value is dropped by
+  // the command's parser. `--max-tokens` is never forwarded; the warm-up keeps
+  // its own cap above.
+  if (options.temperature !== undefined) flags.push(`--temperature=${options.temperature}`);
+  for (const flag of SAMPLING_FLAGS) {
+    if (options[flag] !== undefined) flags.push(`--${flag}=${options[flag]}`);
+  }
   flags.push(WARM_UP_PROMPT);
   return flags;
 }

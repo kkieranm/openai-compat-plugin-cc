@@ -1,10 +1,14 @@
 // Every untrusted value the sweep report interpolates into Markdown passes through here first. The
 // report is model-authored finding prose, server-reported ids, git subjects, operator paths and
 // foreign-build ledger values rendered into a Markdown file — a backtick opens a code span or fence, a
-// blank line breaks a list, and none of it is this tool's to trust. These three helpers neutralise
-// Markdown metacharacters uniformly (dot-replacement), and the structural test in
-// `tests/structure.test.js` enforces that EVERY interpolation of untrusted data in the render files is
-// one of these calls (or a formatting exception that test lists) — so a new sink cannot be added unwrapped.
+// blank line breaks a list, and none of it is this tool's to trust. `safeInline`, `displayReason` and
+// `safeBlockquoteLines` neutralise Markdown metacharacters uniformly (dot-replacement). Inside a code
+// span only a backtick can end the markup, and a `|` still ends a table cell, so `safeCodeSpan`
+// replaces those two alone and a value such as `qwen3_coder` prints as itself.
+// The structural tests in `tests/structure.test.js` enforce that EVERY interpolation of untrusted data
+// in the sweep render files is a call to one of those four helpers (or a formatting exception that
+// test lists), that every value interpolated inside a code span in `bench/` is a `safeCodeSpan` call,
+// and that `safeCodeSpan` is called nowhere else — so a new sink cannot be added unwrapped.
 //
 // NO OPTIONS, deliberately. Each helper takes exactly one argument. A caller's fallback is a Markdown
 // literal appended as `safeInline(x) || '(none)'` (checked by the grammar as a whole string literal),
@@ -12,6 +16,7 @@
 // and a grammar that has to prove an options object safe is a grammar that keeps finding holes.
 
 const MD_METACHARS = /[`*_[\]()<>#|~\\]/g;
+const CODE_SPAN_METACHARS = /[`|]/g;
 const INLINE_CAP = 1000; // roomy backstop against a runaway reply; an id or path is short, a summary fits
 const BLOCKQUOTE_CAP = 2000;
 const REASON_CAP = 120; // reason codes; the historical displayReason cap, preserved
@@ -39,11 +44,11 @@ function truncate(shown, cap) {
 // One scalar, made safe for a single Markdown line. NEVER recurses: an array element that is itself an
 // array or object is coerced (JSON.stringify in coerce's try/catch), not fed back through the array
 // branch, so a circular reference cannot loop.
-function escapeScalar(value, cap) {
-  return truncate(coerce(value).replace(MD_METACHARS, '.').replace(/\s+/g, ' '), cap);
+function escapeScalar(value, cap, metachars) {
+  return truncate(coerce(value).replace(metachars, '.').replace(/\s+/g, ' '), cap);
 }
 
-function inline(value, cap) {
+function inline(value, cap, metachars = MD_METACHARS) {
   if (value === undefined || value === null) return ''; // '' so a caller's trailing `|| 'fallback'` fires
   // The WHOLE branch is guarded, `Array.isArray` included: it throws on a REVOKED proxy, which would
   // otherwise escape before the loop's own guard and lose the report.
@@ -60,11 +65,11 @@ function inline(value, cap) {
           break;
         }
         seen += 1;
-        out += (out ? ', ' : '') + escapeScalar(item, cap);
+        out += (out ? ', ' : '') + escapeScalar(item, cap, metachars);
       }
       return truncate(out, cap);
     }
-    return escapeScalar(value, cap);
+    return escapeScalar(value, cap, metachars);
   } catch {
     return '(unrenderable value)';
   }
@@ -73,6 +78,19 @@ function inline(value, cap) {
 /** One untrusted value, made safe for a single inline Markdown position (code span or prose). */
 export function safeInline(value) {
   return inline(value, INLINE_CAP);
+}
+
+/**
+ * One untrusted value, made safe for the inside of an inline code span.
+ *
+ * A code span renders everything but a backtick literally, and a `|` would still end the cell when the
+ * span sits in a table row (a backslash escape would print literally outside one), so those two are
+ * replaced, as `safeInline` replaces them, and whitespace is folded to one space so a line break cannot
+ * end the span or the line. The coercion, array handling and length cap are `safeInline`'s. A prose
+ * position still needs `safeInline`.
+ */
+export function safeCodeSpan(value) {
+  return inline(value, INLINE_CAP, CODE_SPAN_METACHARS);
 }
 
 /**

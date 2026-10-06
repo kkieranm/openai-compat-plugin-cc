@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { persist } from '../bench/lib/record.mjs';
 import { pairFor, pairKey, runWithWarmUp, warmUpFlags } from '../bench/lib/warm-up.mjs';
+import { SAMPLING_FLAGS } from '../plugins/oai/scripts/lib/sampling.mjs';
 import { tempDir } from './helpers.mjs';
 
 // The harness pays the JIT model load before the first measured case, and
@@ -173,4 +174,28 @@ test('warm-up carries the invocation budgets, so it cannot outlive the cap set f
   const flags = warmUpFlags({ provider: null, model: null }, { timeout: '30', 'max-seconds': '600' });
   assert.ok(flags.includes('--timeout') && flags.includes('30'));
   assert.ok(flags.includes('--max-seconds') && flags.includes('600'));
+});
+
+test('warm-up sends the sampling the run was given, each as one --flag=value before the prompt', () => {
+  const sampling = Object.fromEntries(SAMPLING_FLAGS.map((flag, index) => [flag, `v${index}`]));
+  const flags = warmUpFlags({ provider: 'p', model: 'm' }, { ...sampling, temperature: '0', 'max-tokens': '9000' });
+  const prompt = flags.length - 1;
+  for (const [flag, value] of [...Object.entries(sampling), ['temperature', '0']]) {
+    const index = flags.indexOf(`--${flag}=${value}`);
+    assert.ok(index > 0 && index < prompt, `--${flag}=${value} must precede the prompt: ${JSON.stringify(flags)}`);
+    assert.ok(!flags.includes(`--${flag}`), `--${flag} is sent as one argument, never split from its value`);
+  }
+  // The warm-up's own cap, never the run's.
+  assert.deepEqual(flags.slice(1, 3), ['--max-tokens', '16']);
+  assert.ok(!flags.some((flag) => flag.startsWith('--max-tokens=') || flag === '9000'), JSON.stringify(flags));
+});
+
+test('warm-up sends no sampling flag the run was not given', () => {
+  const flags = warmUpFlags({ provider: 'p', model: 'm' }, {});
+  assert.deepEqual(flags, ['task', '--max-tokens', '16', '--provider', 'p', '--model', 'm', 'hi']);
+});
+
+test('an empty sampling value survives as its own --flag= argument', () => {
+  const flags = warmUpFlags({ provider: null, model: null }, { temperature: '' });
+  assert.ok(flags.includes('--temperature='), JSON.stringify(flags));
 });

@@ -1,4 +1,5 @@
 import { attemptRows, RESPONSE_BUCKETS } from './attempt-rows.mjs';
+import { safeCodeSpan } from './markdown-safe.mjs';
 import { reasonNotes } from './reason-notes.mjs';
 
 /**
@@ -19,7 +20,7 @@ import { reasonNotes } from './reason-notes.mjs';
 
 function countTable(title, pairs) {
   if (pairs.length === 0) return [];
-  return [`${title}`, '', '| | failed attempts |', '| --- | --- |', ...pairs.map(([key, n]) => `| \`${key}\` | ${n} |`), ''];
+  return [`${title}`, '', '| | failed attempts |', '| --- | --- |', ...pairs.map(([key, n]) => `| \`${safeCodeSpan(key)}\` | ${n} |`), ''];
 }
 
 /**
@@ -171,8 +172,8 @@ function respondedSection(stats) {
     `The last table splits those ${stats.failed} failed attempt(s) on **whether an HTTP response was`
     + ' obtained** — whether headers arrived. That is not the same question as whether a peer was'
     + ' reached, and it is deliberately the weaker one: a certificate rejection reaches a peer and'
-    + ' obtains no response, so it is counted beside a hostname that resolved to nothing. A `not'
-    + ' recorded` row counts attempts carrying no such field — the absence of the question rather'
+    + ' obtains no response, so it is counted beside a hostname that resolved to nothing. A'
+    + ' `not recorded` row counts attempts carrying no such field — the absence of the question rather'
     + ' than an answer to it'
     + (malformed
       ? ', and a zero there does NOT mean the counts are complete here: a row below reports a value'

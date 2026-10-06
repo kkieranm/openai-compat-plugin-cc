@@ -81,3 +81,9 @@ test('an unreadable pass under the declared id is not named: no scored result re
   run.report = { ...run.report, kind: 'multi-pass-review', ...exactPass, passes: [exactPass, exactPass, unreadable] };
   assert.doesNotMatch(render([run]), NOTE);
 });
+
+test('the declared-pairing note prints an id with an underscore as itself', () => {
+  const run = goodRun();
+  run.report = { ...run.report, requestedModel: 'org/qwen3_coder', model: 'qwen3_coder', declaredServedModel: 'qwen3_coder' };
+  assert.ok(render([run]).includes('`org/qwen3_coder` answered as `qwen3_coder`'), render([run]));
+});

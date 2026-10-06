@@ -3,9 +3,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, posix, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { MAX_BUDGET_SECONDS } from '../plugins/oai/scripts/lib/http-budgets.mjs';
+import { BENCH_NUMERIC_BOUNDS, NUMERIC_BOUNDS } from '../plugins/oai/scripts/lib/numeric-bounds.mjs';
+import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -755,41 +758,38 @@ function sweepStripComments(source) {
   return out;
 }
 
-// The anchored, NO-OPTIONS grammar: an interpolation is accepted iff it is exactly one
-// balanced wrapper call (single argument — no top-level comma, so a two-arg options
-// call is rejected outright), optionally `.slice(<int>, <int>)`, and/or a trailing
-// `|| '<string literal>'` (one quote-delimited run, no interior quote or concatenation).
-// The argument is ALWAYS passed through the sanitiser, so concat inside it is safe;
-// concat/spread/shorthand/indirect option injection cannot be written into this shape.
-const SWEEP_WRAPPERS = /^(safeInline|safeBlockquoteLines|displayReason)\s*\(/;
-function sweepArgHasTopLevelComma(argText) {
-  let depth = 0;
-  for (const c of argText) {
-    if (c === '(' || c === '{' || c === '[') depth++;
-    else if (c === ')' || c === '}' || c === ']') depth--;
-    else if (c === ',' && depth === 0) return true;
-  }
-  return false;
-}
-function sweepInterpolationAccepted(expr) {
+// The anchored, NO-OPTIONS grammar — an exact allowlist, not a classifier. An interpolation is
+// accepted iff it is exactly one of `W(ARG)`, `W(ARG).slice(0, 9)` (safeCodeSpan only) or
+// `W(ARG) || '<literal>'` (single-quoted, no interior quote, backslash, backtick or `|`), where W is a
+// listed wrapper and ARG is made only of identifiers, `.`, `?.`, balanced parentheses, `?`, `:`, `-`,
+// the literal `', '`, whitespace, and commas inside any parenthesis nested within the call's own (a
+// comma directly inside the call's own would be a second, options argument). ARG admits no other
+// quote literal and no backtick, `/`, `"`, `+`, `[` or `{`, so no string, template, regex or comment
+// can hold a parenthesis: the parentheses counted are the call's own, and the wrapper call provably
+// spans the interpolation up to one of the listed suffixes.
+const SWEEP_WRAPPERS = /^(safeInline|safeCodeSpan|safeBlockquoteLines|displayReason)\s*\(/;
+const SWEEP_ARG_TOKEN = /\s+|[A-Za-z_$][\w$]*|\?\.|', '|[.?:\-(),]/y;
+function sweepInterpolationAccepted(expr, wrappers = SWEEP_WRAPPERS) {
   const t = expr.trim();
-  const m = SWEEP_WRAPPERS.exec(t);
-  if (!m) return false;
-  const open = m[0].length - 1; // index of the wrapper's '('
+  const head = wrappers.exec(t);
+  if (!head) return false;
+  const wrapper = head[0].replace(/\s*\($/, '');
   let depth = 1;
-  let j = open + 1;
-  for (; j < t.length && depth > 0; j++) {
-    if (t[j] === '(') depth++;
-    else if (t[j] === ')') depth--;
+  let j = head[0].length;
+  while (depth > 0) {
+    SWEEP_ARG_TOKEN.lastIndex = j;
+    const token = SWEEP_ARG_TOKEN.exec(t);
+    if (!token) return false;
+    if (token[0] === '(') depth += 1;
+    else if (token[0] === ')') depth -= 1;
+    else if (token[0] === ',' && depth === 1) return false; // a second argument
+    j += token[0].length;
   }
-  if (depth !== 0) return false; // unbalanced
-  if (sweepArgHasTopLevelComma(t.slice(open + 1, j - 1))) return false; // exactly one argument
-  let rest = t.slice(j).trim();
-  const sliceMatch = /^\.slice\(\s*\d+\s*,\s*\d+\s*\)/.exec(rest);
-  if (sliceMatch) rest = rest.slice(sliceMatch[0].length).trim();
+  if (t.slice(head[0].length, j - 1).trim() === '') return false;
+  const rest = t.slice(j).trim();
   if (rest === '') return true;
-  // optional trailing || '<string literal>' — a whole single quote-delimited run
-  return /^\|\|\s*'[^'\\]*'$/.test(rest) || /^\|\|\s*"[^"\\]*"$/.test(rest);
+  if (rest === '.slice(0, 9)') return wrapper === 'safeCodeSpan';
+  return /^\|\|\s*'[^'\\`|]*'$/.test(rest);
 }
 
 test('every untrusted interpolation in the sweep render files is markdown-safe-wrapped or an exception', () => {
@@ -807,9 +807,9 @@ test('every untrusted interpolation in the sweep render files is markdown-safe-w
   assert.deepEqual(
     offenders,
     [],
-    'an untrusted value reaches the sweep report unescaped — wrap it in safeInline/safeBlockquoteLines ' +
-      '(fallback via a trailing `|| \'literal\'`); add a file-bound SWEEP_SAFE_EXPRESSIONS entry ONLY for ' +
-      'intentional Markdown/layout that is provably safe.',
+    'an untrusted value reaches the sweep report unescaped — wrap it in safeInline/safeBlockquoteLines, or ' +
+      'safeCodeSpan inside a code span (fallback via a trailing `|| \'literal\'`); add a file-bound ' +
+      'SWEEP_SAFE_EXPRESSIONS entry ONLY for intentional Markdown/layout that is provably safe.',
   );
 });
 
@@ -829,15 +829,43 @@ test('the sweep interpolation grammar rejects unsafe shapes and accepts the wrap
     "safeInline(x) || 'a' + 'b'",
     "safeInline(x) || '' + entry.y",
     'record.newlyAddedField',
+    // Parentheses inside a quote, template, regex or comment, around a value outside the wrapper call.
+    "safeCodeSpan('(') + row.id + (')')",
+    'safeCodeSpan(`(`) + row.id + (`)`)',
+    'safeCodeSpan(/[(]/.source) + row.id + (/[)]/.source)',
+    'safeCodeSpan(a /* ( */) + row.id + (/* ) */ b)',
+    // Outside the exact allowlist.
+    'safeInline(entry.sha).slice(0, 9)',
+    "safeCodeSpan(entry.sha).slice(0, 9) || 'x'",
+    'safeCodeSpan(entry.sha).slice(0, 12)',
+    'safeInline(x) || "unknown"',
+    'safeInline()',
+    'safeInline(a, b)',
+    'safeInline(a + b)',
+    'safeInline(a[b])',
+    'safeInline({ a })',
+    "safeInline(f('a'))",
+    'safeInline("a")',
+    'safeInline(a / b)',
+    // A fallback literal holding a backtick or `|`, which opens a code span or ends a table cell.
+    "safeInline(x) || 'a|b'",
+    "safeCodeSpan(x) || '`'",
   ];
   const mustAccept = [
     'safeInline(entry.model)',
+    'safeCodeSpan(entry.model)',
     "safeInline(entry.model) || 'unknown'",
-    'safeInline(entry.sha).slice(0, 9)',
+    'safeCodeSpan(entry.sha).slice(0, 9)',
     'safeBlockquoteLines(finding.evidence)',
     "safeInline(where) || '(no location given)'",
     'safeInline(record.include)',
     'displayReason(reason)',
+    'safeInline(String(run.integrity.discarded))',
+    "safeInline(s.values.join(', '))",
+    'safeInline(enumerated - reviewed)',
+    "safeCodeSpan(hasFile ? finding.file : finding.line) || '(no location given)'",
+    'safeCodeSpan(run.report?.model)',
+    'safeInline(axisValue(run.signature.hard.maxSeconds))',
   ];
   const wrongly = [];
   for (const e of mustReject) if (sweepInterpolationAccepted(e)) wrongly.push(`accepted unsafe: ${e}`);
@@ -856,4 +884,444 @@ test('sweepStripComments preserves interpolations in strings/templates and drops
   // False POSITIVE cases — a real comment's example interpolation must be removed:
   assert.deepEqual(interpolations(sweepStripComments('const x = 1; // ${entry.model} in a comment')), []);
   assert.deepEqual(interpolations(sweepStripComments('/* ${entry.model} in a\n block comment */ const y = 2;')), []);
+});
+
+// ---------------------------------------------------------------------------
+// Inside an inline code span Markdown renders everything literally except a backtick (and a `|`
+// still ends a table cell), so a value there needs `safeCodeSpan` (backtick and `|` neutralised,
+// whitespace folded) — never `safeInline`, whose dot-replacement would print `qwen3_coder` as
+// `qwen3.coder`, and never nothing, which lets a backtick end the span. Every `${…}` inside a code
+// span in a bench file must be exactly one `safeCodeSpan(…)` call in the grammar above (optionally
+// `.slice(0, 9)` or `|| 'literal'`). A code-span delimiter is a backtick in a string or template
+// literal as the literal decodes it — raw in a quoted string, or escaped as \` in either; a hex or
+// unicode escape of one (\x60, \u0060, \u{60}) is decoded as a backtick and also refused outright.
+// A span left open at the end of its literal is refused, since concatenation could carry a value
+// into it. Only single-backtick delimiters are recognised, so a run of two or more decoded backticks
+// is refused rather than read as two empty spans around a value. A backtick after an odd run of
+// decoded backslashes is refused where it would open a span: Markdown prints it as a literal
+// backtick, so what follows sits in prose. Before a closing delimiter a backslash is span content and
+// is accepted. Inside an open span the literal text may hold no `|` (GFM splits the table cell
+// before any span forms) and no line break, and the only escapes accepted there are `\\` and `\``.
+// `safeCodeSpan` is refused everywhere except at the head of such an interpolation (or as a plain
+// import specifier, below): in prose it leaves `_`, `*` and `[` live. A markdown-safe wrapper name
+// (`safeCodeSpan`, `safeInline`, `displayReason`, `safeBlockquoteLines`) is accepted only as a call or
+// as a plain specifier of an `import {…} from '…'` clause whose module specifier resolves, against
+// the scanned file, to bench/lib/markdown-safe.mjs; a comment inside the braces is ignored unless it
+// holds a `}`, which ends the clause early (the import is then refused). Refused:
+// an `as` with a wrapper name on either side, a wrapper imported from any other module, the name
+// written directly after `function`, and, outside such a clause, the name anywhere it is not followed
+// by `(` — which covers a variable declaration, a parameter, a destructured binding and a bare reference.
+//
+// The scan is a guard against an accidentally unescaped value, not against contrived source. It does
+// not see a delimiter built at runtime (`String.fromCharCode(96)` and the like), a regex literal the
+// lexer misreads and so desynchronises on, or a backslash supplied from outside the literal (a
+// preceding `${…}`, a `\x5c` or `\u005c` escape, `String.raw`). Nor does it see a value placed into a
+// literal by runtime string construction — `replace`/`replaceAll`, `split`/`join`, a format helper —
+// the same class as a delimiter built at runtime — nor an import whose comment text fakes the end of
+// the clause, or a unicode-escaped identifier or string name in one. The rendering tests — values
+// printed verbatim, table column counts — are the behavioural backstop for those.
+const CODE_SPAN_WRAPPER = /^safeCodeSpan\s*\(/;
+const CODE_SPAN_HELPER = 'safeCodeSpan';
+const MARKDOWN_SAFE_WRAPPERS = new Set(['safeCodeSpan', 'safeInline', 'displayReason', 'safeBlockquoteLines']);
+// Every bench driver and library file: a file that emits no code span contributes nothing, so a
+// new renderer is covered without being listed. markdown-safe.mjs is the sanitiser itself.
+const CODE_SPAN_SCAN_FILES = [
+  ...readdirSync(join(ROOT, 'bench')).filter((name) => name.endsWith('.mjs')).map((name) => `bench/${name}`),
+  ...readdirSync(join(ROOT, 'bench/lib')).filter((name) => name.endsWith('.mjs')).map((name) => `bench/lib/${name}`),
+].filter((rel) => rel !== 'bench/lib/markdown-safe.mjs');
+
+// A `/` in code position opens a regex literal when the previous significant character cannot end
+// an operand. Skipping regex bodies keeps a quote or backtick inside one from desynchronising the scan.
+const REGEX_PRECEDERS = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
+
+// A backtick written as an escape in a string or template literal: `\``, `\x60`, `\u0060` or `\u{60}`.
+const BACKTICK_ESCAPE = /\\(?:`|x60|u0060|u\{0*60\})/y;
+
+/**
+ * Every `${…}` in `source` that sits inside a Markdown code span, every one outside, and every
+ * literal that leaves a code span open, uses a multi-backtick or backslash-escaped opening delimiter,
+ * or that the scan could not close, or whose span text holds a `|`, a line break or an escape other
+ * than `\\` or `\`` — plus every use of `safeCodeSpan` that is not the head of an in-span
+ * interpolation, and every wrapper name used other than as a call or a plain import specifier from
+ * markdown-safe.mjs. `rel` is the scanned file's repo-relative path, against which an import's module
+ * specifier is resolved.
+ */
+function codeSpanInterpolations(source, rel = 'bench/lib/control.mjs') {
+  const inSpan = [];
+  const outside = [];
+  const problems = [];
+  let i = 0;
+  const n = source.length;
+  let last = '';
+  const lineAt = (index) => source.slice(0, index).split('\n').length;
+
+  // The escape at `at` when it decodes to a backtick, or null; a hex or unicode form is refused.
+  function escapedBacktick(at, kind) {
+    BACKTICK_ESCAPE.lastIndex = at;
+    const escape = BACKTICK_ESCAPE.exec(source);
+    if (escape && escape[0] !== '\\`') problems.push(`line ${lineAt(at)}: a hex or unicode backtick escape in a ${kind}`);
+    return escape;
+  }
+
+  function quoted(quote) {
+    const start = i;
+    let j = i + 1;
+    let backticks = 0;
+    let previous = false; // the last decoded character was a backtick
+    let backslashes = 0; // decoded backslashes immediately before the current character
+    while (j < n && source[j] !== quote) {
+      if (source[j] === '\n') { problems.push(`line ${lineAt(start)}: unterminated string`); break; }
+      const spanOpen = backticks % 2 === 1;
+      if (spanOpen && (source[j] === '|' || source[j] === '\r')) {
+        problems.push(`line ${lineAt(start)}: a \`|\` or line break inside a code span in a quoted string`);
+      }
+      let width = 1;
+      let backtick = source[j] === '`';
+      let backslash = false;
+      if (source[j] === '\\') {
+        const escape = escapedBacktick(j, 'quoted string');
+        width = escape ? escape[0].length : 2;
+        backtick = escape !== null;
+        backslash = source[j + 1] === '\\';
+        if (spanOpen && !backtick && !backslash) {
+          problems.push(`line ${lineAt(start)}: an escape other than \\\\ or \\\` inside a code span in a quoted string`);
+        }
+      }
+      if (backtick) {
+        if (backticks % 2 === 0 && backslashes % 2 === 1) {
+          problems.push(`line ${lineAt(start)}: a backslash-escaped backtick as an opening code-span delimiter in a quoted string`);
+        }
+        backticks += 1;
+        if (previous) problems.push(`line ${lineAt(start)}: a multi-backtick code-span delimiter in a quoted string`);
+      }
+      previous = backtick;
+      backslashes = backslash ? backslashes + 1 : 0;
+      j += width;
+    }
+    if (backticks % 2 === 1) problems.push(`line ${lineAt(start)}: a code span crosses the end of a quoted string`);
+    i = j + 1;
+  }
+
+  function regex() {
+    let inClass = false;
+    i += 1;
+    while (i < n) {
+      const c = source[i];
+      if (c === '\\') { i += 2; continue; }
+      if (c === '\n') return;
+      if (inClass) { if (c === ']') inClass = false; } else if (c === '[') inClass = true; else if (c === '/') { i += 1; break; }
+      i += 1;
+    }
+    while (i < n && /[a-z]/i.test(source[i])) i += 1;
+  }
+
+  // Code until the `}` closing the current `${`, or to the end of the source at top level.
+  // `spanHead`: this is an interpolation inside a code span, whose head may be `safeCodeSpan`.
+  function code(topLevel, spanHead = false) {
+    let depth = 0;
+    const start = i;
+    last = '';
+    while (i < n) {
+      const c = source[i];
+      const next = source[i + 1];
+      if (c === '/' && next === '/') { while (i < n && source[i] !== '\n') i += 1; continue; }
+      if (c === '/' && next === '*') { const end = source.indexOf('*/', i + 2); i = end === -1 ? n : end + 2; continue; }
+      if (c === "'" || c === '"') { quoted(c); last = 'x'; continue; }
+      if (c === '`') { i += 1; template(); last = 'x'; continue; }
+      if (c === '/' && (REGEX_PRECEDERS.has(last) || /\breturn$/.test(source.slice(Math.max(0, i - 8), i).trimEnd()))) { regex(); last = 'x'; continue; }
+      if (/[A-Za-z_$]/.test(c) && !/[\w$]/.test(source[i - 1] ?? '')) {
+        let j = i;
+        while (j < n && /[\w$]/.test(source[j])) j += 1;
+        const word = source.slice(i, j);
+        const importClause =
+          word === 'import' && topLevel && depth === 0 ? /^(import\s*\{([^}]*)\}\s*from\s*)(['"])([^'"\n]*)\3/.exec(source.slice(i)) : null;
+        if (importClause) {
+          const [, head, specifiers, , module] = importClause;
+          const fromMarkdownSafe =
+            /^\.\.?\//.test(module) && posix.normalize(posix.join(posix.dirname(rel), module)) === 'bench/lib/markdown-safe.mjs';
+          // A comment inside the braces would otherwise join the specifier beside it and hide its name.
+          // A block comment becomes a space, so `a/**/as/**/b` still reads as a rename.
+          const uncommented = specifiers.replace(/(['"])(?:\\.|(?!\1)[^\\\n])*\1|\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*/g, (token) =>
+            token[0] === '/' ? ' ' : token,
+          );
+          for (const specifier of uncommented.split(',').map((part) => part.trim()).filter(Boolean)) {
+            const names = specifier.split(/\s+as\s+/).map((name) => name.replace(/^['"]|['"]$/g, ''));
+            if (names.length > 1) {
+              const wrapper = names.find((name) => MARKDOWN_SAFE_WRAPPERS.has(name));
+              if (wrapper) problems.push(`line ${lineAt(i)}: an import renamed onto or from ${wrapper}`);
+            } else if (MARKDOWN_SAFE_WRAPPERS.has(names[0]) && !fromMarkdownSafe) {
+              problems.push(`line ${lineAt(i)}: ${names[0]} imported from ${module}, not bench/lib/markdown-safe.mjs`);
+            }
+          }
+          j = i + head.length;
+        } else if (word === CODE_SPAN_HELPER && !(spanHead && source.slice(start, i).trim() === '')) {
+          problems.push(`line ${lineAt(i)}: safeCodeSpan used outside the head of a code-span interpolation`);
+        } else if (
+          MARKDOWN_SAFE_WRAPPERS.has(word) &&
+          (!/^\s*\(/.test(source.slice(j)) || /\bfunction\s*\*?\s*$/.test(source.slice(Math.max(0, i - 16), i)))
+        ) {
+          problems.push(`line ${lineAt(i)}: ${word} used other than as a call or a plain import specifier`);
+        }
+        i = j;
+        last = 'x';
+        continue;
+      }
+      if (c === '{') depth += 1;
+      if (c === '}') {
+        if (depth === 0 && !topLevel) { const expr = source.slice(start, i); i += 1; return expr; }
+        depth -= 1;
+      }
+      if (!/\s/.test(c)) last = /[\w$)\].]/.test(c) ? 'x' : c;
+      i += 1;
+    }
+    if (!topLevel) problems.push('an interpolation never closes');
+    return source.slice(start, i);
+  }
+
+  function template() {
+    const start = i;
+    let open = false;
+    let previous = false; // the last decoded character was a backtick
+    let backslashes = 0; // decoded backslashes immediately before the current character
+    while (i < n) {
+      const c = source[i];
+      if (c === '\\') {
+        const escape = escapedBacktick(i, 'template literal');
+        if (escape) {
+          if (!open && backslashes % 2 === 1) {
+            problems.push(`line ${lineAt(i)}: a backslash-escaped backtick as an opening code-span delimiter in a template literal`);
+          }
+          if (previous) problems.push(`line ${lineAt(i)}: a multi-backtick code-span delimiter in a template literal`);
+          open = !open;
+          previous = true;
+          backslashes = 0;
+          i += escape[0].length;
+        } else {
+          if (open && source[i + 1] !== '\\') {
+            problems.push(`line ${lineAt(i)}: an escape other than \\\\ or \\\` inside a code span in a template literal`);
+          }
+          previous = false;
+          backslashes = source[i + 1] === '\\' ? backslashes + 1 : 0;
+          i += 2;
+        }
+        continue;
+      }
+      previous = false;
+      backslashes = 0;
+      if (open && (c === '|' || c === '\n' || c === '\r')) {
+        problems.push(`line ${lineAt(i)}: a \`|\` or line break inside a code span in a template literal`);
+      }
+      if (c === '`') {
+        i += 1;
+        if (open) problems.push(`line ${lineAt(start)}: a code span crosses the end of a template literal`);
+        return;
+      }
+      if (c === '$' && source[i + 1] === '{') {
+        const spanOpen = open;
+        i += 2;
+        const expr = code(false, spanOpen).trim();
+        (spanOpen ? inSpan : outside).push(expr);
+        continue;
+      }
+      i += 1;
+    }
+    problems.push(`line ${lineAt(start)}: unterminated template literal`);
+  }
+
+  code(true);
+  return { inSpan, outside, problems };
+}
+
+test('every value interpolated inside a Markdown code span in bench/ is escaped with safeCodeSpan', () => {
+  const offenders = [];
+  for (const rel of CODE_SPAN_SCAN_FILES) {
+    const { inSpan, problems } = codeSpanInterpolations(readFileSync(join(ROOT, rel), 'utf8'), rel);
+    for (const problem of problems) offenders.push(`${rel}: ${problem}`);
+    for (const expr of inSpan) {
+      if (!sweepInterpolationAccepted(expr, CODE_SPAN_WRAPPER)) offenders.push(`${rel}: \`\${${expr}}\``);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'a value inside a code span is not escaped for one — wrap it as `${safeCodeSpan(x)}` (fallback via a ' +
+      "trailing `|| 'literal'`); safeInline would dot its `_`, `*` and `[`, and no escape lets a backtick end the span.",
+  );
+});
+
+test('the code-span scan reaches every bench renderer that emits a code span', () => {
+  const sites = (rel) => codeSpanInterpolations(readFileSync(join(ROOT, rel), 'utf8'), rel).inSpan.length;
+  for (const rel of SWEEP_RENDER_FILES) assert.ok(CODE_SPAN_SCAN_FILES.includes(rel), `${rel} is not scanned`);
+  for (const rel of [
+    'bench/lib/report.mjs',
+    'bench/lib/caveats.mjs',
+    'bench/lib/reliability-report.mjs',
+    'bench/lib/compare-report.mjs',
+    'bench/lib/sweep-report.mjs',
+    'bench/lib/sweep-health.mjs',
+    'bench/lib/sweep-reproduction-report.mjs',
+    'bench/task-run.mjs',
+  ]) {
+    assert.ok(CODE_SPAN_SCAN_FILES.includes(rel), `${rel} is not scanned`);
+    assert.ok(sites(rel) > 0, `${rel}: the scan found no code-span interpolation in a file known to emit one`);
+  }
+});
+
+// Positive control: the scan and its grammar must fire, so a broken scanner fails here rather
+// than passing the enforcing test vacuously.
+test('the code-span scan flags unescaped and prose-escaped values and accepts safeCodeSpan (positive control)', () => {
+  // A control is a source scanned as a default bench/lib file, or a `[rel, source]` pair.
+  const flagged = (control) => {
+    const [rel, source] = Array.isArray(control) ? control : [undefined, control];
+    const { inSpan, problems } = codeSpanInterpolations(source, rel);
+    return [...problems, ...inSpan.filter((expr) => !sweepInterpolationAccepted(expr, CODE_SPAN_WRAPPER))];
+  };
+  const mustFlag = [
+    'x(`- \\`${entry.model}\\``);',
+    'x(`- \\`${safeInline(entry.model)}\\``);',
+    'x(`- \\`${displayReason(reason)}\\``);',
+    "x(`\\`${safeCodeSpan(a) || b}\\``);",
+    'x(`${rows.map((row) => `\\`${row.id}\\``).join(", ")}`);',
+    "x('- `' + entry.model + '`');",
+    'x(`- \\`open ${safeCodeSpan(a)}` + entry.model + "`");',
+    'const re = /[`\'"]/g; x(`\\`${entry.model}\\``);',
+    'function f() { return /`/.test(a) ? `\\`${entry.model}\\`` : ""; }',
+    // safeCodeSpan anywhere but the head of an in-span interpolation.
+    'x(`- ${safeCodeSpan(entry.model)} in prose`);',
+    "x('- ' + safeCodeSpan(entry.model));",
+    'const where = safeCodeSpan(a); x(`- \\`${where}\\``);',
+    'x(`- ${list.map(safeCodeSpan).join(", ")}`);',
+    "x(`\\`${b || safeCodeSpan(a)}\\``);",
+    "x(`\\`${safeCodeSpan(list.map((part) => safeCodeSpan(part)).join(':'))}\\``);",
+    // A multi-backtick delimiter, in a template and in a quoted string.
+    'x(`| \\`\\`${row.id}\\`\\` |`);',
+    "x('``' + row.id + '``');",
+    // An escaped backtick in a quoted string is a delimiter too, alone or beside another.
+    "x('\\`\\`' + row.id + '\\`\\`');",
+    "x('\\``' + row.id + '`\\`');",
+    // A hex or unicode backtick escape, balanced around a wrapped value or not.
+    "x('\\x60' + row.id + '\\x60');",
+    'x(`\\x60${safeCodeSpan(a)}\\x60`);',
+    "x('\\u0060' + row.id + '\\u{60}');",
+    // Parentheses inside a quote, template, regex or comment, closing the wrapper call early.
+    "x(`\\`${safeCodeSpan('(') + row.id + (')')}\\``);",
+    'x(`\\`${safeCodeSpan(`(`) + row.id + (`)`)}\\``);',
+    'x(`\\`${safeCodeSpan(/[(]/.source) + row.id + (/[)]/.source)}\\``);',
+    'x(`\\`${safeCodeSpan(a /* ( */) + row.id + (/* ) */ b)}\\``);',
+    // A backslash-escaped backtick as the opening delimiter: Markdown prints it, leaving the value in prose.
+    'x(`\\\\\\`${safeCodeSpan(x)}\\\\\\``);',
+    "x('\\\\`a`');",
+    // A fallback literal holding a `|`, which ends a table cell.
+    "x(`| \\`${safeCodeSpan(a) || 'a|b'}\\` |`);",
+    // A wrapper name bound to something else: an `as` rename, a declaration or a parameter.
+    "import { identity as safeCodeSpan } from './ident.mjs';\nx(`\\`${safeCodeSpan(a)}\\``);",
+    "import { identity as safeInline } from './x.mjs';\nx(`- ${safeInline(a)}`);",
+    'const safeInline = (x) => x; x(`- ${safeInline(a)}`);',
+    'function displayReason(r) { return r; }',
+    'const f = (safeBlockquoteLines) => safeBlockquoteLines(a);',
+    "export { identity as safeInline } from './x.mjs';",
+    "import * as safeInline from './x.mjs';",
+    // A wrapper renamed away from its own name, or imported from anywhere but markdown-safe.mjs.
+    "import { safeCodeSpan as code } from './markdown-safe.mjs';\nx(`- ${code(m)} in prose`);",
+    "import { safeInline } from './ident.mjs';\nx(`- ${safeInline(a)}`);",
+    "import { safeInline } from './x/markdown-safe.mjs';\nx(`- ${safeInline(a)}`);",
+    "import { safeInline } from 'markdown-safe.mjs';\nx(`- ${safeInline(a)}`);",
+    ['bench/task-run.mjs', "import { safeInline } from './markdown-safe.mjs';\nx(`- ${safeInline(a)}`);"],
+    // A comment inside an import's braces, beside a wrapper imported from elsewhere or renamed.
+    "import {\n  // escapes prose\n  safeInline,\n} from './ident.mjs';\nx(`- ${safeInline(a)}`);",
+    "import {\n  identity as safeInline // c\n} from './ident.mjs';\nx(`- ${safeInline(a)}`);",
+    "import { safeInline /* c */ } from './ident.mjs';\nx(`- ${safeInline(a)}`);",
+    "import {\n  // span escaper\n  safeCodeSpan as code,\n} from './markdown-safe.mjs';\nx(`- ${code(m)} in prose`);",
+    "import { safeCodeSpan/**/as/**/code } from './markdown-safe.mjs';\nx(`- ${code(m)} in prose`);",
+    // A quoted specifier holding `//` is a string, not a comment.
+    "import { \"x//y\" as safeInline } from './x.mjs';\nx(`- ${safeInline(a)}`);",
+    // A `|` in span text ends the table cell (GFM splits the cell first, so no span forms); a line
+    // break ends the table row, and is refused everywhere for simplicity.
+    'x(`| \\`Model | ${safeCodeSpan(row.id)}\\` |`);',
+    "x('a `b|c` d');",
+    'x(`\\`a\nb\\``);',
+    // An escape other than \\ or \` in span text, in a template and in a quoted string.
+    'x(`\\`a\\nb\\``);',
+    'x(`\\`a\\|b\\``);',
+    'x(`\\`a\\x7cb\\``);',
+    'x(`\\`a\\u000ab\\``);',
+    "x('`a\\nb`');",
+    "x('`a\\|b`');",
+    "x('`a\\x7cb`');",
+    "x('`a\\u000ab`');",
+  ];
+  const mustPass = [
+    'x(`- \\`${safeCodeSpan(entry.model)}\\``);',
+    "x(`- \\`${safeCodeSpan(entry.model) || '(none)'}\\` and ${safeInline(entry.subject)}`);",
+    'x(`\\`${safeCodeSpan(entry.sha).slice(0, 9)}\\``);',
+    'x(`- ${entry.model} outside any span`);',
+    "x('a `literal` span ' + n);",
+    '// a comment: `\\`${entry.model}\\``\nx(1);',
+    'const half = total / 2; x(`\\`${safeCodeSpan(half)}\\``);',
+    'const re = /[\'"`]/g; x(`\\`${safeCodeSpan(a)}\\``);',
+    "import { safeCodeSpan, safeInline } from './markdown-safe.mjs';\nx(`\\`${safeCodeSpan(a)}\\``);",
+    "import {\n  safeCodeSpan,\n} from './markdown-safe.mjs';\nx(`\\`${safeCodeSpan(a)}:${safeCodeSpan(b)}\\``);",
+    // A backslash before a closing delimiter is span content, not an escape.
+    'x(`\\`${safeCodeSpan(a)}\\\\\\``);',
+    "import { safeInline } from \"./markdown-safe.mjs\";\nx(`- ${safeInline(a)}`);",
+    "import { safeCodeSpan, safeInline } from './markdown-safe.mjs'; // see https://example.com//x\nx(`- ${safeInline(a)}`);",
+    "import {\n  // span escaper\n  safeCodeSpan, /* prose */ safeInline,\n} from './markdown-safe.mjs';\nx(`\\`${safeCodeSpan(a)}\\` ${safeInline(b)}`);",
+    ['bench/task-run.mjs', "import { safeCodeSpan, safeInline } from './lib/markdown-safe.mjs';\nx(`\\`${safeCodeSpan(a)}\\``);"],
+    // A `|` or an escape outside a span is not span text.
+    'x(`| \\`${safeCodeSpan(a)}\\` |\\n`);',
+  ];
+  const wrongly = [];
+  for (const source of mustFlag) if (flagged(source).length === 0) wrongly.push(`not flagged: ${source}`);
+  for (const source of mustPass) if (flagged(source).length > 0) wrongly.push(`flagged: ${source} — ${flagged(source)}`);
+  assert.deepEqual(wrongly, [], 'the code-span scan mis-classified a control case.');
+});
+
+// The same scan over real renderers with one site mutated in memory: a double-backtick span around a
+// raw value, a safeCodeSpan call moved out of its span into prose, and a span built from escaped
+// backticks in quoted strings. Each mutant must change the source (or the control proves nothing)
+// and must be flagged.
+test('the code-span scan flags a double-backtick, prose-position or escaped-quote-span mutant of a real renderer (negative control)', () => {
+  const mutants = [
+    ['bench/lib/report.mjs', '| \\`${safeCodeSpan(row.id)}\\`', '| \\`\\`${row.id}\\`\\`'],
+    ['bench/lib/sweep-report.mjs', '*(answered by \\`${safeCodeSpan(entry.model)}\\`)*', '*(answered by ${safeCodeSpan(entry.model)})*'],
+    ['bench/lib/caveats.mjs', '**\\`--temperature ${safeCodeSpan(temperature)}\\` was on**', '**--temperature ${safeCodeSpan(temperature)} was on**'],
+    // The span written as escaped backticks in quoted strings, around a raw value.
+    ['bench/lib/report.mjs', "`| \\`${safeCodeSpan(row.id)}\\`${row.dropped ? ` +${row.dropped} unlisted` : ''} | ", "'| \\`' + row.id + '\\` |' + ` "],
+  ];
+  for (const [rel, from, to] of mutants) {
+    const source = readFileSync(join(ROOT, rel), 'utf8');
+    assert.ok(source.includes(from), `${rel}: the site to mutate is gone — update this control`);
+    const { inSpan, problems } = codeSpanInterpolations(source.replace(from, to), rel);
+    const flagged = [...problems, ...inSpan.filter((expr) => !sweepInterpolationAccepted(expr, CODE_SPAN_WRAPPER))];
+    assert.ok(flagged.length > 0, `${rel}: the mutant ${to} was not flagged`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A non-sampling numeric flag's domain is written once, in `numeric-bounds.mjs`. The commands' parse, the bench's
+// up-front check and the comparison's reading of a recorded value each read that table, so none of
+// them can widen or narrow a flag the others still enforce.
+const NUMERIC_BOUND_READERS = ['plugins/oai/scripts/lib/delegate.mjs', 'bench/run.mjs', 'bench/lib/compare-model.mjs'];
+
+test('every non-sampling numeric flag bound is read from the one table in numeric-bounds.mjs, never written out', () => {
+  const offenders = [];
+  for (const rel of NUMERIC_BOUND_READERS) {
+    const source = sweepStripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    for (const match of source.matchAll(/\b(min|max|integer)\s*:/g)) {
+      offenders.push(`${rel}: line ${source.slice(0, match.index).split('\n').length}: ${match[0]}`);
+    }
+    if (!/\b(BENCH_)?NUMERIC_BOUNDS\b/.test(source)) offenders.push(`${rel}: does not read the bounds table`);
+  }
+  assert.deepEqual(offenders, [], 'a numeric bound is written out at a validator — read it from numeric-bounds.mjs instead');
+});
+
+test('the bounds table holds the domains the commands and the bench document', () => {
+  assert.deepEqual({ ...NUMERIC_BOUNDS.temperature }, { min: 0, max: 2 });
+  assert.deepEqual({ ...NUMERIC_BOUNDS.timeout }, { min: 1, max: MAX_BUDGET_SECONDS });
+  assert.deepEqual({ ...NUMERIC_BOUNDS['max-seconds'] }, { min: 1, max: MAX_BUDGET_SECONDS });
+  assert.deepEqual({ ...NUMERIC_BOUNDS['max-tokens'] }, { integer: true, min: 1 });
+  assert.deepEqual({ ...BENCH_NUMERIC_BOUNDS['max-tokens'] }, { integer: true, min: MIN_REVIEW_RESERVE_TOKENS });
+  for (const flag of Object.keys(NUMERIC_BOUNDS).filter((key) => key !== 'max-tokens')) {
+    assert.equal(BENCH_NUMERIC_BOUNDS[flag], NUMERIC_BOUNDS[flag], `${flag}: the bench's bound is the commands' own`);
+  }
 });

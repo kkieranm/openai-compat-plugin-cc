@@ -656,7 +656,7 @@ test('the JSON record is private, because it is the only artifact holding raw ou
 // finding, id, subject, path or evidence cannot corrupt the report or throw. These assert
 // the RENDERED behaviour; the structural guarantee that EVERY sink is wrapped lives in
 // tests/structure.test.js.
-import { safeInline } from '../bench/lib/markdown-safe.mjs';
+import { safeCodeSpan, safeInline } from '../bench/lib/markdown-safe.mjs';
 
 test('a hostile finding.summary cannot open a fence or break the list', () => {
   const out = render(commit({
@@ -704,6 +704,56 @@ test('a non-array / circular / throwing record.include renders without throwing'
   // A valid array still renders its elements joined and escaped.
   const out = renderSweep({ ...base, include: ['scripts', 'bench/`x`'], enumerated: 0, entries: [] });
   assert.match(out, /scripts, bench\/\.x\./);
+});
+
+test('safeCodeSpan keeps a value verbatim except a backtick and a pipe, which it neutralises, and whitespace, which it folds', () => {
+  assert.equal(safeCodeSpan('qwen3_coder*[x](y)#~<a>\\'), 'qwen3_coder*[x](y)#~<a>\\');
+  assert.equal(safeCodeSpan('a`b'), 'a.b');
+  assert.equal(safeCodeSpan('a|b'), 'a.b');
+  assert.equal(safeCodeSpan('line one\n\nline two\r\tend'), 'line one line two end');
+  assert.equal(safeCodeSpan(undefined), '');
+  assert.equal(safeCodeSpan(null), '');
+  assert.equal(safeCodeSpan(['a_b', 'c`d']), 'a_b, c.d');
+  assert.equal(safeCodeSpan({ toJSON() { throw new Error('boom'); } }), '(unrenderable object)');
+  assert.equal(safeCodeSpan('x'.repeat(5000)).length, safeInline('x'.repeat(5000)).length, 'the same length cap');
+  for (const v of ['a`b*c_d', 'a|b', '/var/folders/x_y/z']) assert.equal(safeCodeSpan(safeCodeSpan(v)), safeCodeSpan(v));
+});
+
+test('a model id, sha and finding location print verbatim inside their code spans', () => {
+  const out = renderRecord({ repo: '/srv/my_repo', requestedModel: 'org/qwen3_coder*', from: 'v1_[rc]' }, commit({
+    outcome: 'findings',
+    sha: 'ab_cd*[e]9xyz',
+    model: 'org/qwen3_coder*',
+    reason: 'odd_reason*',
+    findings: [{ file: 'src/a_b*[c].mjs', line: 7, severity: 'high', summary: 'x' }],
+  }));
+  assert.ok(out.includes('`src/a_b*[c].mjs:7`'), out);
+  assert.ok(out.includes('`ab_cd*[e]` a commit'), out);
+  assert.ok(out.includes('*answered by `org/qwen3_coder*`*'), out);
+  assert.ok(out.includes('- **Model requested** `org/qwen3_coder*`'), out);
+  assert.ok(out.includes('- **Repository** `/srv/my_repo`'), out);
+  assert.ok(out.includes('- **Enumerated from** `v1_[rc]`'), out);
+});
+
+test('a backtick or line break in a code-span value cannot close or break the span', () => {
+  const out = render(commit({
+    outcome: 'findings',
+    model: 'srv/a`b\nc',
+    findings: [{ file: 'x`y\nz_w.mjs', line: 2, severity: 'high', summary: 'x' }],
+  }));
+  assert.ok(out.includes('`x.y z_w.mjs:2`'), out);
+  assert.ok(out.includes('*answered by `srv/a.b c`*'), out);
+  for (const line of out.split('\n')) {
+    assert.equal((line.match(/`/g) ?? []).length % 2, 0, `a code span left open: ${line}`);
+  }
+});
+
+test('a declared pairing and a coverage reason print verbatim inside their code spans', () => {
+  const out = renderRecord({ requestedModel: 'org/qwen3_coder' },
+    commit({ outcome: 'clean', requestedModel: 'org/qwen3_coder', model: 'qwen3_coder', declaredServedModel: 'qwen3_coder', findings: [] }),
+    commit({ sha: 'fff0000aaa', outcome: 'failed', reason: 'odd_reason*' }));
+  assert.ok(out.includes('`org/qwen3_coder` answered as `qwen3_coder`'), out);
+  assert.ok(out.includes('(`odd_reason*`)'), out);
 });
 
 test('safeInline is idempotent (double-wrap is safe)', () => {

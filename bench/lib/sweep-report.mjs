@@ -20,7 +20,7 @@ import { declaredMatch } from '../../plugins/oai/scripts/lib/model-identity.mjs'
 import { incompleteness } from './sweep-notes.mjs';
 import { serverHealth } from './sweep-health.mjs';
 import { REVIEWED } from './sweep-outcome.mjs';
-import { safeInline, safeBlockquoteLines, displayReason } from './markdown-safe.mjs';
+import { safeCodeSpan, safeInline, safeBlockquoteLines, displayReason } from './markdown-safe.mjs';
 
 /**
  * Why each STARVED commit left no findings, in the reader's terms — one entry
@@ -86,7 +86,7 @@ const UNUSABLE_STARVED_REASON = 'STARVATION WITH AN UNUSABLE REASON CODE — the
  * disagree with the sentence in front of it.
  */
 function reasonSuffix(reason) {
-  if (reasonPresent(reason)) return ` (\`${displayReason(reason)}\`)`;
+  if (reasonPresent(reason)) return ` (\`${safeCodeSpan(reason)}\`)`;
   if (reason === undefined || reason === null || typeof reason === 'string') return '';
   return ` (recorded reason: ${displayReason(reason)})`;
 }
@@ -198,7 +198,7 @@ const WHY = {
  * actually served the request, which this plugin must not do.
  */
 function answeredBy(entry) {
-  return entry.model ? ` *(answered by \`${safeInline(entry.model)}\`)*` : '';
+  return entry.model ? ` *(answered by \`${safeCodeSpan(entry.model)}\`)*` : '';
 }
 
 /**
@@ -227,21 +227,22 @@ function reviewedSection(entries) {
 
 function subjectLine(entry) {
   // coerce before slice: a non-string sha (foreign build) would throw on `.slice`.
-  return `\`${safeInline(entry.sha).slice(0, 9)}\` ${safeInline(entry.subject)}`.trim();
+  return `\`${safeCodeSpan(entry.sha).slice(0, 9)}\` ${safeInline(entry.subject)}`.trim();
 }
 
 function findingLines(entry) {
   return entry.findings.map((finding) => {
-    // Each component is escaped BEFORE the join — `Array.join` coerces via `toString`, so a hostile
-    // `finding.file`/`finding.line` with a throwing `toString` would otherwise abort the whole report
-    // before `safeInline` ran. The empty join still falls through to the literal fallback below.
-    const where = [finding.file, finding.line]
-      .filter((part) => part !== undefined && part !== null)
-      .map((part) => safeInline(part))
-      .join(':');
+    // `file` and `line` are escaped separately inside the span, never joined first: `Array.join`
+    // coerces via `toString`, so a hostile value with a throwing `toString` would abort the whole
+    // report. With only one of them present, an empty value falls through to the literal fallback.
+    const hasFile = finding.file !== undefined && finding.file !== null;
+    const hasLine = finding.line !== undefined && finding.line !== null;
     const severity = finding.severity ? `**${safeInline(finding.severity)}** ` : '';
     const evidence = finding.evidence ? `\n    > ${safeBlockquoteLines(finding.evidence)}` : '';
-    return `- ${severity}\`${safeInline(where) || '(no location given)'}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
+    if (hasFile && hasLine) {
+      return `- ${severity}\`${safeCodeSpan(finding.file)}:${safeCodeSpan(finding.line)}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
+    }
+    return `- ${severity}\`${safeCodeSpan(hasFile ? finding.file : finding.line) || '(no location given)'}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
   });
 }
 
@@ -271,7 +272,7 @@ function findingsBlock(entry, indent = '', { attribute = true } = {}) {
   // The caller may already have named the answering model on its own row — a
   // coverage row does. Naming it twice for one commit is noise the tests could
   // not see, since they assert the string is PRESENT.
-  const lines = attribute ? [`${indent}*answered by \`${safeInline(entry.model) || 'unknown'}\`*`, ''] : [];
+  const lines = attribute ? [`${indent}*answered by \`${safeCodeSpan(entry.model) || 'unknown'}\`*`, ''] : [];
   for (const note of incompleteness(entry)) lines.push(`${indent}> **Incomplete:** ${note}`, '');
   for (const line of findingLines(entry)) lines.push(`${indent}${line}`);
   lines.push('');
@@ -372,15 +373,15 @@ function header(record) {
     `- **Started** ${safeInline(record.startedAt)} · **ended** ${safeInline(record.endedAt) || 'not observed'}`,
     // Always, even for a self-review: its ABSENCE is exactly what would let a
     // foreign --repo run's artifact go unattributed.
-    `- **Repository** \`${safeInline(record.repo) || '(not recorded)'}\``,
+    `- **Repository** \`${safeCodeSpan(record.repo) || '(not recorded)'}\``,
     `- **Stopped because** ${safeInline(record.stoppedBecause)}`,
-    `- **Model requested** \`${safeInline(record.requestedModel) || '(provider default)'}\``,
+    `- **Model requested** \`${safeCodeSpan(record.requestedModel) || '(provider default)'}\``,
     `- **Enumerated** ${safeInline(enumerated)} commits · **reviewed** ${safeInline(reviewed)} · **no review** ${safeInline(enumerated - reviewed)}`,
     `- **Per-commit cap** ${safeInline(record.maxSeconds)}s · **paths included** ${safeInline(record.include)}`,
     // The window this run walked. Without it the artifact cannot say what it
     // enumerated FROM, and two arms of a benchmark cannot be shown to have
     // reviewed the same commits.
-    `- **Enumerated from** \`${safeInline(record.from) || 'HEAD'}\`${shortfall(record)}`,
+    `- **Enumerated from** \`${safeCodeSpan(record.from) || 'HEAD'}\`${shortfall(record)}`,
     `- ${tally(record.entries)}`,
     '',
   ];
@@ -400,7 +401,7 @@ function declaredPairings(entries) {
   const pairs = new Set();
   for (const entry of entries) {
     if (declaredMatch(entry)) {
-      pairs.add(`\`${safeInline(entry.requestedModel) || '(not recorded)'}\` answered as \`${safeInline(entry.model)}\``);
+      pairs.add(`\`${safeCodeSpan(entry.requestedModel) || '(not recorded)'}\` answered as \`${safeCodeSpan(entry.model)}\``);
     }
   }
   if (pairs.size === 0) return [];

@@ -18,8 +18,9 @@ import { reportFlags, reviewFlags } from '../bench/run.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import { SAMPLING_FLAGS, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
 import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
-import { PASSES_CEILING, parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
+import { parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
 import { REVIEW_SPEC } from '../plugins/oai/scripts/lib/cmd-review.mjs';
+import { modelList, respondJson, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 test('importing bench/run.mjs does NOT run the benchmark', async () => {
   // THE GUARD THAT GUARDS THE GUARD.
@@ -118,10 +119,19 @@ test('--cold mints a cache-buster unique to the case and run', () => {
 
 // A bench that gets past validation would run the whole corpus and write a record
 // into this checkout, so the child is killed at its first case and the test learns
-// that a case started rather than waiting for one.
+// that a case started rather than waiting for one. The only provider it can reach is
+// an in-process server that counts every request, so a validation that broke sends
+// nothing to a real model, and `hits` shows whether anything was sent — a warm-up
+// request precedes the first case's progress line.
 const spawnBench = async (args) => {
   const runPath = fileURLToPath(new URL('../bench/run.mjs', import.meta.url));
-  const child = spawn(process.execPath, [runPath, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
+  const server = await startFakeServer((request, response) => respondJson(response, modelList('test-model')));
+  const { path: configPath } = writeConfig({
+    defaultProvider: 'fake',
+    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192 } },
+  });
+  const env = { ...process.env, OAI_PLUGIN_CONFIG: configPath, OAI_PLUGIN_STATE: tempDir('bench-flags-state-') };
+  const child = spawn(process.execPath, [runPath, ...args], { cwd: fileURLToPath(new URL('..', import.meta.url)), env });
   let out = '';
   let startedCase = false;
   const read = (d) => {
@@ -136,7 +146,9 @@ const spawnBench = async (args) => {
   const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
   const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
   clearTimeout(timer);
-  return { code, signal, out, startedCase };
+  const hits = server.requests.length;
+  await server.close();
+  return { code, signal, out, startedCase, hits };
 };
 
 test('bench refuses --max-tokens below the review reserve floor BEFORE materializing', async () => {
@@ -145,7 +157,8 @@ test('bench refuses --max-tokens below the review reserve floor BEFORE materiali
   // every child's reserveFor, so without this floor a multi-case sweep would
   // materialize every repo and record predictable failures. The refusal must
   // name the floor and cost milliseconds, not repos.
-  const { code, signal, out, startedCase } = await spawnBench(['--max-tokens', '100']);
+  const { code, signal, out, startedCase, hits } = await spawnBench(['--max-tokens', '100']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(startedCase, false, `validation let --max-tokens 100 through and a case started: ${out.slice(0, 300)}`);
   assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
   assert.notEqual(code, 0, `a below-floor --max-tokens must be refused: ${out.slice(0, 300)}`);
@@ -182,7 +195,8 @@ test('neither --passes nor --lens by default', () => {
 
 
 test('bench refuses --lens + --passes together BEFORE materializing any case', async () => {
-  const { code, signal, out } = await spawnBench(['--lens', 'security', '--passes', '2']);
+  const { code, signal, out, hits } = await spawnBench(['--lens', 'security', '--passes', '2']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(signal, null, out.slice(0, 300));
   assert.notEqual(code, 0, `the collision must be refused up front: ${out.slice(0, 300)}`);
   assert.match(out, /--lens and --passes cannot be combined/);
@@ -190,7 +204,8 @@ test('bench refuses --lens + --passes together BEFORE materializing any case', a
 });
 
 test('bench refuses an unknown --lens BEFORE materializing any case', async () => {
-  const { code, signal, out } = await spawnBench(['--lens', 'bogus']);
+  const { code, signal, out, hits } = await spawnBench(['--lens', 'bogus']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(signal, null, out.slice(0, 300));
   assert.notEqual(code, 0, out.slice(0, 300));
   assert.match(out, /Unknown --lens "bogus"/);
@@ -198,7 +213,8 @@ test('bench refuses an unknown --lens BEFORE materializing any case', async () =
 });
 
 test('bench refuses an over-ceiling --passes BEFORE materializing any case', async () => {
-  const { code, signal, out } = await spawnBench(['--passes', '99']);
+  const { code, signal, out, hits } = await spawnBench(['--passes', '99']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(signal, null, out.slice(0, 300));
   assert.notEqual(code, 0, out.slice(0, 300));
   assert.doesNotMatch(out, /run \d+\/\d+/, 'refused before running any case');
@@ -235,7 +251,8 @@ test('forwarded values reach the review as the bench validated them, empty ones 
 });
 
 test('bench refuses an out-of-range sampling value BEFORE materializing any case', async () => {
-  const { code, signal, out, startedCase } = await spawnBench(['--top-p', '7']);
+  const { code, signal, out, startedCase, hits } = await spawnBench(['--top-p', '7']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(startedCase, false, `validation let --top-p 7 through and a case started: ${out.slice(0, 300)}`);
   assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
   assert.notEqual(code, 0, `an out-of-range --top-p must be refused: ${out.slice(0, 300)}`);
@@ -248,12 +265,24 @@ test('the report is told which sampling flags were set, and only those', () => {
 });
 
 test('bench accepts a valid sampling flag on its command line', async () => {
-  // Refused for --passes, which is checked after the sampling flags are validated:
-  // reaching that refusal proves --top-p was both parsed and accepted. The match is
-  // on the refusal's own sentence — an unknown-flag hint also names --passes.
-  const { code, signal, out, startedCase } = await spawnBench(['--top-p', '0.9', '--passes', '99']);
+  // Refused for the unknown case, which is looked up only once option validation
+  // has returned: reaching that refusal proves --top-p was both parsed and
+  // accepted, whatever order the options are checked in.
+  const { code, signal, out, startedCase, hits } = await spawnBench(['--top-p', '0.9', '--case', '__nonexistent__']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
   assert.equal(startedCase, false, out.slice(0, 300));
   assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
   assert.notEqual(code, 0);
-  assert.match(out, new RegExp(`--passes must be an integer between 1 and ${PASSES_CEILING}`), `--top-p must be accepted: ${out.slice(0, 300)}`);
+  assert.match(out, /Unknown case\(s\): __nonexistent__\./, `--top-p must be accepted: ${out.slice(0, 300)}`);
+});
+
+test('bench refuses a stray positional BEFORE any case starts', async () => {
+  // `parseArgs` stops reading flags at the first non-`--` token, so `caps --model x`
+  // would otherwise run every case on the default model with `--model x` ignored.
+  const { code, signal, out, startedCase, hits } = await spawnBench(['caps', '--model', 'wanted']);
+  assert.equal(hits, 0, `a refused bench sent a request to the model server: ${out.slice(0, 300)}`);
+  assert.equal(startedCase, false, `a stray positional let a case start: ${out.slice(0, 300)}`);
+  assert.equal(signal, null, `child was killed (${signal}) without starting a case: ${out.slice(0, 300)}`);
+  assert.notEqual(code, 0);
+  assert.match(out, /Refusing: "caps", "--model", "wanted" is not an option this command takes/);
 });

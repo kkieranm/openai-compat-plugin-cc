@@ -17,11 +17,13 @@ import {
   startFakeServer,
   writeConfig,
 } from './helpers.mjs';
-import { NEEDS_SQLITE, readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { renderTaskFooter } from '../plugins/oai/scripts/lib/render.mjs';
 
 const REQUESTED = 'lmstudio-community/Qwen3.8-27B-MLX-4bit';
 const SERVED = 'Qwen3.8-27B-MLX-4bit';
 const SWAP_WARNING = /asked for "lmstudio-community\/Qwen3\.8-27B-MLX-4bit" but Qwen3\.8-27B-MLX-4bit answered/;
+const DECLARED_FOOTER = /model: Qwen3\.8-27B-MLX-4bit \(declared for lmstudio-community\/Qwen3\.8-27B-MLX-4bit\)/;
 
 const findings = JSON.stringify({
   analysis: 'read each changed file in full',
@@ -63,13 +65,13 @@ async function reviewRepo() {
   return dir;
 }
 
-test('task: a reply under the declared id raises no swap warning and a clean footer', async () => {
+test('task: a reply under the declared id raises no swap warning and a footer marking the declaration', async () => {
   const server = await bareIdServer();
   try {
     const result = await runCompanion(['task', 'hello'], { configPath: config(server.baseUrl) });
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stderr, SWAP_WARNING);
-    assert.match(result.stdout, /model: Qwen3\.8-27B-MLX-4bit/);
+    assert.match(result.stdout, DECLARED_FOOTER);
     assert.doesNotMatch(result.stdout, /\(requested /);
   } finally {
     await server.close();
@@ -83,6 +85,7 @@ test('task: without the declaration the same reply is reported as a substitution
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, SWAP_WARNING);
     assert.match(result.stdout, /model: Qwen3\.8-27B-MLX-4bit \(requested lmstudio-community\/Qwen3\.8-27B-MLX-4bit\)/);
+    assert.doesNotMatch(result.stdout, /\(declared for /);
   } finally {
     await server.close();
   }
@@ -123,13 +126,13 @@ test('task --json failure envelope reports the declared id as null beside a null
   }
 });
 
-test('review: a reply under the declared id raises no swap warning and a clean footer', async () => {
+test('review: a reply under the declared id raises no swap warning and a footer marking the declaration', async () => {
   const server = await bareIdServer(findings);
   try {
     const result = await runCompanion(['review'], { configPath: config(server.baseUrl), cwd: await reviewRepo() });
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stderr, SWAP_WARNING);
-    assert.match(result.stdout, /model: Qwen3\.8-27B-MLX-4bit/);
+    assert.match(result.stdout, DECLARED_FOOTER);
     assert.doesNotMatch(result.stdout, /\(requested /);
 
     const undeclared = await runCompanion(['review'], {
@@ -139,6 +142,7 @@ test('review: a reply under the declared id raises no swap warning and a clean f
     assert.equal(undeclared.status, 0, undeclared.stderr);
     assert.match(undeclared.stderr, SWAP_WARNING);
     assert.match(undeclared.stdout, /\(requested lmstudio-community\/Qwen3\.8-27B-MLX-4bit\)/);
+    assert.doesNotMatch(undeclared.stdout, /\(declared for /);
   } finally {
     await server.close();
   }
@@ -271,7 +275,7 @@ test('background: the declaration survives submission, the worker and /oai:resul
 
     const shown = await runCompanion(['result', id], { configPath, env: { OAI_PLUGIN_STATE: state } });
     assert.equal(shown.status, 0, shown.stderr);
-    assert.match(shown.stdout, /model: Qwen3\.8-27B-MLX-4bit/);
+    assert.match(shown.stdout, DECLARED_FOOTER);
     assert.doesNotMatch(shown.stdout, /\(requested /);
     assert.doesNotMatch(shown.stderr, SWAP_WARNING);
   } finally {
@@ -377,8 +381,39 @@ test('background: with nothing declared the request carries no entry and the swa
     const shown = await runCompanion(['result', id], { configPath, env: { OAI_PLUGIN_STATE: state } });
     assert.equal(shown.status, 0, shown.stderr);
     assert.match(shown.stdout, /\(requested lmstudio-community\/Qwen3\.8-27B-MLX-4bit\)/);
+    assert.doesNotMatch(shown.stdout, /\(declared for /);
     assert.match(shown.stderr, SWAP_WARNING);
   } finally {
     await server.close();
+  }
+});
+
+test('the footer marks a declared match, and leaves an exact match and a substitution as they were', () => {
+  const footer = (fields) => renderTaskFooter({ providerName: 'unsloth', ...fields });
+  assert.match(footer({ model: SERVED, requestedModel: REQUESTED, declaredServedModel: SERVED }), DECLARED_FOOTER);
+  const exact = footer({ model: REQUESTED, requestedModel: REQUESTED, declaredServedModel: SERVED });
+  assert.match(exact, /model: lmstudio-community\/Qwen3\.8-27B-MLX-4bit$/);
+  assert.doesNotMatch(exact, /\((declared for|requested) /);
+  // A self-mapping declaration never turns an exact reply into a declared one.
+  assert.doesNotMatch(footer({ model: REQUESTED, requestedModel: REQUESTED, declaredServedModel: REQUESTED }), /\(declared for /);
+  const swapped = footer({ model: 'other', requestedModel: REQUESTED, declaredServedModel: SERVED });
+  assert.match(swapped, /model: other \(requested lmstudio-community\/Qwen3\.8-27B-MLX-4bit\)/);
+  assert.doesNotMatch(swapped, /\(declared for /);
+});
+
+test('/oai:result shows a persisted declared match with no requested id as declared for an unknown id', { skip: NEEDS_SQLITE }, async () => {
+  // Only a stored outcome can carry a declared served id without the requested one beside it.
+  const scenario = await queueScenario();
+  try {
+    insertSynthetic(scenario.state, {
+      id: 'declared-unknown',
+      state: 'completed',
+      outcome: { content: 'the answer', model: SERVED, declaredServedModel: SERVED },
+    });
+    const shown = await scenario.run(['result', 'declared-unknown']);
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.match(shown.stdout, /model: Qwen3\.8-27B-MLX-4bit \(declared for unknown\)/);
+  } finally {
+    await scenario.server.close();
   }
 });

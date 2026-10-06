@@ -101,12 +101,13 @@ it). Map the requested id to the id the server reports:
 A reply naming exactly the declared id for the requested id is then not a substitution; every other
 pair is still compared exactly. The mapping is your assertion that the two ids are the same model,
 not proof of it — nothing the plugin can query confirms it — so `--json` records it as
-`declaredServedModel` beside `requestedModel` and `model`, the benchmark and review-sweep reports
-name each pairing a scored run or sweep entry relied on, and the sweep reproduction reader discloses
-such a run as provenance-unverifiable. Declare only an id the server does not also list as a model of its
-own: if it does, a real swap to that model would be accepted as the requested one. The declaration
-describes the provider's own endpoint: it does not apply under `--base-url` to a different endpoint,
-or to a bare `--base-url` with no `--provider`.
+`declaredServedModel` beside `requestedModel` and `model`, the `/oai:task`, `/oai:review` and
+`/oai:result` footers show such a reply as `model: <served> (declared for <requested>)`, the
+benchmark and review-sweep reports name each pairing a scored run or sweep entry relied on, and the
+sweep reproduction reader discloses such a run as provenance-unverifiable. Declare only an id the
+server does not also list as a model of its own: if it does, a real swap to that model would be
+accepted as the requested one. The declaration describes the provider's own endpoint: it does not
+apply under `--base-url` to a different endpoint, or to a bare `--base-url` with no `--provider`.
 
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
 `--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several

@@ -17,9 +17,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isMainModule } from './lib/main-module.mjs';
 import { parseArgs } from '../plugins/oai/scripts/lib/args.mjs';
-import { MAX_ATTEMPTS_CEILING, PASSES_CEILING, parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
-import { MAX_BUDGET_SECONDS } from '../plugins/oai/scripts/lib/http-budgets.mjs';
-import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
+import { parseNumber } from '../plugins/oai/scripts/lib/delegate.mjs';
+import { BENCH_NUMERIC_BOUNDS } from '../plugins/oai/scripts/lib/numeric-bounds.mjs';
 import { parseReviewLenses } from '../plugins/oai/scripts/lib/review.mjs';
 import { SAMPLING_FLAGS, SAMPLING_PARAMS, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
@@ -269,31 +268,24 @@ function selectCases(all, wanted) {
 /**
  * Every flag checked before any case runs, so a mistyped budget costs a
  * refusal in milliseconds rather than surfacing after the first model round
- * trip. Lifted out of `main` at the function size budget.
+ * trip.
  */
 function validateOptions(options) {
   const runsPerCase = options.runs ? Number(options.runs) : 1;
   if (!Number.isInteger(runsPerCase) || runsPerCase < 1) {
     throw new UserError(`--runs must be a positive integer, got "${options.runs}".`);
   }
-  // Validated with the review command's *own* validator, and with exactly its
-  // options — bench only forwards these flags, so any stricter rule here would
-  // give one flag two domains: `--timeout 1.5` rejected by the harness while
-  // `/oai:review --timeout 1.5` accepts it. Hence `{ min: 1 }` and no
-  // `integer: true`; fractional seconds are a legitimate duration. `--runs`
-  // above stays integer-only for the opposite reason — it is a count, not a
-  // duration. Called for the throw alone, before any case runs, so a mistyped
-  // budget costs nothing rather than surfacing after the first model round trip.
-  // `max` included, not just `min` — the comment above says "exactly its
-  // options" and it has to be true. Omitting the ceiling let
-  // `--max-seconds 99999999` clear this guard and be refused by every child
-  // instead: a 6-case N=3 sweep would materialize 18 repos, spawn 18 processes
-  // and record 18 failed runs with `reason: null`, then render a full table of
-  // all-zero recall — in place of one refusal in milliseconds, which is the
-  // entire point of validating here.
-  const budget = { min: 1, max: MAX_BUDGET_SECONDS };
-  if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', budget);
-  if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', budget);
+  // Validated with the review command's own validator and, from
+  // `BENCH_NUMERIC_BOUNDS`, the command's own bounds, because bench only forwards
+  // these flags: a stricter rule here would give one flag two domains, with
+  // `--timeout 1.5` rejected by the harness while `/oai:review --timeout 1.5`
+  // accepts it. The duration bounds carry no `integer` — fractional seconds are
+  // a legitimate duration — and a ceiling as well as a floor, so an
+  // over-ceiling `--max-seconds` is one refusal here rather than a failed run
+  // recorded for every case. `--runs` above stays integer-only because it is a
+  // count, not a duration. Called for the throw alone.
+  if (options.timeout !== undefined) parseNumber(options.timeout, 'timeout', BENCH_NUMERIC_BOUNDS.timeout);
+  if (options['max-seconds'] !== undefined) parseNumber(options['max-seconds'], 'max-seconds', BENCH_NUMERIC_BOUNDS['max-seconds']);
   // Same early-refusal reason as the budgets above: a bad value must fail in
   // milliseconds, not after materializing every repo and recording each child's
   // refusal as a failed run. The floor is `MIN_REVIEW_RESERVE_TOKENS`, not 1 —
@@ -303,16 +295,16 @@ function validateOptions(options) {
   // rejected by every spawned child, which is exactly what this up-front check
   // exists to prevent. Temperature uses `/oai:review`'s own 0–2 domain.
   if (options['max-tokens'] !== undefined) {
-    parseNumber(options['max-tokens'], 'max-tokens', { integer: true, min: MIN_REVIEW_RESERVE_TOKENS });
+    parseNumber(options['max-tokens'], 'max-tokens', BENCH_NUMERIC_BOUNDS['max-tokens']);
   }
-  if (options.temperature !== undefined) parseNumber(options.temperature, 'temperature', { min: 0, max: 2 });
+  if (options.temperature !== undefined) parseNumber(options.temperature, 'temperature', BENCH_NUMERIC_BOUNDS.temperature);
   parseSampling(options);
   // Same domain as the command it forwards to, for the reason stated above: an
   // out-of-range value here otherwise materializes every repo, spawns every
   // child, records each validation refusal as a failed run, and renders a table
   // of all-zero recall — in place of one refusal in milliseconds.
   if (options['max-attempts'] !== undefined) {
-    parseNumber(options['max-attempts'], 'max-attempts', { integer: true, min: 1, max: MAX_ATTEMPTS_CEILING });
+    parseNumber(options['max-attempts'], 'max-attempts', BENCH_NUMERIC_BOUNDS['max-attempts']);
   }
   // The pass strategy, refused up front for the same reason as every budget above:
   // an over-ceiling `--passes`, an unknown or empty `--lens`, or the two together
@@ -328,14 +320,21 @@ function validateOptions(options) {
     });
   }
   if (options.passes !== undefined) {
-    parseNumber(options.passes, 'passes', { integer: true, min: 1, max: PASSES_CEILING });
+    parseNumber(options.passes, 'passes', BENCH_NUMERIC_BOUNDS.passes);
   }
   if (options.lens !== undefined) parseReviewLenses(options.lens); // Throws on empty/unknown/duplicate, naming the set.
   return runsPerCase;
 }
 
 async function main() {
-  const { options } = parseArgs(process.argv.slice(2), SPEC);
+  const { options, positionals } = parseArgs(process.argv.slice(2), SPEC);
+  // This command takes no positional argument. `parseArgs` stops reading flags at
+  // the first non-`--` token and returns the rest as positionals, so a typo such
+  // as `caps --model wanted` would otherwise run every case with `--model wanted`
+  // ignored.
+  if (positionals.length > 0) {
+    throw new UserError(`Refusing: ${positionals.map((token) => `"${token}"`).join(', ')} is not an option this command takes, and everything after it was ignored rather than parsed.`, { hint: 'Flags only, and every flag must start with --. Check for a typo or a missing --.' });
+  }
   // The operator's annotation of what the record cannot probe (a server set to a
   // reasoning default in the UI). Bounded here so the persisted `options` block
   // carries a size-capped value; it never leaves the bench record.

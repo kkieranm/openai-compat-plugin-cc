@@ -508,3 +508,20 @@ test('a requested numeric sampling value is printed as the number', () => {
 test('a requested thinking switch is printed as its plain value', () => {
   assert.match(render([goodRun()], { sampling: { 'enable-thinking': false } }), /`--enable-thinking false` was requested/);
 });
+
+test('a model id inside a code span prints as itself, and a backtick or line break cannot end the span', () => {
+  const run = substitutedRun();
+  run.report = { ...run.report, requestedModel: 'org/qwen3_coder*[x]', model: 'other`model\nnext_line' };
+  const report = render([run]);
+  assert.ok(report.includes('asked for `org/qwen3_coder*[x]`, `other.model next_line` answered.'), report);
+  for (const line of report.split('\n')) {
+    assert.equal((line.match(/`/g) ?? []).length % 2, 0, `a code span left open: ${line}`);
+  }
+});
+
+test('a requested sampling or budget value prints verbatim inside its code span', () => {
+  const report = render([goodRun()], { sampling: { 'reasoning-effort': 'very_high' }, maxTokens: '4_096', temperature: '0.[5]', timeoutSeconds: '6*0', maxSeconds: '9_0' });
+  for (const shown of ['`--reasoning-effort very_high`', '`--max-tokens 4_096`', '`--temperature 0.[5]`', '`--timeout 6*0`', '`--max-seconds 9_0`']) {
+    assert.ok(report.includes(shown), `${shown} missing:\n${report}`);
+  }
+});

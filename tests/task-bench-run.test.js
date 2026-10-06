@@ -1,9 +1,12 @@
 // The task bench's loop, driven without a model.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { renderReport, requestArgs, runSweep } from '../bench/task-run.mjs';
 import { loadTaskCases } from '../bench/lib/task-corpus.mjs';
 import { fileURLToPath } from 'node:url';
+import { modelList, respondJson, startFakeServer, tempDir, writeConfig } from './helpers.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CASES = loadTaskCases(ROOT);
@@ -96,4 +99,67 @@ test('the run records the prompt that was SENT, not the label it came from', asy
     assert.equal(run.prompt, CASES[0].prompts[run.arm]);
     assert.ok(run.prompt.length > 0);
   }
+});
+
+test('the task bench refuses a stray positional BEFORE any case starts', async () => {
+  // The only provider the child can reach is this in-process server, which counts every request, so a
+  // case that did start reaches no real model and is seen here.
+  const server = await startFakeServer((request, response) => respondJson(response, modelList('test-model')));
+  const { path: configPath } = writeConfig({
+    defaultProvider: 'fake',
+    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192 } },
+  });
+  const env = { ...process.env, OAI_PLUGIN_CONFIG: configPath, OAI_PLUGIN_STATE: tempDir('task-bench-state-') };
+  const child = spawn(process.execPath, [join(ROOT, 'bench/task-run.mjs'), 'x', '--model', 'wanted'], { cwd: ROOT, env });
+  let out = '';
+  let startedCase = false;
+  const read = (data) => {
+    out += data;
+    if (!startedCase && /run \d+\/\d+/.test(out)) {
+      startedCase = true;
+      child.kill('SIGKILL');
+    }
+  };
+  child.stdout.on('data', read);
+  child.stderr.on('data', read);
+  const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+  const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
+  clearTimeout(timer);
+  const hits = server.requests.length;
+  await server.close();
+  assert.equal(hits, 0, `a refused command sent a request to the model server: ${out.slice(0, 300)}`);
+  assert.equal(startedCase, false, `a stray positional let a case start: ${out.slice(0, 300)}`);
+  assert.equal(signal, null, out.slice(0, 300));
+  assert.notEqual(code, 0);
+  assert.match(out, /Refusing: "x", "--model", "wanted" is not an option this command takes/);
+  assert.doesNotMatch(out, /\n\s+at /, 'a refusal, not a stack trace');
+});
+
+test('a `|` in a case id keeps its report row at the header\'s column count', async () => {
+  const { execute } = answering({ pointed: 'x', neutral: 'y' });
+  const sweep = runSweep([{ ...CASES[0], id: 'a|b' }], { runs: 1 }, { execute });
+  const rows = renderReport(sweep).split('\n').filter((line) => line.startsWith('|'));
+  const pipes = (line) => line.split('|').length;
+  assert.ok(rows.some((row) => row.startsWith('| a.b |')), rows.join('\n'));
+  for (const row of rows) assert.equal(pipes(row), pipes(rows[0]), row);
+});
+
+test('a model id prints verbatim inside a code span, with an unconfirmed id\'s `?` outside it', async () => {
+  const execute = (caseDef, arm) => ({
+    content: 'x',
+    model: 'qwen3_coder-q4_k_m',
+    modelReported: arm === 'neutral' ? false : true,
+    attempts: [],
+  });
+  const markdown = renderReport(runSweep([CASES[0]], { runs: 1 }, { execute }));
+  assert.ok(markdown.includes('| pointed | `qwen3_coder-q4_k_m` |'), markdown);
+  assert.ok(markdown.includes('| neutral | `qwen3_coder-q4_k_m`? |'), markdown);
+});
+
+test('a `|` in a model id keeps its report row at the header\'s column count', async () => {
+  const execute = () => ({ content: 'x', model: 'm|n', attempts: [] });
+  const rows = renderReport(runSweep([CASES[0]], { runs: 1 }, { execute })).split('\n').filter((line) => line.startsWith('|'));
+  const pipes = (line) => line.split('|').length;
+  assert.ok(rows.some((row) => row.includes('| `m.n` |')), rows.join('\n'));
+  for (const row of rows) assert.equal(pipes(row), pipes(rows[0]), row);
 });

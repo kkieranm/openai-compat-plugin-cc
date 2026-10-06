@@ -290,3 +290,22 @@ test('without --cold the retry-warmed prefill stays in the sample it belongs to'
   const [row] = caseRows([{ caseDef: CASE, runs: [retriedRun()] }], { cold: false });
   assert.deepEqual(row.prefill.values, [500]);
 });
+
+test('a `|` in a case id, failure reason or requested model keeps every table row at its header\'s column count', () => {
+  const run = retriedRun();
+  run.report = { ...run.report, requestedModel: 'm|n', attempts: [failedAttempt('reason|x'), answered()] };
+  const markdown = renderReport([{ caseDef: { ...CASE, id: 'a|b' }, runs: [run] }], {
+    runsPerCase: 1, model: 'm', provider: 'p', diffOnly: false, cold: false,
+  });
+  const lines = markdown.split('\n');
+  // Each hostile value reaches a table row: the recall table and all three failure tables.
+  assert.ok(lines.some((line) => line.startsWith('| `a.b` ')), markdown);
+  for (const row of ['| `a.b` | 1 |', '| `reason.x` | 1 |', '| `m.n` | 1 |']) assert.ok(lines.includes(row), `${row} missing:\n${markdown}`);
+  const pipes = (line) => line.split('|').length;
+  let header = null;
+  lines.forEach((line, index) => {
+    if (!line.startsWith('|')) { header = null; return; }
+    if (header === null) header = pipes(line);
+    assert.equal(pipes(line), header, `line ${index + 1} has a different column count than its header: ${line}`);
+  });
+});

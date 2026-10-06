@@ -21,7 +21,7 @@
 // happened — entries carried only `seconds`, a rounded duration — so the timeline
 // is what got recorded, and everything here is computed from it.
 import { isOutage } from './sweep-outcome.mjs';
-import { safeInline } from './markdown-safe.mjs';
+import { safeCodeSpan, safeInline } from './markdown-safe.mjs';
 
 /** Commits the loop actually attempted, in the order it attempted them.
  *
@@ -49,7 +49,7 @@ function clock(iso) {
 
 // One outage's `sha time` label, hoisted out of the interpolation below so both its untrusted values
 // are wrapped at a top-level interpolation the structural test can see.
-const outageLabel = (entry) => `\`${safeInline(entry.sha).slice(0, 9)}\` ${safeInline(clock(entry.startedAt))}`;
+const outageLabel = (entry) => `\`${safeCodeSpan(entry.sha).slice(0, 9)}\` ${safeInline(clock(entry.startedAt))}`;
 
 /**
  * Replay the counter over the entries that SETTLED, and report what it did.

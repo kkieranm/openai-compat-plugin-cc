@@ -10,7 +10,7 @@
 // rate, a censored run read as a clean pass), and one definition sitting next to
 // its own caveats is harder to quote out of context than one sitting alone.
 
-import { safeInline } from './markdown-safe.mjs';
+import { safeCodeSpan } from './markdown-safe.mjs';
 import { degradedNote } from './schema-degrade.mjs';
 
 function pct(found, total) {
@@ -132,7 +132,7 @@ function capNote(rows, maxSeconds) {
   if (!maxSeconds && capped === 0) return [];
   return [
     (maxSeconds
-      ? `**\`--max-seconds ${maxSeconds}\` was on**`
+      ? `**\`--max-seconds ${safeCodeSpan(maxSeconds)}\` was on**`
       : '**A wall-clock cap was in force, from the provider config rather than a flag** — this harness '
         + 'was never told the number, and infers it only from the runs it killed')
     + `, so any run still generating at that point was cut off and recorded as a failure with reason `
@@ -198,20 +198,20 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
   // credit the difference to the model.
   if (maxTokens !== undefined) {
     notes.push(
-      `**\`--max-tokens ${maxTokens}\` was on**, capping each reply's token budget — which on a model that `
+      `**\`--max-tokens ${safeCodeSpan(maxTokens)}\` was on**, capping each reply's token budget — which on a model that `
       + 'spends its whole window reasoning is what lets it finish and answer at all, so its recall is not '
       + 'comparable to an arm run without it.',
     );
   }
   if (temperature !== undefined) {
     notes.push(
-      `**\`--temperature ${temperature}\` was on**: this arm did not use the model's default sampling `
+      `**\`--temperature ${safeCodeSpan(temperature)}\` was on**: this arm did not use the model's default sampling `
       + 'temperature, so its findings and their variance are not comparable to an arm run at the default.',
     );
   }
   for (const [flag, value] of Object.entries(sampling)) {
     notes.push(
-      `**\`--${flag} ${safeInline(value)}\` was requested**: an arm `
+      `**\`--${safeCodeSpan(flag)} ${safeCodeSpan(value)}\` was requested**: an arm `
       + 'run without it is not comparable to this one. Whether a server honours the request is not visible '
       + 'from here.',
     );
@@ -223,7 +223,7 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
   notes.push(...capNote(rows, maxSeconds));
   if (timeoutSeconds) {
     notes.push(
-      `**\`--timeout ${timeoutSeconds}\` was on**, which bounds the wait for each run's *first token* only — `
+      `**\`--timeout ${safeCodeSpan(timeoutSeconds)}\` was on**, which bounds the wait for each run's *first token* only — `
       + 'prefill, not generation. It does not cap a run that is producing output.',
     );
   }
@@ -248,8 +248,8 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
   // it switches some cases and not others; a reader comparing two runs would
   // otherwise credit the difference to a switch that never reached every row.
   if (diffOnly) {
-    const applied = rows.filter((row) => row.diffOnly).map((row) => `\`${row.id}\``);
-    const skipped = rows.filter((row) => !row.diffOnly).map((row) => `\`${row.id}\``);
+    const applied = rows.filter((row) => row.diffOnly).map((row) => `\`${safeCodeSpan(row.id)}\``);
+    const skipped = rows.filter((row) => !row.diffOnly).map((row) => `\`${safeCodeSpan(row.id)}\``);
     notes.push(
       `**\`--diff-only\` applied to ${applied.join(', ') || 'no cases'}.**`
       + (skipped.length
@@ -310,7 +310,7 @@ function caveats(rows, runsPerCase, flags) {
     '**"Unmatched" is not "false positive".** The scorer matches a quoted anchor line or a line range, so '
     + 'it undercounts a finding that describes a known defect in different words.'
     + (controls.length > 0
-      ? ` The control case(s) — ${controls.map((id) => `\`${id}\``).join(', ')} — are clean targets with `
+      ? ` The control case(s) — ${controls.map((id) => `\`${safeCodeSpan(id)}\``).join(', ')} — are clean targets with `
         + 'no defects to find, so every unmatched finding there is a false positive by construction; the '
         + 'table marks their `unmatched` cell `(false pos)`.'
       : ''),

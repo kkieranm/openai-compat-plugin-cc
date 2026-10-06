@@ -570,9 +570,9 @@ test('a reordered array in caseDef suppresses ranking (array order is preserved,
 
 // ---- numeric value flags compare numerically ----
 
-test('max-tokens "1024" vs 1024 and temperature "1" vs 1.0 are rankable (numeric compare)', () => {
-  const a = norm(baseRecord({ 'max-tokens': '1024', temperature: '1' }), 'a.json', 'a');
-  const b = norm(baseRecord({ 'max-tokens': 1024, temperature: 1.0 }), 'b.json', 'b');
+test('max-tokens "4096" vs 4096 and temperature "1" vs 1.0 are rankable (numeric compare)', () => {
+  const a = norm(baseRecord({ 'max-tokens': '4096', temperature: '1' }), 'a.json', 'a');
+  const b = norm(baseRecord({ 'max-tokens': 4096, temperature: 1.0 }), 'b.json', 'b');
   assert.equal(buildComparison([a, b]).rankable, true, JSON.stringify(buildComparison([a, b]).divergences));
 });
 
@@ -612,29 +612,54 @@ test('per-case degradation on DIFFERENT cases suppresses ranking, though record-
 
 // ---- hostile numeric coercion ----
 
-test('numeric option strings the CLI accepts (.5, 1e2, +5) read as known numbers, so equivalents rank', () => {
-  const a = norm(baseRecord({ temperature: '.5', timeout: '1e2', 'max-tokens': '+5' }), 'a.json', 'a');
-  const b = norm(baseRecord({ temperature: 0.5, timeout: 100, 'max-tokens': 5 }), 'b.json', 'b');
+test('numeric option strings the CLI accepts (.5, 1e2, +4096) read as known numbers, so equivalents rank', () => {
+  const a = norm(baseRecord({ temperature: '.5', timeout: '1e2', 'max-tokens': '+4096' }), 'a.json', 'a');
+  const b = norm(baseRecord({ temperature: 0.5, timeout: 100, 'max-tokens': 4096 }), 'b.json', 'b');
   const comp = buildComparison([a, b]);
   assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
 });
 
-test('an empty-string numeric option is UNKNOWN and suppresses ranking (fail-closed; the writer would read it as 0)', () => {
+test('an empty-string numeric option compares as the validator reads it (0), so it ranks with an explicit 0', () => {
   const a = norm(baseRecord({ temperature: '' }), 'a.json', 'a');
-  const b = norm(baseRecord({ temperature: '' }), 'b.json', 'b');
+  const b = norm(baseRecord({ temperature: '0' }), 'b.json', 'b');
   const comp = buildComparison([a, b]);
-  assert.equal(comp.rankable, false);
-  assert.ok(axisNames(comp).includes('temperature'), JSON.stringify(comp.divergences));
+  assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
+});
+
+test("--temperature ' ' ranks with --temperature 0: both are the value the run sent", () => {
+  const a = norm(baseRecord({ temperature: ' ' }), 'a.json', 'a');
+  const b = norm(baseRecord({ temperature: '0' }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, true, JSON.stringify(comp.divergences));
+});
+
+test('a numeric option the run would refuse is UNKNOWN and suppresses ranking, even when both records carry it', () => {
+  for (const [axis, value] of [['temperature', '7'], ['timeout', '0'], ['max-seconds', '1e12'], ['max-tokens', '5'], ['max-attempts', '1.5'], ['passes', '999']]) {
+    const a = norm(baseRecord({ [axis]: value }), 'a.json', 'a');
+    const b = norm(baseRecord({ [axis]: value }), 'b.json', 'b');
+    const comp = buildComparison([a, b]);
+    assert.equal(comp.rankable, false, `${axis}=${value}`);
+    assert.ok(axisNames(comp).includes(axis), `${axis}: ${JSON.stringify(comp.divergences)}`);
+  }
+});
+
+test('max-tokens compares under the bench floor, not the review minimum of 1', () => {
+  const a = norm(baseRecord({ 'max-tokens': '5' }), 'a.json', 'a');
+  const b = norm(baseRecord({ 'max-tokens': 5 }), 'b.json', 'b');
+  const comp = buildComparison([a, b]);
+  assert.equal(comp.rankable, false, 'a value below MIN_REVIEW_RESERVE_TOKENS is one no bench run sent');
+  assert.ok(axisNames(comp).includes('max-tokens'), JSON.stringify(comp.divergences));
 });
 
 test('a hostile non-numeric option value is unknown, not coerced to a number', () => {
-  // Number([]) === 0, so a coercing reader would call these two records EQUAL on
-  // max-tokens (both 0) and rank them. Treating [] as unknown makes them diverge.
-  const a = norm(baseRecord({ 'max-tokens': [] }), 'a.json', 'a');
-  const b = norm(baseRecord({ 'max-tokens': 0 }), 'b.json', 'b');
+  // Number([]) === 0, and 0 is a temperature the validator accepts, so a coercing
+  // reader would call these two records EQUAL on temperature and rank them.
+  // Treating [] as unknown makes them diverge.
+  const a = norm(baseRecord({ temperature: [] }), 'a.json', 'a');
+  const b = norm(baseRecord({ temperature: 0 }), 'b.json', 'b');
   const comp = buildComparison([a, b]);
   assert.equal(comp.rankable, false);
-  assert.ok(axisNames(comp).includes('max-tokens'), JSON.stringify(comp.divergences));
+  assert.ok(axisNames(comp).includes('temperature'), JSON.stringify(comp.divergences));
 });
 
 // ---- never-throws on a pathological record ----
@@ -838,8 +863,21 @@ test('a markdown-metacharacter model id is escaped in the rendered output', () =
     { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun({ model: 'evil[x](y)', requestedModel: 'evil[x](y)' })] },
   ] }), 'a.json', 'a');
   const out = renderComparison(buildComparison([n]));
-  assert.ok(!out.includes('evil[x](y)'), 'raw metacharacters must not survive');
-  assert.match(out, /evil\.x/, 'the neutralised (dotted) form is present');
+  // A code span renders its contents literally, so the label prints as itself there;
+  // outside a code span (the matrix header cell) the metacharacters stay neutralised.
+  const outsideSpans = out.replace(/`[^`\n]*`/g, '');
+  assert.ok(!outsideSpans.includes('evil[x](y)'), `raw metacharacters must not survive outside a code span: ${out}`);
+  assert.match(outsideSpans, /\| evil\.x\.\.y\. @ a \|/, 'the table cell keeps the neutralised (dotted) form');
+  assert.ok(out.includes('- `evil[x](y) @ a` — `a.json`'), `the code span shows the label verbatim: ${out}`);
+});
+
+test('a label or path cannot close or break its code span', () => {
+  const n = norm(record({ runsPerCase: 1, options: {}, results: [
+    { caseDef: caseDef({ id: 'c1', defects: 2 }), runs: [scoredRun()] },
+  ] }), 'dir/a`b\nc_d.json', 'a');
+  const out = renderComparison(buildComparison([n]));
+  const listed = out.split('\n').find((line) => line.startsWith('- `'));
+  assert.equal(listed, '- `model-a @ a` — `dir/a.b c_d.json`');
 });
 
 test('a divergent pair still renders both tables, with the ranking withheld', () => {

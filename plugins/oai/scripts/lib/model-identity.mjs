@@ -18,9 +18,10 @@
  * through the provider's `servedModelIds`. `substitution()` uses it for its
  * declared branch, and every other reader of a declared match calls it rather
  * than testing the ids inline: multi-pass agreement (`review-passes.mjs`), the
- * bench note naming declared pairings (`bench/lib/report.mjs`), the sweep
- * reproduction reader's model provenance (`bench/lib/sweep-reproduction.mjs`)
- * and the sweep report's declared-pairing line (`bench/lib/sweep-report.mjs`).
+ * footer's declared marker (`render.mjs`), the bench note naming declared
+ * pairings (`bench/lib/report.mjs`), the sweep reproduction reader's model
+ * provenance (`bench/lib/sweep-reproduction.mjs`) and the sweep report's
+ * declared-pairing line (`bench/lib/sweep-report.mjs`).
  */
 
 /**

@@ -12,9 +12,11 @@ All notable changes to this project are documented here, loosely following the
   and answers as `Qwen3.8-27B-MLX-4bit`. A reply under the declared id is no longer reported as a
   substitution by `/oai:task`, `/oai:review`, `/oai:result` or the benchmark; every other pair is still
   compared exactly. The declaration is the operator's assertion, not a check: `--json` carries it as
-  `declaredServedModel`, the benchmark report names each pairing a scored run relied on, the review sweep's
-  report names each pairing an entry was accepted under, and the sweep reproduction reader
-  (`bench/sweep-reproduction.mjs`) counts a run accepted that way as provenance-unverified.
+  `declaredServedModel`, the `/oai:task`, `/oai:review` and `/oai:result` footers show such a reply as
+  `model: <served> (declared for <requested>)`, the benchmark report names each pairing a scored run
+  relied on, the review sweep's report names each pairing an entry was accepted under, and the sweep
+  reproduction reader (`bench/sweep-reproduction.mjs`) counts a run accepted that way as
+  provenance-unverified.
 - `/oai:task` and `/oai:review` take `--enable-thinking true|false`, sent as the chat template's thinking
   switch (`chat_template_kwargs.enable_thinking`). Checked with Qwen3.8-27B (MLX 4-bit): `false` turned
   thinking off on oMLX, vMLX and Unsloth Studio; on LM Studio `true` did not make the model think, and
@@ -53,6 +55,18 @@ All notable changes to this project are documented here, loosely following the
   `request-too-large` rather than none, and each attempt record carries the `maxTokens` it asked for;
   the review sweep therefore no longer counts a commit refused with a 413 toward stopping the night
   as a server outage.
+- The benchmark's warm-up request now carries the run's `--temperature` and sampling flags, so the model
+  is warmed with the settings its cases are sent with; it keeps its own 16-token reply cap.
+- `npm run bench:compare` reads `--temperature`, `--timeout`, `--max-seconds`, `--max-tokens`,
+  `--max-attempts` and `--passes` as the bench validated them, so `--temperature ' '` ranks with
+  `--temperature 0`, and a value the bench would refuse keeps two records from ranking.
+- `bench/run.mjs` and `bench/task-run.mjs` refuse a word that is not a flag, as the review sweep does,
+  instead of running every case with the flags after it ignored.
+- The benchmark, comparison and review-sweep reports print a model id, path or other value inside a code
+  span as written — `qwen3_coder` no longer reads `qwen3.coder` — and replace a backtick, `|` or line
+  break in it, so the value cannot end the span or split a table row. The benchmark's case column and
+  failure-count tables, and the task benchmark's model column (now a code span) and case column (now
+  escaped as prose), printed such values unescaped before.
 - `npm run bench -- --temperature=` (an empty value, accepted as 0) no longer makes every review fail: the bench
   forwards `--max-tokens`, `--temperature` and the sampling flags as one `--flag=value` argument each,
   which the review's parser does not drop.

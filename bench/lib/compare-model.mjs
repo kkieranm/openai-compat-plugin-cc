@@ -16,6 +16,8 @@ import { reasoningWitness } from '../../plugins/oai/scripts/lib/reasoning-witnes
 import { parseReviewLenses } from '../../plugins/oai/scripts/lib/review.mjs';
 import { reportIdentity } from './record.mjs';
 import { SAMPLING_PARAMS } from '../../plugins/oai/scripts/lib/sampling.mjs';
+import { parseNumber } from '../../plugins/oai/scripts/lib/delegate.mjs';
+import { BENCH_NUMERIC_BOUNDS } from '../../plugins/oai/scripts/lib/numeric-bounds.mjs';
 
 // A review record is `{ runsPerCase, options, warmed, results }` — never a sweep
 // or task record. A task record is `{ kind: 'task', options, ...sweep }`, so it
@@ -64,26 +66,28 @@ function canonicalJson(value) {
 const known = (value) => ({ state: 'known', value });
 const unknown = (reason) => ({ state: 'unknown', reason });
 
+// The domain each non-sampling numeric flag is validated in before a run sends it: the bench's
+// bounds, which `validateOptions` in `bench/run.mjs` checks against the same table.
+const NUMERIC_BOUNDS = BENCH_NUMERIC_BOUNDS;
+
 // A numeric value flag: absence is a definite "default" (compared as null); a
-// finite number, or a non-empty numeric string, compares numerically. The string
-// grammar is the writer's own — `Number()` + `Number.isFinite`, per
-// `plugins/oai/scripts/lib/parse-number.mjs` — so every form the CLI persists ("1", "1.0",
-// ".5", "1e2", "+5") reads as a known number and two records made with the same
-// option are not falsely divergent. The `typeof` gate stays load-bearing: it
-// runs FIRST so a hostile array/object/boolean is UNKNOWN rather than coerced
-// (`Number([])` is 0), and `Number()` then only ever sees a primitive string, so
-// no `valueOf`/`toString` is invoked. An empty/whitespace string is UNKNOWN
-// (fail-closed: the writer would read it as 0, we do not equate two blanks); the
-// reason is a bounded `typeof` label, never a stack-blowing `JSON.stringify`.
-function numericAxis(raw) {
+// present value compares as the validator the run went through reads it —
+// `parseNumber` with that flag's bounds — so every spelling the CLI accepts ("1",
+// "1.0", ".5", "1e2", " ") reads as the number that was sent, and two records made
+// with the same option are not falsely divergent. A value the validator refuses is
+// UNKNOWN (fail-closed: no run could have sent it). The `typeof` gate stays
+// load-bearing: it runs FIRST so a hostile array/object/boolean is UNKNOWN rather
+// than coerced (`Number([])` is 0), and the validator then only ever sees a
+// primitive, so no `valueOf`/`toString` is invoked. The reason is a bounded label,
+// never a stack-blowing `JSON.stringify`.
+function numericAxis(raw, flag) {
   if (raw === undefined || raw === null) return known(null);
-  if (typeof raw === 'number') return Number.isFinite(raw) ? known(raw) : unknown('non-finite number');
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    const n = Number(trimmed);
-    return trimmed !== '' && Number.isFinite(n) ? known(n) : unknown('non-numeric string value');
+  if (typeof raw !== 'string' && typeof raw !== 'number') return unknown(`non-numeric option value (${typeof raw})`);
+  try {
+    return known(parseNumber(raw, flag, NUMERIC_BOUNDS[flag]));
+  } catch {
+    return unknown(`${flag} value the run would refuse`);
   }
-  return unknown(`non-numeric option value (${typeof raw})`);
 }
 
 // A sampling knob from the review's registry, compared as the review would send
@@ -108,7 +112,7 @@ function samplingAxis({ flag, validate }, raw) {
 // still cannot be disproven, disclosed in the report rather than here).
 function capAxis(options, rows) {
   const raw = options['max-seconds'];
-  if (raw !== undefined && raw !== null) return numericAxis(raw);
+  if (raw !== undefined && raw !== null) return numericAxis(raw, 'max-seconds');
   const anyCapped = rows.some((row) => row.capped > 0);
   return anyCapped ? unknown('a cap was in force (capped runs) but --max-seconds was not recorded') : known(null);
 }
@@ -137,11 +141,11 @@ function scalarAxes(record, rows) {
     // Effective degradation is judged PER CASE in `divergencesOf`, not here: a
     // record-level `some(degraded)` boolean equates two records that degraded on
     // DIFFERENT cases, the exact miscomparison the axis exists to catch.
-    timeout: numericAxis(o.timeout),
-    'max-tokens': numericAxis(o['max-tokens']),
-    temperature: numericAxis(o.temperature),
+    timeout: numericAxis(o.timeout, 'timeout'),
+    'max-tokens': numericAxis(o['max-tokens'], 'max-tokens'),
+    temperature: numericAxis(o.temperature, 'temperature'),
     ...Object.fromEntries(SAMPLING_PARAMS.map((param) => [param.flag, samplingAxis(param, o[param.flag])])),
-    'max-attempts': numericAxis(o['max-attempts']),
+    'max-attempts': numericAxis(o['max-attempts'], 'max-attempts'),
     // `/oai:review --passes`/`--lens`: a multi-pass record's findings are a
     // deduplicated union across N passes, not one pass's output, so ranking it
     // against a single-pass record would compare unlike things. The EFFECTIVE pass
@@ -158,7 +162,7 @@ function scalarAxes(record, rows) {
     // execution order is material (the first lens pays cold prefill, later lenses
     // may be warm), the same reason `files` order is a real input difference — so
     // `correctness,security` and `security,correctness` are correctly incomparable.
-    passes: lens.kind === 'malformed' ? lensMalformed : numericAxis(lens.kind === 'present' ? lens.names.length : (o.passes ?? 1)),
+    passes: lens.kind === 'malformed' ? lensMalformed : numericAxis(lens.kind === 'present' ? lens.names.length : (o.passes ?? 1), 'passes'),
     strategy: lens.kind === 'malformed' ? lensMalformed : known(lens.kind === 'present' ? 'lenses' : 'passes'),
     lenses: lens.kind === 'malformed' ? lensMalformed : known(lens.kind === 'present' ? lens.names.join(',') : null),
     'max-seconds': capAxis(o, rows),
