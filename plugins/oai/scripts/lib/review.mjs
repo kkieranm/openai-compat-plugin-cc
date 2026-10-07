@@ -265,6 +265,11 @@ function conservativeReserveNote(cut, scope) {
   );
 }
 
+/** The qualifier a union note carries: its flag held in at least one pass. */
+function passScope(multiPass) {
+  return multiPass ? 'in at least one pass, ' : '';
+}
+
 /**
  * Why the request was narrower than asked for, in reading order. One list for
  * the parsed and unparsed paths, so a cause disclosed on one is never missing
@@ -272,7 +277,7 @@ function conservativeReserveNote(cut, scope) {
  * can differ, so there the conservative notes claim only "at least one pass".
  */
 export function causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass }, profile) {
-  const scope = multiPass ? 'in at least one pass, ' : '';
+  const scope = passScope(multiPass);
   return [
     unsizedWindowNote(skippedUnsizedWindow, profile),
     conservativeFallbackNote(skippedConservativeCount, scope),
@@ -281,29 +286,53 @@ export function causeNotes({ skippedUnsizedWindow, skippedConservativeCount, con
 }
 
 /**
+ * The hunks-only STATE note, worded for the state rather than the cause: equally
+ * true whether the files did not fit, were not asked for, or were never listed.
+ * Shared by the parsed and unparsed renderers so the two cannot drift.
+ */
+export function hunksOnlyNote(scope = '') {
+  return (
+    `NOTE: ${scope}the model saw only the diff hunks for the changed files, not their whole contents. ` +
+    'A claim that something is undefined, unimported or missing may just mean it is defined in ' +
+    'a part of the file that was not sent.'
+  );
+}
+
+/**
  * Every reason this result may be less than it appears, in one place.
  *
  * Each is a claim about what happened, so each must be true on every path that
  * can reach it — the repo's most-repeated defect is a message whose precondition
  * differs from the condition actually tested. Kept together because they are one
- * idea, and because a new one added beside them inherits the same scrutiny.
+ * idea, and because a new one added beside them inherits the same scrutiny. A
+ * multi-pass union ORs these flags across passes whose requests can differ, so
+ * there the salvaged, cut-off, findings-limit and hunks-only notes say only that
+ * their fact held in at least one pass; the WARNINGs' severity sentence still
+ * speaks of the whole result.
  */
 function caveats(
   { dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged },
   profile,
 ) {
   const notes = [];
+  const scope = passScope(multiPass);
 
   // First and loudest — these findings were not written in
   // the model's ordinary findings-first pass: its normal run produced
   // reasoning but no answer, and what is shown is a SECOND, separate request
   // asking it to conclude from that reasoning. Non-negotiable: a salvaged
   // review must never read as an ordinary complete one.
+  // On a union the salvaged pass's findings are merged in indistinguishably, so
+  // the whole result stays less reliable even though one pass was salvaged.
   if (salvaged) {
     notes.push(
-      "WARNING: this review was SALVAGED. The model's reply held reasoning but no answer; these findings " +
-        'come from a follow-up request asking it to conclude from what it had already worked out, not ' +
-        'from its ordinary findings-first pass. Treat this result as less reliable than an ordinary review.',
+      (multiPass
+        ? 'WARNING: at least one pass of this review was SALVAGED: its reply held reasoning but no answer, ' +
+          'so its findings come from'
+        : "WARNING: this review was SALVAGED. The model's reply held reasoning but no answer; these findings " +
+          'come from') +
+        ' a follow-up request asking it to conclude from what it had already worked out, not from its ' +
+        'ordinary findings-first pass. Treat this result as less reliable than an ordinary review.',
     );
   }
   // Said loudly, and before the findings count is believed: the model was cut
@@ -311,8 +340,12 @@ function caveats(
   // not "found nothing". Without this the reply is identical to a clean review.
   if (analysisCut) {
     notes.push(
-      'WARNING: the model was still reasoning when it hit its length limit, so it never finished ' +
-        'looking. Treat this result as incomplete — especially an empty one. Review a smaller ' +
+      (multiPass
+        ? 'WARNING: in at least one pass the model was still reasoning when it hit its length limit, so ' +
+          'that pass never finished looking. '
+        : 'WARNING: the model was still reasoning when it hit its length limit, so it never finished ' +
+          'looking. ') +
+        'Treat this result as incomplete — especially an empty one. Review a smaller ' +
         'target, or raise the limit.',
     );
   }
@@ -320,21 +353,14 @@ function caveats(
   // to tell "found this many" from "found more and was stopped" — so this says
   // that rather than inventing a count it cannot know. It must be said: an
   // unreported cut is a defect silently binned.
+  // Per pass: a union can list more than the limit, so it names the pass's list.
   if (atCap) {
     notes.push(
-      `(The findings list hit its limit of ${MAX_FINDINGS}, so there may be more. ` +
-        'Review a smaller target to see the rest.)',
+      `(${multiPass ? 'In at least one pass the' : 'The'} findings list hit its limit of ${MAX_FINDINGS}, ` +
+        'so there may be more. Review a smaller target to see the rest.)',
     );
   }
-  // Worded for the state, not the cause: equally true whether the files did not
-  // fit, were not asked for, or were never listed.
-  if (hunksOnly) {
-    notes.push(
-      'NOTE: the model saw only the diff hunks for the changed files, not their whole contents. ' +
-        'A claim that something is undefined, unimported or missing may just mean it is defined in ' +
-        'a part of the file that was not sent.',
-    );
-  }
+  if (hunksOnly) notes.push(hunksOnlyNote(scope));
   // Directly after the state note it explains, and before the rest: a reader who
   // has just been told the model saw only hunks is owed the reason and the fix
   // in the next breath.

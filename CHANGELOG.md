@@ -48,6 +48,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A multi-pass `/oai:review` (`--passes` or `--lens`) no longer states a salvaged, cut-off,
+  findings-limit or hunks-only caveat as true of the whole run: each now says it held in at least one
+  pass. A single-pass reply that could not be parsed now also says when the model saw only the diff
+  hunks.
 - `/oai:review --passes` and `--lens` reports no longer imply that differently worded findings at one
   line are different defects: findings merge by file and line, so differing summaries there may
   describe one defect or several. The `--passes` and `--lens` docs say the same, and say the

@@ -8,7 +8,7 @@
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
-import { causeNotes, renderFindings, unreadableNote } from './review.mjs';
+import { causeNotes, hunksOnlyNote, renderFindings, unreadableNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
 import { substitution } from './model-identity.mjs';
 import { reasoningWitness } from './reasoning-witness.mjs';
@@ -62,6 +62,7 @@ function reportFindings(parsed, context) {
         "model's reply held reasoning but no answer, not the original findings-first pass. Treat it as " +
         'less reliable than an ordinary review.'
       : null,
+    hunksOnly ? hunksOnlyNote() : null,
     ...causeNotes(causes, profile),
     unreadableNote(target.unreadable),
   ].filter(Boolean);
