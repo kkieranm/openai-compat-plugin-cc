@@ -23,7 +23,8 @@ Key modules under `plugins/oai/scripts/lib/`:
 - **`config.mjs`** — loads and normalises `providers.json`; `normalizeBaseUrl` validates the endpoint
   (a bare `host:port` is *not* a valid base URL — the protocol must be http(s)).
 - **`model-info.mjs`** — detects a provider's context window and model types by probing vendor
-  endpoints and trusting the window a server actually serves over a model's theoretical ceiling.
+  endpoints and trusting the window a server actually serves over a model's theoretical ceiling;
+  `discoverModels` owns the order and query string of every discovery request.
 - **`model-selection.mjs`** — the single authority on which model a task uses: picks the server's
   loaded model when several are offered and none is named, and refuses an id no catalogue lists.
 - **`sampling.mjs`** — `SAMPLING_PARAMS` is the one registry of vendor sampling/reasoning parameters a

@@ -1,9 +1,9 @@
 // The delegation path shared by every command that sends work to a model:
 // which model, how big its window is, and does the request fit.
-import { fetchModels, DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
+import { DEFAULT_IDLE_MS, DEFAULT_TIMEOUT_MS } from './client.mjs';
 import { checkContextBudget, estimateTokens, typicalTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
-import { describeModels, effectiveWindow } from './model-info.mjs';
+import { discoverModels, effectiveWindow } from './model-info.mjs';
 import { NUMERIC_BOUNDS } from './numeric-bounds.mjs';
 import { parseNumber } from './parse-number.mjs';
 import { buildMessages, DEFAULT_SYSTEM_PROMPT } from './prompt.mjs';
@@ -70,13 +70,12 @@ export function parseNumericOptions(options) {
 }
 
 /**
- * Model records for a provider, fetched once and reused for both selection and
- * the context window.
+ * Model records for a provider, reused for both selection and the context
+ * window.
  */
 export async function describeProvider(profile, { required = true } = {}) {
   try {
-    const modelsPayload = await fetchModels(profile, { timeoutMs: PROBE_TIMEOUT_MS });
-    return await describeModels(profile, { modelsPayload });
+    return await discoverModels(profile, { listingTimeoutMs: PROBE_TIMEOUT_MS });
   } catch (error) {
     // Choosing a model needs the list, so that failure is fatal. Merely sizing
     // the window does not: a server that cannot list models (or 404s /models
@@ -105,10 +104,9 @@ export async function describeProvider(profile, { required = true } = {}) {
  * ONE authority is one input. Teaching setup this function's probing rule would
  * be a second copy of it.
  *
- * The cost is one `/v1/models` GET, against a server the next line is about to
- * post a whole prompt to. With `required: mustChooseModel`, a probe that fails
- * with a `UserError` is only fatal when there is no requested or configured
- * model to fall back on; any other failure is rethrown.
+ * With `required: mustChooseModel`, a probe that fails with a `UserError` is
+ * only fatal when there is no requested or configured model to fall back on;
+ * any other failure is rethrown.
  */
 export async function resolveTarget(profile, options) {
   const mustChooseModel = !options.model && !profile.defaultModel;

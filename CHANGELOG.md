@@ -29,8 +29,10 @@ All notable changes to this project are documented here, loosely following the
 - The context window is now detected on vMLX, from the prompt cap it enforces, so the size check works
   there without a `contextLength` in the config. The window is read only while vMLX has a model
   loaded, so checking it does not wake a sleeping vMLX into reloading its model (for a `baseUrl` at
-  the server's root without a query string). A cap set with `--max-prompt-tokens` above the model's
-  own context is taken as given; set `contextLength` in that case.
+  the server's root; one with a query string is sent `/v1/models` without it once `/health`
+  identifies vMLX, while an unidentified `/health`, or a 401/403 for `/v1/models` without the query,
+  sends `/v1/models` with it, which can wake the model). A cap set with `--max-prompt-tokens` above
+  the model's own context is taken as given; set `contextLength` in that case.
 
 ### Changed
 

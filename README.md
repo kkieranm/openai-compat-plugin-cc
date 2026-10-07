@@ -148,13 +148,16 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   `/oai:setup` shows where the number came from. On vMLX it is the server's prompt cap, for the model
   under the name the server lists (another name the server also accepts gets none), read only while
   a model is loaded so that probing does not wake a sleeping vMLX (for a `baseUrl` at the server's
-  root without a query string); a cap set with `--max-prompt-tokens` above the model's own context is
-  taken as given, so set `contextLength` in that case. Only the window a server is *actually serving*
-  counts — a model's theoretical ceiling is ignored, since guarding on it would admit input the server
-  rejects. Where nothing can be detected the plugin warns instead of guessing, and `contextLength` on
-  a profile overrides detection. An undetected window is not treated as a large one: `/oai:review`
-  stops sending the diff-covered changed files whole rather than shipping a request it cannot size,
-  and reports the skip. Files covered by no diff still go whole — see the review command's docs.
+  root; one with a query string is sent `/v1/models` without it once `/health` identifies vMLX, while
+  an unidentified `/health`, or a 401/403 for `/v1/models` without the query, sends `/v1/models` with
+  it, which can wake the model); a cap set with `--max-prompt-tokens` above the model's own context
+  is taken as given, so set `contextLength` in that case. Only the window a server is *actually
+  serving* counts — a model's theoretical ceiling is ignored, since guarding on it would admit input
+  the server rejects. Where nothing can be detected the plugin warns instead of guessing, and
+  `contextLength` on a profile overrides detection. An undetected window is not treated as a large
+  one: `/oai:review` stops sending the diff-covered changed files whole rather than shipping a
+  request it cannot size, and reports the skip. Files covered by no diff still go whole — see the
+  review command's docs.
 - **Review findings are claims, not conclusions.** They come from a small model asked to report
   findings in a fixed shape — requested in prose and parsed leniently by default, or as a strict JSON
   schema under `--structured-output`. Each one is checked against the real code before anything is

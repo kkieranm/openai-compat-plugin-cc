@@ -16,7 +16,7 @@
  */
 
 import { readJson, readText } from './body.mjs';
-import { authHeaders } from './client.mjs';
+import { authHeaders, fetchModels } from './client.mjs';
 import { send } from './http.mjs';
 import { planSelection } from './model-selection.mjs';
 
@@ -186,10 +186,11 @@ async function probeHealth(url, { headers, timeoutMs }) {
  * `/v1/models` itself; on a machine that holds one model at a time, a probe that
  * loads a model is not a read. So a recognised vMLX ends the probe chain whether
  * or not a window was found, and `/health` is sent without the profile's query
- * string, which would turn it into a routed request. The guarantee is for a
- * baseUrl that reaches the gateway at its own root without a query string: with
- * a query, `fetchModels` has already sent `/v1/models?…`, which the gateway
- * routes.
+ * string, which would turn it into a routed request — and so is every other
+ * discovery request to a recognised vMLX (`discoverModels`), unless a 401 or
+ * 403 for the query-free listing brings the query back. The guarantee is for a
+ * baseUrl that reaches the gateway at its own root, and, for one with a query
+ * string, once `/health` has identified it.
  *
  * The other native probes run only on evidence that the server is not vMLX: a
  * non-2xx `/health`, or a complete one of another shape. A `/health` that fails
@@ -213,30 +214,72 @@ async function probeHealth(url, { headers, timeoutMs }) {
  * by default vMLX refuses those prompts (`prompt_too_long`). An absent or null
  * cap leaves the window unknown.
  *
- * Returns null to let the other probes run, otherwise `{ detected }`, where
- * `detected` is null when no window and model id could be read without waking
- * the server.
+ * Takes the `/health` reading (`readVmlxHealth`) rather than sending it, so a
+ * caller that read it first does not send it twice. Returns null to let the
+ * other probes run, otherwise `{ detected }`, where `detected` is null when no
+ * window and model id could be read without waking the server.
  */
-async function probeVmlx(root, { headers, timeoutMs, query = '' }) {
-  const { conclusive, payload: health } = await probeHealth(`${root}/health`, { headers, timeoutMs });
+async function probeVmlx(root, reading, { headers, timeoutMs, query = '' }) {
   const vmlx = (window, id) => ({
     detected: window && typeof id === 'string' && id ? { models: [{ id, window }], source: SOURCE_VMLX } : null,
   });
-  if (!conclusive) return vmlx();
+  if (!reading.conclusive) return vmlx();
+  const kind = vmlxKind(reading);
+  if (!kind) return null;
+  const health = reading.payload;
 
-  if (typeof health?.model_loaded === 'boolean' && typeof health?.engine_type === 'string') {
+  if (kind === 'engine') {
     const window = health.model_loaded ? positiveInteger(health.max_prompt_tokens) : undefined;
     return vmlx(window, health.served_model_name || health.model_name);
   }
 
-  if (Array.isArray(health?.backends) && health?.gateway_port !== undefined) {
-    const running = health.backends.length > 0 && health.backends.every((backend) => backend?.status === 'running');
-    if (!running) return vmlx();
-    const capabilities = await probeJson(`${root}/v1/capabilities${query}`, { headers, timeoutMs });
-    return vmlx(positiveInteger(capabilities?.max_prompt_tokens), capabilities?.loaded_model || capabilities?.id);
-  }
+  const running = health.backends.length > 0 && health.backends.every((backend) => backend?.status === 'running');
+  if (!running) return vmlx();
+  const capabilities = await probeJson(`${root}/v1/capabilities${query}`, { headers, timeoutMs });
+  return vmlx(positiveInteger(capabilities?.max_prompt_tokens), capabilities?.loaded_model || capabilities?.id);
+}
 
+/** The vMLX `/health` reading, `{ conclusive, payload }`, sent without the profile's query. */
+async function readVmlxHealth(profile, { timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+  return probeHealth(`${probeRoot(profile.baseUrl)}/health`, { headers: authHeaders(profile), timeoutMs });
+}
+
+/** Which vMLX a conclusive `/health` reading shows — `'engine'`, `'gateway'` — or null. */
+function vmlxKind(reading) {
+  const health = reading?.conclusive ? reading.payload : undefined;
+  if (typeof health?.model_loaded === 'boolean' && typeof health?.engine_type === 'string') return 'engine';
+  if (Array.isArray(health?.backends) && health?.gateway_port !== undefined) return 'gateway';
   return null;
+}
+
+const AUTH_REFUSALS = new Set([401, 403]);
+
+/**
+ * The `/v1/models` listing and the model records described from it. A vMLX
+ * gateway routes `/v1/models?…` to a session, so a profile with a query is
+ * identified from `/health` first, and a recognised vMLX is sent the listing and
+ * its probes without the query. A 401 or 403 for the query-free listing is
+ * evidence a proxy needs the query, so the listing is resent with it and the
+ * query kept; any other failure is not, and resending on it would wake the model
+ * for nothing. Without a query the listing goes first, since a window it carries
+ * (`readVllm`) costs no further request.
+ */
+export async function discoverModels(profile, { listingTimeoutMs } = {}) {
+  let reading;
+  let listing = profile;
+  if (profile.query) {
+    reading = await readVmlxHealth(profile);
+    if (vmlxKind(reading)) listing = { ...profile, query: '' };
+  }
+  let modelsPayload;
+  try {
+    modelsPayload = await fetchModels(listing, { timeoutMs: listingTimeoutMs });
+  } catch (error) {
+    if (listing === profile || !AUTH_REFUSALS.has(error?.status)) throw error;
+    listing = profile;
+    modelsPayload = await fetchModels(profile, { timeoutMs: listingTimeoutMs });
+  }
+  return describeModels(listing, { modelsPayload, reading });
 }
 
 // Tried in order; the first recognisable shape wins. Each entry is a path
@@ -253,7 +296,7 @@ const NATIVE_PROBES = [
  * be established. `models` always lists every id the server offers, even when no
  * dialect was recognised.
  */
-export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE_TIMEOUT_MS } = {}) {
+export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE_TIMEOUT_MS, reading } = {}) {
   const ids = Array.isArray(modelsPayload?.data)
     ? modelsPayload.data.map((entry) => (typeof entry === 'string' ? entry : entry?.id)).filter(Boolean)
     : [];
@@ -264,7 +307,11 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
   const root = probeRoot(profile.baseUrl);
   const headers = authHeaders(profile);
   // First, because a recognised vMLX must receive no other native probe.
-  const vmlx = await probeVmlx(root, { headers, timeoutMs, query: profile.query ?? '' });
+  const vmlx = await probeVmlx(root, reading ?? (await readVmlxHealth(profile, { timeoutMs })), {
+    headers,
+    timeoutMs,
+    query: profile.query ?? '',
+  });
   if (vmlx) {
     if (!vmlx.detected) return unrecognised(ids);
     // The one model vMLX reports is not a catalogue to refuse other names

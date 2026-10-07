@@ -31,7 +31,7 @@ import { assertDecodable, budgetError, transportError } from './http-errors.mjs'
  * its own, reset by parsed deltas carrying text.
  *
  * `totalMs` is what keeps the control plane safe. `/v1/models` and the
- * `model-info` probes are bounded totals today (10s and 2s) and can never reach
+ * `model-info` probes are bounded totals today and can never reach
  * undici's 300s; handing them a phase-based budget with no ceiling would let a
  * slow drip block `/oai:setup` forever, since it awaits every provider. Chat
  * omits it by default — a run still producing tokens is working however long it
