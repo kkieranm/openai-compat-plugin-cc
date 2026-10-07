@@ -90,12 +90,14 @@ function locationKey(finding) {
  * line.
  *
  * K is a LOCATION-agreement count, bounded in BOTH directions and neither is a
- * defect-identity claim: it UNDER-counts true agreement (an off-by-a-line or
- * paraphrased duplicate does not merge, so true location agreement is >= K), and
+ * defect-identity claim: it UNDER-counts true agreement (an off-by-a-line
+ * duplicate does not merge, so the true count can exceed K), and
  * it can OVER-state defect agreement (two DIFFERENT defects at one line count as
  * K=2 for that location though neither corroborated the other). `summaries[]`
- * carries more than one entry exactly when that happened, which is what the
- * report surfaces so K is never read as proof the passes found the same defect.
+ * carries more than one entry whenever more than one distinct summary was given
+ * for that location — paraphrases of one defect or different defects alike —
+ * which is what the report surfaces so K is never read as proof the passes found
+ * the same defect.
  * Each merged finding carries the denominator `readablePasses` (S) beside
  * `agreement` (K) so a consumer never has to recover S from elsewhere.
  */
@@ -340,10 +342,9 @@ export function totalDuration(passes) {
 // One line per pass: index, wall clock, and either the finding count (readable)
 // or the failure reason (non-observation). `passSummaries` is built by
 // `reportPasses`, in pass order, so indices are preserved. `servedNote` discloses
-// a non-observation pass that ran on a different model — the disclosure the
-// single-pass `substitutionNotice` used to carry, now that the multi-pass loop
-// drops it; the model id itself rides the JSON `passes[]` entry, so the text
-// stays generic and prints no server-controlled value.
+// a pass whose reply could not be read but whose server confirmed a substituted
+// model; the model id itself rides the JSON `passes[]` entry, so the text stays
+// generic and prints no server-controlled value.
 function formatPassLine({ index, lens, durationMs, findings, reason, servedNote }) {
   const secs = Number.isFinite(durationMs) ? `${(durationMs / 1000).toFixed(1)}s` : 'unknown time';
   const state = reason
@@ -373,9 +374,9 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
   // On the lens path a finding is tagged with the LENS(es) that flagged it, not an
   // agreement count: across deliberately disjoint focuses K is coverage, not
   // confidence, and "flagged by: security" makes that self-evident where a bare
-  // count invites the confidence misread. The plain `--passes` path is unchanged —
-  // K there IS a decorrelation signal (repeated samples of one prompt), and its
-  // "LOWER BOUND on true agreement" paragraph stays exactly as written.
+  // count invites the confidence misread. On the plain `--passes` path K IS a
+  // decorrelation signal (repeated samples of one prompt), reported under the
+  // "LOWER BOUND on true agreement" framing.
   const lensPath = strategy === 'lenses';
   const annotated = merged.findings.map((finding) => {
     const divergent = finding.summaries.length > 1;
@@ -392,10 +393,10 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
     ? 'Each finding is tagged with the lens(es) that flagged it. A lens run reports COVERAGE across ' +
       'focuses, not confidence: a finding flagged by only one lens is a blind spot that lens was ' +
       'looking for, not a low-confidence result, so being flagged by fewer lenses is not a demotion. ' +
-      'Where the summaries differ, different lenses reported different defects at one line — the ' +
+      'Where the summaries differ, the lenses may have reported different defects at one line — the ' +
       'differing summaries are shown.'
     : 'The agreement count is how many passes flagged that LOCATION: a LOWER BOUND on true agreement ' +
-      '(paraphrased or off-by-a-line duplicates do not merge), and where the summaries differ it may ' +
+      '(off-by-a-line duplicates do not merge), and where the summaries differ it may ' +
       'join DIFFERENT defects reported at one line — the differing summaries are shown so it is never ' +
       'read as proof the passes found the same defect.';
   const header = [openingLine, passSummaries.map(formatPassLine).join('\n'), explanation]
@@ -414,9 +415,9 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
  * the union (each carrying `agreement`, `readablePasses`, `summaries[]`);
  * `passes[]` preserves each pass's own record; the top-level `requestedModel` /
  * `model` / `declaredServedModel` are the first readable pass's (the run failed
- * closed before here if the passes measured different models), so a consumer's
- * substitution check stays meaningful — given all three, since passes can agree
- * while one reported the exact id and another the declared one.
+ * closed before here if the readable passes measured different models), so a
+ * consumer's substitution check stays meaningful — given all three, since passes
+ * can agree while one reported the exact id and another the declared one.
  * Caveat fields are the fail-closed OR across readable passes; `contextChecked`
  * is the AND. Per-pass originals stay in `passes[]`, so nothing is concealed.
  * `parsed: true` is hard-coded and honest — `reportPasses`'s precondition
@@ -456,9 +457,9 @@ export function passesEnvelope(merged, { label, provider, requestedModel, declar
     // OMITTED: duplicate lenses are refused, so `agreement === lenses.length` for
     // every finding, making the pair redundant with `lenses[]` while wearing a
     // confidence-shaped name a diverse-focus run must not invite a reader to rank
-    // on. `lenses[]` is the sole per-finding signal there. The plain `--passes`
-    // path is byte-unchanged. `mergePasses` stays strategy-neutral (it still
-    // computes both); the omission is here, at the one seam that knows the strategy.
+    // on. `lenses[]` is the sole per-finding signal there; the plain `--passes`
+    // path keeps both. `mergePasses` is strategy-neutral (it computes both); the
+    // omission is here, at the one seam that knows the strategy.
     findings: strategy === 'lenses' ? merged.findings.map(withoutAgreement) : merged.findings,
     ...caveatFlags,
     contextChecked,

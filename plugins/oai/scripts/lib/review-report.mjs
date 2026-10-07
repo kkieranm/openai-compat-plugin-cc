@@ -552,10 +552,10 @@ export function passEnvelope(pass, index, context) {
 }
 
 // The one-line-per-pass summary the text report renders: finding count for a
-// readable pass, the failure reason for a non-observation, and a note when a
-// non-observation ran on a confirmed different model — the substitution
-// disclosure the multi-pass loop no longer prints inline (the id itself is on the
-// JSON `passes[]` entry, so the text stays free of server-controlled values).
+// readable pass, the failure reason for a non-observation, and a note when a pass
+// whose reply could not be read was served a confirmed substituted model (the id
+// itself is on the JSON `passes[]` entry, so the text stays free of
+// server-controlled values).
 function passSummary(pass, index, report) {
   // `lens` rides the summary so a lens run's text report names which focus each
   // pass ran — a failed lens pass is then diagnosable from the text, not only the

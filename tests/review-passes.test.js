@@ -202,11 +202,11 @@ const textFor = (finding) =>
 
 test('a merged finding with differing summaries is marked and shows them all', () => {
   // The over-merge disclosure: K keys on location, so two passes flagging one
-  // line with DIFFERENT descriptions count K=2 though neither corroborated the
-  // other. The render must mark that and show both, so K is never read as
-  // defect agreement. This asserts the RENDER, not the merge: a merged finding
-  // carries summaries[] either way, so only the rendered marker + both
-  // summaries reds when the divergence branch is reverted.
+  // line with different DEFECTS, as this fixture's are, count K=2 though neither
+  // corroborated the other. The render must mark that and show both, so K is
+  // never read as defect agreement. This asserts the RENDER, not the merge: a
+  // merged finding carries summaries[] either way, so only the rendered marker +
+  // both summaries reds when the divergence branch is reverted.
   const text = textFor({ summary: 'off-by-one in the index', summaries: ['off-by-one in the index', 'unrelated null-deref on the same line'] });
   assert.match(text, /\[2\/2 passes — summaries differ\]/);
   assert.match(text, /off-by-one in the index/);
@@ -361,11 +361,13 @@ test('the lens-path text tags a finding by lens and DROPS the confidence framing
   assert.match(text, /\[flagged by: security\]/);
   assert.match(text, /COVERAGE across focuses, not confidence/);
   assert.doesNotMatch(text, /LOWER BOUND on true agreement/);
+  assert.match(text, /the lenses may have reported different defects at one line/);
+  assert.doesNotMatch(text, /different lenses reported different defects/);
 });
 
 test('the passes-path text KEEPS the LOWER BOUND framing (control for the lens path)', () => {
-  // The other half of the control: the plain `--passes` rendering is unchanged, so
-  // the confidence paragraph is present there. If the branch leaked, this reds.
+  // The other half of the control: the plain `--passes` rendering carries the
+  // confidence paragraph. If the branch leaked, this reds.
   const text = passesText(
     { readablePasses: 2, findings: [{ file: 'a.js', line: 10, severity: 'high', evidence: '', agreement: 2, readablePasses: 2, summary: 's', summaries: ['s'], lenses: [] }] },
     {
@@ -376,6 +378,8 @@ test('the passes-path text KEEPS the LOWER BOUND framing (control for the lens p
     },
   );
   assert.match(text, /LOWER BOUND on true agreement/);
+  assert.match(text, /\(off-by-a-line duplicates do not merge\)/);
+  assert.doesNotMatch(text, /paraphrased/);
   assert.doesNotMatch(text, /flagged by:/);
 });
 

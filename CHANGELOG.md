@@ -48,6 +48,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review --passes` and `--lens` reports no longer imply that differently worded findings at one
+  line are different defects: findings merge by file and line, so differing summaries there may
+  describe one defect or several. The `--passes` and `--lens` docs say the same, and say the
+  served-model check covers only the passes that were counted.
 - `/oai:review` retries once when a server refuses its reply budget with HTTP 413 and states a smaller
   one it can take — vMLX's `safe_cap=<N>`. The review re-plans with that budget under the same deadline;
   a second refusal is final, as is a stated budget below the 4,096 tokens a review's reserve shrinks
