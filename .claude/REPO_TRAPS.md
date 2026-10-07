@@ -1267,3 +1267,33 @@ evidence. The review lens: for every fallback, name the case it serves, then che
 against every other failure that reaches the same catch.
 **Guarded by** `tests/vmlx-discovery.test.js`: "any other status for the query-free /v1/models is
 not resent, since the resend would wake the model".
+
+## A main guard that compares `argv[1]` with the module's own path
+
+`process.argv[1] === fileURLToPath(import.meta.url)` looks like "am I the entry script", and it fails
+both ways. Invoked through a path containing a symlink, Node resolves the link in `import.meta.url`
+but not in `argv[1]`, so the guard is false and the script does nothing: the tracker records
+`node <link>/bench/compare.mjs --bogus-flag` exiting 0 silently (2026-09-27, again 2026-10-04). Under `node -e
+CODE <path>` or `node -p CODE <path>`, Node runs no entry script yet puts `<path>` in `argv[1]`, so
+the guard is true for a module that was only imported, and importing it runs its `main` (recorded
+2026-10-04; reproduced 2026-10-07 on Node 26.3.1). Both are the same mistake: `argv[1]` is a string the
+caller typed, not the identity of the running entry point. Bench drivers guard `main` with the shared
+`isMainModule` (`bench/lib/main-module.mjs`), which resolves both paths and treats an eval flag as "no
+entry script".
+**Guarded by** `tests/structure.test.js`: "every bench driver runs main only under the shared
+isMainModule guard"; and `tests/main-module.test.js`: "a symlinked directory in the path still names
+the entry script", "under -e there is no entry script, even when argv[1] names this very module",
+"-p and -pe count as eval too".
+
+## `node -p` output order is not a fixed point to anchor an assertion on
+
+`-p` prints its expression's value, but when it prints relative to a pending async callback depends
+on the Node version. On Node 26.3.1, `node -p "setTimeout(() => console.log('async'), 0); 'value'"`
+prints `async` before `value`, so the value comes at exit (observed 2026-10-07). Before Node 22 it
+printed immediately: `lib/internal/process/execution.js` prints the value at once in v20.19.0 and
+registers an exit handler for it in v22.0.0. The engines floor (`>=18.18`) still admits the older
+behaviour. A test that reads an async result from a `-p` child's stdout, positioned against `-p`'s
+own output, therefore passes or fails by Node version. Route the observation to a channel `-p` does
+not write: stderr, or a file.
+**Guarded by** `tests/main-module.test.js`: "-p and -pe count as eval too", whose verdict goes to
+stderr for this reason.
