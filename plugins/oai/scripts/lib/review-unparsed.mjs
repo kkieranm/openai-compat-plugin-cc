@@ -8,6 +8,7 @@
 import { withLedger } from './attempt-ledger.mjs';
 import { requireAnswer } from './client.mjs';
 import { UserError } from './errors.mjs';
+import { withReviewCauses } from './review-ladder.mjs';
 
 /**
  * The verbatim reply, for the paths that could not read findings out of it —
@@ -17,15 +18,19 @@ import { UserError } from './errors.mjs';
  * are decisions about whether the run is reportable at all, so a second copy
  * would be free to disagree, and this repo keeps relearning that fixing the
  * branch in front of you leaves the adjacent one wrong.
+ *
+ * Every refusal thrown here carries the narrowing causes of the request
+ * `context` describes, when it describes one (see `withReviewCauses`).
  */
-export function unparsedReply(result, { structured, profile, ledger }) {
+export function unparsedReply(result, context) {
+  const { structured, profile, ledger, salvaged } = context;
   // A reply we cut off mid-object is a token-budget problem, not a shape
   // problem. Showing the fragment and calling it a bad shape blames the model
   // for damage we did, and hides the one flag that fixes it.
   if (result.finishReason === 'length') {
-    // The old hint said "raise --max-tokens" and stopped there, which is now
-    // sometimes advice that cannot work: below the wall-clock ceiling every
-    // extra token widens `analysis`, not the findings tail, so a reply overrun
+    // Raising --max-tokens alone is sometimes advice that cannot work: below the
+    // wall-clock ceiling every extra token widens `analysis`, not the findings
+    // tail, so a reply overrun
     // by its ninth long finding fails again at a larger budget — and on a big
     // input `prepareRequest` may shrink the raised value straight back to the
     // window's leftovers. Reviewing less is the lever that moves both.
@@ -35,7 +40,11 @@ export function unparsedReply(result, { structured, profile, ledger }) {
     // a closed, populated entry for it — so the failure this throws must carry
     // that record rather than leave `errorReport()`'s `attempts` field null,
     // which left the dominant overnight-sweep failure mode unmeasurable.
-    const failure = new UserError(`${profile.name} ran out of tokens before it finished writing its findings.`, {
+    //
+    // A salvage follow-up runs on its own fixed budget, which --max-tokens never
+    // reaches, so its exhaustion is named and that remedy left out.
+    const where = salvaged ? ' in the salvage follow-up,' : '';
+    const failure = new UserError(`${profile.name} ran out of tokens${where} before it finished writing its findings.`, {
       // Tagged so a caller can tell "the budget ran out" from "the server broke"
       // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
       // off the `--json` envelope and states the rule its own header keeps —
@@ -43,10 +52,11 @@ export function unparsedReply(result, { structured, profile, ledger }) {
       // separate a starved run from a failed one reports a night that measured
       // nothing as a night that found nothing.
       reason: 'token-exhaustion',
-      hint:
-        'Review a smaller target — a single commit with --commit, or specific files with --file. '
-        + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
-        + 'reasoning rather than more room for the findings themselves.',
+      hint: salvaged
+        ? 'Review a smaller target — a single commit with --commit, or specific files with --file.'
+        : 'Review a smaller target — a single commit with --commit, or specific files with --file. '
+          + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
+          + 'reasoning rather than more room for the findings themselves.',
     });
     // The reply's usage carried onto the error so `errorReport`'s reasoning
     // witness can observe it: this is the failure mode it most wants to see — the
@@ -54,7 +64,7 @@ export function unparsedReply(result, { structured, profile, ledger }) {
     // much. Read only as a validated number by `reasoningWitness`, never
     // serialized raw, so it cannot reach the persisted envelope as a foreign shape.
     failure.usage = result.usage;
-    throw withLedger(failure, ledger);
+    throw withLedger(withReviewCauses(failure, context), ledger);
   }
 
   // Under a schema the reasoning channel carries the constrained output, so it
@@ -82,6 +92,6 @@ export function unparsedReply(result, { structured, profile, ledger }) {
   try {
     return requireAnswer(result, profile).trim();
   } catch (error) {
-    throw withLedger(error, ledger);
+    throw withLedger(withReviewCauses(error, context), ledger);
   }
 }

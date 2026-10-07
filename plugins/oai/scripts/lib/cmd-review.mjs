@@ -10,9 +10,9 @@ import { UserError } from './errors.mjs';
 import { collectTarget } from './git-diff.mjs';
 import { declaredServedModel, substitutionNotice } from './model-identity.mjs';
 import { withProgress } from './progress.mjs';
-import { aggregateAttempts, allFailedError, partitionPasses, servedModelFailure } from './review-passes.mjs';
-import { errorReport, report, reportPasses } from './review-report.mjs';
-import { parseReviewLenses, windowRemedy, windowSource } from './review.mjs';
+import { aggregateAttempts, allFailedError, partitionPasses, runCauses, servedModelFailure } from './review-passes.mjs';
+import { causeFlags, errorReport, report, reportPasses } from './review-report.mjs';
+import { failureCauseNotes, parseReviewLenses, windowRemedy, windowSource } from './review.mjs';
 import { requestFindings, reserveFor } from './review-request.mjs';
 import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
@@ -58,9 +58,11 @@ export async function runReview(argv) {
     // report it — including for a runaway refused after the model call returned.
     attachSampling(error, sampling);
     // Written before the rethrow, so the companion still writes prose to stderr
-    // and exits 1 (or 2) exactly as it did. Additive: nothing that worked
+    // and exits 1 (or 2). The envelope is additive: nothing in it that worked
     // before reads differently.
     if (options.json) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
+    // After the envelope, so the notes reach only the text the companion prints.
+    if (error?.failureNotes) error.hint = [error.hint, ...error.failureNotes].filter(Boolean).join('\n\n');
     throw error;
   }
 }
@@ -135,6 +137,19 @@ function reviewPlan({ profile, options, instructions, target, model, contextLeng
   };
 }
 
+/**
+ * Records the failed request's (or, on a multi-pass failure, the run's)
+ * conservative-count notes on the error, as `failureNotes` — a field
+ * `errorReport` does not serialise, since `--json` carries the cause flags and
+ * its `hint` keeps its own meaning.
+ */
+function noteCauses(error) {
+  if (!error?.reviewCauses) return error;
+  const notes = failureCauseNotes({ ...causeFlags(error.reviewCauses), multiPass: error.reviewCauses.multiPass });
+  if (notes.length) error.failureNotes = notes;
+  return error;
+}
+
 async function reviewFlow(options, instructions, terminated, sampling) {
   assertAskable(options, instructions, terminated);
   // The collision is checked BEFORE the numeric parse below, so `--lens x --passes
@@ -178,7 +193,7 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   // readable. The window is resolved here rather than at command entry, so it
   // rides this closure rather than `runReview`'s catch the way `sampling` does.
   const named = (error) =>
-    attachRunContext(Object.assign(error, {
+    attachRunContext(Object.assign(noteCauses(error), {
       requestedModel: error.requestedModel ?? model,
       declaredServedModel: error.declaredServedModel ?? declaredServedModel(profile, model),
     }), runContext);
@@ -344,12 +359,15 @@ async function runMultiPass({ passCount, lenses = [], profile, options, instruct
   // models is not a measurement of one model. Both post-hoc failures carry the
   // completed passes' attempt records so their `--json` envelope reads
   // `attempts` like every other — `allFailedError` aggregates its own; the
-  // served-model refusal is a bare `UserError`, so attach them here.
+  // served-model refusal is a bare `UserError`, so attach them here, with the
+  // run's request causes when a pass recorded any.
   if (readable.length === 0) throw allFailedError(outcomes, profile);
   const servedFailure = servedModelFailure(readable);
   if (servedFailure) {
     const attemptRecords = aggregateAttempts(outcomes);
     if (attemptRecords.length) servedFailure.attemptRecords = attemptRecords;
+    const causes = runCauses(outcomes);
+    if (causes) servedFailure.reviewCauses = causes;
     throw servedFailure;
   }
 

@@ -48,6 +48,11 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A failed `/oai:review` now says when the conservative non-ASCII count shaped the request it sent — as
+  notes on stderr and as cause fields in `--json` — and a multi-pass report names it on a failed pass's
+  own line. A salvage follow-up that runs out of tokens is now named as such, without suggesting
+  `--max-tokens`, which cannot reach its fixed budget; a reasoning cutoff no longer says it is
+  attempting to conclude after that attempt is over.
 - A multi-pass `/oai:review` (`--passes` or `--lens`) no longer states a salvaged, cut-off,
   findings-limit or hunks-only caveat as true of the whole run: each now says it held in at least one
   pass. A single-pass reply that could not be parsed now also says when the model saw only the diff

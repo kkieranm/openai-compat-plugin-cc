@@ -189,7 +189,7 @@ export async function collectStream(
         const reasoningChars = answer.reasoning.length;
         const failure = new UserError(
           `${profile.name} was still reasoning and had not written an answer when the client stopped the stream at the reasoning cutoff.`,
-          { hint: 'Attempting to conclude from the partial reasoning instead.' },
+          { hint: 'No answer could be concluded from the partial reasoning. Review a smaller target.' },
         );
         failure.reason = 'token-reserve-cutoff';
         failure.maxTokens = maxTokens;

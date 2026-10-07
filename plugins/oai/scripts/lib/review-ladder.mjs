@@ -122,3 +122,24 @@ export function unconstrainedLadder(shared, ladder) {
   // to come before the reasoning or a long think eats the whole budget.
   return { ...prepareLadder(shared, { ...ladder, suffix: schemaInstruction(findingsFirst(schema)) }), schema };
 }
+
+/**
+ * The request-narrowing causes of the request a failure belongs to, attached to
+ * the error so its failure report can say what that request was.
+ *
+ * `built` counts as request-shaped only when it has a `skipped` key, which every
+ * built request and the review report's context carry (`null` on the whole-file
+ * rung): an object without one attaches nothing, so a partial context can never
+ * assert causes it does not know. Never overwrites, so the innermost site that
+ * knew the request wins.
+ */
+export function withReviewCauses(error, built) {
+  if (error && typeof error === 'object' && !error.reviewCauses && built && Object.hasOwn(built, 'skipped')) {
+    error.reviewCauses = {
+      skipped: built.skipped ?? null,
+      conservativeReserveCut: Boolean(built.conservativeReserveCut),
+      hunksOnly: Boolean(built.hunksOnly),
+    };
+  }
+  return error;
+}

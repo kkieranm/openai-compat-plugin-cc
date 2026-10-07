@@ -255,7 +255,10 @@ export function aggregateAttempts(passes) {
  * prose for a shape-unreadable reply, the only case that takes the whole-run
  * `all-passes-unreadable` claim. Disclosed trade-off: a leading unreadable-prose
  * pass thus masks a later thrown pass's reason in the top-level headline; the
- * evidence survives in `attempts`.
+ * evidence survives in `attempts`. Its request causes, like its attempts,
+ * describe the whole run: each flag ORed across the passes that recorded one
+ * and the first recorded skip (see `runCauses`), scoped "in at least one pass",
+ * and left unset when no pass built a request.
  */
 export function allFailedError(passes, profile) {
   const attemptRecords = aggregateAttempts(passes);
@@ -265,7 +268,7 @@ export function allFailedError(passes, profile) {
     error = first.error;
   } else {
     try {
-      unparsedReply(first.result, { structured: first.structured, profile, ledger: first.ledger });
+      unparsedReply(first.result, { ...first, profile });
       error = new UserError(
         `All ${passes.length} review passes returned a reply that could not be read as findings; nothing has been checked.`,
         { reason: 'all-passes-unreadable' },
@@ -289,7 +292,33 @@ export function allFailedError(passes, profile) {
   // records, and we deliberately replace that one-pass view with the whole-run
   // superset.
   if (attemptRecords.length) error.attemptRecords = attemptRecords;
+  const causes = runCauses(passes);
+  if (causes) error.reviewCauses = causes;
   return error;
+}
+
+// A pass's request causes: a thrown pass's from its error, any other pass's from
+// its own outcome. Null when the pass never built a request.
+function recordedCauses(pass) {
+  if (!pass.ok) return pass.error?.reviewCauses ?? null;
+  return Object.hasOwn(pass, 'skipped') ? pass : null;
+}
+
+/**
+ * The run's request causes: each fact ORed across the passes that recorded one,
+ * scoped as a multi-pass fact. Null when no pass built a request. The two skip
+ * causes never co-occur — one means no known window, the other needs one — so
+ * the first recorded skip stands for the run.
+ */
+export function runCauses(passes) {
+  const recorded = passes.map(recordedCauses).filter(Boolean);
+  if (!recorded.length) return null;
+  return {
+    skipped: recorded.find((causes) => causes.skipped != null)?.skipped ?? null,
+    conservativeReserveCut: recorded.some((causes) => Boolean(causes.conservativeReserveCut)),
+    hunksOnly: recorded.some((causes) => Boolean(causes.hunksOnly)),
+    multiPass: true,
+  };
 }
 
 /**
@@ -344,12 +373,12 @@ export function totalDuration(passes) {
 // `reportPasses`, in pass order, so indices are preserved. `servedNote` discloses
 // a pass whose reply could not be read but whose server confirmed a substituted
 // model; the model id itself rides the JSON `passes[]` entry, so the text stays
-// generic and prints no server-controlled value.
-function formatPassLine({ index, lens, durationMs, findings, reason, servedNote }) {
+// generic and prints no server-controlled value. `causeNote` names a failed
+// pass's salvage follow-up and what the conservative non-ASCII count did to its
+// request.
+function formatPassLine({ index, lens, durationMs, findings, reason, servedNote, causeNote }) {
   const secs = Number.isFinite(durationMs) ? `${(durationMs / 1000).toFixed(1)}s` : 'unknown time';
-  const state = reason
-    ? `${reason}${servedNote ? ` — ${servedNote}` : ''}`
-    : `${findings} finding(s)`;
+  const state = reason ? [reason, servedNote, causeNote].filter(Boolean).join(' — ') : `${findings} finding(s)`;
   // The lens (when a lens run) names which focus this pass ran, so a failed pass is
   // diagnosable from the text; omitted on the plain `--passes` path (lens null).
   const focus = lens ? ` [${lens}]` : '';

@@ -25,7 +25,7 @@ import { unparsedReply } from './review-unparsed.mjs';
  * the follow-up concluded from; the follow-up is sent with its own small
  * fixed reserve.
  */
-function causeFlags({ skipped, conservativeReserveCut }) {
+export function causeFlags({ skipped, conservativeReserveCut }) {
   return {
     skippedUnsizedWindow: skipped === 'unsized-window',
     skippedConservativeCount: skipped === 'conservative-count',
@@ -33,8 +33,31 @@ function causeFlags({ skipped, conservativeReserveCut }) {
   };
 }
 
+// The same fields for a FAILED request, read off the `reviewCauses` its failure
+// site attached (`withReviewCauses`), with the `hunksOnly` state beside them.
+function reviewCauseFields(causes) {
+  return { hunksOnly: Boolean(causes.hunksOnly), ...causeFlags(causes) };
+}
+
+// A failed pass's request facts, for its own line in the text report: whether its
+// reply came from a salvage follow-up, and the conservative count's causes. The
+// union's caveats come only from readable passes, so these would otherwise go
+// unsaid. Null when there is neither. The
+// unsized-window cause is left to the union's own note: every pass shares the
+// window, so a readable pass beside it already carries that cause.
+function causeNote({ skipped, conservativeReserveCut }, { salvaged = false } = {}) {
+  const notes = [
+    salvaged ? 'its reply came from a salvage follow-up' : null,
+    skipped === 'conservative-count' ? 'whole files withheld by the conservative non-ASCII count' : null,
+    // The review request's, never a salvage follow-up's: that runs on its own
+    // fixed budget, and a follow-up that threw records no `salvaged` to say so.
+    conservativeReserveCut ? "the review request's reply budget reduced by the conservative non-ASCII count" : null,
+  ].filter(Boolean);
+  return notes.length ? notes.join('; ') : null;
+}
+
 function reportFindings(parsed, context) {
-  const { result, structured, profile, model, target, hunksOnly, salvaged, ledger } = context;
+  const { result, profile, model, target, hunksOnly, salvaged } = context;
   const causes = causeFlags(context);
   if (parsed) {
     process.stdout.write(
@@ -50,7 +73,7 @@ function reportFindings(parsed, context) {
     return;
   }
 
-  const text = unparsedReply(result, { structured, profile, ledger });
+  const text = unparsedReply(result, context);
   // Every caveat, because a reply that came back as prose did not see more —
   // `salvaged` FIRST, same ordering as `caveats()` below: without it, a
   // salvage follow-up's prose reply carries no indication it came from a
@@ -373,6 +396,10 @@ export function errorReport(error) {
     partial: error?.answer?.reasoning?.trim() || error?.answer?.content?.trim()
       ? { reasoning: error.answer.reasoning, content: error.answer.content }
       : null,
+    // What a failed review's request was, and why it was narrower than asked
+    // for — present only on a review failure whose request was built, so a task
+    // or job envelope never gains these keys.
+    ...(error?.reviewCauses ? reviewCauseFields(error.reviewCauses) : {}),
   };
 }
 
@@ -527,9 +554,10 @@ export function passEnvelope(pass, index, context) {
     // INVISIBLE, contradicting "nothing is concealed". Surface them on the pass's
     // own `passes[]` entry (never the top-level OR). `degraded` derives from the
     // same formula `runTimings` uses, `Boolean()`-wrapped to stay identical. The
-    // thrown branch below cannot carry these — an `ok: false` outcome holds only
-    // `{lens, error, ledger, durationMs}`, so fabricating them there would assert a fact
-    // nothing recorded; a thrown pass's salvage attempt survives only in `attempts`.
+    // thrown branch below cannot carry these salvage facts — an `ok: false` outcome
+    // holds only `{lens, error, ledger, durationMs}`, so fabricating them there would
+    // assert a fact nothing recorded; a thrown pass's salvage attempt survives only in
+    // `attempts`. Its request causes, which its error does record, it carries.
     entry.salvaged = Boolean(pass.salvaged);
     entry.salvageTrim = pass.salvageTrim ?? null;
     entry.degraded = Boolean(context.structuredOutput) && !pass.structured;
@@ -548,25 +576,37 @@ export function passEnvelope(pass, index, context) {
     const usage = pass.error.usage ?? pass.error.answer?.usage ?? null;
     entry.usage = usage;
     entry.reasoning = reasoningWitness(usage);
+    // The request's state and causes, when its failure site recorded them.
+    if (pass.error.reviewCauses) Object.assign(entry, reviewCauseFields(pass.error.reviewCauses));
   }
   return entry;
 }
 
 // The one-line-per-pass summary the text report renders: finding count for a
-// readable pass, the failure reason for a non-observation, and a note when a pass
+// readable pass, the failure reason for a non-observation, a note when a pass
 // whose reply could not be read was served a confirmed substituted model (the id
 // itself is on the JSON `passes[]` entry, so the text stays free of
-// server-controlled values).
+// server-controlled values), and a non-observation's request facts (`causeNote`).
 function passSummary(pass, index, report) {
   // `lens` rides the summary so a lens run's text report names which focus each
   // pass ran — a failed lens pass is then diagnosable from the text, not only the
   // JSON `passes[]`. Null on the plain `--passes` path (formatPassLine omits it).
   if (report.ok !== false) {
-    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null };
+    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null, causeNote: null };
   }
   const substituted = pass.result?.modelReported === true
     && substitution(pass.result.requestedModel, pass.result.model, pass.result.declaredServedModel);
-  return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: null, reason: report.reason, servedNote: substituted ? 'served a different model' : null };
+  // A thrown pass's causes ride its error; a parse-null pass recorded its own.
+  const causes = pass.ok ? pass : pass.error?.reviewCauses;
+  return {
+    index,
+    lens: pass.lens ?? null,
+    durationMs: pass.durationMs,
+    findings: null,
+    reason: report.reason,
+    servedNote: substituted ? 'served a different model' : null,
+    causeNote: causes ? causeNote(causes, { salvaged: pass.ok && Boolean(pass.salvaged) }) : null,
+  };
 }
 
 /**

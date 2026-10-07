@@ -14,7 +14,7 @@ import { checkContextBudget, estimateTokens } from './context-guard.mjs';
 import { UserError } from './errors.mjs';
 import { reviewSystemPrompt } from './review.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS, reviewSchemaFor } from './review-schema.mjs';
-import { prepareLadder, unconstrainedLadder } from './review-ladder.mjs';
+import { prepareLadder, unconstrainedLadder, withReviewCauses } from './review-ladder.mjs';
 import { findingsFirst, isFormatRejection, responseFormatFor, schemaInstruction } from './structured.mjs';
 
 /**
@@ -374,7 +374,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // salvage).
     const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
     if (salvaged?.result) return salvaged;
-    throw withLedger(salvaged?.failure ?? fallbackError, ledger);
+    throw withLedger(withReviewCauses(salvaged?.failure ?? fallbackError, built), ledger);
   }
 }
 
@@ -843,7 +843,7 @@ async function findingsWithin(profile, plan, { expiresAt, removed, format, ceili
     // No salvage here: neither of `SALVAGE_REASONS` can arise on this request —
     // the watchdog is never armed, and a reasoning-only reply is not refused,
     // since under a grammar the reasoning channel carries the answer.
-    if (!isFormatRejection(error)) throw error;
+    if (!isFormatRejection(error)) throw withReviewCauses(error, first);
     format.rejected = true;
     // The whole ladder is climbed again, not just the guard: the instruction
     // makes the prompt longer, so the rung that fit a moment ago may not now.

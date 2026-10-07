@@ -265,6 +265,28 @@ function conservativeReserveNote(cut, scope) {
   );
 }
 
+/**
+ * The conservative-count causes of a FAILED request, worded for a request the
+ * server may have rejected unread: they say what the request carried, never what
+ * the model saw. No unsized-window note — its remedy, sending the files whole,
+ * is beside the point of a rejected request and contradicts a too-large
+ * refusal's own hint; `--json` still carries `skippedUnsizedWindow`.
+ */
+export function failureCauseNotes({ skippedConservativeCount, conservativeReserveCut, multiPass }) {
+  const scope = passScope(multiPass);
+  return [
+    skippedConservativeCount
+      ? `NOTE: ${scope}the diff-covered changed files did not fit the window as counted, so they were not sent whole — ` +
+        'the request carried only their hunks. Non-ASCII text is counted conservatively, so they may in fact have ' +
+        "fitted; the real count cannot be known without the model's tokenizer."
+      : null,
+    conservativeReserveCut
+      ? `NOTE: ${scope}the review request's reply budget was reduced to make room for the input as counted. Non-ASCII text is counted ` +
+        'conservatively, so it may have been reduced more than the real input required.'
+      : null,
+  ].filter(Boolean);
+}
+
 /** The qualifier a union note carries: its flag held in at least one pass. */
 function passScope(multiPass) {
   return multiPass ? 'in at least one pass, ' : '';
