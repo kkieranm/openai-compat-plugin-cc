@@ -1253,3 +1253,17 @@ classifier/predicate check stays as a second, separate guard — never as the on
 **Guarded by** `tests/sweep-report.test.js` — "an attempted stream-error-frame row resets any live outage
 streak, as its prose says" (behavioural, not structural: no guard can tell a surrogate assertion from
 a direct one by reading it, so this stays a review lens).
+
+## A fallback keyed on a broad failure class that re-triggers the harm the change removes
+
+Measured 2026-10-07. A fix stopped discovery from sending a query-bearing request to a vMLX gateway,
+which routes that request to a session and wakes a sleeping model. To keep a proxy that needs the
+query working, it resent the request with the query when the query-free one was refused. "Refused"
+was keyed on *any* HTTP status, so a 503 or 500 from a gateway mid-reload, a 404 or a 302 each
+produced the exact wake-inducing request the fix existed to stop. The fallback's trigger has to be
+evidence for the one case the fallback serves. Here that is an authentication refusal (401/403;
+not 407, which a query cannot satisfy). A class of failures that merely includes that case is not
+evidence. The review lens: for every fallback, name the case it serves, then check its trigger
+against every other failure that reaches the same catch.
+**Guarded by** `tests/vmlx-discovery.test.js`: "any other status for the query-free /v1/models is
+not resent, since the resend would wake the model".
