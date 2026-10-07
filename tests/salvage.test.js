@@ -565,20 +565,23 @@ test('a long reasoning-only reasoning is trimmed to head+tail before the salvage
 /** review-request.mjs's SALVAGE_MIN_REASONING_CHARS: the shortest reasoning a follow-up is sent for. */
 const SALVAGE_MIN_REASONING_CHARS = 500;
 
-/** A first request that ends reasoning-only with exactly `reasoningText`; every later request answers. */
-function exactReasoningOnlyThenAnswer(reasoningText) {
+/** A first request that ends reasoning-only with `reasoningText`; every later request gets `followUp`. */
+function reasoningOnlyThen(reasoningText, followUp) {
   let requestCount = 0;
   return (record, response) => {
     if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
     requestCount += 1;
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
-    response.end(requestCount === 1
-      ? reasoningOnlyEmptyContentFrames(reasoningText)
-      : finishFrame(JSON.stringify({
-        findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from minimal reasoning' }],
-        summary: 'salvaged',
-      })));
+    response.end(requestCount === 1 ? reasoningOnlyEmptyContentFrames(reasoningText) : followUp);
   };
+}
+
+/** A first request that ends reasoning-only with exactly `reasoningText`; every later request answers. */
+function exactReasoningOnlyThenAnswer(reasoningText) {
+  return reasoningOnlyThen(reasoningText, finishFrame(JSON.stringify({
+    findings: [{ file: 'seed.txt', line: 1, severity: 'low', summary: 'concluded from minimal reasoning' }],
+    summary: 'salvaged',
+  })));
 }
 
 test('reasoning exactly SALVAGE_MIN_REASONING_CHARS long is salvaged', async () => {
@@ -607,13 +610,9 @@ const SALVAGE_WARNING_FORBIDDEN = /ran out of|out of time|out of tokens|budget|d
 
 /** The text report of a review salvaged by a follow-up answering `followUpContent`. */
 async function salvagedTextReport(followUpContent) {
-  let requestCount = 0;
-  const { dir, server, configPath } = await reviewScenario((record, response) => {
-    if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
-    requestCount += 1;
-    response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
-    response.end(requestCount === 1 ? reasoningOnlyEmptyContentFrames('x'.repeat(SALVAGE_MIN_REASONING_CHARS)) : finishFrame(followUpContent));
-  });
+  const { dir, server, configPath } = await reviewScenario(
+    reasoningOnlyThen('x'.repeat(SALVAGE_MIN_REASONING_CHARS), finishFrame(followUpContent)),
+  );
   try {
     const result = await runCompanion(['review'], { configPath, cwd: dir });
     assert.equal(result.status, 0, result.stderr);
@@ -654,6 +653,61 @@ test('reasoning one character short of SALVAGE_MIN_REASONING_CHARS is not salvag
     assert.equal(chatRequestsOf(server).length, 1, 'no follow-up is sent');
   } finally {
     await server.close();
+  }
+});
+
+// --- the follow-up itself ----------------------------------------------------
+//
+// One follow-up, sent once, carrying the reasoning with its surrounding
+// whitespace stripped — which is also what the minimum length is judged on.
+
+test('a salvage follow-up is sent once, never retried', async () => {
+  // Content, then the stream closes with no finish_reason and no [DONE]: a
+  // retryable shape, so with the review allowed two attempts only the
+  // follow-up's own single-attempt limit stops a second follow-up. 600
+  // characters stay under the trim budget, so no untrimmed fallback follows
+  // either.
+  const unfinished = `data: ${JSON.stringify({
+    id: 'chatcmpl-test',
+    object: 'chat.completion.chunk',
+    model: 'test-model',
+    choices: [{ index: 0, delta: { content: '{"findings": [' }, finish_reason: null }],
+  })}\n\n`;
+  const { dir, server, configPath } = await reviewScenario(reasoningOnlyThen('x'.repeat(600), unfinished));
+  try {
+    const result = await runCompanion(['review', '--json', '--max-attempts', '2'], { configPath, cwd: dir });
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(result.stdout).reason, 'reasoning-only');
+    const chats = chatRequestsOf(server);
+    assert.equal(chats.length, 2, 'the original plus exactly one follow-up');
+    assert.equal(chats[1].body.messages[2].content, 'x'.repeat(600), 'the second request is the follow-up');
+  } finally {
+    await server.close();
+  }
+});
+
+test('whitespace around the reasoning does not count toward the salvage minimum', async () => {
+  const short = await reviewScenario(exactReasoningOnlyThenAnswer(`${'x'.repeat(SALVAGE_MIN_REASONING_CHARS - 1)}\n\n\n\n\n`));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath: short.configPath, cwd: short.dir });
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(result.stdout).reason, 'reasoning-only');
+    assert.equal(chatRequestsOf(short.server).length, 1, 'no follow-up is sent');
+  } finally {
+    await short.server.close();
+  }
+
+  const reasoning = 'x'.repeat(SALVAGE_MIN_REASONING_CHARS);
+  const padded = await reviewScenario(exactReasoningOnlyThenAnswer(`\n\n${reasoning}\n\n`));
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath: padded.configPath, cwd: padded.dir });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).salvaged, true);
+    const chats = chatRequestsOf(padded.server);
+    assert.equal(chats.length, 2, 'the original plus one follow-up');
+    assert.equal(chats[1].body.messages[2].content, reasoning, 'the follow-up carries the reasoning with the surrounding whitespace stripped');
+  } finally {
+    await padded.server.close();
   }
 });
 
