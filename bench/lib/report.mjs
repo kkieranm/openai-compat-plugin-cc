@@ -1,7 +1,6 @@
 // Turning benchmark runs into something a person can read.
 //
-// Three files, three questions, all three seams cut by the size ratchet and all
-// three real. `run-buckets.mjs` decides which bucket a run falls into;
+// `run-buckets.mjs` decides which bucket a run falls into;
 // `case-rows.mjs` turns runs into the counts and samples a row is made of;
 // `caveats.mjs` writes the prose qualifying every figure. What is left here is
 // the rendering: cells, the table, and the document around it.
@@ -49,8 +48,8 @@ function rateCell({ values, measured, completed }) {
 }
 
 function tokenCell({ values, measured, completed }) {
-  // Em dash, not 0. The old `?? 0` printed a zero-token prompt for a case whose
-  // runs all failed, which is a measurement nobody made.
+  // Em dash, not 0: a case whose runs all failed has no prompt size, and a zero
+  // would be a measurement nobody made.
   if (values.length === 0) return '—';
   const low = Math.min(...values);
   const high = Math.max(...values);
@@ -102,14 +101,12 @@ function unmatchedCell(row) {
 }
 
 /**
- * The distinct lenses a case reviewed at, joined — or an em dash when no run was
- * measurable, matching `tokenCell`'s own "nobody measured this". The join, never
- * a pick, is the point: `whole@154624 / hunks@61696` in one cell is the divergence
- * a silent single value would hide.
+ * The cell for a deduped set of labels — the lens rungs, the reasoning states —
+ * joined, or an em dash when no run was measurable, matching `tokenCell`'s own
+ * "nobody measured this". The join, never a pick, is the point:
+ * `whole@154624 / hunks@61696` in one cell is the divergence a silent single
+ * value would hide.
  */
-// The cell for a deduped set of labels — the lens rungs, the reasoning states —
-// joined, or an em dash when no run was measurable. One helper across both
-// columns, the same way `rangeCell` already serves prefill and generation.
 function setCell(values) {
   return values.length > 0 ? values.join(' / ') : '—';
 }
@@ -119,7 +116,7 @@ function table(rows) {
     // Prefill and generation are two columns, never one. They are not two views
     // of the same quantity: a prompt cache moves the first by tens of times and
     // leaves the second alone, so summing them produces a figure that describes
-    // neither, which is exactly what the `seconds` column they replace did.
+    // neither.
     //
     // `lens` sits beside `prompt tokens` on purpose: a hunks lens is why a
     // prompt-token count is small, and reading the pair together is what tells a
@@ -137,10 +134,10 @@ function table(rows) {
     // scored — printing it as a fifth column would break the sum and read as a
     // bucket it is not.
     const scoredCell = row.cut ? `${row.scored}/${row.runs} (${row.cut} cut)` : `${row.scored}/${row.runs}`;
-    // The same shape, for the same reason: a run the wall-clock cap killed is
-    // still a failed run, so it stays inside `failed` and the sum holds. What it
-    // is *not* is a result about the reviewer — a harness limit and a model that
-    // could not answer were one number until the CLI started saying which.
+    // The same shape, for the same reason: a run a budget timed out is still a
+    // failed run, so it stays inside `failed` and the sum holds. What it is *not*
+    // is a result about the reviewer: a harness limit, not a model that could not
+    // answer.
     //
     // A list, not one sub-count: both kinds can occur in the same case, and a
     // cell that could only name one of them would have to pick, silently
@@ -159,10 +156,19 @@ function table(rows) {
   return lines;
 }
 
-export function renderReport(results, { runsPerCase, model, provider, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling, passes, lens }) {
+function modelTitle(model, requestedModel, unanswered) {
+  return unanswered
+    ? `\`${safeCodeSpan(requestedModel)}\` (requested; no run was answered by it)`
+    : `\`${safeCodeSpan(model)}\``;
+}
+
+export function renderReport(results, { runsPerCase, model, provider, requestedModel, unanswered, diffOnly, cold, structuredOutput, timeoutSeconds, maxSeconds, maxTokens, temperature, sampling, passes, lens }) {
   const rows = caseRows(results, { cold });
   const lines = [
-    `# Benchmark — ${provider} / ${model}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`
+    // Provider and model ids are server- and config-supplied, so they go in code
+    // spans: a newline in either could otherwise open a heading of its own. A
+    // model no run answered is named by its requested id, the note outside it.
+    `# Benchmark — \`${safeCodeSpan(provider)}\` / ${modelTitle(model, requestedModel, unanswered)}${diffOnly ? ' (--diff-only)' : ''}${cold ? ' (--cold)' : ''}`
     + `${structuredOutput ? ' (--structured-output)' : ''}`
     // The pass strategy in the title, for the same reason as the flags above: two
     // arms differing only in --passes/--lens produce incomparable measurements, so
@@ -218,11 +224,7 @@ function declaredIdNotes(results) {
   ];
 }
 
-/**
- * The residue sections below the table, lifted out of `renderReport` at the
- * function size budget — which it sat exactly on, so the reliability section
- * could not have been added without this.
- */
+/** The residue sections below the table. */
 function supplements(results) {
   const lines = [];
   const unmatched = results.flatMap(({ caseDef, runs }) =>
@@ -232,9 +234,20 @@ function supplements(results) {
     // Printed in full rather than counted. The count alone cannot be checked,
     // and the whole reason to keep a residue is to be able to eyeball what the
     // scorer is missing before trusting the number above it.
+    // Every field but the case id (a fixture name) is model output, so each sits
+    // in a code span: nothing in one renders as structure or as a link, and none
+    // starts a line. The evidence keeps only its first line, taken before
+    // escaping, which folds the newlines that line is cut at; a value that is not
+    // a string is left for safeCodeSpan to coerce.
     for (const { caseId, finding } of unmatched) {
-      lines.push(`- \`${safeCodeSpan(caseId)}\` **${finding.file}${finding.line ? `:${finding.line}` : ''}** (${finding.severity}) — ${finding.summary}`);
-      if (finding.evidence) lines.push(`  > ${finding.evidence.split('\n')[0].trim().slice(0, 160)}`);
+      const line = finding.line ? `:\`${safeCodeSpan(finding.line)}\`` : '';
+      lines.push(`- \`${safeCodeSpan(caseId)}\` \`${safeCodeSpan(finding.file)}\`${line} (\`${safeCodeSpan(finding.severity)}\`) — \`${safeCodeSpan(finding.summary)}\``);
+      if (finding.evidence) {
+        const firstLine = typeof finding.evidence === 'string'
+          ? finding.evidence.split(/\r\n?|\n/)[0].trim().slice(0, 160)
+          : finding.evidence;
+        lines.push(`  > \`${safeCodeSpan(firstLine)}\``);
+      }
     }
     lines.push('');
   }
@@ -265,7 +278,12 @@ function failureSections(results) {
   const failures = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.error && run.reason !== 'model-substituted').flatMap((run) => [
       `- \`${safeCodeSpan(caseDef.id)}\`:`,
-      ...String(run.error).split('\n').map((line) => `      ${line}`),
+      // A blank line, then six spaces: two for the list item, four for an
+      // indented code block, where server text echoed into stderr renders
+      // literally. Split on every line ending, so a lone CR cannot start an
+      // unindented line.
+      '',
+      ...String(run.error).split(/\r\n?|\n/).map((line) => `      ${line}`),
     ]));
   if (failures.length > 0) lines.push('## Logical runs that did not complete', '', ...failures, '');
 

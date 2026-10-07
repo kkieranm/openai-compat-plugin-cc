@@ -48,6 +48,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- The bench report no longer lets a provider, a model id or a model's finding text inject Markdown into
+  its heading or its unmatched-findings list: those values render as code spans, and a value that is not
+  a string no longer crashes the render. A failed run's stderr renders as a code block, so server text
+  echoed into it can no longer render as links, HTML or headings.
 - A failed `/oai:review` now says when the conservative non-ASCII count shaped the request it sent — as
   notes on stderr and as cause fields in `--json` — and a multi-pass report names it on a failed pass's
   own line. A salvage follow-up that runs out of tokens is now named as such, without suggesting

@@ -4,9 +4,8 @@ import { join } from 'node:path';
 /**
  * What the run *was*, and where its two artefacts go.
  *
- * Lifted out of `run.mjs` at the file size budget. The seam: this module decides
- * what the run should be called and writes it down, while `run.mjs` decides the
- * order things happen in.
+ * This module decides what the run should be called and writes it down, while
+ * `run.mjs` decides the order things happen in.
  */
 
 /**
@@ -27,10 +26,10 @@ import { join } from 'node:path';
  * substituted — and that is the modal case, not a corner: substitution is a
  * property of one requested id against one server, so a server that renames the
  * model for the first run renames it for all of them. `options.model` is
- * undefined on a normal invocation (the config supplies it), so the title became
- * `# Benchmark — unknown / unknown` above a table of nothing but failures: the
- * report losing the identity of the server it ran against at exactly the moment
- * a reader needs it.
+ * undefined on a normal invocation (the config supplies it), so keyed on counted
+ * runs alone the title would name neither server nor model above a table of
+ * nothing but failures: the report losing the identity of the server it ran
+ * against at exactly the moment a reader needs it.
  *
  * So: `provider` from any report at all, since a substitution says nothing about
  * which server answered. `model` from a COUNTED run, and where none exists, the
@@ -44,6 +43,10 @@ export function reportIdentity(results, options) {
   return {
     provider: answered?.provider ?? anyReport?.provider ?? options.provider ?? 'unknown',
     model: answered?.model ?? (requested ? `${requested} (requested; no run was answered by it)` : 'unknown'),
+    // The same fact in parts, for a renderer that shows the id apart from its
+    // annotation.
+    requestedModel: requested ?? null,
+    unanswered: !answered && Boolean(requested),
   };
 }
 

@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReport } from '../bench/lib/report.mjs';
+import { reportIdentity } from '../bench/lib/record.mjs';
 import { caseRows } from '../bench/lib/case-rows.mjs';
 import { CASE, cell, goodRun } from './bench-report-fixtures.mjs';
 
@@ -142,6 +143,20 @@ test('a failed run reports what happened, not the advice that followed it', () =
   assert.match(report, /Raise --max-tokens/, 'the remedy may be shown too — but not instead');
 });
 
+test('server text echoed into a failed run\'s stderr renders as code, never as Markdown', () => {
+  const report = render([{ diffOnly: false, error: 'boom [click](https://evil.example) <img src=x>\rnext\n# heading' }]);
+  const lines = report.split('\n');
+  const label = lines.findIndex((line) => /^- `[^`]+`:$/.test(line));
+  assert.ok(label >= 0, report);
+  assert.deepEqual(lines.slice(label + 1, label + 5), [
+    '',
+    '      boom [click](https://evil.example) <img src=x>',
+    '      next',
+    '      # heading',
+  ]);
+  assert.ok(!lines.some((line) => line.startsWith('# heading') || line.startsWith('next')), report);
+});
+
 /** A run that answered, parsed and scored — with its two timing halves reported. */
 function measuredRun() {
   const run = goodRun();
@@ -251,6 +266,81 @@ function unmatchedFinding() {
 function runWithUnmatched({ byDefect, recall }) {
   return { ...goodRun(), score: { matched: [], unmatched: [unmatchedFinding()], byDefect, recall } };
 }
+
+// Provider, model and every finding field are supplied by a server, a config or
+// the model under test, so none may open Markdown structure of its own.
+test('a hostile provider or model id stays inside the heading', () => {
+  const report = renderReport([{ caseDef: CASE, runs: [goodRun()] }], {
+    runsPerCase: 1, provider: 'p\n## evil-provider', model: 'm\n## evil-model',
+  });
+  const lines = report.split('\n');
+  assert.ok(!lines.some((line) => line.startsWith('## evil')), report);
+  assert.match(lines[0], /^# Benchmark — `p ## evil-provider` \/ `m ## evil-model`/);
+});
+
+/** A report holding one run whose only unmatched finding is `finding`. */
+function reportWithFinding(finding) {
+  const run = { ...goodRun(), score: { ...goodRun().score, matched: [], unmatched: [finding] } };
+  return renderReport([{ caseDef: CASE, runs: [run] }], { runsPerCase: 1, provider: 'p', model: 'm' });
+}
+
+test('a hostile unmatched finding opens no heading, list item, link or second evidence line', () => {
+  const report = reportWithFinding({
+    file: 'a.js\n# x', line: '9\n# z', severity: 'high\n- injected',
+    summary: 'ok\n\n# injected heading see https://evil.example',
+    evidence: '- first [link](http://x)\nsecond line',
+  });
+  const lines = report.split('\n');
+  for (const injected of ['# x', '# z', '# injected', '- injected']) {
+    assert.ok(!lines.some((line) => line.startsWith(injected)), `${injected}: ${report}`);
+  }
+  assert.ok(report.includes('`ok # injected heading see https://evil.example`'), report);
+  assert.ok(lines.includes('  > `- first [link](http://x)`'), report);
+  assert.doesNotMatch(report, /second line/);
+});
+
+test('a finding location that is not a string renders instead of throwing', () => {
+  const report = reportWithFinding({ file: 'a.js', line: Object.create(null), severity: 'low', summary: 's' });
+  assert.ok(report.includes('`a.js`:`{}`'), report);
+});
+
+test('evidence that is not a string renders instead of throwing', () => {
+  for (const [evidence, shown] of [[Object.create(null), '{}'], [{ a: 1 }, '{"a":1}']]) {
+    const report = reportWithFinding({ file: 'a.js', line: 1, severity: 'low', summary: 's', evidence });
+    assert.ok(report.split('\n').includes(`  > \`${shown}\``), report);
+  }
+});
+
+test('evidence ends its first line at a lone carriage return too', () => {
+  const report = reportWithFinding({ file: 'a.js', line: 1, severity: 'low', summary: 's', evidence: 'first\rsecond' });
+  assert.ok(report.split('\n').includes('  > `first`'), report);
+  assert.doesNotMatch(report, /second/);
+});
+
+test('a model no run answered is named by its requested id, the note outside its code span', () => {
+  const results = [{ caseDef: CASE, runs: [{ diffOnly: false, error: 'the server refused' }] }];
+  const identity = reportIdentity(results, { model: 'wanted', provider: 'p' });
+  const heading = renderReport(results, { runsPerCase: 1, ...identity }).split('\n')[0];
+  assert.match(heading, /`wanted` \(requested; no run was answered by it\)/);
+  assert.doesNotMatch(heading, /`wanted \(requested/);
+
+  const served = { ...goodRun(), report: { ...goodRun().report, provider: 'p', model: 'wanted' } };
+  const answeredResults = [{ caseDef: CASE, runs: [served] }];
+  const answered = renderReport(answeredResults, { runsPerCase: 1, ...reportIdentity(answeredResults, { model: 'wanted' }) }).split('\n')[0];
+  assert.match(answered, /`wanted`/);
+  assert.doesNotMatch(answered, /requested; no run/);
+});
+
+test('identifiers keep their underscores', () => {
+  const report = renderReport([{ caseDef: CASE, runs: [goodRun()] }], { runsPerCase: 1, provider: 'p', model: 'qwen3_coder-Q4_K_M' });
+  assert.match(report.split('\n')[0], /`qwen3_coder-Q4_K_M`/);
+  assert.ok(reportWithFinding({ file: 'tests/__init__.py', line: 3, severity: 'low', summary: 's' }).includes('`tests/__init__.py`:`3`'));
+});
+
+test('a model that is not a string renders instead of throwing', () => {
+  const report = renderReport([{ caseDef: CASE, runs: [goodRun()] }], { runsPerCase: 1, provider: 'p', model: Object.create(null) });
+  assert.equal(report.split('\n')[0], '# Benchmark — `p` / `{}`');
+});
 
 // On a control every unmatched finding is a false positive by construction, so
 // the cell names it — while an ordinary case's unmatched may be a real defect
