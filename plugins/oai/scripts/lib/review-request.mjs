@@ -232,12 +232,14 @@ function replyEnvelope(result) {
 /**
  * The tagged error for a clean stream that never left its reasoning channel —
  * shared by both places that reject that shape (`unconstrained()`'s own
- * request and `attemptSalvage`'s follow-up) so the two never drift into two
- * wordings for the same failure, and so both can hand the same object to
- * `result.markUnanswered()` before using it.
+ * request and `salvageEmptyFailure`'s follow-up) so one function words the
+ * failure, and so both can hand the same object to `result.markUnanswered()`
+ * before using it. Only `unconstrained()` passes the reserve-cut flag: its
+ * failure is thrown and shown, while the follow-up's is recorded only as an
+ * outcome and a reason, so its hint is never surfaced.
  */
-function reasoningOnlyFailure(profile, result) {
-  const { message, hint } = reasoningOnlyRefusal(profile);
+function reasoningOnlyFailure(profile, result, { reserveCut = false } = {}) {
+  const { message, hint } = reasoningOnlyRefusal(profile, { reserveCut });
   const failure = new UserError(message, { reason: 'reasoning-only', hint });
   failure.answer = replyEnvelope(result);
   return failure;
@@ -355,7 +357,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // reasoning channel legitimately carries the answer (see `client.mjs`'s
     // `requireAnswer` docstring), so that branch has no counterpart check.
     if (isReasoningOnly(result)) {
-      const failure = reasoningOnlyFailure(profile, result);
+      const failure = reasoningOnlyFailure(profile, result, { reserveCut: Boolean(built.conservativeReserveCut) });
       // The ledger already closed this physical attempt `answered` (`settle()`
       // ran inside `chatCompletion` before this check ever saw the result) —
       // reclassify it now, before the failure propagates, or a run that

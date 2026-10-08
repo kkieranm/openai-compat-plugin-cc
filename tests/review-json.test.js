@@ -290,9 +290,9 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   assert.equal('parsed' in envelope, false);
   assert.match(envelope.message, /ran out of tokens/);
   // The failure envelope carries the reasoning witness too, so its shape matches
-  // the success envelope's. The witness reads `error.usage`, which no throw site
-  // sets — this reply's own usage is dropped when the token-exhaustion error is
-  // thrown — so it is the `unknown` witness: present, never absent.
+  // the success envelope's. The witness reads `error.usage`, and this fake reply's
+  // usage carries no `completion_tokens_details.reasoning_tokens`, so it is the
+  // `unknown` witness: present, never absent.
   assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
 });
 

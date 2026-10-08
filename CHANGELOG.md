@@ -53,6 +53,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A review that ran out of tokens, or answered with reasoning alone, after the conservative non-ASCII
+  count cut its reply budget no longer suggests raising `--max-tokens`, which could not have been sent.
+  On a salvaged review, the reserve note says it was the review request's budget that was cut, without
+  claiming the answer had less room.
 - `/oai:review`'s hunks-only note now says the model saw only the diff hunks for the diff-covered
   changed files: files no diff covers, such as untracked ones, are still sent whole.
 - The bench report no longer lets a provider, a model id or a model's finding text inject Markdown into

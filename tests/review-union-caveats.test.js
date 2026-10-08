@@ -50,6 +50,16 @@ test('a single pass keeps the categorical wording of each caveat', () => {
   }
 });
 
+test('a salvaged result says the reserve cut was the review request\'s, without claiming the answer\'s room', () => {
+  const salvaged = render({ salvaged: true, conservativeReserveCut: true });
+  assert.match(salvaged, /NOTE: the review request's reply budget was reduced/);
+  assert.doesNotMatch(salvaged, /less room to reason and answer/);
+  const union = render({ salvaged: true, conservativeReserveCut: true, multiPass: true });
+  assert.match(union, /NOTE: in at least one pass, the review request's reply budget was reduced/);
+  const ordinary = render({ conservativeReserveCut: true });
+  assert.match(ordinary, /NOTE: the reply budget was reduced .* less room to reason and answer\./s);
+});
+
 test('a reply that could not be parsed still says the model saw only the diff hunks', async () => {
   const { dir, server, configPath } = await reviewScenario((request, response) => {
     if (request.url.includes('/models')) return respondJson(response, modelList('test-model'));

@@ -256,10 +256,19 @@ function conservativeFallbackNote(skipped, scope) {
 
 /**
  * The reply budget was cut further than a typical count of the non-ASCII text
- * would have cut it. Shared by both paths; no figures, for the same reason.
+ * would have cut it. Shared by both paths; no figures, for the same reason. On a
+ * salvaged result the cut was the review request's, and the findings came from a
+ * follow-up on its own fixed budget, so the note says so and claims nothing
+ * about the room the answering request had.
  */
-function conservativeReserveNote(cut, scope) {
+function conservativeReserveNote(cut, scope, salvaged) {
   if (!cut) return null;
+  if (salvaged) {
+    return (
+      `NOTE: ${scope}the review request's reply budget was reduced to make room for the input as counted. ` +
+      'Non-ASCII text is counted conservatively, so it may have been reduced more than the real input required.'
+    );
+  }
   return (
     `NOTE: ${scope}the reply budget was reduced to make room for the input as counted. Non-ASCII text is counted ` +
     'conservatively, so it may have been reduced more than the real input required, leaving the model ' +
@@ -300,12 +309,15 @@ function passScope(multiPass) {
  * from the other. A multi-pass union ORs each fact across passes whose requests
  * can differ, so there the conservative notes claim only "at least one pass".
  */
-export function causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass }, profile) {
+export function causeNotes(
+  { skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged },
+  profile,
+) {
   const scope = passScope(multiPass);
   return [
     unsizedWindowNote(skippedUnsizedWindow, profile),
     conservativeFallbackNote(skippedConservativeCount, scope),
-    conservativeReserveNote(conservativeReserveCut, scope),
+    conservativeReserveNote(conservativeReserveCut, scope, salvaged),
   ].filter(Boolean);
 }
 
@@ -388,7 +400,9 @@ function caveats(
   // Directly after the state note it explains, and before the rest: a reader who
   // has just been told the model saw only hunks is owed the reason and the fix
   // in the next breath.
-  notes.push(...causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass }, profile));
+  notes.push(
+    ...causeNotes({ skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged }, profile),
+  );
   const missing = unreadableNote(unreadable);
   if (missing) notes.push(missing);
   if (dropped > 0) {

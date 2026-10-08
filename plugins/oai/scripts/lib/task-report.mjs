@@ -92,11 +92,11 @@ function jsonTaskReport(outcome, answer) {
     // cost from what the run cost. `null` where no ledger reached this far.
     //
     // **No `retried` boolean beside it, and that is another deliberate
-    // divergence from the review envelope.** `retried` there is
-    // `(requestCount ?? 1) > 1` — a second source for a fact this list already
-    // holds, which is the mirror-don't-generate defect the review envelope
-    // itself avoids for `substituted`. Two sources disagree eventually; a
-    // consumer counts `attempts`.
+    // divergence from the review envelope.** `retried` there is the ledger's
+    // entry count above one, else `(requestCount ?? 1) > 1` — a second source
+    // for a fact this list already holds, which is the mirror-don't-generate
+    // defect the review envelope itself avoids for `substituted`. Two sources
+    // disagree eventually; a consumer counts `attempts`.
     attempts: ledger ? ledger.entries() : null,
   };
 }

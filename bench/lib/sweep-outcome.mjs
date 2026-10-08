@@ -64,10 +64,10 @@ export const MAX_RAW = 256_000;
  * budget is armed only by `deadline.progress()`, called when a frame carried
  * text, so only a server that began generating and then went silent can emit it.
  *
- * **This predicate reads the CLI's own hint rather than the reason NAME.** A
- * version that generalised on the name regressed each time the set of reason
- * strings changed. The rule above reads an artifact rather than inferring one,
- * which is why it is written here rather than just the resulting set.
+ * **The set was chosen by reading each reason's CLI hint, not by generalising
+ * on its name**; the predicate itself reads only `reason`. The rule above is
+ * written here, not just the resulting set, so a new reason is judged the same
+ * way.
  *
  * **Still excluded, each for its own reason:** `token-exhaustion` and
  * `token-reserve-cutoff` (both the model's own budget, never the server's),

@@ -111,14 +111,20 @@ export function isReasoningOnly(result) {
 }
 
 /**
- * The one message/hint pair for the reasoning-only refusal, shared by
- * `requireAnswer` below and `review-request.mjs`'s `unconstrained()` — two
- * throw sites for the same shape, never two wordings that can drift apart.
+ * The message/hint pair for the reasoning-only refusal, shared by
+ * `requireAnswer` below and `review-request.mjs`'s `reasoningOnlyFailure`, so
+ * one function words the failure. `requireAnswer`'s reasoning-only arm fires
+ * only for `/oai:task`: on a review `unconstrained()` throws that shape before
+ * any reply reaches it. The hint drops the --max-tokens remedy when `reserveCut`
+ * says the conservative count already cut the reply budget to fit the window,
+ * since a higher ceiling cannot then be sent.
  */
-export function reasoningOnlyRefusal(profile) {
+export function reasoningOnlyRefusal(profile, { reserveCut = false } = {}) {
   return {
     message: `${profile.name} returned only internal reasoning and no answer.`,
-    hint: 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
+    hint: reserveCut
+      ? 'Ask a narrower question — the model never left its reasoning channel.'
+      : 'Raise --max-tokens, or ask a narrower question — the model never left its reasoning channel.',
   };
 }
 

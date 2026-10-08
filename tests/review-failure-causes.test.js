@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { withReviewCauses } from '../plugins/oai/scripts/lib/review-ladder.mjs';
 import { allFailedError } from '../plugins/oai/scripts/lib/review-passes.mjs';
-import { errorReport } from '../plugins/oai/scripts/lib/review-report.mjs';
+import { errorReport, report } from '../plugins/oai/scripts/lib/review-report.mjs';
 import { reserveFor } from '../plugins/oai/scripts/lib/review-request.mjs';
 import {
   chatRequests,
@@ -155,6 +155,90 @@ test('a reply cut off at the token limit after a conservative reserve cut says s
   assert.doesNotMatch(text.stderr, FALLBACK_NOTE);
   assert.doesNotMatch(text.stderr, /at least one pass/, 'a single review is one request');
   assert.doesNotMatch(text.stderr, /salvage follow-up/, 'no salvage ran');
+  // A higher ceiling cannot be sent once the count cut the budget to fit.
+  assert.doesNotMatch(envelope.hint, /Raising --max-tokens/);
+  assert.doesNotMatch(text.stderr, /Raising --max-tokens/);
+});
+
+test('a reply cut off at the token limit with no reserve cut keeps the --max-tokens remedy', async () => {
+  const dir = await repoWithNewFile('plain ascii');
+  const server = await scriptedServer((_, response) => respondJson(response, lengthCompletion('{"findings": [')));
+  const json = await runCompanion(['review', '--json'], { configPath: configFor(server), cwd: dir });
+  await server.close();
+
+  assert.equal(json.status, 1, json.stderr);
+  const envelope = JSON.parse(json.stdout);
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.conservativeReserveCut, false);
+  assert.match(envelope.hint, /Raising --max-tokens helps only when the window has room to spare/);
+});
+
+/** A clean stream that never left its reasoning channel, too short to salvage. */
+function reasoningOnlyReply(_, response) {
+  const frame = (delta, finishReason) => `data: ${JSON.stringify({
+    id: 'chatcmpl-test', object: 'chat.completion.chunk', model: 'test-model',
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+  })}\n\n`;
+  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  response.end(`${frame({ reasoning_content: 'thinking, briefly.' }, null)}${frame({}, 'stop')}data: [DONE]\n\n`);
+}
+
+async function reasoningOnlyEnvelope(args, dir) {
+  const server = await scriptedServer(reasoningOnlyReply);
+  const result = await runCompanion([args[0], '--json', ...args.slice(1)], { configPath: configFor(server), cwd: dir });
+  await server.close();
+  assert.equal(result.status, 1, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.match(envelope.message, /returned only internal reasoning and no answer/);
+  assert.equal(typeof envelope.hint, 'string');
+  return envelope;
+}
+
+test('a reasoning-only review after a reserve cut does not suggest raising --max-tokens', async () => {
+  const envelope = await reasoningOnlyEnvelope(['review'], await reserveCutRepo());
+  assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(envelope.conservativeReserveCut, true);
+  assert.match(envelope.hint, /narrower question/);
+  assert.doesNotMatch(envelope.hint, /Raise --max-tokens/);
+});
+
+test('a reasoning-only review with no reserve cut keeps the --max-tokens remedy', async () => {
+  const envelope = await reasoningOnlyEnvelope(['review'], await repoWithNewFile('plain ascii'));
+  assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(envelope.conservativeReserveCut, false);
+  assert.match(envelope.hint, /Raise --max-tokens/);
+});
+
+test('a reasoning-only task keeps the --max-tokens remedy', async () => {
+  const envelope = await reasoningOnlyEnvelope(['task', 'a question'], await createRepo());
+  assert.match(envelope.hint, /Raise --max-tokens/);
+});
+
+test('a salvaged prose reply after a reserve cut names the review request\'s budget', () => {
+  const context = {
+    json: false,
+    result: { content: PROSE, finishReason: 'stop', model: 'test-model' },
+    profile: { name: 'local' },
+    model: 'test-model',
+    target: { label: 'working tree', unreadable: [] },
+    hunksOnly: false,
+    salvaged: true,
+    conservativeReserveCut: true,
+    budget: { checked: true },
+    estimatedTokens: 100,
+    durationMs: 1,
+  };
+  let out = '';
+  const write = process.stdout.write;
+  process.stdout.write = (chunk) => { out += chunk; return true; };
+  try {
+    report(null, context);
+  } finally {
+    process.stdout.write = write;
+  }
+  assert.match(out, /SALVAGE follow-up/);
+  assert.match(out, /the review request's reply budget was reduced/);
+  assert.doesNotMatch(out, /less room to reason and answer/);
 });
 
 /**

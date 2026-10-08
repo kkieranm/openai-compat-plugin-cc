@@ -86,7 +86,7 @@ function reportFindings(parsed, context) {
         'less reliable than an ordinary review.'
       : null,
     hunksOnly ? hunksOnlyNote() : null,
-    ...causeNotes(causes, profile),
+    ...causeNotes({ ...causes, salvaged }, profile),
     unreadableNote(target.unreadable),
   ].filter(Boolean);
   process.stdout.write(
@@ -563,7 +563,7 @@ export function passEnvelope(pass, index, context) {
     entry.degraded = Boolean(context.structuredOutput) && !pass.structured;
     // What this pass's request was, beside the reply nobody could read: the
     // state and its causes, exactly as a readable entry carries them.
-    entry.hunksOnly = pass.hunksOnly;
+    entry.hunksOnly = Boolean(pass.hunksOnly);
     Object.assign(entry, causeFlags(pass));
   } else if (pass.error) {
     // A THROWN pass (no `pass.result`) may still carry the reply's usage on its
@@ -611,8 +611,8 @@ function passSummary(pass, index, report) {
 
 /**
  * A multi-pass run, as text or one merged JSON object. The single-pass path
- * (`report` above) is untouched; `cmd-review.mjs` calls this only when
- * `passes > 1`, and only after the fail-closed guards (all-unreadable,
+ * (`report` above) is untouched; `cmd-review.mjs` calls this when `passes > 1`
+ * or any `--lens` is given, and only after the fail-closed guards (all-unreadable,
  * served-model disagreement) have already thrown. Every caveat is the fail-closed
  * OR across readable passes so an incomplete or salvaged union can never read as
  * a clean complete one; `contextChecked` is the AND. Per-pass originals are kept

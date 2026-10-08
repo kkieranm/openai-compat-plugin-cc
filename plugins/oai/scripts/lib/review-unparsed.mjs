@@ -52,7 +52,9 @@ export function unparsedReply(result, context) {
       // separate a starved run from a failed one reports a night that measured
       // nothing as a night that found nothing.
       reason: 'token-exhaustion',
-      hint: salvaged
+      // Without the --max-tokens remedy when the conservative count already cut
+      // the reply budget to fit the window: a higher ceiling cannot be sent.
+      hint: salvaged || context.conservativeReserveCut
         ? 'Review a smaller target — a single commit with --commit, or specific files with --file.'
         : 'Review a smaller target — a single commit with --commit, or specific files with --file. '
           + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '

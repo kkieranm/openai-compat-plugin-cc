@@ -275,9 +275,9 @@ export function allFailedError(passes, profile) {
       );
     } catch (classified) {
       error = classified;
-      // `requireAnswer`'s reasoning-only/empty-answer refusals (reached THROUGH
-      // `unparsedReply`) set no `reason`, so without this the terminal envelope's
-      // `reason` reads null for exactly those first-pass shapes; a token-exhausted
+      // `requireAnswer`'s empty-answer refusal (a whitespace-only reply, reached
+      // THROUGH `unparsedReply`) sets no `reason`, so without this the terminal
+      // envelope's `reason` reads null for that first-pass shape; a token-exhausted
       // first pass arrives with its own `reason` and is left untouched. `== null`
       // (not a bare falsy check) so an empty-string reason — which no current
       // producer emits — could never be silently overwritten. Scoped to the catch
