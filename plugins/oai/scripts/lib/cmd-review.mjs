@@ -72,9 +72,8 @@ export async function runReview(argv) {
  *
  * Together rather than scattered because they share a deadline: both must fire
  * before git is walked or a provider is contacted, so a mistyped command costs
- * nothing. Lifted out of `reviewFlow` at the function size budget, and the seam
- * is real — these decide whether the request is *askable*, while everything
- * below builds it.
+ * nothing. These decide whether the request is *askable*, while everything below
+ * builds it.
  */
 function assertAskable(options, instructions, terminated) {
   if (instructions && !terminated) assertNoFlagsInPrompt(instructions, REVIEW_SPEC);
@@ -90,8 +89,8 @@ function assertAskable(options, instructions, terminated) {
 /**
  * Everything the request needs, assembled in one place.
  *
- * Lifted out of `reviewFlow` at the function size budget. The seam: this decides
- * *what to ask for*, while the caller runs it and renders what comes back.
+ * This decides *what to ask for*, while the caller runs it and renders what comes
+ * back.
  */
 function reviewPlan({ profile, options, instructions, target, model, contextLength, numeric, sampling, ledger, lens }) {
   const { maxTokens, temperature, timeoutSeconds, maxSeconds, maxAttempts } = numeric;

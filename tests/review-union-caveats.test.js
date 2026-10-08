@@ -27,8 +27,8 @@ const CAVEATS = {
     union: /\(In at least one pass the findings list hit its limit of \d+, so there may be more\./,
   },
   hunksOnly: {
-    single: /NOTE: the model saw only the diff hunks for the changed files/,
-    union: /NOTE: in at least one pass, the model saw only the diff hunks for the changed files/,
+    single: /NOTE: the model saw only the diff hunks for the diff-covered changed files/,
+    union: /NOTE: in at least one pass, the model saw only the diff hunks for the diff-covered changed files/,
   },
 };
 

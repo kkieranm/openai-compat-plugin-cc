@@ -144,6 +144,25 @@ test('nothing diff-covered to withhold is not this case either', async () => {
   assert.doesNotMatch(text.stdout, REMEDY);
 });
 
+test('on a mixed target the hunks-only note names only the diff-covered files', async () => {
+  // The untracked file is covered by no diff, so it goes whole on the hunks rung
+  // too; only the tracked file falls back to hunks, and the note must say so.
+  const dir = await repoWithDistantMarker();
+  const UNTRACKED_LINE = 'export const untrackedMarker = "sent-whole";';
+  writeFileSync(join(dir, 'brand-new.js'), `${UNTRACKED_LINE}\n`);
+  const server = await reviewServer();
+  const configPath = configFor(server, null);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const prompt = sentPrompt(server);
+  assert.ok(prompt.includes(UNTRACKED_LINE), 'the untracked file went whole');
+  assert.ok(!prompt.includes(OUTSIDE_THE_HUNK), 'the tracked file went as hunks');
+  assert.match(result.stdout, /the model saw only the diff hunks for the diff-covered changed files, not their whole contents/);
+});
+
 test('the JSON and the text report agree that the bodies were withheld', async () => {
   // The drift this repo keeps producing: a caveat true on one rendering and
   // absent from the next. Two runs of the same scenario, one per view.

@@ -2,11 +2,9 @@
 // size the window, the diff alone otherwise, and the prose instruction that
 // stands in for a grammar.
 //
-// Split from `review-request.mjs` under the size ratchet when the unconstrained
-// path became the default and the file crossed 300 lines. The seam is a
-// real one rather than a place the knife happened to land: this module decides
-// what the model is SHOWN, while `review-request.mjs` decides how much budget
-// there is to show it in and what to do when a request comes back refused.
+// This module decides what the model is SHOWN, while `review-request.mjs`
+// decides how much budget there is to show it in and what to do when a request
+// comes back refused.
 import { prepareRequest } from './delegate.mjs';
 import { buildReviewPrompt, lensDirective } from './review.mjs';
 import { REVIEW_SCHEMA, reviewSchemaFor } from './review-schema.mjs';

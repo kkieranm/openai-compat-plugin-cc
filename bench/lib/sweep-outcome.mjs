@@ -1,9 +1,7 @@
 // What one finished review means — the whole of the sweep's honesty, in one place.
 //
-// Extracted from `review-sweep.mjs` when reading the envelope's caveat fields
-// pushed that file toward its size budget. The seam is real rather than
-// arithmetic: this module decides what a reply MEANS, the harness decides what
-// to do next.
+// This module decides what a reply MEANS; the harness (`review-sweep.mjs`)
+// decides what to do next.
 //
 // The premise it defends: a review that starved for tokens and a review that
 // genuinely found nothing are both an empty findings list. Anything that reads
@@ -12,11 +10,12 @@
 //
 // **The CLI already says which it was — in fields, not prose.** `analysisCut`
 // is the caveat meaning the model never finished looking; `atCap` means the
-// findings list was cut at the ceiling; `hunksOnly` means only the diff was
-// reviewed, whatever the cause — true of `--diff-only` and of
-// `skippedUnsizedWindow`, named separately because nothing could size the
-// window, so the whole-file rung was never attempted, and the remedy is a
-// `contextLength` in the provider config;
+// findings list was cut at the ceiling; `hunksOnly` means the diff-covered
+// changed files were reviewed only as hunks, not whole (files no diff covers may
+// still have gone whole, though a sweep's `--commit` review has none), whatever
+// the cause — `--diff-only`, a window refusal, or `skippedUnsizedWindow`, named
+// separately because nothing could size the window, so the whole-file rung was
+// never attempted, and the remedy is a `contextLength` in the provider config;
 // `dropped` counts findings the model DID
 // emit that normalization discarded. `review-report.mjs` states the rule these
 // serve — "a fact changing what the reader should believe cannot live on one
@@ -147,10 +146,8 @@ function captured(stdout, stderr) {
  * A reason that is safe to compare, or `null`.
  *
  * The envelope is a document from another process, so `reason` can be any JSON
- * value — and a non-string one used to throw out of `serverUnwell` and take the
- * whole sweep with it, erasing every commit that had not yet been reached. A
- * shape the harness cannot interpret is recorded as no reason rather than
- * trusted, which is the same rule the rest of this module keeps.
+ * value. A shape the harness cannot interpret is recorded as no reason rather
+ * than trusted, which is the same rule the rest of this module keeps.
  */
 function usableReason(stdout) {
   const reason = reasonFrom(stdout);
@@ -270,9 +267,9 @@ export function classify({ status, stdout, stderr, code, signal }) {
   // stderr and no envelope is otherwise indistinguishable from an ordinary
   // crash, which defeats the diagnostic contract the rest of this adds.
   const kept = { ...captured(stdout, stderr), signal: signal ?? null };
-  // The harness's own capture ceiling, not the child dying. `execFileSync`
-  // throws ENOBUFS with `status: null`, which an earlier version turned into 1
-  // and then reported as "the review process died without recording an outcome".
+  // The harness's own capture ceiling, not the child dying, so it is checked
+  // before the status: the executor reports it as code `ENOBUFS` with a partial
+  // stdout, which would otherwise classify as a crash.
   if (code === 'ENOBUFS') return { outcome: 'output-too-large', ...kept };
   let parsed;
   try {
@@ -287,19 +284,10 @@ export function classify({ status, stdout, stderr, code, signal }) {
   const settled = outcomeFor(stdout, false);
   // EVERY report-derived entry is built by `reported`, and a differing verdict is
   // an override on top of it — never a second construction site.
-  //
-  // The substituted branch used to build its own object, and dropped the findings
-  // and all four caveats doing so: a substituted model's real leads vanished from
-  // both artifacts. That was the THIRD instance of one identity — `classify` not
-  // carrying a belief-changing envelope field onto the entry — after
-  // `analysisCut`/`atCap`/`hunksOnly` and then `dropped`, each fixed on the path
-  // it was found on while a sibling path kept the defect. One mapping is what
-  // makes a fourth path impossible rather than merely unlikely.
   const entry = reported(settled.report);
   if (settled.reason === 'model-substituted') {
-    // The verdict is replaced; the FACTS are not. `analysisCut` in particular
-    // reached the artifact only through the `truncated` outcome name, so an
-    // override erased it — the renderer now reads it from the entry instead.
+    // The verdict is replaced; the FACTS are not: the renderer reads every
+    // caveat from the entry, so an overridden outcome keeps them.
     return { ...entry, outcome: 'substituted', reason: settled.reason, ...kept };
   }
   return { ...entry, ...kept };

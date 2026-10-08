@@ -131,8 +131,10 @@ export function parseReviewLenses(raw) {
  * request, and telling a model it has a whole file it does not have is the very
  * defect this argument exists to remove.
  *
- * `hunksOnly` is the opposite claim and is equally load-bearing: it warns the
- * model off the "X is not defined" conclusion the hunks alone invite.
+ * Without it, and with a diff, the prompt scopes its claim to the request
+ * instead (the comment on that branch below): a file block is complete, every
+ * other file is hunks only, which warns the model off the "X is not defined"
+ * conclusion the hunks alone invite.
  */
 export function buildReviewPrompt({ label, diff, instructions, wholeFiles }) {
   const parts = [`Review these ${label} for defects.`];
@@ -314,7 +316,7 @@ export function causeNotes({ skippedUnsizedWindow, skippedConservativeCount, con
  */
 export function hunksOnlyNote(scope = '') {
   return (
-    `NOTE: ${scope}the model saw only the diff hunks for the changed files, not their whole contents. ` +
+    `NOTE: ${scope}the model saw only the diff hunks for the diff-covered changed files, not their whole contents. ` +
     'A claim that something is undefined, unimported or missing may just mean it is defined in ' +
     'a part of the file that was not sent.'
   );

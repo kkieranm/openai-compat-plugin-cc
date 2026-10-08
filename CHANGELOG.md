@@ -53,6 +53,8 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review`'s hunks-only note now says the model saw only the diff hunks for the diff-covered
+  changed files: files no diff covers, such as untracked ones, are still sent whole.
 - The bench report no longer lets a provider, a model id or a model's finding text inject Markdown into
   its heading or its unmatched-findings list: those values render as code spans, and a value that is not
   a string no longer crashes the render. A failed run's stderr renders as a code block, so server text

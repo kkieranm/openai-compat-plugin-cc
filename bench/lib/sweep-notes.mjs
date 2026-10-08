@@ -21,17 +21,14 @@ export function incompleteness(entry) {
   // no answer, and what is shown is a second, separate request asking it to
   // conclude from that reasoning.
   if (entry.salvaged) notes.push("SALVAGED: the model's reply held reasoning but no answer; these findings come from a follow-up request asking it to conclude from what it had already worked out, not from its ordinary findings-first pass — treat as less reliable than an ordinary review");
-  // Read from the entry, never inferred from the outcome name. `analysisCut`
-  // used to reach the artifact only by surviving as the `truncated` verdict, so
-  // an entry whose outcome was overridden — a substituted model whose analysis
-  // was ALSO cut — lost the fact entirely.
+  // Read from the entry, never inferred from the outcome name: an entry whose
+  // outcome was overridden — a substituted model whose analysis was also cut —
+  // carries the fact only as a field.
   if (entry.analysisCut) notes.push('the analysis was cut off before the model finished looking, so this is not a complete review of the commit');
   if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
   if (entry.dropped) notes.push(`${safeInline(entry.dropped)} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
-  // State, not cause — `--diff-only` reaches this too, so the wording this
-  // replaced ("the changed files did not fit the window") was already false for
-  // that flag before there was a second cause. The cause is the next line, and
-  // it is separate so that neither has to guess at the other.
+  // State, not cause — `--diff-only` reaches this too. The cause is the next
+  // line, and it is separate so that neither has to guess at the other.
   if (entry.hunksOnly) notes.push('the diff-covered changed files were reviewed only as hunks, not whole; files covered by no diff — untracked, or given with --file — may still have been sent whole');
   if (entry.skippedUnsizedWindow) notes.push('the provider\'s context window could not be determined, so the whole-file rung was skipped rather than sent unmeasured — set "contextLength" for the provider to enable it');
   if (entry.rawTruncated) notes.push('the raw reply was truncated in the machine record');

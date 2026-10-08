@@ -104,8 +104,7 @@ function reasonPresent(reason) {
 /**
  * What a `starved` row says: two arms for a reason that is not a usable code
  * (absent or blank, and not text — the split `reasonSuffix` makes), then the
- * table's own prose or the unrecognised sentence — never token-exhaustion's,
- * which used to be inherited.
+ * table's own prose or the unrecognised sentence — never token-exhaustion's.
  */
 function starvedExplanation(reason) {
   if (!reasonPresent(reason)) {
@@ -209,9 +208,10 @@ function answeredBy(entry) {
  * it — and the whole artifact's stated invariant is that no enumerated commit is
  * absent from both.
  *
- * Its caveats are rendered here too: a commit reviewed diff-only (`hunksOnly`),
- * or one whose findings were all discarded (`dropped`), is a completed review of
- * something narrower than the report's permanent caveat claims.
+ * Its caveats are rendered here too: a commit whose diff-covered changed files
+ * were reviewed only as hunks (`hunksOnly`), or one whose findings were all discarded
+ * (`dropped`), is a completed review of something narrower than the report's
+ * permanent caveat claims.
  */
 function reviewedSection(entries) {
   const quiet = entries.filter((entry) => REVIEWED.has(entry.outcome) && !(entry.findings?.length > 0));
@@ -251,9 +251,8 @@ function findingLines(entry) {
  *
  * Keyed on the findings the entry CARRIES, never on `outcome === 'findings'`. A
  * `truncated` or `substituted` review is not a review of the commit — that is why
- * neither counts as reviewed — but whatever leads it emitted are still leads, and
- * an earlier version dropped them from the morning artifact entirely, leaving
- * them only in the raw JSON.
+ * neither counts as reviewed — but whatever leads it emitted are still leads, so
+ * they are rendered here rather than left only in the raw JSON.
  */
 function hasFindings(entry) {
   return Array.isArray(entry.findings) && entry.findings.length > 0;
@@ -320,8 +319,9 @@ function coverageSection(entries) {
     } else {
       // Caveats are rendered from what the entry CARRIES, for every row — not
       // only where the outcome happened to be `findings`. A `clean` entry with
-      // `hunksOnly` is a completed review of a diff, not of the files whole, and
-      // the report's permanent caveat claims otherwise unless this says so.
+      // `hunksOnly` is a completed review of the diff-covered files as hunks, not
+      // whole, and the report's permanent caveat claims otherwise unless this says
+      // so.
       for (const note of incompleteness(entry)) lines.push(`  - *${note}*`);
     }
   }
