@@ -53,6 +53,12 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A line of a finding's evidence in the sweep report can no longer open a list, a heading, a rule or a
+  code block. The reproduction report's run stamps and the sweep report's outcome tally, which follow a
+  bare `- `, now render as code spans, so they cannot open a nested list. A run with no stamp reads as
+  `unstamped run` and a missing outcome as `no outcome recorded`, plain text outside any span. A
+  whitespace-only count of dropped findings now reads "an unknown number of" rather than opening a
+  bullet. Bare URLs in model text can still render as links under a linkify renderer.
 - A multi-pass review whose passes all failed no longer says every pass returned an unreadable reply;
   the terminal error is classified from the first pass alone, and later passes may have thrown, so the
   message now says none produced readable findings and that the first pass's reply was unreadable. A

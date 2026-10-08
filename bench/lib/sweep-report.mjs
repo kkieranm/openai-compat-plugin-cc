@@ -329,10 +329,18 @@ function coverageSection(entries) {
   return lines;
 }
 
+// An outcome as a code span, which a leading list marker cannot open a list from. A missing one is fixed
+// prose outside any span: an empty span would print as two backticks and pair with the next one on the
+// line, and no recorded value can render as unquoted prose, so the two cannot be confused.
+function outcomeLabel(outcome) {
+  const span = `\`${safeCodeSpan(outcome)}\``;
+  return span.length === 2 ? 'no outcome recorded' : span; // two backticks: an empty span
+}
+
 function tally(entries) {
   const counts = new Map();
   for (const entry of entries) counts.set(entry.outcome, (counts.get(entry.outcome) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1]).map(([outcome, n]) => `${safeInline(outcome)}: ${safeInline(n)}`).join(' · ');
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([outcome, n]) => `${outcomeLabel(outcome)}: ${safeInline(n)}`).join(' · ');
 }
 
 /**

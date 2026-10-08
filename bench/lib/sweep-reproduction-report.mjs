@@ -1,8 +1,10 @@
 // Render the cross-run reproduction model (from sweep-reproduction.mjs) as Markdown.
 //
-// Every `${…}` interpolation in this file is a `safeInline`/`displayReason` call —
-// it is in tests/structure.test.js's SWEEP_RENDER_FILES, whose anchored grammar admits
-// nothing else, so a new unwrapped `${…}` sink fails that test. Every untrusted scalar
+// Every `${…}` interpolation in this file is a `safeInline`/`safeCodeSpan`/`displayReason` call, or a
+// `stampLabel` call whose own interpolation is a `safeCodeSpan` code span — it is in
+// tests/structure.test.js's SWEEP_RENDER_FILES, whose anchored grammar admits nothing else beyond
+// the two `stampLabel` calls listed as this file's exceptions, so a new unwrapped `${…}` sink fails
+// that test. Every untrusted scalar
 // (stamp, model, sha, subject, reason, axis value) reaches such an interpolation — the
 // matrix data row's sha and n/k counts included. ONE untrusted value stays outside the
 // grammar's view: the matrix COLUMN HEADER composes a variable number of run stamps via
@@ -26,11 +28,18 @@ const cell = (outcome) => (outcome === 'findings' ? 'F' : outcome === 'clean' ? 
 
 const axisValue = (axis) => (axis.state === 'known' ? JSON.stringify(axis.value) : 'unrecorded');
 
+// A run stamp as a code span, so a stamp starting with a list marker cannot open a nested list after the
+// line's `- `. A missing one is fixed prose outside any span, which no recorded stamp can render as.
+function stampLabel(stamp) {
+  const span = `\`${safeCodeSpan(stamp)}\``;
+  return span.length === 2 ? 'unstamped run' : span; // two backticks: an empty span
+}
+
 // One run's identity line: stamp, observed model, and the window it ran under.
 function runLine(run) {
   const model = run.signature.hard.observedModel;
   const modelText = model.state === 'known' ? model.value : 'model unprovable';
-  return `- ${safeInline(run.stamp)} — ${safeInline(modelText)}, ${safeInline(axisValue(run.signature.hard.maxSeconds))}s cap`;
+  return `- ${stampLabel(run.stamp)} — ${safeInline(modelText)}, ${safeInline(axisValue(run.signature.hard.maxSeconds))}s cap`;
 }
 
 // The per-run integrity + gap disclosure: a lost record is named by sha, never
@@ -41,7 +50,7 @@ function integritySection(runs) {
   if (damaged.length === 0) return [];
   const lines = ['', '### Lost records (integrity)', ''];
   for (const run of damaged) {
-    lines.push(`- ${safeInline(run.stamp)}: ${safeInline(String(run.integrity.discarded))} discarded line(s)`);
+    lines.push(`- ${stampLabel(run.stamp)}: ${safeInline(String(run.integrity.discarded))} discarded line(s)`);
     for (const gap of run.integrity.gaps) {
       lines.push(`  - gap at ${safeInline(SHORT(gap.sha))} — ${displayReason(gap.why)}`);
     }
@@ -59,7 +68,7 @@ function leadsSection(runs) {
     for (const lead of run.leads) {
       const subject = lead.subject ? ` — ${safeInline(lead.subject)}` : '';
       lines.push(
-        `- ${safeInline(run.stamp)} ${safeInline(SHORT(lead.sha))}` + subject
+        `- ${stampLabel(run.stamp)} ${safeInline(SHORT(lead.sha))}` + subject
           + `: ${safeInline(lead.outcome)}, ${safeInline(String(lead.count))} finding(s)`,
       );
     }
@@ -96,7 +105,7 @@ function comparableSection(group, index) {
 
   lines.push('', '**Per run:**');
   for (const p of perRun) {
-    lines.push(`- ${safeInline(p.stamp)}: ${safeInline(String(p.reviewedCount))} reviewed, ${safeInline(String(p.findingBearingCount))} finding-bearing`);
+    lines.push(`- ${stampLabel(p.stamp)}: ${safeInline(String(p.reviewedCount))} reviewed, ${safeInline(String(p.findingBearingCount))} finding-bearing`);
   }
 
   // The matrix: one row per commit reviewed by >=1 run, cells across the runs. The

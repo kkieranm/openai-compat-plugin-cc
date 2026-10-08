@@ -683,6 +683,11 @@ const SWEEP_RENDER_FILES = [
 // why, cause) are trusted by NAME — their safety lives in a nearby assignment the grammar
 // cannot bind to. A future rebinding of one of those locals to an untrusted value would pass
 // silently. All are safe today (constructions visible in-file); re-verify on any change to them.
+// The helper-call entries (subjectLine, answeredBy, reasonSuffix, shortfall, tally, outcomeLabel,
+// stampLabel) share this property: a helper is admitted by name, and its body is scanned only where it
+// carries a `${…}`, so a helper rewritten to return its argument bare passes this test. The
+// rendered-output tests in tests/sweep-report.test.js and tests/sweep-reproduction.test.js are the
+// backstop.
 const SWEEP_SAFE_EXPRESSIONS = {
   'bench/lib/sweep-report.mjs': new Set([
     'subjectLine(entry)',   // helper: a code span, sha/subject wrapped inside it
@@ -690,6 +695,7 @@ const SWEEP_SAFE_EXPRESSIONS = {
     'reasonSuffix(entry.reason)', // helper: displayReason inside it
     'shortfall(record)',    // helper: its own interpolations wrapped
     'tally(record.entries)',// helper: its own interpolations wrapped
+    'outcomeLabel(outcome)', // helper: a safeCodeSpan code span, or fixed prose
     'severity',             // built with intentional ** and a wrapped finding.severity
     'evidence',             // built with intentional > and safeBlockquoteLines
     'line',                 // a built finding line (its parts wrapped)
@@ -712,10 +718,13 @@ const SWEEP_SAFE_EXPRESSIONS = {
   // `SWEEP_SAFE_EXPRESSIONS[rel].has(...)` throws on undefined.
   'bench/lib/compare-report.mjs': new Set([]),
   // sweep-reproduction-report.mjs emits every untrusted scalar through a safeInline/
-  // displayReason ${…} interpolation (scanned here); the one residual is the matrix
-  // column header (run stamps via runs.map, wrapped but no ${…}) — no formatting
-  // exception, so the set is empty — but the entry must exist, or the `.has(...)` throws.
-  'bench/lib/sweep-reproduction-report.mjs': new Set([]),
+  // safeCodeSpan/displayReason ${…} interpolation (scanned here), or through stampLabel,
+  // whose own interpolation is a safeCodeSpan code span; the one residual is the matrix
+  // column header (run stamps via runs.map, wrapped but no ${…}).
+  'bench/lib/sweep-reproduction-report.mjs': new Set([
+    'stampLabel(run.stamp)', // helper: a safeCodeSpan code span, or fixed prose
+    'stampLabel(p.stamp)',
+  ]),
 };
 
 // String-aware comment stripping — a deliberate fork of the shared `withoutComments`

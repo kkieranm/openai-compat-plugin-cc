@@ -354,6 +354,23 @@ test('RENDER: a gap sha appears in the per-run gap section, never in a group mat
   assert.equal(inMatrixRow, false, 'the gap sha must never be a matrix cell');
 });
 
+test('RENDER: a run stamp starting with a list marker cannot open a nested list', () => {
+  const unstamped = renderReproduction([run('', { header: { diffOnly: true }, entries: [reviewed('x', 'qwen')] })]);
+  assert.ok(unstamped.includes('- unstamped run — qwen'), unstamped);
+  for (const stamp of ['- x', '-']) {
+    // A clean run renders the run line and the per-run line; a run with a discarded line and a lead is
+    // ungroupable and renders the integrity line and the lead line. Together, all four stamp lines.
+    const damaged = run(stamp, { header: { diffOnly: true }, entries: [reviewed('x', 'qwen')], discarded: 1 });
+    damaged.leads = [{ sha: 'abc123def', subject: 'fix', outcome: 'truncated', count: 2 }];
+    const clean = renderReproduction([run(stamp, { header: { diffOnly: true }, entries: [reviewed('x', 'qwen')] })]);
+    const md = `${clean}\n${renderReproduction([damaged])}`;
+    for (const line of [`- \`${stamp}\` — qwen, 3600s cap`, `- \`${stamp}\`: 1 discarded line(s)`, `- \`${stamp}\` abc123def`, `- \`${stamp}\`: 1 reviewed`]) {
+      assert.ok(md.includes(line), `stamp ${JSON.stringify(stamp)}, ${line}: ${md}`);
+    }
+    assert.ok(!md.split('\n').some((line) => /^\s*- - /.test(line)), md);
+  }
+});
+
 test('RENDER: a lead row carries the commit subject', () => {
   // The subject is collected onto leads and must reach the reader; the
   // sha alone identifies the commit, the subject makes the row human-readable.

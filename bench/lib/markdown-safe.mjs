@@ -2,7 +2,8 @@
 // report is model-authored finding prose, server-reported ids, git subjects, operator paths and
 // foreign-build ledger values rendered into a Markdown file — a backtick opens a code span or fence, a
 // blank line breaks a list, and none of it is this tool's to trust. `safeInline`, `displayReason` and
-// `safeBlockquoteLines` neutralise Markdown metacharacters uniformly (dot-replacement). Inside a code
+// `safeBlockquoteLines` neutralise Markdown metacharacters uniformly (dot-replacement); `safeInline` also
+// trims, and `safeBlockquoteLines` also keeps each line from opening a block. Inside a code
 // span only a backtick can end the markup, and a `|` still ends a table cell, so `safeCodeSpan`
 // replaces those two alone and a value such as `qwen3_coder` prints as itself.
 // The structural tests in `tests/structure.test.js` enforce that EVERY interpolation of untrusted data
@@ -75,9 +76,13 @@ function inline(value, cap, metachars = MD_METACHARS) {
   }
 }
 
-/** One untrusted value, made safe for a single inline Markdown position (code span or prose). */
+/**
+ * One untrusted value, made safe for a single inline Markdown position (code span or prose).
+ *
+ * Trimmed, so a value cannot start with whitespace — after a `*`, that would open a bullet.
+ */
 export function safeInline(value) {
-  return inline(value, INLINE_CAP);
+  return inline(value, INLINE_CAP).trim();
 }
 
 /**
@@ -109,11 +114,26 @@ export function displayReason(value) {
  *
  * Escapes metacharacters per character, then rewrites EVERY line ending — `\n`, `\r`, `\r\n` — to the
  * blockquote continuation, so no line can be left without the `> ` prefix and break out of the quote.
+ * Each line also loses its leading indentation and has a leading block marker escaped (`quotedLine`).
  * The continuation is hardcoded rather than a caller option: it is a fixed layout, and an option is a
  * hole.
  */
 export function safeBlockquoteLines(value) {
   if (value === undefined || value === null) return '';
   const shown = truncate(coerce(value).replace(MD_METACHARS, '.'), BLOCKQUOTE_CAP);
-  return shown.replace(/\r\n?|\n/g, EVIDENCE_CONTINUATION);
+  return shown.split(/\r\n?|\n/).map(quotedLine).join(EVIDENCE_CONTINUATION);
+}
+
+// A block marker at a quoted line's start: a run of `-`, `+` or `=` (a list item, a thematic break, or
+// a setext underline turning the line above into a heading), or 1-9 digits and a `.` (an ordered-list
+// number), each followed by a space, a tab or the line's end.
+const BLOCK_MARKER = /^(?:[-+=]+(?=[ \t]|$)|\d{1,9}(?=\.(?:[ \t]|$)))/;
+
+// One evidence line, unable to open a block. Leading spaces and tabs are dropped: four columns of them
+// would open an indented code block, and fewer can still carry a list marker. A paragraph's continuation
+// line renders without its leading whitespace anyway, and a whitespace-only line stays blank, so it still
+// separates paragraphs. A leading marker is then escaped — after the metacharacter pass, so the backslash
+// is not itself dotted.
+function quotedLine(line) {
+  return line.replace(/^[ \t]+/, '').replace(BLOCK_MARKER, (marker) => (/^\d/.test(marker) ? `${marker}\\` : `\\${marker}`));
 }

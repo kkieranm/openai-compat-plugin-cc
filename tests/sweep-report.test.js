@@ -656,7 +656,7 @@ test('the JSON record is private, because it is the only artifact holding raw ou
 // finding, id, subject, path or evidence cannot corrupt the report or throw. These assert
 // the RENDERED behaviour; the structural guarantee that EVERY sink is wrapped lives in
 // tests/structure.test.js.
-import { safeCodeSpan, safeInline } from '../bench/lib/markdown-safe.mjs';
+import { displayReason, safeBlockquoteLines, safeCodeSpan, safeInline } from '../bench/lib/markdown-safe.mjs';
 
 test('a hostile finding.summary cannot open a fence or break the list', () => {
   const out = render(commit({
@@ -760,6 +760,54 @@ test('safeInline is idempotent (double-wrap is safe)', () => {
   for (const v of ['a`b*c_d', '/var/folders/x_y/z', 'HEAD~5', '{"code":42}']) {
     assert.equal(safeInline(safeInline(v)), safeInline(v));
   }
+});
+
+const quoted = (...lines) => lines.join('\n    > ');
+
+test('an evidence line cannot open a list, a rule or a setext heading', () => {
+  assert.equal(safeBlockquoteLines('- a\n+ b\n1. c\nd\n---\n==='), quoted('\\- a', '\\+ b', '1\\. c', 'd', '\\---', '\\==='));
+});
+
+test('an evidence line loses its leading spaces and tabs, but a blank line stays blank', () => {
+  assert.equal(safeBlockquoteLines('\t- x\n \t- x\n    code'), quoted('\\- x', '\\- x', 'code'));
+  assert.equal(safeBlockquoteLines('a\n    \nb'), quoted('a', '', 'b'));
+  assert.equal(safeBlockquoteLines('a\n    b'), quoted('a', 'b'));
+  assert.equal(safeBlockquoteLines('a - b\n-x\n1.5 x\n-. x'), quoted('a - b', '-x', '1.5 x', '-. x'));
+});
+
+test('safeInline trims, idempotently, and a marker-only value still closes its emphasis', () => {
+  for (const [value, shown] of [[' - x', '- x'], ['    code', 'code'], ['   ', '']]) {
+    assert.equal(safeInline(value), shown, JSON.stringify(value));
+    assert.equal(safeInline(safeInline(value)), shown, `${JSON.stringify(value)} twice`);
+  }
+  const out = render(commit({ outcome: 'findings', model: 'qwen/qwen3.6-27b', findings: [{ file: 'a.mjs', line: 1, severity: '-', summary: 'x' }] }));
+  assert.ok(out.includes('- **-** `a.mjs:1`'), out);
+});
+
+test('the inline trim does not reach code spans or reasons', () => {
+  assert.equal(safeCodeSpan(' - x'), ' - x');
+  assert.equal(safeCodeSpan('    code'), ' code');
+  assert.equal(displayReason(' - x'), ' - x');
+});
+
+test('a line-start marker in evidence or a ledger count cannot open a block in the rendered report', () => {
+  for (const outcome of ['findings', 'truncated']) {
+    const out = render(commit({
+      outcome,
+      model: 'qwen/qwen3.6-27b',
+      findings: [{ file: 'a.mjs', line: 1, severity: 'high', summary: 'x', evidence: 'ok\n- injected' }],
+    }));
+    assert.ok(out.includes('    > \\- injected'), `${outcome}: ${out}`);
+  }
+  const tallied = renderSweep({ ...base, enumerated: 1, entries: [commit({ outcome: '- injected' })] });
+  assert.ok(tallied.includes('- `- injected`: 1'), tallied);
+  // Two outcomes that render empty must not pair their backticks into one span across the line.
+  const blank = renderSweep({ ...base, enumerated: 2, entries: [commit({ outcome: undefined }), commit({ outcome: '' })] });
+  assert.ok(blank.includes('- no outcome recorded: 1 · no outcome recorded: 1'), blank);
+  const literal = renderSweep({ ...base, enumerated: 2, entries: [commit({ outcome: '' }), commit({ outcome: 'no outcome recorded' })] });
+  assert.ok(literal.includes('`no outcome recorded`: 1'), literal);
+  assert.match(render(commit({ outcome: 'clean', dropped: '    ', model: 'qwen/qwen3.6-27b', findings: [] })), /\*an unknown number of finding\(s\)/);
+  assert.match(render(commit({ outcome: 'clean', dropped: '  3', model: 'qwen/qwen3.6-27b', findings: [] })), /\*3 finding\(s\)/);
 });
 
 test('a finding.file/line with a throwing toString does not abort the report', () => {

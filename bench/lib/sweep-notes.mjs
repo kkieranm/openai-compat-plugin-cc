@@ -26,7 +26,7 @@ export function incompleteness(entry) {
   // carries the fact only as a field.
   if (entry.analysisCut) notes.push('the analysis was cut off before the model finished looking, so this is not a complete review of the commit');
   if (entry.atCap) notes.push('the findings list hit the reporting cap, so it is not the whole of what was found');
-  if (entry.dropped) notes.push(`${safeInline(entry.dropped)} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
+  if (entry.dropped) notes.push(`${safeInline(entry.dropped) || 'an unknown number of'} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
   // State, not cause — `--diff-only` reaches this too. The cause is the next
   // line, and it is separate so that neither has to guess at the other.
   if (entry.hunksOnly) notes.push('the diff-covered changed files were reviewed only as hunks, not whole; files covered by no diff — untracked, or given with --file — may still have been sent whole');
