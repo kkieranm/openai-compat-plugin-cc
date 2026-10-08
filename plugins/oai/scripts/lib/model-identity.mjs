@@ -38,9 +38,7 @@
  * exactly the A/B contaminant this exists to catch.
  *
  * `null` when either id is missing rather than a difference: an absent field is
- * "nothing was determined", never evidence that a substitution happened. The
- * same rule `budgetError`'s `serverResponded` had to learn — a proxy that
- * asserts a fact it only inferred is the defect class, not the fix.
+ * "nothing was determined", never evidence that a substitution happened.
  */
 export function substitution(requested, served, declared) {
   if (!requested || !served) return null;
@@ -91,8 +89,11 @@ export function declaredServedModel(profile, requested) {
  * Why the commands and not lower down: `finishAnswer` is a pure accumulator and
  * runs once per rung of the capability ladder, so warning there would put I/O in
  * the wrong layer and repeat itself on a retry. `report()` is too late and too
- * narrow — `--json` and every error path route around it, and the whole point is
- * that the operator hears about this while the run is still in front of them.
+ * narrow — under `--json` it skips its human rendering, a failure before
+ * reporting never reaches it, and a refusal raised while reporting
+ * (`unparsedReply` throwing in either branch) propagates to the command's
+ * catch — and the whole point is that the operator hears about this while the
+ * run is still in front of them.
  */
 export function substitutionNotice(result) {
   const swap = substitution(result?.requestedModel, result?.model, result?.declaredServedModel);

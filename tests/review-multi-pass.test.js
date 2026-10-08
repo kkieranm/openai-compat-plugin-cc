@@ -1,7 +1,9 @@
 // `/oai:review --passes N` end to end against the fake server: the byte-identity
 // of the single-pass path, the union with its agreement count, the empty-pass
-// denominator, and the two fail-closed refusals (all-unreadable, and a served
-// model the server never confirmed).
+// denominator, and two fail-closed refusals: all-unreadable, and the one of the
+// three served-model refusals exercised here — a served model the server never
+// confirmed. Substitution is covered in `served-model-ids.test.js` and
+// cross-pass disagreement in `review-passes.test.js`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { outcomeFor } from '../bench/lib/outcome.mjs';
@@ -186,14 +188,14 @@ test('the merged --json envelope carries every single-pass top-level key a consu
   await server.close();
 
   // Genuinely per-pass or per-reply facts a union does not carry at top level; each
-  // rides every entry of passes[] instead. `summary` — mergePasses has no union
-  // summary by design. `attempts` and `finishReason` are NO LONGER here: the merged
-  // SUCCESS envelope carries both at top level (attempts = the whole-run aggregate
-  // over all passes; finishReason = the union truncation signal), because a
-  // multi-pass bench record's WHOLE-RUN reliability (bench/lib/attempt-rows.mjs
+  // rides every READABLE pass's entry of passes[] instead. `summary` — mergePasses
+  // has no union summary by design. `attempts` and `finishReason` are not here: the
+  // merged SUCCESS envelope carries both at top level (attempts = the whole-run
+  // aggregate over all passes; finishReason = the union truncation signal), because
+  // a multi-pass bench record's WHOLE-RUN reliability (bench/lib/attempt-rows.mjs
   // everyAttempt) and truncation (run-buckets.mjs truncatedRuns) read TOP-LEVEL
-  // report.attempts/report.finishReason — reachable now that bench forwards
-  // --passes. `retried` STAYS per-pass-only: no bench/ code reads report.retried
+  // report.attempts/report.finishReason, and the bench forwards --passes.
+  // `retried` STAYS per-pass-only: no bench/ code reads report.retried
   // (single-pass retried is a per-pass request-count derivation). The rest —
   // `raw`/`analysisLength`/`analysisCap`/`estimatedTokens`/`contextNote`/`prefillMs`/
   // `generationMs`/`salvageTrim` — are per-reply diagnostics.
@@ -259,7 +261,7 @@ test('a PARSE-NULL truncated pass flips the union finishReason — over every re
   assert.equal(report.kind, 'multi-pass-review');
   assert.equal(report.readablePasses, 1, 'the truncated parse-null pass is NOT readable');
   assert.equal(report.finishReason, 'length', 'a result-bearing parse-null length pass flips the union');
-  // The bench truncation reader now classifies the whole multi-pass record as
+  // The bench truncation reader classifies the whole multi-pass record as
   // truncated off the top-level signal — the consumer proof.
   assert.equal(truncatedRuns([{ report }]).length, 1);
 });

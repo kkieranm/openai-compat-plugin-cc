@@ -252,13 +252,15 @@ export function aggregateAttempts(passes) {
  * by re-running `unparsedReply`, which THROWS the fully-formed
  * token-exhaustion/reasoning-only error — its `reason`, `hint`, and `usage`
  * carrier (which `errorReport`'s reasoning witness reads) all intact — or RETURNS
- * prose for a shape-unreadable reply, the only case that takes the whole-run
- * `all-passes-unreadable` claim. Disclosed trade-off: a leading unreadable-prose
- * pass thus masks a later thrown pass's reason in the top-level headline; the
- * evidence survives in `attempts`. Its request causes, like its attempts,
- * describe the whole run: each flag ORed across the passes that recorded one
- * and the first recorded skip (see `runCauses`), scoped "in at least one pass",
- * and left unset when no pass built a request.
+ * prose for a shape-unreadable reply. The `all-passes-unreadable` reason is
+ * stamped in both of those branches: on an unreadable-prose first pass, and on a
+ * classified throw that carries no reason of its own. The whole-run "None of the
+ * N…" message is the prose branch's alone. Disclosed trade-off: a leading
+ * unreadable-prose pass thus masks a later thrown pass's reason in the top-level
+ * headline; the evidence survives in `attempts`. Its request causes, like its
+ * attempts, describe the whole run: each flag ORed across the passes that
+ * recorded one and the first recorded skip (see `runCauses`), scoped "in at
+ * least one pass", and left unset when no pass built a request.
  */
 export function allFailedError(passes, profile) {
   const attemptRecords = aggregateAttempts(passes);
@@ -270,7 +272,8 @@ export function allFailedError(passes, profile) {
     try {
       unparsedReply(first.result, { ...first, profile });
       error = new UserError(
-        `All ${passes.length} review passes returned a reply that could not be read as findings; nothing has been checked.`,
+        `None of the ${passes.length} review passes produced readable findings (the first returned a reply that ` +
+          'could not be read as findings); nothing has been checked.',
         { reason: 'all-passes-unreadable' },
       );
     } catch (classified) {
@@ -441,11 +444,12 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
 /**
  * The `--json` report: ONE merged object (the benchmark reads a single
  * `JSON.parse(stdout)`), additive over the single-pass shape. `findings[]` is
- * the union (each carrying `agreement`, `readablePasses`, `summaries[]`);
- * `passes[]` preserves each pass's own record; the top-level `requestedModel` /
- * `model` / `declaredServedModel` are the first readable pass's (the run failed
- * closed before here if the readable passes measured different models), so a
- * consumer's substitution check stays meaningful — given all three, since passes
+ * the union (each carrying `summaries[]` and `lenses[]`, plus `agreement` and
+ * `readablePasses` on the `--passes` path only — the lens path omits that pair,
+ * see `withoutAgreement`); `passes[]` preserves each pass's own record; the
+ * top-level `requestedModel` / `model` / `declaredServedModel` are the first
+ * readable pass's (the run failed closed before here if the readable passes
+ * measured different models), so a consumer's substitution check stays meaningful — given all three, since passes
  * can agree while one reported the exact id and another the declared one.
  * Caveat fields are the fail-closed OR across readable passes; `contextChecked`
  * is the AND. Per-pass originals stay in `passes[]`, so nothing is concealed.
@@ -483,11 +487,11 @@ export function passesEnvelope(merged, { label, provider, requestedModel, declar
     model,
     modelReported,
     // On the lens path each finding's per-finding `agreement`/`readablePasses` are
-    // OMITTED: duplicate lenses are refused, so `agreement === lenses.length` for
-    // every finding, making the pair redundant with `lenses[]` while wearing a
-    // confidence-shaped name a diverse-focus run must not invite a reader to rank
-    // on. `lenses[]` is the sole per-finding signal there; the plain `--passes`
-    // path keeps both. `mergePasses` is strategy-neutral (it computes both); the
+    // OMITTED: `agreement` equals the length of the finding's own `lenses[]`, and
+    // `readablePasses` repeats the top-level `readablePasses`, so the pair is
+    // redundant while wearing a confidence-shaped name a diverse-focus run must
+    // not invite a reader to rank on. `lenses[]` is the sole per-finding signal
+    // there; the plain `--passes` path keeps both. `mergePasses` is strategy-neutral (it computes both); the
     // omission is here, at the one seam that knows the strategy.
     findings: strategy === 'lenses' ? merged.findings.map(withoutAgreement) : merged.findings,
     ...caveatFlags,

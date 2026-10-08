@@ -71,18 +71,18 @@ export function reportFlags(options) {
     sampling: Object.fromEntries(SAMPLING_PARAMS.filter(({ flag }) => options[flag] !== undefined).map(({ flag, validate }) => [flag, validate(options[flag], flag)])),
     // The pass strategy in the report title — a lens arm and a plain arm produce
     // incomparable measurements and must be tellable apart in the artifact.
-    passes: options.passes,
-    lens: options.lens,
+    // The validated values are used, so a stray newline or space in either flag
+    // cannot reach the heading; the child CLI still receives the flags as given.
+    passes: options.passes === undefined ? undefined : parseNumber(options.passes, 'passes', BENCH_NUMERIC_BOUNDS.passes),
+    lens: options.lens === undefined ? undefined : parseReviewLenses(options.lens).join(','),
   };
 }
 
 /**
  * The command line for one run of one case.
  *
- * Lifted out of `reviewOnce` at the function size budget, and the seam is a
- * clean one: this decides *what to ask for*, while the caller decides what to do
- * with the answer — including how to record a failure, which is the half that
- * kept growing.
+ * This decides *what to ask for*, while the caller decides what to do with the
+ * answer — including how to record a failure.
  */
 // EXPORTED for `tests/bench-review-flags.test.js`. Exporting the composition is
 // the seam, not another end-to-end test.
@@ -100,7 +100,7 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   if (options['structured-output']) flags.push('--structured-output');
   // Unique per run *and* per invocation. Without the run index every run of a
   // case would share a prefix and only the first would be cold — the exact
-  // thing --cold exists to prevent, reintroduced by the fix.
+  // thing --cold exists to prevent.
   if (options.cold) flags.push('--cache-buster', `${INVOCATION}-${caseDef.id}-${runIndex}`);
   // The manifest may pin its own provider/model, so a case can name the model
   // it is a fair test of; the command line overrides it. This is what makes
@@ -114,11 +114,9 @@ export function reviewFlags(materializedArgs, caseDef, options, { diffOnly, runI
   // wait is a property of this invocation, not of the case. Command line only.
   if (options.timeout) flags.push('--timeout', options.timeout);
   if (options['max-seconds']) flags.push('--max-seconds', options['max-seconds']);
-  // `--max-tokens` and `--temperature`, threaded on their own. `--max-tokens` is the
-  // one that made reviews complete on a starved model (a run that spent its whole
-  // window reasoning and never answered), and `--temperature` is forwarded beside
-  // it; `!== undefined` because `--temperature 0` is a legitimate deterministic
-  // setting that a truthy check would silently drop.
+  // `--max-tokens` and `--temperature`, threaded on their own; `!== undefined`
+  // because `--temperature 0` is a legitimate deterministic setting that a truthy
+  // check would silently drop.
   // One argument, `--flag=value`: as a separate argument an empty value (`--temperature=`,
   // accepted by validation as 0) is dropped by the review's parser, which then refuses the flag
   // or reads the next one as its value.
@@ -161,10 +159,10 @@ function reviewOnce(caseDef, options, runIndex) {
   const diffOnly = Boolean(options['diff-only']) && caseDef.mode === 'commit';
   // Materialization is inside the try, not above it. Every git call in
   // corpus.mjs throws UserError, and building the repo happens per case, after
-  // model time has already been spent on earlier ones — so a throw here used to
-  // escape runCase and cases.map() to the top-level handler, discarding every
-  // completed case's results and leaking the temp repo, against this function's
-  // own promise that one case failing must not cancel the rest.
+  // model time has already been spent on earlier ones — so a throw here must not
+  // escape runCase and cases.map() to the top-level handler, which would discard
+  // every completed case's results and leak the temp repo, against this
+  // function's own promise that one case failing must not cancel the rest.
   let dir;
   try {
     const materialized = materialize(caseDef, ROOT);
@@ -191,15 +189,11 @@ function reviewOnce(caseDef, options, runIndex) {
 }
 
 /**
- * A run that produced nothing, as the record keeps it. Lifted out of
- * `reviewOnce` at the function size budget.
+ * A run that produced nothing, as the record keeps it.
  *
- * The whole of stderr, not one line of it. Taking the last line returned the
- * UserError's *hint* — the companion writes the message and the hint as separate
- * lines — so the record showed "Raise --max-tokens…" as the reason a run failed
- * while "ran out of tokens" was discarded. Presenting the remedy as the
- * diagnosis is this repo's signature class, in the very field whose comment
- * calls itself the evidence the harness exists to keep.
+ * The whole of stderr, not one line of it. `oai-companion.mjs` writes
+ * `error.message` and then `error.hint` as separate lines, so the last line
+ * alone would be the hint, with the diagnosis dropped.
  *
  * `reason` is the category beside the prose, read from the command's own
  * `--json` envelope rather than matched out of stderr.
@@ -210,21 +204,23 @@ export function failedRun(error, caseDef, options, diffOnly) {
     diffOnly,
     error: said || error.message,
     reason: reasonFrom(error.stdout),
-    // Carried here because the failure envelope cannot: a run whose every
-    // attempt died produced no report, so the reliability table would bucket its
-    // attempts under "unknown" — collapsing a two-model sweep whose runs all
-    // failed into one indistinguishable row, which is the sweep this record
-    // exists to describe.
-    // The command's own resolved id first: it knows what providers.json supplied,
-    // which the flags usually do not name at all.
+    // Carried on the record because `record.mjs` persists this reduced object,
+    // not the envelope: a run whose every attempt died produced no report, so
+    // without it the reliability table would bucket its attempts under
+    // "unknown" — collapsing a two-model sweep whose runs all failed into one
+    // indistinguishable row, which is the sweep this record exists to describe.
+    // The id from the command's failure envelope when one was written: it knows
+    // what providers.json supplied, which the flags usually do not name at all.
+    // Otherwise the flags, then the manifest.
     requestedModel: requestedModelFrom(error.stdout) ?? options.model ?? caseDef.model ?? null,
     // Kept even here — see attemptsFrom. Scoring reads logical runs; reliability
     // reads every physical request, including all of the ones that failed.
     attempts: attemptsFrom(error.stdout),
-    // The server config the failed run acted on — without this the motivating
-    // review-bench FAILURE record (a reasoning runaway) drops the loaded window
-    // its watchdog threshold was derived from. `record.mjs` persists this reduced
-    // object, not the whole envelope, so the copy has to happen here.
+    // The server config the failed run acted on. The reply reserve (`reserveFor`
+    // in `review-request.mjs`) is derived from the loaded window unless
+    // --max-tokens was given or no window was detected, so the window rides the
+    // failed record — the copy has to happen here, for the reason
+    // `requestedModel` gives above.
     ...runContextFrom(error.stdout),
   };
 }
@@ -238,12 +234,10 @@ function runCase(caseDef, options, runsPerCase) {
     // is not an empty findings list, and scoring it as one would enter a failed
     // read as a clean review — the distinction --json exists to preserve.
     //
-    // `!outcome.error` as well, now that a run can carry both a report and a
+    // `!outcome.error` as well, because a run can carry both a report and a
     // failure: a substituted run parsed perfectly and is still not a
     // measurement of the requested model. `case-rows.mjs` enforces the same
-    // exclusion on its own side rather than trusting this line, because an
-    // invariant that lives in one file and is relied on by another is how the
-    // partition quietly stopped being exhaustive last time.
+    // exclusion on its own side rather than trusting this line.
     if (outcome.report?.parsed && !outcome.error) {
       const score = scoreRun(outcome.report.findings, caseDef.defects);
       outcome.score = { ...score, recall: recall(score.byDefect) };

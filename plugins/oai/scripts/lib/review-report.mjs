@@ -1,10 +1,9 @@
 // How a finished review run is shown — the text report and the `--json` object.
 //
-// Split from cmd-review.mjs, which orchestrates the request. Kept out of
-// review.mjs deliberately: that module is pure string-building, and this one
-// writes to stdout and throws. The refusals that decide whether a run is
-// REPORTABLE AT ALL left for `review-unparsed.mjs` at the size ratchet, so this
-// file no longer owns them and this line no longer claims it does.
+// `cmd-review.mjs` orchestrates the request. Kept out of review.mjs
+// deliberately: that module is pure string-building, and this one writes to
+// stdout and throws. The refusals that decide whether a run is REPORTABLE AT ALL
+// are defined in `review-unparsed.mjs`; this file calls them.
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
@@ -150,10 +149,9 @@ function runTimings(result, { structured, structuredOutput, ledger }) {
 /**
  * What could be read out of the reply, or nulls where nothing was determined.
  *
- * Lifted out of `jsonReport` at the function size budget. The parse-derived
- * fields are `null` rather than `false`/`[]` for a reply that could not be read:
- * an empty findings list is indistinguishable from a clean review, and one of
- * those two is a failure.
+ * The parse-derived fields are `null` rather than `false`/`[]` for a reply that
+ * could not be read: an empty findings list is indistinguishable from a clean
+ * review, and one of those two is a failure.
  *
  * `analysisLength`/`analysisCap` are deliberately JSON-only, and that is not the
  * omission this file exists to prevent: `analysisCut` is the *caveat* and it is
@@ -294,12 +292,10 @@ export function jsonReport(parsed, context) {
 /**
  * A run that failed, as one object — the other half of the `--json` contract.
  *
- * Without it, `--json` was machine-readable on success and prose on failure, so
- * a harness could tell *that* a run failed but never *why*: `bench/run.mjs`
- * stored the whole of stderr and could only distinguish a wall-clock cap from a
- * 500 by pattern-matching the message. This repo has hit that pattern
- * twice over, and the fix is the same one taken here — read the structured
- * field, not the prose.
+ * It makes `--json` machine-readable on failure as well as on success, so a
+ * harness can tell *why* a run failed, not only *that* it did: `bench/run.mjs`
+ * reads the failure's category from the structured `reason` field rather than
+ * pattern-matching stderr to tell a wall-clock cap from a 500.
  *
  * `reason` is the transport's own vocabulary where there is one
  * (`deadline-timeout`, `idle-timeout`, `oversize`, `protocol`, …) and `null`
@@ -612,10 +608,12 @@ function passSummary(pass, index, report) {
 /**
  * A multi-pass run, as text or one merged JSON object. The single-pass path
  * (`report` above) is untouched; `cmd-review.mjs` calls this when `passes > 1`
- * or any `--lens` is given, and only after the fail-closed guards (all-unreadable,
- * served-model disagreement) have already thrown. Every caveat is the fail-closed
- * OR across readable passes so an incomplete or salvaged union can never read as
- * a clean complete one; `contextChecked` is the AND. Per-pass originals are kept
+ * or any `--lens` is given, and only once the fail-closed guards have passed:
+ * `runMultiPass`'s `readable.length === 0` check (which throws
+ * `allFailedError`), then `servedModelFailure`, which found every readable pass
+ * confirmed, unsubstituted and on one model. Every caveat is the fail-closed OR
+ * across readable passes so an incomplete or salvaged union can never read as a
+ * clean complete one; `contextChecked` is the AND. Per-pass originals are kept
  * in `passes[]`, so nothing is concealed.
  *
  * PRECONDITION: at least one readable pass. `runMultiPass` throws

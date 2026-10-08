@@ -1,11 +1,10 @@
-// What the benchmark's timing and prompt-size columns claim.
+// What the benchmark's timing, rate, prompt-size and failed columns claim.
 //
-// Split from `bench-report.test.js` at the size ratchet. The seam: that file
-// asks whether every run lands in exactly one bucket, this one asks whether the
-// figures beside those buckets describe what their headers say. Both defects
-// this file guards were the same shape — two quantities welded into one number,
-// printed under a name that promises one of them: `seconds` was prefill plus
-// generation, and `prompt tokens` was one prompt times the run count.
+// `bench-report.test.js` asks whether every run lands in exactly one bucket;
+// this file guards the timing, rate and failed-cell figures beside those
+// buckets, and whether each describes what its header says. Prefill and
+// generation stay separate columns, never a welded `seconds` column, and
+// `prompt tokens` is one prompt's size, not the sum over runs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReport } from '../bench/lib/report.mjs';
@@ -31,11 +30,9 @@ test('prefill and generation are separate columns, never one number', async () =
 });
 
 test('the prompt-token column is the prompt, not the sum of every run\'s prompt', async () => {
-  // It was a sum, which is invisible at N=1 — where sum equals per-run — and
-  // wrong by a factor of `runs` everywhere else. The benchmark record quotes
-  // `config-origin` at 1,575 prompt tokens from an N=1 sweep; the first N=3
-  // report printed 4,725 for the same case, in the column a reader divides a
-  // generation figure by.
+  // A sum is invisible at N=1 — where sum equals per-run — and wrong by a
+  // factor of `runs` everywhere else, in the column a reader divides a
+  // generation figure by. Three identical runs must report one run's size.
   const report = renderReport(
     [{ caseDef: CASE, runs: [goodRun(), goodRun(), goodRun()] }],
     { runsPerCase: 3, provider: 'local', model: 'test-model' },

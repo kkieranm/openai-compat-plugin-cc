@@ -27,7 +27,7 @@ const clean = JSON.stringify({
 });
 
 // The content channel: with no grammar the reasoning channel is scratchpad and
-// `requireAnswer` refuses it, and no grammar is what an ordinary review sends now.
+// `requireAnswer` refuses it, and an ordinary review sends no grammar.
 const replies = (body, options) => (request, response) => respondStream(response, completionFrames(body, options));
 
 /** The single JSON object `--json` promises on stdout. */
@@ -155,7 +155,7 @@ test('a cut analysis reaches the JSON, so a guillotined run cannot score as clea
   // finish_reason stop, empty findings — and indistinguishable from a
   // genuinely clean pass without this.
   // Built from the schema the request actually carried, not from a constant.
-  // The cap is derived per run now, so this run is cut only if the schema that
+  // The cap is derived per run, so this run is cut only if the schema that
   // was sent is the same instance the parser compared the reply against — which
   // makes this the regression guard for that threading.
   const guillotined = (record) => JSON.stringify({
@@ -279,8 +279,8 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   assert.equal(result.status, 1, 'a run that ran out of tokens is not a reportable result');
   assert.match(result.stderr, /ran out of tokens/);
 
-  // Stdout is no longer empty here — `--json` is machine-readable on the
-  // failure path too — so the invariant is asserted directly rather than via
+  // Stdout is not empty here — `--json` is machine-readable on the failure
+  // path too — so the invariant is asserted directly rather than via
   // emptiness: whatever is printed must be unmistakably *not* a report. A caller keying on
   // `findings` or `parsed` must find neither, so a budget failure can never be
   // read as a finished run that found nothing.
@@ -290,9 +290,10 @@ test('--json refuses a truncated reply exactly as the text report does', async (
   assert.equal('parsed' in envelope, false);
   assert.match(envelope.message, /ran out of tokens/);
   // The failure envelope carries the reasoning witness too, so its shape matches
-  // the success envelope's. The witness reads `error.usage`, and this fake reply's
-  // usage carries no `completion_tokens_details.reasoning_tokens`, so it is the
-  // `unknown` witness: present, never absent.
+  // the success envelope's. The witness reads `error.usage ?? error.answer.usage`;
+  // here `error.usage` is the carrier, and this fake reply's usage carries no
+  // `completion_tokens_details.reasoning_tokens`, so it is the `unknown`
+  // witness: present, never absent.
   assert.deepEqual(envelope.reasoning, { state: 'unknown', tokens: null });
 });
 

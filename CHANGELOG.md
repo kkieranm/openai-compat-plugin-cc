@@ -53,6 +53,11 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A multi-pass review whose passes all failed no longer says every pass returned an unreadable reply;
+  the terminal error is classified from the first pass alone, and later passes may have thrown, so the
+  message now says none produced readable findings and that the first pass's reply was unreadable. A
+  stray newline in the bench's `--lens` or `--passes` no longer splits the report's heading, which now
+  shows the validated values.
 - A review that ran out of tokens, or answered with reasoning alone, after the conservative non-ASCII
   count cut its reply budget no longer suggests raising `--max-tokens`, which could not have been sent.
   On a salvaged review, the reserve note says it was the review request's budget that was cut, without

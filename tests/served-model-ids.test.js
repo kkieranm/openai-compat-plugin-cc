@@ -200,7 +200,7 @@ test('review --passes: a declared id is not a substitution to the multi-pass gua
     assert.deepEqual(report.passes.map((pass) => pass.declaredServedModel), [SERVED, SERVED]);
 
     // Without the declaration the same replies are a substituted pass, and the
-    // union fails closed exactly as before.
+    // union fails closed.
     const undeclared = await runCompanion(['review', '--passes', '2', '--json'], {
       configPath: config(server.baseUrl, { declared: false }),
       cwd: await reviewRepo(),

@@ -187,10 +187,10 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   // providers.json rather than passed as a flag, so a caller reading the failure
   // envelope — the benchmark's reliability table — could not otherwise say which
   // model an all-failed run had asked for, and bucketed every one as "unknown";
-  // the run context is here for the same reason — the qwen runaway that scored
-  // 0/6 is a report-stage throw, and only the window on its record makes it
-  // readable. The window is resolved here rather than at command entry, so it
-  // rides this closure rather than `runReview`'s catch the way `sampling` does.
+  // the run context is here for the same reason — a reasoning runaway thrown by
+  // the report stage is interpretable only with the window on its record. The
+  // window is resolved here rather than at command entry, so it rides this
+  // closure rather than `runReview`'s catch the way `sampling` does.
   const named = (error) =>
     attachRunContext(Object.assign(noteCauses(error), {
       requestedModel: error.requestedModel ?? model,
@@ -204,13 +204,12 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   // returned — carries it too, not just a failure from `requestFindings`.
   try {
     // Opt-in multi-pass: N independent passes unioned with an agreement count.
-    // `passes === 1` (the default, and no flag) is byte-identical to the block
-    // below — this branch is the whole extent of the feature's footprint on the
-    // flagship path.
+    // `passes === 1` (the default, and no flag) skips this branch and runs the
+    // single-pass block below.
     const passCount = lenses.length || (numeric.passes ?? 1);
     // Multi-pass on either axis: more than one plain pass, OR one-or-more lenses
     // (a lens run always routes here so the envelope carries lens identity). A
-    // lens-less `passCount === 1` never enters here — byte-identical as before.
+    // lens-less `passCount === 1` never enters here.
     if (passCount > 1 || lenses.length) {
       await runMultiPass({ passCount, lenses, profile, options, instructions, target, model, contextLength, numeric, sampling, runContext });
       return;

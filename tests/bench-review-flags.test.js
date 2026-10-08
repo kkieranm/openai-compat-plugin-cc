@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { reportFlags, reviewFlags } from '../bench/run.mjs';
+import { renderReport } from '../bench/lib/report.mjs';
 import { MIN_REVIEW_RESERVE_TOKENS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import { SAMPLING_FLAGS, parseSampling } from '../plugins/oai/scripts/lib/sampling.mjs';
 import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
@@ -262,6 +263,21 @@ test('bench refuses an out-of-range sampling value BEFORE materializing any case
 test('the report is told which sampling flags were set, and only those', () => {
   assert.deepEqual(reportFlags({ 'top-p': '0.9', 'reasoning-effort': ' high ' }).sampling, { 'top-p': 0.9, 'reasoning-effort': 'high' });
   assert.deepEqual(reportFlags({}).sampling, {});
+});
+
+test('the report heading takes the validated --lens and --passes, each arm on one line', () => {
+  const heading = (options) => renderReport([], { runsPerCase: 1, provider: 'p', model: 'm', ...reportFlags(options) }).split('\n')[0];
+
+  assert.equal(reportFlags({ lens: 'security\n' }).lens, 'security');
+  assert.match(heading({ lens: 'security\n' }), /\(--lens security\)$/);
+  assert.equal(reportFlags({ passes: ' 2\n' }).passes, 2);
+  assert.match(heading({ passes: ' 2\n' }), /\(--passes 2\)$/);
+
+  // The child CLI still receives each flag as given; it validates its own.
+  const lensFlags = build({ lens: 'security\n' });
+  assert.equal(lensFlags[lensFlags.indexOf('--lens') + 1], 'security\n');
+  const passFlags = build({ passes: ' 2\n' });
+  assert.equal(passFlags[passFlags.indexOf('--passes') + 1], ' 2\n');
 });
 
 test('bench accepts a valid sampling flag on its command line', async () => {

@@ -62,11 +62,9 @@ export function partialFrom(stdout) {
  * The server config a FAILED run resolved, off the same envelope —
  * one reader for all four fields rather than parsing the envelope four times.
  *
- * The motivating case: `qwen/qwen3.8-27b` scored 0/6, every case a reasoning
- * runaway, and the record could not say the loaded window the run's watchdog
- * threshold was derived from. Carried here because `failedRun`/`failure` build a
- * narrow record from the envelope, not the whole of it, so a field left unread
- * is a field the failure record drops.
+ * Carried here because `failedRun`/`failure` build a narrow record from the
+ * envelope, not the whole of it, so a field left unread is a field the failure
+ * record drops.
  */
 export function runContextFrom(stdout) {
   return pickRunContext(failureEnvelope(stdout));

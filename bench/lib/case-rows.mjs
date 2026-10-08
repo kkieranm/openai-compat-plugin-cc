@@ -1,12 +1,10 @@
 // What each row of the benchmark table *is*, before anything decides how to
 // print it.
 //
-// Split from `report.mjs` under the size ratchet, and the seam is the one that
-// was already implicit there: this file turns runs into counts and samples,
-// while that one turns counts and samples into cells and prose. The dependency
-// runs one way only — `report.mjs` imports this, never the reverse — because the
-// obvious half-move, leaving the sampling helpers behind and importing them back,
-// is an import cycle waiting to happen.
+// This file turns runs into counts and samples, while `report.mjs` turns counts
+// and samples into cells and prose. The dependency runs one way only —
+// `report.mjs` imports `caseRows`, and this file imports nothing from
+// `report.mjs` — because the reverse import would be a cycle.
 import { tokensPerSecond } from '../../plugins/oai/scripts/lib/throughput.mjs';
 import { reasoningWitness } from '../../plugins/oai/scripts/lib/reasoning-witness.mjs';
 import { answeringAttempt } from './attempt-rows.mjs';
@@ -15,10 +13,10 @@ import { analysisCutRuns, scoredRuns, truncatedRuns, unreadableRuns } from './ru
 /**
  * Runs whose figures describe what this row claims to measure.
  *
- * `!run.error` as well as `run.report`, because a run can now carry both: a
+ * `!run.error` as well as `run.report`, because a run can carry both: a
  * substituted run parsed a perfectly good reply and was timed accurately — on
- * the WRONG MODEL. Gating on the report alone let its prefill, generation and
- * tok/s into a row whose failed cell disowned it, so the table could print
+ * the WRONG MODEL. Gating on the report alone would let its prefill, generation
+ * and tok/s into a row whose failed cell disowned it, so the table could print
  * throughput for a model it also said had not run.
  */
 export function measurable(runs) {
@@ -139,8 +137,8 @@ function rateSamples(runs) {
  * The rung is chosen by how much of the changed set the loaded window can hold
  * (`review-ladder.mjs`), so two models on one case — or one model on two days —
  * can review at very different fidelity purely because of how much KV cache
- * fitted, and prompt tokens is the only column from which that could previously
- * be guessed. `whole@154624` against `hunks@61696` is not two samples of one
+ * fitted, and prompt tokens is the only other column from which that could be
+ * guessed. `whole@154624` against `hunks@61696` is not two samples of one
  * measurement, and naming it is what stops a lens divergence reading as a model
  * result.
  *
@@ -199,10 +197,16 @@ function reasoningSamples(runs) {
 /**
  * How the failed runs failed, split only as far as the record actually says.
  *
- * A timeout and a model error were the same thing in this table until the CLI
- * started emitting a structured `reason` — both were a stderr blob in the
- * `failed` column, so "the harness gave up" and "the model could not do it" were
- * indistinguishable, and only the second is a result about the reviewer.
+ * Every run with an error counts in `failed`. Two kinds are sub-named in the
+ * cell `N (k timed out, j substituted)`: the timeouts, counted from the CLI
+ * envelope's `reason` (any reason ending `-timeout`), and the substitutions,
+ * counted from the harness's own `outcomeFor` classification in `outcome.mjs`
+ * (the CLI never emits `model-substituted`). Every other failure, not only a
+ * model error, is the unnamed remainder of the count. `run.error` is the
+ * trimmed stderr, or the thrown error's message when stderr is empty, or the
+ * harness's substitution text; it is not printed in the column, but the
+ * report's failure section prints it under "Logical runs that did not
+ * complete" (substitutions excluded).
  *
  * Counted off `reason`, never off the message text. `reason` is `null` for a run
  * that failed before the envelope could be written, and such a run is counted as
@@ -232,8 +236,7 @@ function failureStats(runs) {
 /**
  * Which bucket every run of a case lands in, resolved once.
  *
- * Lifted out of `caseRows` at the function size budget, and the seam is the
- * right one: this decides *what each run counts as*, while the row literal
+ * This decides *what each run counts as*, while the row literal in `caseRows`
  * decides what gets printed. The `scoredSet` intersection is the part that has
  * to travel with it — see the comments below.
  */

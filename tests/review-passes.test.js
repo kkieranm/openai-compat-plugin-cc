@@ -102,7 +102,7 @@ test('an unconfirmed served model fails closed', () => {
 });
 
 test('two passes served different confirmed models fail closed as disagreement', () => {
-  // The `served.length > 1` branch: every pass confirmed its model and none is a
+  // The `measured.size > 1` branch: every pass confirmed its model and none is a
   // substitution (each requested===served), but the served models differ across
   // passes — unreachable while one target is shared, so reached here directly.
   const a = { ok: true, parsed: { findings: [] }, result: { model: 'modelX', requestedModel: 'modelX', modelReported: true } };
@@ -242,6 +242,17 @@ test('allFailedError takes the reason from the first pass IN ORDER, not the firs
   // attemptRecords span EVERY pass, overwriting the classified error's own
   // single-pass records with the whole-run superset.
   assert.deepEqual(error.attemptRecords, [{ id: 'a1' }, { id: 'b1' }]);
+});
+
+test('allFailedError says only that no pass produced findings when the first was unreadable', () => {
+  // Only the first pass is re-examined for the terminal error; later passes may
+  // have thrown, so the message claims nothing about their replies.
+  const prose = { ok: true, parsed: null, structured: false, result: { content: 'I looked and am not sure.', reasoning: '', finishReason: 'stop', usage: {} }, ledger: { entries: () => [] } };
+  const thrown = { ok: false, error: Object.assign(new Error('boom'), { reason: 'deadline-timeout' }), ledger: { entries: () => [] } };
+  const error = allFailedError([prose, thrown], profile);
+  assert.match(error.message, /None of the 2 review passes produced readable findings \(the first returned a reply that could not be read as findings\)/);
+  assert.doesNotMatch(error.message, /All 2/);
+  assert.equal(error.reason, 'all-passes-unreadable');
 });
 
 test('allFailedError keeps a thrown first pass\'s own error and reason', () => {
@@ -394,7 +405,8 @@ test('parseReviewLenses validates the list, refusing empty, unknown, duplicate, 
   assert.throws(() => parseReviewLenses('correctness,,security'), /empty entry/);
   assert.throws(() => parseReviewLenses('correctness,bogus'), /Unknown --lens "bogus"/);
   // Duplicate rejection: a repeated focus would run twice while mergePasses dedups
-  // its provenance to one lens, and is what makes agreement === lenses.length hold.
+  // its provenance to one lens, and is what makes each finding's agreement equal
+  // the length of its own lenses[].
   assert.throws(() => parseReviewLenses('security,security'), /repeated/);
   // A non-string yields a controlled UserError, never a leaked toString throw.
   assert.throws(() => parseReviewLenses(['security']), /comma-separated list of lens names/);
@@ -402,9 +414,9 @@ test('parseReviewLenses validates the list, refusing empty, unknown, duplicate, 
 });
 
 test('the lens-path envelope OMITS per-finding agreement/readablePasses; the --passes path KEEPS them', () => {
-  // Two-sided control for the agreement drop: after duplicate-rejection
-  // agreement equals the lens count, so a confidence-shaped number over
-  // redundant data is stripped at the envelope seam — but ONLY on the lens
+  // Two-sided control for the agreement drop: after duplicate-rejection each
+  // finding's agreement equals its own lens count, so a confidence-shaped number
+  // over redundant data is stripped at the envelope seam — but ONLY on the lens
   // path. mergePasses stays neutral (still computes agreement); the omission is
   // passesEnvelope's alone.
   const baseEnv = {

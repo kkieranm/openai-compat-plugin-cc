@@ -6,10 +6,6 @@
 // pair `cmd-review.mjs` documents as what distinguishes "asked for a schema and
 // got an unstructured reply" from "never wanted a schema". The benchmark must
 // read `degraded`, not only the flag.
-//
-// Its own file rather than an addition to bench-report.test.js, which the size
-// ratchet refused — correctly: that file was at its budget and this is a
-// separable subject.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderReport } from '../bench/lib/report.mjs';
