@@ -2,7 +2,7 @@
 
 A Claude Code plugin that delegates work to models you host yourself — anything speaking the
 OpenAI-compatible `/v1/chat/completions` API: [LM Studio](https://lmstudio.ai), oMLX,
-Unsloth Studio, or a remote compatible endpoint.
+Unsloth Studio, MTPLX, or a remote compatible endpoint.
 
 Inspired by [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc), but the transport
 is plain HTTP and the providers are configuration rather than code, so adding one is a config edit.
@@ -109,6 +109,21 @@ server does not also list as a model of its own: if it does, a real swap to that
 accepted as the requested one. The declaration describes the provider's own endpoint: it does not
 apply under `--base-url` to a different endpoint, or to a bare `--base-url` with no `--provider`.
 
+MTPLX is not in the seeded config. Its documented default port, 8000, is oMLX's too, so start its API server on
+another port and add a profile for it:
+
+```sh
+mtplx serve --port 18083
+```
+
+```json
+"mtplx": { "baseUrl": "http://localhost:18083/v1" }
+```
+
+MTPLX needs no API key by default. It lists one chat model and answers a request naming any other id
+with that model, so the plugin refuses an id MTPLX does not list rather than send it. MTPLX thinks by
+default; the plugin's `--enable-thinking false` turns that off.
+
 Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
 `--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several
 chat models and none is named, the plugin lists them and asks rather than picking one for you;
@@ -144,8 +159,12 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   `--max-tokens`, unless the request already asked for no more than that. An HTTP 413 is reported
   with the reason `request-too-large`, and each attempt in the `--json` record carries the
   `maxTokens` it asked for. A cap stated with any other status is not read.
-- **The window is detected automatically** on LM Studio, oMLX, vMLX, vLLM, llama.cpp and TGI, and
-  `/oai:setup` shows where the number came from. On vMLX it is the server's prompt cap, for the model
+- **The window is detected automatically** on LM Studio, oMLX, vMLX, MTPLX, vLLM, llama.cpp and TGI,
+  and `/oai:setup` shows where the number came from. On MTPLX it is `execution_window.tokens` from its
+  `/health`, the window it actually serves — lower than the figure its `/v1/models` lists when
+  `--context-window` is set above what fits in memory without `--allow-swap`, since MTPLX then refuses
+  longer prompts (with `--allow-swap` it admits them and `tokens` is the configured window) — and
+  without that reading no window is detected. On vMLX it is the server's prompt cap, for the model
   under the name the server lists (another name the server also accepts gets none), read only while
   a model is loaded so that probing does not wake a sleeping vMLX (for a `baseUrl` at the server's
   root; one with a query string is sent `/v1/models` without it once `/health` identifies vMLX, while

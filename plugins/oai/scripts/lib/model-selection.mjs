@@ -50,8 +50,10 @@ function refusesUnlisted(described) {
  *
  * Only against a catalogue whose semantics are known. A bare `/v1/models` list
  * may be aliases, routed names or permission-filtered, so absence there is not
- * evidence. That is the shape-not-name rule applied to the catalogue instead
- * of the window.
+ * evidence on its own. That is the shape-not-name rule applied to the catalogue
+ * instead of the window. MTPLX is the exception: its listing is its catalogue,
+ * since it answers an unlisted id with the model it serves, and that catalogue
+ * holds whether or not a window was detected, so `source` may be null.
  *
  * The gate is a published catalogue, NOT merely a recognised dialect, and the
  * difference is a real server: llama.cpp's `/props` and TGI's `/info` are

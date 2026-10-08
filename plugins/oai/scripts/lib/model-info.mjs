@@ -4,8 +4,9 @@
  * No OpenAI-compatible server reports it in the standard `/v1/models` — the
  * spec's model object is id/created/object/owned_by, so every context field
  * below is a vendor extension. This module is the ONLY place that knows any
- * vendor dialect, and it branches on the *shape of a response*, never on a
- * provider's name.
+ * vendor dialect, and it branches on what a response carries — a dialect's
+ * field shape, or `owned_by` on every entry of a non-empty listing — never on
+ * configuration such as a provider's name.
  *
  * The rule that matters: a probe yields a `window` only when the field is the
  * window actually being SERVED. Fields that report a model's ceiling
@@ -72,7 +73,10 @@ const SOURCE_LLAMACPP = 'llama.cpp /props n_ctx';
 const SOURCE_TGI = 'TGI /info max_total_tokens';
 const SOURCE_OMLX = 'oMLX /v1/models/status';
 const SOURCE_VMLX = 'vMLX max_prompt_tokens';
-export const CONTEXT_SOURCES = new Set([SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX, SOURCE_VMLX]);
+const SOURCE_MTPLX = 'MTPLX /health execution_window';
+export const CONTEXT_SOURCES = new Set([
+  SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX, SOURCE_VMLX, SOURCE_MTPLX,
+]);
 
 /** vLLM puts the served length on the standard model object. Costs no extra request. */
 function readVllm(payload) {
@@ -80,10 +84,11 @@ function readVllm(payload) {
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_model_len))
     .map((entry) => ({ id: entry.id, window: entry.max_model_len }));
-  // NAMES THE FIELD, NOT A VENDOR (checked against a running oMLX).
+  // NAMES THE FIELD, NOT A VENDOR.
   //
   // `max_model_len` is a convention vLLM popularised, not a fingerprint — oMLX
-  // 0.5.7 publishes it too — and this reader runs FIRST, so naming the vendor
+  // 0.5.7 publishes it too — and this reader runs first for every listing the
+  // MTPLX check does not take, so naming the vendor
   // would report "detected via vLLM" for a server that is not vLLM. A correct
   // number under a wrong provenance is exactly what this repo's "a fact names its
   // source" rule exists against. The order stays (a window already in hand costs
@@ -239,6 +244,28 @@ async function probeVmlx(root, reading, { headers, timeoutMs, query = '' }) {
   return vmlx(positiveInteger(capabilities?.max_prompt_tokens), capabilities?.loaded_model || capabilities?.id);
 }
 
+/**
+ * MTPLX, recognised by a listing whose every entry it owns. Its `/v1/models`
+ * `max_model_len` is the configured window, which an operator may set above
+ * what fits in memory; without `--allow-swap` MTPLX then refuses a prompt past
+ * the fit (HTTP 507), with it the prompt is admitted and `tokens` is the
+ * configured window, and either way only `/health`'s `execution_window.tokens`
+ * says what it actually serves. So the listing's figure is never used for it:
+ * without a valid `tokens` there is no window. The catalogue is kept either
+ * way, since MTPLX answers an id it does not serve with the model it does.
+ */
+async function probeMtplx(root, ids, { headers, timeoutMs, query }) {
+  const health = await probeJson(`${root}/health${query}`, { headers, timeoutMs });
+  const window = positiveInteger(health?.execution_window?.tokens);
+  if (!window) return { models: ids.map((id) => ({ id })), source: null, catalogueIds: ids };
+  return merge(ids, { models: ids.map((id) => ({ id, window })), source: SOURCE_MTPLX });
+}
+
+function isMtplxListing(payload) {
+  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  return entries.length > 0 && entries.every((entry) => entry?.owned_by === 'mtplx');
+}
+
 /** The vMLX `/health` reading, `{ conclusive, payload }`, sent without the profile's query. */
 async function readVmlxHealth(profile, { timeoutMs = PROBE_TIMEOUT_MS } = {}) {
   return probeHealth(`${probeRoot(profile.baseUrl)}/health`, { headers: authHeaders(profile), timeoutMs });
@@ -301,12 +328,18 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
     ? modelsPayload.data.map((entry) => (typeof entry === 'string' ? entry : entry?.id)).filter(Boolean)
     : [];
 
+  const root = probeRoot(profile.baseUrl);
+  const headers = authHeaders(profile);
+  // Before `readVllm`, which would take MTPLX's configured window as served.
+  if (isMtplxListing(modelsPayload)) {
+    return probeMtplx(root, ids, { headers, timeoutMs, query: profile.query ?? '' });
+  }
+
   const free = readVllm(modelsPayload);
   if (free) return merge(ids, free);
 
-  const root = probeRoot(profile.baseUrl);
-  const headers = authHeaders(profile);
-  // First, because a recognised vMLX must receive no other native probe.
+  // Before the NATIVE_PROBES loop, because a recognised vMLX must receive no
+  // other native probe.
   const vmlx = await probeVmlx(root, reading ?? (await readVmlxHealth(profile, { timeoutMs })), {
     headers,
     timeoutMs,
@@ -370,6 +403,8 @@ function merge(ids, detected) {
   });
   // The ids the DIALECT itself enumerated, carried separately because `models`
   // above is keyed on the /v1/models list and drops anything that list omits.
+  // For MTPLX the dialect's ids are the listing's own; its no-window result
+  // sets them directly rather than through here.
   //
   // Two jobs, and both need this rather than a boolean. It says whether the
   // dialect published a catalogue at all — llama.cpp's /props and TGI's /info

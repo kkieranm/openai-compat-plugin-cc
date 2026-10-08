@@ -7,6 +7,11 @@ All notable changes to this project are documented here, loosely following the
 
 ### Added
 
+- MTPLX is supported, with its context window detected from `/health`'s `execution_window`: the window
+  it actually serves, which is smaller than the one its `/v1/models` lists when `--context-window` is set
+  above what fits in memory without `--allow-swap`. Without that reading no window is detected, and an
+  id MTPLX does not list is refused either way. The README shows a profile on port 18083, since MTPLX's
+  documented default port is oMLX's.
 - A provider in `providers.json` can declare `servedModelIds`, mapping a requested model id to the id its
   server reports in replies — for Unsloth Studio, which lists `lmstudio-community/Qwen3.8-27B-MLX-4bit`
   and answers as `Qwen3.8-27B-MLX-4bit`. A reply under the declared id is no longer reported as a
