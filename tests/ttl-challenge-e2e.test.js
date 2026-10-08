@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { execFile } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { EPISODE_VERDICTS } from '../bench/lib/ttl-verdict.mjs';
+import { tempDir } from './helpers.mjs';
 import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
 
 /**
@@ -24,7 +31,7 @@ import { CHALLENGE_TTL_S, runDriver, runScenario } from './ttl-e2e-harness.mjs';
  * cross-test state: it proves no `EPISODE_VERDICTS` member is MISSING a scenario,
  * but not that every entry here is genuinely exercised — a fiction entry added
  * alongside an equally fictional `EPISODE_VERDICTS` member would pass. Each entry's
- * reality rests on its own asserting test above, by convention. Accumulating the
+ * reality rests on its own asserting test below, by convention. Accumulating the
  * verdicts a run actually observed would close that, but couples the guard to every
  * test having run (a filtered `--test-name-pattern` would fail it), which is the
  * worse trade for a fixture whose whole value is running end to end.
@@ -50,8 +57,7 @@ test('the instrument runs end to end and refutes when every episode survives', a
   // The condition the refutation rests on travels WITH it rather than living in
   // a doc nobody reads beside the number.
   assert.match(manifest.outcome.says, /provided request serialization and server admission/);
-  // The bound tracks the EPISODE COUNT — two here, not the shipped three. It was
-  // hardcoded at 63% until a real one-episode run printed that for n=1.
+  // The bound tracks the EPISODE COUNT — two here, not the shipped three.
   assert.match(manifest.outcome.says, /0 events in 2 is ~78%/, 'the bound travels with the claim');
 });
 
@@ -59,7 +65,7 @@ test('the manifest describes the run that happened, not the shipped protocol', a
   const { manifest } = await runScenario({}, { episodes: 2 });
 
   // Built from the EFFECTIVE config. A record asserting the 120s protocol while a
-  // 0.4s harness ran is worse than no record at all.
+  // sub-second harness ran is worse than no record at all.
   assert.equal(manifest.protocol.challengeTtlSeconds, CHALLENGE_TTL_S);
   assert.equal(manifest.protocol.episodes, 2);
   assert.equal(manifest.protocol.canonical, false, 'a harness run is never the shipped experiment');
@@ -162,10 +168,7 @@ test('an episode that never got a response says NOTHING about the server', async
 });
 
 test('a calibration run under broken preconditions does not license the sweep', async () => {
-  // The gate everything else rests on used to be judged on `obtainedResponse`,
-  // `failed` and `prefillMs` alone — so it could clear while another model was
-  // resident or the server never applied the TTL it was asked for. `fromLoad`
-  // defaults to 1, so the fault is present for the calibration itself.
+  // `fromLoad` defaults to 1, so the fault is present for the calibration itself.
   const { result, manifest } = await runScenario({ competingModel: { key: 'other/model', fromMs: 50 } });
 
   assert.equal(manifest.calibration.cleared, false);
@@ -181,7 +184,7 @@ test('a calibration run under broken preconditions does not license the sweep', 
 });
 
 test('an episode whose prefill never cleared the bar is no-exposure, not a survival', async () => {
-  // The wasted-episode verdict, driven end to end for the first time. It cannot be
+  // The wasted-episode verdict, driven end to end. It cannot be
   // reached with a single fixed reply delay: calibration must CLEAR the exposure
   // bar to license the sweep, and the challenge episode must NOT clear the SAME bar
   // (both use `challengeTtlMs × EXPOSURE_MARGIN`). So the calibration reply (call 1)
@@ -200,7 +203,8 @@ test('an episode whose prefill never cleared the bar is no-exposure, not a survi
 });
 
 test('a residency poll that returns garbage is recorded as unreadable, not as an unload', async () => {
-  // `unreadableFromMs` makes `lms ps` emit non-JSON once the episode is under way.
+  // `unreadableFromMs` makes `lms ps` emit non-JSON from that long after the
+  // post-load readback, so from the episode's first, pre-dispatch sample on.
   // The instrument must count that as "could not read residency" (`unreadableSamples`)
   // and NOT as "the model is gone" — an unreadable poll is not an unload, so the
   // episode still survives past expiry rather than reading as an absence.
@@ -210,6 +214,52 @@ test('a residency poll that returns garbage is recorded as unreadable, not as an
   assert.ok(episode.unreadableSamples > 0, 'the garbage polls were counted as unreadable');
   assert.equal(episode.unloadAt, null, 'an unreadable poll is not read as an unload');
   assert.equal(episode.verdict, E2E_VERDICTS.survived);
+});
+
+test('a slow readback after load does not let a timed garbage fault fire before it', async () => {
+  // The driver confirms the applied TTL with one `ps` straight after `load`. A
+  // cold start slower than the fault's onset must not turn that confirmation into
+  // garbage: calibration would fail `ttl-confirmed` and leave the sweep unlicensed
+  // with no episode run.
+  const garbage = (await runScenario({ unreadableFromMs: 100, slowReadbackMs: 250 })).manifest;
+  const [unreadable] = garbage.episodes;
+  assert.ok(unreadable, JSON.stringify(garbage.outcome));
+  assert.equal(unreadable.verdict, E2E_VERDICTS.survived);
+  assert.ok(unreadable.unreadableSamples > 0);
+  assert.equal(unreadable.unloadAt, null);
+});
+
+test('a slow readback after load leaves a timed unload to fire during the episode', async () => {
+  const unload = (await runScenario({ unloadAtMs: 300, slowReadbackMs: 400 })).manifest;
+  assert.equal(unload.outcome.verdict, 'contradictory-evidence', JSON.stringify(unload.outcome));
+  assert.equal(unload.episodes[0].verdict, E2E_VERDICTS.survivedDespiteUnload);
+});
+
+test('slowReadbackMs delays only the first ps after each load', async () => {
+  // The stub run directly, so the hook the two tests above lean on is pinned on
+  // its own: without it they would pass against a stub with no delay at all.
+  const work = tempDir('oai-ttl-stub-');
+  const env = {
+    ...process.env,
+    TTL_STUB_SCENARIO: join(work, 'scenario.json'),
+    TTL_STUB_STATE: join(work, 'state.json'),
+  };
+  writeFileSync(env.TTL_STUB_SCENARIO, JSON.stringify({ model: 'm', slowReadbackMs: 1000 }));
+  const stub = fileURLToPath(new URL('./ttl-stub-lms.mjs', import.meta.url));
+  const lms = async (...args) => {
+    const started = performance.now();
+    const { stdout } = await promisify(execFile)(process.execPath, [stub, ...args], { env, encoding: 'utf8' });
+    return { stdout, ms: performance.now() - started };
+  };
+
+  assert.ok((await lms('ps', '--json')).ms < 1000, 'a ps with nothing loaded is not delayed');
+  await lms('load', 'm', '--ttl', '1', '-y');
+  const readback = await lms('ps', '--json');
+  assert.ok(readback.ms >= 1000, `the readback was delayed (${readback.ms}ms)`);
+  assert.equal(JSON.parse(readback.stdout)[0].modelKey, 'm');
+  assert.ok((await lms('ps', '--json')).ms < 1000, 'a later ps is not delayed');
+  await lms('load', 'm', '--ttl', '1', '-y');
+  assert.ok((await lms('ps', '--json')).ms >= 1000, 'the next load re-arms the delay');
 });
 
 test('the driver reads and forwards the attempt record the rules consume', async () => {

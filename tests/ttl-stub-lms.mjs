@@ -2,9 +2,6 @@
 /**
  * A fake `lms` for the TTL challenge harness.
  *
- * Its own file rather than an addition to `helpers.mjs`, which sits three lines
- * under the 300-line ratchet.
- *
  * The driver shells out to `lms` for four things — `ps --json`, `load`,
  * `unload -a` and `version` — and every residency fact the instrument reads comes
  * back through the first of them. So this is the seam that lets the whole I/O
@@ -12,22 +9,31 @@
  *
  * A scenario is a JSON file named by `TTL_STUB_SCENARIO`; mutable state lives
  * beside it under `TTL_STUB_STATE`. Residency is computed from the elapsed time
- * since the last `load`, which is exactly how the driver arranges its episodes:
- * load, then run, then load again for the next one.
+ * since the first `ps` after the last `load`: the driver reads residency back
+ * straight after every load to confirm the TTL, then runs, then loads again for
+ * the next one. Timing faults from that readback rather than from `load` keeps a
+ * slow cold start of this stub from moving a fault in front of the readback.
  *
  * Scenario fields, all optional except `model`:
  *   model            the key `ps` reports resident
  *   appliedTtlMs     what `ps` reports as ttlMs — set it different from the
  *                    requested TTL to exercise the treatment-confirmed check
- *   unloadAtMs       when the model vanishes from `ps`, relative to load
- *   unreadableFromMs when `ps` starts emitting garbage instead of JSON
- *   competingModel   { key, fromMs, fromLoad } — a second resident model appearing
- *   fromLoad         which load onward a fault applies (1 = including calibration,
- *                    2 = challenge episodes only). Calibration now runs the same
- *                    validity checks as a challenge, so a fault present from load 1
- *                    disqualifies the sweep before any challenge episode exists —
- *                    which is correct, and would otherwise erase the coverage of
- *                    the per-episode path.
+ *   unloadAtMs       when the model vanishes from `ps`, relative to the readback
+ *   unreadableFromMs when `ps` starts emitting garbage instead of JSON, likewise
+ *   competingModel   { key, fromMs } — a second resident model appearing,
+ *                    fromMs relative to the readback
+ *   slowReadbackMs   how long the readback after each load waits before reading
+ *                    the clock, standing in for a slow cold start
+ *   fromLoad         which load onward `appliedTtlMs` and `competingModel` apply
+ *                    (1 = including calibration, 2 = challenge episodes only).
+ *                    Calibration runs the same validity checks as a challenge,
+ *                    so either of those two present from load 1 disqualifies the
+ *                    sweep before any challenge episode exists — which is
+ *                    correct, and would otherwise erase the coverage of the
+ *                    per-episode path. The timed unload and garbage faults
+ *                    ignore `fromLoad`; the readback sees elapsed 0, so one with
+ *                    a positive onset cannot disqualify calibration, while an
+ *                    onset of 0 hits the readback itself.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -40,15 +46,13 @@ const readState = () => {
 };
 const writeState = (state) => writeFileSync(statePath, JSON.stringify(state));
 
-/** Is a scenario fault in force for this load? `fromLoad` defaults to the first. */
+/** Do `appliedTtlMs` and `competingModel` apply on this load? `fromLoad` defaults to 1. */
 function faultActive(state) {
   return (state.loads ?? 1) >= (scenario.fromLoad ?? 1);
 }
 
-function residency() {
-  const state = readState();
+function residency(state, elapsed) {
   if (state.loadedAt === null) return [];
-  const elapsed = Date.now() - state.loadedAt;
   const entries = [];
   if (scenario.unloadAtMs === undefined || scenario.unloadAtMs === null || elapsed < scenario.unloadAtMs) {
     entries.push({
@@ -76,14 +80,20 @@ function residency() {
 
 if (command === 'ps') {
   const state = readState();
-  writeState({ ...state, polls: (state.polls ?? 0) + 1 });
-  const elapsed = state.loadedAt === null ? 0 : Date.now() - state.loadedAt;
+  const readback = state.loadedAt !== null && state.armedAt == null;
+  if (readback && scenario.slowReadbackMs) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, scenario.slowReadbackMs);
+  }
+  const now = Date.now();
+  const armedAt = readback ? now : state.armedAt ?? null;
+  const elapsed = armedAt === null ? 0 : now - armedAt;
+  writeState({ ...state, polls: (state.polls ?? 0) + 1, armedAt });
   // "Could not read residency" and "nothing is loaded" are different facts, and
   // the instrument must not collapse them — so the stub can produce the first.
   if (scenario.unreadableFromMs != null && elapsed >= scenario.unreadableFromMs) {
     process.stdout.write('not json at all\n');
   } else {
-    process.stdout.write(`${JSON.stringify(residency())}\n`);
+    process.stdout.write(`${JSON.stringify(residency(state, elapsed))}\n`);
   }
 } else if (command === 'load') {
   const ttlIndex = process.argv.indexOf('--ttl');
