@@ -178,13 +178,23 @@ function autoSelect(described) {
       },
     };
   }
-  if (candidates.length === 1) return { modelId: candidates[0].id };
+  // A listing that marks `loadedOnly` comes from a server that answers only the model it has loaded
+  // (unless it is set to switch models on request), so its sole candidate is picked only when it is
+  // reported loaded; otherwise the state checks below say why not. A `loadedOnly` reading's ids and
+  // states come from one payload, so its records are exact joins and `state === 'loaded'` can be read
+  // here without `statesUsable`'s exact-match check.
+  if (candidates.length === 1 && (!described.loadedOnly || candidates[0].state === 'loaded')) {
+    return { modelId: candidates[0].id };
+  }
 
   const nameOne = 'Pass --model <id>, or set "defaultModel" for this provider in the config.';
   if (!statesUsable(candidates)) {
     return {
       problem: {
-        message: `This provider offers ${candidates.length} models: ${listModelIds(candidates.map((model) => model.id))}.`,
+        message: candidates.length === 1
+          ? `No model this provider offers is established as a loaded chat model; the one candidate is ${listModelIds([candidates[0].id])}.`
+          : `This provider offers ${candidates.length} ${described.loadedOnly ? 'candidates for a chat request' : 'models'}: `
+            + `${listModelIds(candidates.map((model) => model.id))}.`,
         hint: nameOne,
       },
     };
@@ -195,12 +205,13 @@ function autoSelect(described) {
   if (loaded.length === 0) {
     return {
       problem: {
-        // Names them. The `candidates.length > 1` message this branch replaced
-        // always carried the list, and dropping it made the refusal tell the
-        // operator to pass an id it never showed — recoverable only by running a
-        // second command. It is also the only branch here that withheld it.
-        message: `This provider offers ${candidates.length} chat models, but none of them is loaded: `
-          + `${listModelIds(candidates.map((model) => model.id))}.`,
+        // Names them, so the operator can pass one of the listed ids without a
+        // second command. A `loadedOnly` listing's unloaded models are never
+        // checked for their kind, so they are candidates, not known chat models.
+        message: candidates.length === 1
+          ? `The one candidate this provider offers for a chat request is not loaded: ${listModelIds([candidates[0].id])}.`
+          : `This provider offers ${candidates.length} ${described.loadedOnly ? 'candidates for a chat request' : 'chat models'}, `
+            + `but none of them is loaded: ${listModelIds(candidates.map((model) => model.id))}.`,
         hint: 'Load one in the server, or name one of those with --model <id> to request it — what a '
           + 'server does with an id it has not loaded is its own decision.',
       },
@@ -211,7 +222,10 @@ function autoSelect(described) {
   // asks, rather than picking the first and calling it the loaded one.
   return {
     problem: {
-      message: `This provider has ${loaded.length} models loaded: ${listModelIds(loaded.map((model) => model.id))}.`,
+      // On a `loadedOnly` listing every loaded candidate has been confirmed a chat model, and a loaded
+      // embedder has been filtered out, so the count is of chat models.
+      message: `This provider has ${loaded.length} ${described.loadedOnly ? 'chat models' : 'models'} loaded: `
+        + `${listModelIds(loaded.map((model) => model.id))}.`,
       hint: nameOne,
     },
   };

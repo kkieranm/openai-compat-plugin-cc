@@ -74,8 +74,10 @@ const SOURCE_TGI = 'TGI /info max_total_tokens';
 const SOURCE_OMLX = 'oMLX /v1/models/status';
 const SOURCE_VMLX = 'vMLX max_prompt_tokens';
 const SOURCE_MTPLX = 'MTPLX /health execution_window';
+const SOURCE_UNSLOTH = 'Unsloth /v1/models context_length';
 export const CONTEXT_SOURCES = new Set([
   SOURCE_CONFIG, SOURCE_VLLM, SOURCE_LMSTUDIO, SOURCE_LLAMACPP, SOURCE_TGI, SOURCE_OMLX, SOURCE_VMLX, SOURCE_MTPLX,
+  SOURCE_UNSLOTH,
 ]);
 
 /** vLLM puts the served length on the standard model object. Costs no extra request. */
@@ -266,6 +268,52 @@ function isMtplxListing(payload) {
   return entries.length > 0 && entries.every((entry) => entry?.owned_by === 'mtplx');
 }
 
+/**
+ * Unsloth Studio, recognised by a listing whose every entry it owns. The listing names every model on
+ * disk; `loaded` says which one can answer, and only a loaded entry carries `context_length`, the
+ * budget Studio fitted for it (below the architectural `max_context_length`). A `loaded` that is not a
+ * boolean leaves the state unknown, so selection's incomplete-state refusal fires rather than reading
+ * the model as unloaded.
+ */
+function readUnsloth(payload) {
+  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const models = entries.map((entry) => {
+    const state = entry.loaded === true ? 'loaded' : entry.loaded === false ? 'not-loaded' : undefined;
+    return {
+      id: entry.id,
+      state,
+      window: state === 'loaded' ? positiveInteger(entry.context_length) : undefined,
+      ceiling: positiveInteger(entry.max_context_length),
+    };
+  });
+  return { models, source: SOURCE_UNSLOTH };
+}
+
+/**
+ * The Unsloth reading, with each loaded model's kind asked of Studio: the listing carries no type, and
+ * Studio can serve an embedding model as its loaded one, which selection must not take for a chat model.
+ * A reply for that model saying `is_embedding: true` types it as embeddings, and `false` keeps it a
+ * chat model. Any other outcome — an error, a timeout, another model's name, a non-boolean — leaves
+ * its state unknown, so selection lists the models and asks rather than guess what the model is.
+ */
+async function probeUnsloth(root, payload, ids, { headers, timeoutMs, query }) {
+  const reading = readUnsloth(payload);
+  await Promise.all(reading.models.filter((model) => model.state === 'loaded').map(async (model) => {
+    const check = await probeJson(`${root}/api/models/check-embedding/${encodeURIComponent(model.id)}${query}`, { headers, timeoutMs });
+    const answered = check?.model_name === model.id && typeof check.is_embedding === 'boolean';
+    if (!answered) model.state = undefined;
+    else if (check.is_embedding) model.type = 'embeddings';
+  }));
+  // Studio answers only its loaded model (a listed, unloaded id is refused unless its "Switch model by
+  // request" setting is on), so a sole candidate it reports unloaded is not one to pick unasked.
+  return { ...merge(ids, reading), loadedOnly: true };
+}
+
+function isUnslothListing(payload) {
+  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  return entries.length > 0 && entries.every((entry) => entry?.owned_by === 'unsloth-studio');
+}
+
 /** The vMLX `/health` reading, `{ conclusive, payload }`, sent without the profile's query. */
 async function readVmlxHealth(profile, { timeoutMs = PROBE_TIMEOUT_MS } = {}) {
   return probeHealth(`${probeRoot(profile.baseUrl)}/health`, { headers: authHeaders(profile), timeoutMs });
@@ -333,6 +381,11 @@ export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE
   // Before `readVllm`, which would take MTPLX's configured window as served.
   if (isMtplxListing(modelsPayload)) {
     return probeMtplx(root, ids, { headers, timeoutMs, query: profile.query ?? '' });
+  }
+  // Studio answers an id it does not list with the model it has loaded, so the catalogue `merge` keeps
+  // is what refuses one.
+  if (isUnslothListing(modelsPayload)) {
+    return probeUnsloth(root, modelsPayload, ids, { headers, timeoutMs, query: profile.query ?? '' });
   }
 
   const free = readVllm(modelsPayload);

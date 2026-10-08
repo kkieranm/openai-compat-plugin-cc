@@ -53,6 +53,13 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- With several models on disk and none named, `/oai:task` and `/oai:review` select the one Unsloth
+  Studio has loaded, once Studio confirms it is a chat model, say none is, or list the several that are
+  and ask, and detect the selected model's context window from the budget Studio advertises for it;
+  `/oai:setup` reports the same selection. A loaded model Studio reports as an embedding model is not
+  selected, and a sole model Studio lists as not loaded is reported rather than picked. Previously no
+  model was selected and no window detected. An id Studio does not list is refused, since Studio would
+  answer it with whatever model is loaded.
 - A line of a finding's evidence in the sweep report can no longer open a list, a heading, a rule or a
   code block. The reproduction report's run stamps and the sweep report's outcome tally, which follow a
   bare `- `, now render as code spans, so they cannot open a nested list. A run with no stamp reads as

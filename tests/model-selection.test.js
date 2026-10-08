@@ -283,3 +283,13 @@ test('several candidate models with none named is refused, listing them', async 
   assert.match(result.stderr, /offers 2 models: chat-a, chat-b/);
   assert.match(result.stderr, /Pass --model <id>/);
 });
+
+test('a sole LM Studio chat model is selected even when it is not loaded', async () => {
+  const server = await lmStudioServer([chatModel('chat-a', 'not-loaded')]);
+  const { path } = localConfig(server);
+  const result = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+  assert.equal(result.status, 0, result.stderr);
+  const chat = server.requests.find((request) => request.url.endsWith('/chat/completions'));
+  assert.equal(chat.body.model, 'chat-a');
+});

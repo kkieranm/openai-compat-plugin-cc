@@ -167,6 +167,7 @@ test('CONTEXT_SOURCES stays in sync with what describeModels actually reports', 
   assert.ok(CONTEXT_SOURCES.has(described.source), `${described.source} must be listed in CONTEXT_SOURCES`);
   assert.ok(CONTEXT_SOURCES.has('config'));
   assert.ok(CONTEXT_SOURCES.has('LM Studio /api/v0/models'));
+  assert.ok(CONTEXT_SOURCES.has('Unsloth /v1/models context_length'));
 });
 
 // --- integration: the --json envelope through the real CLI -------------------

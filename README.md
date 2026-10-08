@@ -124,19 +124,30 @@ MTPLX needs no API key by default. It lists one chat model and answers a request
 with that model, so the plugin refuses an id MTPLX does not list rather than send it. MTPLX thinks by
 default; the plugin's `--enable-thinking false` turns that off.
 
-Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is
-`--model` > the profile's `defaultModel` > the server's sole chat model. If a server offers several
-chat models and none is named, the plugin lists them and asks rather than picking one for you;
-embedding models are never chosen. **`--model` selects which model is requested; it does not
+Unsloth Studio lists every model on disk in its `/v1/models`, and marks the one it has loaded. With
+several listed and none named, the plugin picks the loaded one once Studio confirms it is a chat model,
+says none is loaded, or lists the several that are and asks. A model is loaded in Studio or with its
+`POST /api/inference/load`. A model that is listed but not loaded is refused by Studio unless its
+"Switch model by request" setting (Settings > API) is on. Studio answers an id it does not list with
+the loaded model, so the plugin refuses such an id rather than send it.
+
+Provider precedence is `--base-url` > `--provider` > `defaultProvider`. Model precedence is `--model` >
+the profile's `defaultModel` > the server's sole chat model (on Unsloth Studio, only one it reports
+loaded and confirms is a chat model). If a server offers several chat models and none is named, the
+plugin lists them and asks rather than picking one for you — unless the server reports every model's
+loaded state (LM Studio, Unsloth Studio), when it picks the one reported loaded, says none is, or lists
+the several that are and asks. Models the server reports as embeddings (LM Studio's model type, or a
+loaded model Unsloth Studio confirms is one) are never chosen; on Unsloth Studio, a loaded model it
+gives no clear answer about leaves the plugin listing the models and asking, and a sole model it lists
+as not loaded is reported rather than picked. **`--model` selects which model is requested; it does not
 configure how the server loads it.** Whether an id that is downloaded but not resident gets loaded on
-demand is the server's decision, and observed behaviour differs — observed on LM Studio 0.4.20,
-which attempts the load, sizes it by its own settings, and may refuse for want of memory
-(a 7.15 GB model it sized at 44.87 GB), and on oMLX 0.5.7, which loads on demand successfully. Those
-are two observations at two versions, not an account of every server: if yours is neither, nothing
-here predicts what it will do — including whether it refuses at all, since a server may instead answer
-from whatever it already has loaded. A named provider must
-exist even when `--base-url` overrides its endpoint, and if that URL points at a different host the
-profile's API key is **not** sent with it.
+demand is the server's decision, and observed behaviour differs — observed on LM Studio 0.4.20, which
+attempts the load, sizes it by its own settings, and may refuse for want of memory (a 7.15 GB model it
+sized at 44.87 GB), and on oMLX 0.5.7, which loads on demand successfully. Those are two observations
+at two versions, not an account of every server: if yours is neither, nothing here predicts what it
+will do — including whether it refuses at all, since a server may instead answer from whatever it
+already has loaded. A named provider must exist even when `--base-url` overrides its endpoint, and if
+that URL points at a different host the profile's API key is **not** sent with it.
 
 Flags go before the request text; from the first word of the request onward, everything is taken
 verbatim, so apostrophes, quotes and backslashes need no escaping. To ask about a flag by name, put
@@ -159,23 +170,23 @@ the request after a bare `--` (`/oai:task -- explain the --file flag`) or use `-
   `--max-tokens`, unless the request already asked for no more than that. An HTTP 413 is reported
   with the reason `request-too-large`, and each attempt in the `--json` record carries the
   `maxTokens` it asked for. A cap stated with any other status is not read.
-- **The window is detected automatically** on LM Studio, oMLX, vMLX, MTPLX, vLLM, llama.cpp and TGI,
-  and `/oai:setup` shows where the number came from. On MTPLX it is `execution_window.tokens` from its
-  `/health`, the window it actually serves — lower than the figure its `/v1/models` lists when
-  `--context-window` is set above what fits in memory without `--allow-swap`, since MTPLX then refuses
-  longer prompts (with `--allow-swap` it admits them and `tokens` is the configured window) — and
-  without that reading no window is detected. On vMLX it is the server's prompt cap, for the model
-  under the name the server lists (another name the server also accepts gets none), read only while
-  a model is loaded so that probing does not wake a sleeping vMLX (for a `baseUrl` at the server's
-  root; one with a query string is sent `/v1/models` without it once `/health` identifies vMLX, while
-  an unidentified `/health`, or a 401/403 for `/v1/models` without the query, sends `/v1/models` with
-  it, which can wake the model); a cap set with `--max-prompt-tokens` above the model's own context
-  is taken as given, so set `contextLength` in that case. Only the window a server is *actually
-  serving* counts — a model's theoretical ceiling is ignored, since guarding on it would admit input
-  the server rejects. Where nothing can be detected the plugin warns instead of guessing, and
-  `contextLength` on a profile overrides detection. An undetected window is not treated as a large
-  one: `/oai:review` stops sending the diff-covered changed files whole rather than shipping a
-  request it cannot size, and reports the skip. Files covered by no diff still go whole — see the
+- **The window is detected automatically** on LM Studio, oMLX, vMLX, MTPLX, Unsloth Studio, vLLM,
+  llama.cpp and TGI, and `/oai:setup` shows where the number came from. On MTPLX it is
+  `execution_window.tokens` from its `/health`, the window it actually serves — lower than the figure
+  its `/v1/models` lists when `--context-window` is set above what fits in memory without
+  `--allow-swap`, since MTPLX then refuses longer prompts (with `--allow-swap` it admits them and
+  `tokens` is the configured window) — and without that reading no window is detected. On vMLX it is
+  the server's prompt cap, for the model under the name the server lists (another name the server also
+  accepts gets none), read only while a model is loaded so that probing does not wake a sleeping vMLX
+  (for a `baseUrl` at the server's root; one with a query string is sent `/v1/models` without it once
+  `/health` identifies vMLX, while an unidentified `/health`, or a 401/403 for `/v1/models` without the
+  query, sends `/v1/models` with it, which can wake the model); a cap set with `--max-prompt-tokens`
+  above the model's own context is taken as given, so set `contextLength` in that case. Only the window
+  a server is *actually serving* counts — a model's theoretical ceiling is ignored, since guarding on
+  it would admit input the server rejects. Where nothing can be detected the plugin warns instead of
+  guessing, and `contextLength` on a profile overrides detection. An undetected window is not treated
+  as a large one: `/oai:review` stops sending the diff-covered changed files whole rather than shipping
+  a request it cannot size, and reports the skip. Files covered by no diff still go whole — see the
   review command's docs.
 - **Review findings are claims, not conclusions.** They come from a small model asked to report
   findings in a fixed shape — requested in prose and parsed leniently by default, or as a strict JSON
