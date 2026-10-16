@@ -39,7 +39,7 @@ Key modules under `plugins/oai/scripts/lib/`:
   generations, so the default path asks for the shape in prose and parses leniently.
   `--structured-output` opts back in for servers without that grammar engine.
 - **`git-diff.mjs`** — for `/oai:review`, sends each changed file whole alongside the diff when the
-  window can be sized, and falls back to the diff alone when it can't.
+  window can be sized, and falls back to the diff alone when it can't; `--diff-only` sends the diff alone.
 - **`job-store.mjs`** and the `job-*.mjs` family — background jobs (`/oai:task --background`). The
   concurrency design is a SQLite transaction, not a file protocol: one job runs at a time, the rest
   queue. Requires `node:sqlite` (see the footgun on Node versions below).
@@ -47,6 +47,12 @@ Key modules under `plugins/oai/scripts/lib/`:
 `bench/` scores `/oai:review` against committed snapshots of real project history; `bench/cases/`
 holds those historical before/after trees as fixtures. `npm run bench` is opt-in and needs a real
 model server.
+
+## Settled product decisions
+
+- `/oai:review` reviews uncommitted work by default; Claude verifies each finding and fixes only the
+  confirmed ones (`plugins/oai/commands/review.md`).
+- A server that rejects `response_format` gets the request retried without it (`review-request.mjs`).
 
 ## Commands
 
@@ -93,6 +99,10 @@ model server.
 
 - **A code comment states current behaviour, not the process that produced it.** Write a comment only
   when the *why* is non-obvious.
+- **Shared temp-dir cleanup lives in `tempDir()`'s `process.on('exit')` handler (`tests/helpers.mjs`),
+  never a helper-level `after()`** — an import-time `after()` runs before a test file's own `after()`
+  hooks and would delete directories those hooks inspect. A bare `mkdtempSync(` anywhere in `tests/`
+  but `helpers.mjs` fails `tests/structure.test.js`.
 - **Every recurring defect class graduates from a review note to a structural test** —
   `tests/structure.test.js` holds these, and `tests/plugin.test.js` guards the markdown command
   surface (a missing `allowed-tools` entry or a renamed script would otherwise break silently).
@@ -103,6 +113,7 @@ model server.
   plugin load, and a delegation round trip.
 - Review with the built-in **`/code-review`**.
 - Commit gate: tests green and the `verify` skill passed before committing.
+- Commit directly to `main`; there is no per-feature branch.
 
 ## Grilling checklist — schema/shape questions worth surfacing early
 

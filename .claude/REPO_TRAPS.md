@@ -1297,3 +1297,39 @@ own output, therefore passes or fails by Node version. Route the observation to 
 not write: stderr, or a file.
 **Guarded by** `tests/main-module.test.js`: "-p and -pe count as eval too", whose verdict goes to
 stderr for this reason.
+
+## A comparison or fail-closed signal ranged over the clean subset
+
+A comparison, or a union signal meant to fail closed, must range over the population that produces
+the signal, not a display or "readable" subset. `bench/lib/run-buckets.mjs` `scoredRuns` is the one
+definition of the runs that produced recall; `compare-model.mjs` judges comparability over it, never
+the wider `measurable` set, which includes truncated and unreadable runs and can make two records'
+sets equal while their scored runs differ. The same shape in `review-report.mjs`: the merged
+multi-pass `finishReason` is `'length'` when any pass — a parse-null one included — ended on `'length'`, because a
+parse-null pass is excluded from `readable` yet still carries its `finishReason`, and token
+exhaustion is a leading cause of an unreadable reply. Scoping the signal to the clean subset excludes
+exactly the members it exists to flag. Ask what population produces the compared thing and whether
+the signalled condition is itself a reason members drop out; the deciding test is a repro that makes
+the compared sets equal while the measured members differ.
+
+## A benchmark label must be locatable in the snapshot it is scored against
+
+A corpus defect is listed only if it can be pointed at in the snapshot the reviewer is shown: file,
+line range, and the exact source line as `anchor` (`bench/lib/score.mjs` `anchorHit` matches a finding
+whose evidence quotes it; a missing-code defect carries a null anchor and only the range applies).
+A claim that cannot be located goes in the case's `dropped` array with its reason, so the smaller
+denominator is visible; a misattributed label lowers the reviewer's recall for a defect that was
+never in the code it saw. Prefer the quoted-line anchor to line
+proximity. A clean control case declares `"control": true`, and `bench/lib/corpus.mjs` refuses a
+control that lists any defect or dropped claim, and a zero-defect case that is not a control.
+
+## Async ordering that code reasoning gets wrong
+
+- **A `throw` inside `for-await-of` is not synchronous with iterator teardown.** `IteratorClose` can
+  `await` the generator's cleanup before the surrounding `catch` runs, so a still-armed sibling timer
+  can overwrite the failure. Racing callbacks are idempotent and timers are cleared early
+  (`stream-collect.mjs`; `tests/token-reserve-cutoff.test.js`).
+- **`EventEmitter.emit` runs every listener synchronously; a `.then` continuation is a microtask.**
+  Awaiting a promise resolved by an earlier listener observes the later listeners' effects; state set
+  alongside the event (`child.exitCode`) may not reflect them (`tests/ttl-episode.test.js`, "a close
+  firing after error is a no-op").
