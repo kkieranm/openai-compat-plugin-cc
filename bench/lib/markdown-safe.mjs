@@ -16,6 +16,10 @@
 // `safeCodeSpan(x, '(none)')`. The grammar checks either as a whole string literal, never an option
 // value — because an option value is a place unsanitised data can ride into the output, and a grammar
 // that has to prove an options object safe is a grammar that keeps finding holes.
+//
+// A bare URL, `www.` host or email address in prose stays as written, so a linkifying renderer shows it
+// as a link. Its text is its destination, so nothing is hidden, and the report is a local file its
+// operator reads. Publishing a report where links unfurl on render would need the fix at that consumer.
 
 const MD_METACHARS = /[`*_[\]()<>#|~\\]/g;
 const CODE_SPAN_METACHARS = /[`|]/g;
