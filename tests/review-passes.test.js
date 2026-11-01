@@ -6,9 +6,76 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { allFailedError, caveatUnion, contextCheckedAll, mergePasses, partitionPasses, passesEnvelope, passesText, servedModelFailure, totalDuration } from '../plugins/oai/scripts/lib/review-passes.mjs';
 import { lensDirective, parseReviewLenses } from '../plugins/oai/scripts/lib/review.mjs';
+import { readablePassNote } from '../plugins/oai/scripts/lib/review-report.mjs';
 
 const finding = (over = {}) => ({ file: 'a.js', line: 10, severity: 'medium', summary: 'a bug', evidence: '', ...over });
 const readablePass = (findings) => ({ ok: true, parsed: { findings } });
+
+test('severities holds one entry per flagging pass, in pass order, and severity stays the most severe', () => {
+  const merged = mergePasses([
+    readablePass([finding({ severity: 'low' }), finding({ severity: 'high' })]),
+    readablePass([finding({ severity: 'high' }), finding({ severity: 'low' })]),
+    readablePass([finding({ file: 'b.js' })]),
+    readablePass([finding({ severity: 'low' })]),
+  ]);
+  const [first] = merged.findings;
+  assert.deepEqual(first.severities, ['high', 'high', 'low'], 'a pass naming a line twice is one entry, its most severe');
+  assert.equal(first.severities.length, first.agreement);
+  assert.equal(first.severity, 'high');
+});
+
+test('severities keeps pass order, not severity order', () => {
+  const merged = mergePasses(['low', 'high', 'low'].map((severity) => readablePass([finding({ severity })])));
+  assert.deepEqual(merged.findings[0].severities, ['low', 'high', 'low']);
+});
+
+test('a finding with no line carries its one severity', () => {
+  const merged = mergePasses([readablePass([finding({ line: null, severity: 'low' })])]);
+  assert.deepEqual(merged.findings[0].severities, ['low']);
+});
+
+const taggedText = (findings, strategy) => {
+  const merged = { findings, readablePasses: 2 };
+  return passesText(merged, {
+    passCount: 2,
+    passSummaries: [],
+    caveatFlags: {},
+    label: 'x',
+    profile: { name: 'p' },
+    model: 'm',
+    strategy,
+    lenses: ['security', 'correctness'],
+  });
+};
+
+test('the text tag lists severities only when they differ, beside any other difference', () => {
+  const merged = (over) => ({ file: 'a.js', line: 1, severity: 'high', summary: 'bug', summaries: ['bug'], evidence: '', agreement: 2, readablePasses: 2, lenses: ['security'], severities: ['high', 'low'], ...over });
+  assert.match(taggedText([merged()]), /\[2\/2 passes — severities differ: high, low\]/);
+  assert.match(taggedText([merged({ summaries: ['bug', 'other'] })]), /\[2\/2 passes — severities differ: high, low — summaries differ\]/);
+  assert.match(taggedText([merged()], 'lenses'), /\[flagged by: security — severities differ: high, low\]/);
+  assert.doesNotMatch(taggedText([merged({ severities: ['high', 'high'] })]), /severities differ/);
+});
+
+test('a readable pass names each caveat it held, and a clean one names none', () => {
+  assert.equal(readablePassNote({}, {}), null);
+  assert.equal(readablePassNote({ skipped: 'conservative-count' }, {}), 'whole files withheld by the conservative non-ASCII count');
+  assert.equal(
+    readablePassNote({}, { salvaged: true, analysisCut: true, atCap: true, hunksOnly: true }),
+    'its reply came from a salvage follow-up; still reasoning at its length limit; findings list at its limit; saw only diff hunks for the diff-covered files',
+  );
+});
+
+test('a readable pass line carries its note after its finding count', () => {
+  const text = passesText({ findings: [], readablePasses: 1 }, {
+    passCount: 1,
+    passSummaries: [{ index: 0, lens: null, durationMs: 1000, findings: 2, reason: null, servedNote: null, causeNote: 'saw only diff hunks' }],
+    caveatFlags: {},
+    label: 'x',
+    profile: { name: 'p' },
+    model: 'm',
+  });
+  assert.match(text, /pass 1: 1\.0s · 2 finding\(s\) — saw only diff hunks$/m);
+});
 
 test('two passes reporting the same file+line merge into one finding with agreement 2', () => {
   // If the dedup key included the (paraphrased) summary, these two would NOT

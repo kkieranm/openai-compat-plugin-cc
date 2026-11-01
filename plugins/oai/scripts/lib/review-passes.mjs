@@ -83,8 +83,8 @@ function locationKey(finding) {
  * Union the readable passes into one findings list with an agreement count.
  *
  * Agreement K counts READABLE PASSES that flagged the key's LOCATION, never raw
- * findings, so one pass double-reporting a line cannot inflate it (`passes` is a
- * Set of pass indices). A `line === null` finding is kept UNMERGED (its own
+ * findings, so one pass double-reporting a line cannot inflate it (`severityByPass`
+ * is keyed by pass index). A `line === null` finding is kept UNMERGED (its own
  * entry, agreement 1): with no location to anchor on, keying it on file+summary
  * would reintroduce the paraphrase problem for exactly the subset that has no
  * line.
@@ -114,11 +114,12 @@ export function mergePasses(readable) {
           severity: finding.severity,
           summary: finding.summary,
           summaries: [finding.summary],
+          severities: [finding.severity],
           evidence: finding.evidence ?? '',
           agreement: 1,
           readablePasses: S,
           // The lens that produced this single, BY VALUE off the pass — a null-line
-          // finding never enters the keyed Set, so an index-based scheme could not
+          // finding never enters the keyed map, so an index-based scheme could not
           // attribute it at all. Empty on the plain `--passes` path (lens null).
           lenses: pass.lens ? [pass.lens] : [],
         });
@@ -127,13 +128,14 @@ export function mergePasses(readable) {
       const key = locationKey(finding);
       let entry = keyed.get(key);
       if (!entry) {
-        entry = { file: finding.file, line: finding.line, summaries: [], severities: [], evidences: [], passes: new Set(), lenses: [] };
+        entry = { file: finding.file, line: finding.line, summaries: [], severityByPass: new Map(), evidences: [], lenses: [] };
         keyed.set(key, entry);
       }
-      // K counts passes, not findings: `passes` is a Set of pass INDICES, so a
-      // pass that names the same line twice adds its one index once — one vote
-      // however many times it names the line.
-      entry.passes.add(index);
+      // K counts passes, not findings: the map is keyed by pass INDEX, so a pass
+      // that names the same line twice is one vote however many times it names the
+      // line, and its entry is the most severe it said there.
+      const sameLocation = entry.severityByPass.get(index);
+      entry.severityByPass.set(index, sameLocation ? mostSevere([sameLocation, finding.severity]) : finding.severity);
       // Lens provenance BY VALUE (`pass.lens`), never by `index`: `reportPasses`
       // compacts to the readable passes before calling this, so `index` is a
       // position in that compacted array — a failed middle pass shifts it and an
@@ -141,21 +143,23 @@ export function mergePasses(readable) {
       // plain `--passes` path where every `pass.lens` is null.
       if (pass.lens && !entry.lenses.includes(pass.lens)) entry.lenses.push(pass.lens);
       if (finding.summary && !entry.summaries.includes(finding.summary)) entry.summaries.push(finding.summary);
-      entry.severities.push(finding.severity);
       if (finding.evidence && !entry.evidences.includes(finding.evidence)) entry.evidences.push(finding.evidence);
     }
   });
   const merged = [...keyed.values()].map((entry) => ({
     file: entry.file,
     line: entry.line,
-    severity: mostSevere(entry.severities),
+    severity: mostSevere(entry.severityByPass.values()),
+    // One per flagging pass, in the order the readable passes ran, so its length
+    // is `agreement`. It covers a location, which may join different defects.
+    severities: [...entry.severityByPass.values()],
     // A canonical `summary` beside `summaries[]`: the text report and the
     // benchmark's anchor matching both read `summary`, while `summaries[]` shows
     // every distinct phrasing the passes used.
     summary: entry.summaries[0] ?? '',
     summaries: entry.summaries,
     evidence: entry.evidences[0] ?? '',
-    agreement: entry.passes.size,
+    agreement: entry.severityByPass.size,
     readablePasses: S,
     lenses: entry.lenses,
   }));
@@ -380,12 +384,11 @@ export function totalDuration(passes) {
 // `reportPasses`, in pass order, so indices are preserved. `servedNote` discloses
 // a pass whose reply could not be read but whose server confirmed a substituted
 // model; the model id itself rides the JSON `passes[]` entry, so the text stays
-// generic and prints no server-controlled value. `causeNote` names a failed
-// pass's salvage follow-up and what the conservative non-ASCII count did to its
-// request.
+// generic and prints no server-controlled value. `causeNote` names the pass's own
+// caveats, on either kind of line.
 function formatPassLine({ index, lens, durationMs, findings, reason, servedNote, causeNote }) {
   const secs = Number.isFinite(durationMs) ? `${(durationMs / 1000).toFixed(1)}s` : 'unknown time';
-  const state = reason ? [reason, servedNote, causeNote].filter(Boolean).join(' — ') : `${findings} finding(s)`;
+  const state = [reason || `${findings} finding(s)`, servedNote, causeNote].filter(Boolean).join(' — ');
   // The lens (when a lens run) names which focus this pass ran, so a failed pass is
   // diagnosable from the text; omitted on the plain `--passes` path (lens null).
   const focus = lens ? ` [${lens}]` : '';
@@ -416,9 +419,13 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
   const lensPath = strategy === 'lenses';
   const annotated = merged.findings.map((finding) => {
     const divergent = finding.summaries.length > 1;
+    const differences = [
+      new Set(finding.severities).size > 1 ? ` — severities differ: ${finding.severities.join(', ')}` : '',
+      divergent ? ' — summaries differ' : '',
+    ].join('');
     const tag = lensPath
-      ? `[flagged by: ${finding.lenses.join(', ') || 'unknown'}${divergent ? ' — summaries differ' : ''}]`
-      : `[${finding.agreement}/${merged.readablePasses} passes${divergent ? ' — summaries differ' : ''}]`;
+      ? `[flagged by: ${finding.lenses.join(', ') || 'unknown'}${differences}]`
+      : `[${finding.agreement}/${merged.readablePasses} passes${differences}]`;
     const extras = divergent ? finding.summaries.slice(1).map((s) => `\n        · ${s}`).join('') : '';
     return { ...finding, summary: `${finding.summary} ${tag}${extras}` };
   });
@@ -448,7 +455,7 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
 /**
  * The `--json` report: ONE merged object (the benchmark reads a single
  * `JSON.parse(stdout)`), additive over the single-pass shape. `findings[]` is
- * the union (each carrying `summaries[]` and `lenses[]`, plus `agreement` and
+ * the union (each carrying `summaries[]`, `severities[]` and `lenses[]`, plus `agreement` and
  * `readablePasses` on the `--passes` path only — the lens path omits that pair,
  * see `withoutAgreement`); `passes[]` preserves each pass's own record; the
  * top-level `requestedModel` / `model` / `declaredServedModel` are the first
@@ -463,8 +470,8 @@ export function passesText(merged, { passCount, passSummaries, caveatFlags, labe
  * own field) reads the merged record the same way.
  */
 // A merged finding without its `agreement`/`readablePasses` pair — the lens-path
-// projection. Everything else (file, line, severity, summary, summaries, evidence,
-// lenses) is kept. A fresh object, so the shared merged finding is untouched.
+// projection. Everything else (file, line, severity, severities, summary, summaries,
+// evidence, lenses) is kept. A fresh object, so the shared merged finding is untouched.
 function withoutAgreement(finding) {
   const { agreement, readablePasses, ...rest } = finding;
   return rest;

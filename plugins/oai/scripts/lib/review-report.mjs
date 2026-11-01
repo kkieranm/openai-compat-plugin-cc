@@ -49,11 +49,11 @@ function failureCauseFields(causes) {
   };
 }
 
-// A failed pass's request facts, for its own line in the text report: whether its
-// reply came from a salvage follow-up, and the conservative count's causes. The
-// union's caveats come only from readable passes, so these would otherwise go
-// unsaid. Null when there is neither. The
-// unsized-window cause is left to the union's own note: every pass shares the
+// A pass's request facts, for its own line in the text report: whether its reply
+// came from a salvage follow-up, and the conservative count's causes. The union's
+// caveats come only from readable passes, so a failed pass's would otherwise go
+// unsaid, and a readable pass's line says which pass held them. Null when there is
+// neither. The unsized-window cause is left to the union's own note: every pass shares the
 // window, so a readable pass beside it already carries that cause.
 function causeNote({ skipped, conservativeReserveCut }, { salvaged = false } = {}) {
   const notes = [
@@ -591,17 +591,29 @@ export function passEnvelope(pass, index, context) {
   return entry;
 }
 
+// What a readable pass's line says it held, beyond `causeNote`'s request facts:
+// the rest of what a union note reports as "in at least one pass".
+export function readablePassNote(pass, report) {
+  const notes = [
+    causeNote(pass, { salvaged: report.salvaged }),
+    report.analysisCut ? 'still reasoning at its length limit' : null,
+    report.atCap ? 'findings list at its limit' : null,
+    report.hunksOnly ? 'saw only diff hunks for the diff-covered files' : null,
+  ].filter(Boolean);
+  return notes.length ? notes.join('; ') : null;
+}
+
 // The one-line-per-pass summary the text report renders: finding count for a
 // readable pass, the failure reason for a non-observation, a note when a pass
 // whose reply could not be read was served a confirmed substituted model (the id
 // itself is on the JSON `passes[]` entry, so the text stays free of
-// server-controlled values), and a non-observation's request facts (`causeNote`).
+// server-controlled values), and the pass's own caveats (`causeNote`).
 function passSummary(pass, index, report) {
   // `lens` rides the summary so a lens run's text report names which focus each
   // pass ran — a failed lens pass is then diagnosable from the text, not only the
   // JSON `passes[]`. Null on the plain `--passes` path (formatPassLine omits it).
   if (report.ok !== false) {
-    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null, causeNote: null };
+    return { index, lens: pass.lens ?? null, durationMs: pass.durationMs, findings: report.findings?.length ?? 0, reason: null, servedNote: null, causeNote: readablePassNote(pass, report) };
   }
   const substituted = pass.result?.modelReported === true
     && substitution(pass.result.requestedModel, pass.result.model, pass.result.declaredServedModel);

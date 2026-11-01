@@ -15,6 +15,7 @@ import { withReviewCauses } from '../plugins/oai/scripts/lib/review-ladder.mjs';
 import { allFailedError, runCauses } from '../plugins/oai/scripts/lib/review-passes.mjs';
 import { errorReport, report } from '../plugins/oai/scripts/lib/review-report.mjs';
 import { reserveFor } from '../plugins/oai/scripts/lib/review-request.mjs';
+import { MAX_FINDINGS } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import {
   chatRequests,
   completion,
@@ -22,7 +23,9 @@ import {
   deltaFrame,
   git,
   modelList,
+  reasoningFrames,
   respondJson,
+  respondStream,
   reviewScenario,
   runCompanion,
   startFakeServer,
@@ -82,7 +85,7 @@ async function scriptedServer(reply) {
     if (req.url.includes('/models')) return respondJson(response, modelList('test-model'));
     if (!req.url.includes('/chat/completions')) return respondJson(response, completion(FINDINGS));
     chats += 1;
-    return reply(chats, response);
+    return reply(chats, response, req);
   });
 }
 
@@ -402,7 +405,89 @@ test('a thrown pass in a mixed run carries its causes on its own record and line
   assert.equal(text.status, 0, text.stderr);
   assert.ok(passLine(text.stdout, 1)?.includes(PASS_RESERVE_NOTE), text.stdout);
   assert.ok(passLine(text.stdout, 2), text.stdout);
-  assert.ok(!passLine(text.stdout, 2).includes(PASS_RESERVE_NOTE), 'a readable pass line carries no note');
+  assert.ok(passLine(text.stdout, 2).includes(PASS_RESERVE_NOTE), 'the readable pass held the cut too');
+});
+
+test('a readable pass that held no caveat has a bare line', async () => {
+  const dir = await repoWithNewFile('plain ascii');
+  const server = await scriptedServer((_, response) => respondJson(response, completion(FINDINGS)));
+  const text = await runCompanion(['review', '--passes', '2'], { configPath: configFor(server), cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(passLine(text.stdout, 1), /· 0 finding\(s\)$/);
+  assert.match(passLine(text.stdout, 2), /· 0 finding\(s\)$/);
+});
+
+const passLineFinding = (line, severity) => ({ file: 'brand-new.js', line, severity, summary: 'a bug', evidence: 'e' });
+const findingsReply = (findings, analysis = 'a') => completion(JSON.stringify({ analysis, findings, summary: 's' }));
+
+test('each readable pass line names the caveat that pass held, and no other pass\'s', async () => {
+  const dir = await repoWithNewFile('plain ascii');
+  const server = await scriptedServer((n, response, req) => {
+    const maxLength = req.body.response_format?.json_schema?.schema?.properties?.analysis?.maxLength;
+    if (n === 1) return respondJson(response, findingsReply([], 'x'.repeat(maxLength)));
+    if (n === 2) {
+      const full = Array.from({ length: MAX_FINDINGS }, (_, index) => passLineFinding(index + 1, 'low'));
+      return respondJson(response, findingsReply(full));
+    }
+    return respondJson(response, findingsReply([]));
+  });
+  const text = await runCompanion(['review', '--passes', '3', '--structured-output'], { configPath: configFor(server), cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  const [cut, capped, clean] = [1, 2, 3].map((number) => passLine(text.stdout, number));
+  assert.ok(cut.includes('still reasoning at its length limit'), text.stdout);
+  assert.ok(!cut.includes('findings list at its limit'), text.stdout);
+  assert.ok(capped.includes('findings list at its limit'), text.stdout);
+  assert.ok(!capped.includes('still reasoning at its length limit'), text.stdout);
+  assert.match(clean, /· 0 finding\(s\)$/);
+});
+
+test('a salvaged readable pass names the follow-up on its own line', async () => {
+  const dir = await repoWithNewFile('plain ascii');
+  const server = await scriptedServer((n, response) => {
+    if (n === 1) return respondStream(response, reasoningFrames('still reasoning about this change in detail. '.repeat(40)));
+    return respondJson(response, findingsReply([]));
+  });
+  const text = await runCompanion(['review', '--passes', '2'], { configPath: configFor(server), cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  assert.ok(passLine(text.stdout, 1).includes(PASS_SALVAGE_NOTE), text.stdout);
+  assert.ok(!passLine(text.stdout, 2).includes(PASS_SALVAGE_NOTE), text.stdout);
+});
+
+test('a hunks-only pass says so on its line, and a pass that saw the whole file does not', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'edited\n');
+  const server = await scriptedServer((_, response) => respondJson(response, findingsReply([])));
+  const configPath = configFor(server);
+  const hunks = await runCompanion(['review', '--passes', '2', '--diff-only'], { configPath, cwd: dir });
+  const whole = await runCompanion(['review', '--passes', '2'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(hunks.status, 0, hunks.stderr);
+  assert.equal(whole.status, 0, whole.stderr);
+  assert.ok(passLine(hunks.stdout, 1).includes('saw only diff hunks for the diff-covered files'), hunks.stdout);
+  assert.ok(passLine(hunks.stdout, 2).includes('saw only diff hunks for the diff-covered files'), hunks.stdout);
+  assert.ok(!passLine(whole.stdout, 1).includes('saw only diff hunks'), whole.stdout);
+});
+
+test('a lens run keeps severities on its findings, and its tag lists them', async () => {
+  const dir = await repoWithNewFile('plain ascii');
+  const server = await scriptedServer((n, response) =>
+    respondJson(response, findingsReply([passLineFinding(1, n % 2 === 1 ? 'low' : 'high')])));
+  const configPath = configFor(server);
+  const json = await runCompanion(['review', '--lens', 'correctness,security', '--json'], { configPath, cwd: dir });
+  const text = await runCompanion(['review', '--lens', 'correctness,security'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(json.status, 0, json.stderr);
+  const [merged] = JSON.parse(json.stdout).findings;
+  assert.deepEqual(merged.severities, ['low', 'high']);
+  assert.match(text.stdout, /severities differ: low, high/);
 });
 
 test('every pass cut off at the token limit reports the run\'s causes', async () => {
@@ -627,5 +712,5 @@ test('an unreadable pass in a mixed run names its causes on its own line', async
   assert.equal(text.status, 0, text.stderr);
   assert.ok(passLine(text.stdout, 1)?.includes(PASS_RESERVE_NOTE), text.stdout);
   assert.ok(passLine(text.stdout, 2), text.stdout);
-  assert.ok(!passLine(text.stdout, 2).includes(PASS_RESERVE_NOTE), 'a readable pass line carries no note');
+  assert.ok(passLine(text.stdout, 2).includes(PASS_RESERVE_NOTE), 'the readable pass held the cut too');
 });

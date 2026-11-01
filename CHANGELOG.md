@@ -40,6 +40,9 @@ All notable changes to this project are documented here, loosely following the
   the model's own context is taken as given; set `contextLength` in that case.
 - A failed review's `--json` envelope reports `salvaged`, which request's reply the review could not use, and
   `multiPass: true` when its cause fields are ORed across passes.
+- A multi-pass review's findings carry `severities`, one per pass that flagged the location, and the text tag
+  lists them when they differ. A readable pass's line names that pass's own caveats, where the union's notes
+  say only "in at least one pass".
 
 ### Changed
 
