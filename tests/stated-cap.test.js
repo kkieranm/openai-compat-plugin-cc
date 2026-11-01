@@ -377,3 +377,38 @@ test('/oai:task does not retry a refused budget, and names the stated cap', asyn
     await server.close();
   }
 });
+
+const reasoningOnly = (response) => respondStream(response, completionFrames('thinking', { channel: 'reasoning' }));
+const REMEDY = /--max-tokens/;
+const refused = ({ result }) => {
+  assert.equal(result.status, 1, result.stdout.slice(0, 300));
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.reason, 'reasoning-only');
+  return report.hint;
+};
+
+for (const [name, args, first] of [
+  ['by default', [], FIRST_RESERVE],
+  ['after an explicit --max-tokens', ['--max-tokens', '30000'], 30_000],
+]) {
+  test(`a reasoning-only reply on the stated-cap retry does not advise raising the budget, ${name}`, async () => {
+    const run = await review([refuseAbove(SAFE_CAP), reasoningOnly], args);
+
+    assert.deepEqual(run.chats.map((chat) => chat.body.max_tokens), [first, SAFE_CAP]);
+    assert.doesNotMatch(refused(run), REMEDY);
+    assert.match(refused(run), /Ask a narrower question/);
+  });
+}
+
+test('the stated cap still rules the remedy out once the response_format fallback has run', async () => {
+  const rejectFormat = (response) =>
+    respondJson(response, { error: { message: "'response_format.type' must be 'json_schema' or 'text'" } }, 400);
+  const run = await review([refuseAbove(SAFE_CAP), rejectFormat, reasoningOnly], ['--structured-output']);
+
+  assert.deepEqual(run.chats.map((chat) => Boolean(chat.body.response_format)), [true, true, false]);
+  assert.doesNotMatch(refused(run), REMEDY);
+});
+
+test('a reasoning-only reply with no stated-cap retry keeps the --max-tokens remedy', async () => {
+  assert.match(refused(await review([reasoningOnly])), REMEDY);
+});

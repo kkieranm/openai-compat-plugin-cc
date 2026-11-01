@@ -58,6 +58,8 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A reasoning-only reply on a review's retry at a server's stated cap no longer advises raising `--max-tokens`,
+  which the server has ruled out.
 - A server's stated error is shown when the stream then fails before finishing. The failure keeps its reason
   and its retries, and the final error of a foreground task or single review request now carries the
   server's words on stderr.

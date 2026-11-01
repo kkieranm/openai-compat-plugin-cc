@@ -357,7 +357,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // reasoning channel legitimately carries the answer (see `client.mjs`'s
     // `requireAnswer` docstring), so that branch has no counterpart check.
     if (isReasoningOnly(result)) {
-      const failure = reasoningOnlyFailure(profile, result, { reserveCut: built.reserveClamped });
+      const failure = reasoningOnlyFailure(profile, result, { reserveCut: built.reserveClamped || shared.serverCapped });
       // The ledger already closed this physical attempt `answered` (`settle()`
       // ran inside `chatCompletion` before this check ever saw the result) —
       // reclassify it now, before the failure propagates, or a run that
@@ -788,7 +788,7 @@ async function findingsOrRetry(profile, plan, state) {
     // Negotiation, like the `response_format` fallback: the refused entry reads
     // as `refused` once the retry is dispatched, and stays a failure if it never is.
     plan.ledger?.refuseLast(error);
-    return await findingsWithin(profile, plan, { ...state, ceiling: cap });
+    return await findingsWithin(profile, plan, { ...state, ceiling: cap, serverCapped: true });
   }
 }
 
@@ -798,10 +798,10 @@ async function findingsOrRetry(profile, plan, state) {
  * `expiresAt`, `removed` and `format` come from `requestFindings`, which owns
  * them for every run of this body a review makes.
  */
-async function findingsWithin(profile, plan, { expiresAt, removed, format, ceiling }) {
+async function findingsWithin(profile, plan, { expiresAt, removed, format, ceiling, serverCapped = false }) {
   const { model, timeoutMs, idleMs, maxMs, temperature, contextLength, target, instructions, onProgress } = plan;
   const { maxAttempts, ledger, retryDelayMs, structuredOutput, sampling, lens } = plan;
-  const shared = sharedRequest(profile, { ...plan, reserve: ceiling });
+  const shared = { ...sharedRequest(profile, { ...plan, reserve: ceiling }), serverCapped };
   // `ledger` rides with the budgets and is shared by every completion call a
   // review makes, so the schema request and the degraded one after it land in
   // one record with continuous indexes rather than each starting from 1.

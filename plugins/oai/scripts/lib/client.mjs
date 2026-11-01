@@ -116,8 +116,8 @@ export function isReasoningOnly(result) {
  * one function words the failure. `requireAnswer`'s reasoning-only arm fires
  * only for `/oai:task`: on a review `unconstrained()` throws that shape before
  * any reply reaches it. The hint drops the --max-tokens remedy when `reserveCut`
- * says the window already cut the reply budget, since a higher ceiling cannot
- * then be sent.
+ * says the window or a server's stated cap already cut the reply budget, since a
+ * higher ceiling cannot then be sent.
  */
 export function reasoningOnlyRefusal(profile, { reserveCut = false } = {}) {
   return {
