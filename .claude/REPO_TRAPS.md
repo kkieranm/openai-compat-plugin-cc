@@ -1323,6 +1323,14 @@ never in the code it saw. Prefer the quoted-line anchor to line
 proximity. A clean control case declares `"control": true`, and `bench/lib/corpus.mjs` refuses a
 control that lists any defect or dropped claim, and a zero-defect case that is not a control.
 
+## A guard removed from a shared predicate exposes healthy frames to it
+
+`errorFrame` once skipped any frame with `choices`, so nothing it said could touch a healthy stream.
+Widening it to read every frame made a blank `error` beside `choices`, or on a usage trailer, a stated
+error that reopened a finished reply. When a predicate gains a population, walk the frames that population
+already carries, the trailing ones included (`tests/stream-error-frame.test.js`, "a blank envelope is no
+signal").
+
 ## Async ordering that code reasoning gets wrong
 
 - **A `throw` inside `for-await-of` is not synchronous with iterator teardown.** `IteratorClose` can

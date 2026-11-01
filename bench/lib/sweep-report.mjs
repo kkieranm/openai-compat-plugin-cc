@@ -50,7 +50,7 @@ export const FAILED_WHY = {
   // is a non-outage and `replayStreak` zeroes any live streak on it — the reader
   // is told that here, on the row, because the health section reports only the
   // aggregate reset count.
-  'stream-error-frame': 'the server refused the request inside the stream of a successful HTTP response, before any content or reasoning text arrived; it was not re-sent — this client treats such a refusal as non-retryable; it is not counted as a server outage, so it resets any live outage streak, and the next commit may still fare better',
+  'stream-error-frame': 'the server reported an error inside a successful HTTP response, before any content or reasoning text arrived; it was not re-sent — this client treats such a reply as non-retryable; it is not counted as a server outage, so it resets any live outage streak, and the next commit may still fare better',
   // Excluded from `serverUnwell` for the same reason: an HTTP 413 is the server
   // refusing the request's size before generating anything.
   'request-too-large': 'the server refused the request as too large (HTTP 413) before generating anything; a refusal, not an outage — it is not counted as a server outage, so it resets any live outage streak, and the next commit may still fare better',

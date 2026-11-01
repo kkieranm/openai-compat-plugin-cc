@@ -244,10 +244,10 @@ test('a cap that has ALREADY expired mints no ledger entry at all', () => {
   );
 });
 
-// A refusal the server put inside a 200 stream, before any text. Neither a
-// delivery failure (a resend is refused again) nor a completion shape (no
-// reply document was produced) — the whitelists say so, and this pins both.
-test('a refusal streamed before any text is neither retried nor a completion shape', () => {
+// An error a server stated in a 200 reply with no text, streamed or whole. Not
+// retried (a resend is refused again) and not a completion shape (a stated error
+// with no text is no failure of delivery) — the whitelists say so, and this pins both.
+test('a refusal stated before any text is neither retried nor a completion shape', () => {
   assert.equal(
     STREAM_ERROR_FRAME,
     'stream-error-frame',

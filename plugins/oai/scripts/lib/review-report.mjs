@@ -367,7 +367,8 @@ export function errorReport(error) {
     // refusals), `error.answer.usage` for one that builds a reply envelope
     // (`review-request.mjs`'s reasoning-only/salvage failures, and a generic
     // stream drop, whose `.answer` `stream-collect.mjs` attaches to a failure it
-    // catches). Read post-hoc field first; the two carriers are disjoint by site,
+    // catches, and a reply left unfinished by a stated error, whose `.answer` `completion.mjs`
+    // attaches). Read post-hoc field first; the two carriers are disjoint by site,
     // so the order is defensive, not load-bearing. Two carriers rather than folding
     // usage into `.answer` everywhere: a site with no reply envelope uses the bare
     // `error.usage` precisely so `partial` below stays absent for it — reusing
@@ -377,7 +378,8 @@ export function errorReport(error) {
     // pre-stream refusal, or a mid-stream cutoff before that frame); a frame
     // arrived but reported no `reasoning_tokens` detail; or a `completion.mjs`
     // `refuseUnusable` completion-shape refusal (empty/unfinished/blank) attached
-    // no usage carrier at all, so it reads `unknown` here.
+    // no usage carrier, so it reads `unknown` here. The exception is an unfinished
+    // reply a stated error left unfinished, which carries its `.answer` for the partial.
     // Needs no fail-closed reconstruction the way `serverConfig` does:
     // `reasoningWitness` reads only a number and returns a fresh
     // constant-and-primitive object, so nothing off a foreign error can reach the

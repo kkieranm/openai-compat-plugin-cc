@@ -446,6 +446,9 @@ const SALVAGE_TRIM_TAIL_CHARS = 4_500;
  * an answer, and a "conclude now" ask can plausibly still answer it.
  * `idle-timeout` and a raw transport drop mean the SERVER stalled or died;
  * asking it to continue is asking the thing that already stopped answering.
+ * A reply a stated error left unfinished is `stream-unfinished`, likewise left out: that is
+ * a server interruption, not a failure to reach an answer. A finish reason other
+ * than `error` beside a warning leaves the reply finished, so that one can be `reasoning-only`.
  * A `deadline-timeout` means the review's own deadline is spent, and a
  * follow-up runs inside that deadline (see `attemptSalvage`), so there is
  * nothing left for one to run in.

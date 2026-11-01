@@ -53,6 +53,16 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- An error a server states inside a successful response is now read as one. A reply that states
+  one and carries no text is reported as `stream-error-frame`, with the server's own message where it
+  gave one, and not re-sent, instead of `empty-completion` retried twice with the message lost; that covers a chunk
+  carrying `choices`, as MTPLX sends, and a non-streamed reply. A chunk with an error and a `finish_reason`
+  of `error` now ends a reply before any text, whatever follows it. After text, a reply that stated an
+  error and gave no finish reason, or ended on one, is `stream-unfinished` and re-sent, instead of being
+  returned as a finished answer that exits 0. A connection that fails after a stated error is still
+  reported as a transport failure and re-sent, without the server's text (#42).
+  On `/oai:review` such a reply with reasoning and no content no longer goes to salvage: it is re-sent,
+  and fails with a partial if every attempt ends the same way.
 - With several models on disk and none named, `/oai:task` and `/oai:review` select the one Unsloth
   Studio has loaded, once Studio confirms it is a chat model, say none is, or list the several that are
   and ask, and detect the selected model's context window from the budget Studio advertises for it;

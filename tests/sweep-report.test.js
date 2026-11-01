@@ -337,11 +337,11 @@ test('a starved reason that names an Object.prototype key does not select a func
 });
 
 // A `failed` row whose reason a reader would misread gets prose of its own:
-// `stream-error-frame` is a refusal the server put inside a successful response's stream,
+// `stream-error-frame` is a refusal the server put inside a successful response,
 // deliberately not an outage — and so it RESETS any live outage streak, a cost the
 // health section reports only as an aggregate count. The row is where the
 // reader meets the code, so the row is where the sentence is.
-test('a failed stream-error-frame commit is explained as an in-stream refusal, not a generic failure', () => {
+test('a failed stream-error-frame commit is explained as a refusal inside a success, not a generic failure', () => {
   const out = render(commit({ outcome: 'failed', reason: 'stream-error-frame' }));
   assert.ok(out.includes(FAILED_WHY['stream-error-frame']), 'the row does not render its own prose');
   assert.match(out, /\(`stream-error-frame`\)/, 'the code is still appended after the sentence');

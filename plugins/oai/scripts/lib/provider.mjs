@@ -1,6 +1,6 @@
 import { readText } from './body.mjs';
 import { START_HINTS } from './config.mjs';
-import { UserError } from './errors.mjs';
+import { ERROR_BODY_CHARS, UserError } from './errors.mjs';
 import { send } from './http.mjs';
 
 /**
@@ -154,9 +154,6 @@ async function assertOk(profile, path, response) {
   if (cap !== undefined) error.statedMaxTokens = cap;
   throw error;
 }
-
-/** How much of an error body is read: enough for a reason, never a whole page. */
-const ERROR_BODY_CHARS = 400;
 
 /**
  * The statuses whose body is read for a stated reply-budget cap: 413 only. The

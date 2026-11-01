@@ -155,9 +155,9 @@ export const REASON_PARAGRAPHS = [
     + ' "ask again", and a pre-response `ECONNRESET` carried no response at all. The axis is'
     + ' retryability, never blame.'],
   ['stream-error-frame',
-    '`stream-error-frame` below is a request the server **refused inside the stream of a successful HTTP'
+    '`stream-error-frame` below is a request the server **answered with an error inside a successful HTTP'
     + ' response**, before any content or reasoning text arrived — so it is neither a transport failure'
-    + ' nor a dropped request, and it is **not retried**: this client classifies such a refusal as'
+    + ' nor a dropped request, and it is **not retried**: this client classifies such a reply as'
     + ' non-retryable. The row counts as a failed attempt and says nothing about server health.'],
   ['request-too-large',
     '`request-too-large` below is a request the server **refused as too large (HTTP 413) before'

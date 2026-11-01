@@ -80,7 +80,7 @@ const badSseFrame = (response) => {
   return undefined;
 };
 
-/** Headers, then a refusal the server streamed as an error frame before any text — `stream-collect.mjs`'s branch. */
+/** Headers, then a refusal the server streamed as an error frame before any text — `refusalIfStated`, reached from the stream. */
 const errorFrameScript = (response) => {
   response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
   response.end('event: error\ndata: {"error":{"message":"refused"},"message":"refused"}\n\n');
@@ -122,7 +122,7 @@ const SITES = [
   ['http-errors.mjs — transportError on a delivered body', cutAfterRoleOnly, 'transport'],
   ['body.mjs — a whole reply that is not JSON', notJson, 'bad-json'],
   ['sse.mjs — an event that is not JSON', badSseFrame, 'protocol'],
-  ['stream-collect.mjs — an error frame before any text', errorFrameScript, 'stream-error-frame'],
+  ['completion.mjs — an error frame before any text', errorFrameScript, 'stream-error-frame'],
 ];
 
 for (const [name, script, reason] of SITES) {

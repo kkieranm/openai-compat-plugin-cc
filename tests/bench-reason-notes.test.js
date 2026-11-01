@@ -279,9 +279,9 @@ test('the shape-rejected paragraph follows the refused one it calls itself the t
   assert.ok(refusedAt < twinAt, 'the twin reference must point BACKWARDS at printed prose');
 });
 
-test('stream-error-frame is explained as a refusal inside a successful response\'s stream, never a transport failure or a drop', () => {
+test('stream-error-frame is explained as a refusal inside a successful response, never a transport failure or a drop', () => {
   const para = paragraphAbout(renderWith('stream-error-frame'), 'stream-error-frame');
-  assert.match(para, /refused inside the stream of a successful HTTP response/);
+  assert.match(para, /answered with an error inside a successful HTTP response/);
   assert.match(para, /before any content or reasoning text/);
   assert.match(para, /\*\*not retried\*\*/);
   assert.match(para, /neither a transport failure nor a dropped request/);

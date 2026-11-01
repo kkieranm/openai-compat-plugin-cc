@@ -1,5 +1,5 @@
-import { UserError } from './errors.mjs';
-import { BLANK_COMPLETION, EMPTY_COMPLETION, STREAM_UNFINISHED } from './failure-shape.mjs';
+import { ERROR_BODY_CHARS, UserError } from './errors.mjs';
+import { BLANK_COMPLETION, EMPTY_COMPLETION, STREAM_ERROR_FRAME, STREAM_UNFINISHED } from './failure-shape.mjs';
 import { declaredServedModel } from './model-identity.mjs';
 
 /**
@@ -26,6 +26,10 @@ export function emptyAnswer() {
     model: null,
     usage: null,
     finishReason: null,
+    // The latest error the server stated, as `errorFrame` read it, unless
+    // `errorSettled`: the first one at or after a `finish_reason` of `error` stays.
+    serverError: null,
+    errorSettled: false,
     deltas: 0,
   };
 }
@@ -56,6 +60,14 @@ export function applyText(answer, fragment) {
 }
 
 /**
+ * A `finish_reason` is evidence of how a reply ended only as a non-blank string;
+ * a malformed value must not outrank an error the server stated.
+ */
+function isFinishReason(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
  * One `chat.completion.chunk`.
  *
  * Nothing indexes `choices[0]` unconditionally: the frame carrying `usage` has
@@ -66,42 +78,101 @@ export function applyText(answer, fragment) {
 export function applyFrame(answer, frame) {
   if (frame?.model) answer.model = frame.model;
   if (frame?.usage) answer.usage = frame.usage;
+  const stated = errorFrame(frame);
+  if (stated !== null && !answer.errorSettled) answer.serverError = stated;
   const choice = frame?.choices?.[0];
-  if (choice?.finish_reason) answer.finishReason = choice.finish_reason;
+  // A later finish outranks an earlier error, and an error stated after a finish
+  // reopens it.
+  if (isFinishReason(choice?.finish_reason)) answer.finishReason = choice.finish_reason;
+  else if (stated !== null && answer.finishReason !== 'error') answer.finishReason = null;
+  // The first error stated at or after a `finish_reason` of `error` is the cause,
+  // so a warning on a trailing frame cannot replace it; a later finish clears that.
+  answer.errorSettled = answer.finishReason === 'error' && (answer.errorSettled || stated !== null);
   return applyText(answer, choice?.delta);
 }
 
+const ERROR_DEPTH = 8;
+
 /**
- * The server's text when a streamed frame is an error envelope rather than a
- * completion chunk, else null.
+ * Whether a value carries anything: a non-blank string, a truthy scalar, or an
+ * object or array holding one. Past the depth bound a non-empty object is taken
+ * as carrying something, so a hostile nesting stays cheap and a deep real error
+ * is still read.
+ */
+function saysSomething(value, depth = 0) {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!value || typeof value !== 'object') return Boolean(value);
+  if (depth >= ERROR_DEPTH) return Object.keys(value).length > 0;
+  return Object.values(value).some((inner) => saysSomething(inner, depth + 1));
+}
+
+/**
+ * The server's text when a frame or whole reply states an error, else null.
  *
- * Shape only, never wording: a non-array object carrying its own `error`
- * that is a non-null object or a non-empty string, and no own `choices` key. A frame
- * with `choices` is a completion chunk whatever else it carries. The object
- * spelling is the one LM Studio streams (`{error: {message}}`); the string
- * spelling is how it words a non-streamed refusal, which never reaches here
- * (`assertOk` refuses the non-2xx first) and is accepted only so a server that
- * streams that spelling under a 200 is read the same way. Streamed frames only:
- * `applyCompletion`'s whole-body path does not consult this. Whether the text
- * means anything for the answer is the caller's question, since only it knows
- * whether generation had begun.
+ * Shape only, never wording. A non-array object carrying its own `error` is an
+ * error frame when that error is a string or object that says something, whatever
+ * else the frame carries, so a placeholder of blanks and zero values serialised on
+ * every chunk of a healthy reply is no signal, nor is a number or boolean as the
+ * error itself. MTPLX sends a stated error beside `choices` and a
+ * `finish_reason` of `error`; LM Studio streams `{error: {message}}` with no
+ * `choices`, and words a non-streamed refusal as a bare string, which `assertOk`
+ * refuses on its status before it reaches here. Whether the text means anything
+ * for the answer depends on whether any text arrived, which is
+ * `refusalIfStated`'s and `refuseUnusable`'s question.
  */
 export function errorFrame(frame) {
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null;
-  if (Object.hasOwn(frame, 'choices') || !Object.hasOwn(frame, 'error')) return null;
+  if (!Object.hasOwn(frame, 'error')) return null;
   const { error } = frame;
-  if (typeof error === 'string') return error.length > 0 ? error : null;
-  if (!error || typeof error !== 'object') return null;
-  return typeof error.message === 'string' ? error.message : JSON.stringify(error);
+  if (typeof error !== 'string' && (!error || typeof error !== 'object')) return null;
+  if (!saysSomething(error)) return null;
+  if (typeof error === 'string') return error;
+  return typeof error.message === 'string' && saysSomething(error.message) ? error.message : JSON.stringify(error);
+}
+
+/**
+ * Whether this frame ends generation with a stated error: one with its own
+ * `finish_reason` of `error`, or one with no `choices`. Before any text the stream
+ * stops here, so nothing after it is read; after text the finished reply decides.
+ * Any other error beside `choices` waits for the finished reply.
+ */
+export function endsGeneration(frame) {
+  if (errorFrame(frame) === null) return false;
+  return frame?.choices?.[0]?.finish_reason === 'error' || !Object.hasOwn(frame, 'choices');
 }
 
 /** A whole non-streamed completion, folded through the same accumulator. */
 export function applyCompletion(answer, payload) {
   if (payload?.model) answer.model = payload.model;
   if (payload?.usage) answer.usage = payload.usage;
+  answer.serverError = errorFrame(payload);
   const choice = payload?.choices?.[0];
-  if (choice?.finish_reason) answer.finishReason = choice.finish_reason;
+  if (isFinishReason(choice?.finish_reason)) answer.finishReason = choice.finish_reason;
   applyText(answer, choice?.message);
+}
+
+/** Server-controlled detail travels off `.message`, as `assertOk` keeps it. */
+function carryStated(failure, answer) {
+  failure.serverResponded = true;
+  if (answer.serverError !== null) failure.responseBody = answer.serverError.slice(0, ERROR_BODY_CHARS);
+  if (answer.finishReason) failure.finishReason = answer.finishReason;
+  return failure;
+}
+
+/**
+ * The refusal an answer amounts to when the server stated an error and no text
+ * had arrived on either channel, else null. Asked of a stream frame that
+ * `endsGeneration`, so the refusal ends the stream, and of the finished reply by
+ * `refuseUnusable`, which is where a bare `finish_reason` of `error` is judged: an
+ * envelope may yet follow it.
+ */
+export function refusalIfStated(answer, name) {
+  if (answer.content.length > 0 || answer.reasoning.length > 0) return null;
+  if (answer.serverError === null && answer.finishReason !== 'error') return null;
+  return carryStated(new UserError(`${name} reported an error before any text, inside a successful response.`, {
+    hint: 'The server stated an error with no text received, so this reply was not retried.',
+    reason: STREAM_ERROR_FRAME,
+  }), answer);
 }
 
 /**
@@ -151,7 +222,7 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
 }
 
 /**
- * The three shapes in which a completion is not an answer, refused in order.
+ * The shapes in which a completion is not an answer, refused in order.
  *
  * Split out of `finishAnswer` at the function size budget, and the seam is real:
  * these decide whether there is an answer at all, while the caller assembles one.
@@ -160,10 +231,24 @@ export function finishAnswer(answer, { profile, requestedModel, sawDone, streame
  * reported as the earlier, more specific one.
  */
 function refuseUnusable(answer, { profile, sawDone, streamed }) {
+  const refusal = refusalIfStated(answer, profile.name);
+  if (refusal !== null) throw refusal;
+  // With text, a finish reason outranks an error stated with it or before it, so
+  // a warning beside a finished reply stays a reply. A bare envelope decides only
+  // when no finish reason stands.
+  if (answer.finishReason === 'error' || (!answer.finishReason && answer.serverError !== null)) {
+    const size = answer.content.length + answer.reasoning.length;
+    const failure = carryStated(new UserError(`${profile.name} reported an error during the reply (${size} characters received).`, {
+      hint: 'The server stated an error, so the reply is not being shown as a finished answer.',
+      reason: STREAM_UNFINISHED,
+    }), answer);
+    failure.answer = answer;
+    throw failure;
+  }
   if (!answer.sawContent && !answer.sawReasoning) {
-    // `answer.finishReason` is read straight off the server's own payload
-    // (completion.mjs's applyFrame/applyCompletion, no validation) and could
-    // carry a secret-shaped string, so it travels on `.finishReason`, never
+    // `answer.finishReason` is a string the server chose
+    // (completion.mjs's applyFrame/applyCompletion) and could
+    // carry a secret-shaped value, so it travels on `.finishReason`, never
     // inside `.message`. `transportDetail()`
     // (provider.mjs) composes it for display.
     const failure = new UserError(`${profile.name} returned a completion with no message content.`, {
@@ -179,9 +264,9 @@ function refuseUnusable(answer, { profile, sawDone, streamed }) {
       reason: STREAM_UNFINISHED,
     });
   }
-  // Third, and only third. A reply that never had a channel is shape one and a
-  // truncated stream is shape two; this is the one that *finished*, presented a
-  // channel, and put nothing in it.
+  // Last, and only last. A reply that never had a channel and a truncated stream
+  // are refused above; this is the one that *finished*, presented a channel, and
+  // put nothing in it.
   //
   // `.length`, never `.trim()`. A model answering with whitespace has answered —
   // the caller decides whether that is useful — and trimming here would delete a

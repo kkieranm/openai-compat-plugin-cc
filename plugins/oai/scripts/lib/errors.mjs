@@ -1,3 +1,6 @@
+/** How much of a server's error text is read or carried: enough for a reason, never a whole page. */
+export const ERROR_BODY_CHARS = 400;
+
 /**
  * A failure the user can fix themselves (server down, bad flag, oversized input).
  * The dispatcher prints these without a stack trace and exits 1; anything else

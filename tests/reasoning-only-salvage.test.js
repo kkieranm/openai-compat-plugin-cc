@@ -7,7 +7,7 @@
 // closes it — reasoningFrames() already does exactly that.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { completionFrames, reasoningFrames, respondJson, respondStream, reviewScenario, runCompanion } from './helpers.mjs';
+import { completionFrames, deltaFrame, reasoningFrames, respondJson, respondStream, reviewScenario, runCompanion } from './helpers.mjs';
 
 /** Comfortably between SALVAGE_MIN_REASONING_CHARS (500) and the default
  * reviewScenario's watchdog cutoff (6144 chars at contextLength 8192), so
@@ -123,6 +123,69 @@ test('reasoning below SALVAGE_MIN_REASONING_CHARS is not worth a follow-up reque
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'reasoning-only');
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1, 'no follow-up attempted at all');
+  } finally {
+    await server.close();
+  }
+});
+
+// A reply an error ended is a server interruption, so it is re-sent and never
+// salvaged; a finish reason beside a warning leaves the reply finished, and the
+// second case is what proves the reasoning here is enough to reach a follow-up.
+const STATED = { error: { message: 'insufficient memory' } };
+const ended = (...tail) => [
+  deltaFrame({ role: 'assistant' }),
+  deltaFrame({ reasoning_content: SUBSTANTIAL_REASONING }),
+  ...tail,
+];
+const finishing = (finishReason, extra = {}) => deltaFrame({}, {
+  choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+  ...extra,
+});
+
+for (const [name, reply] of [
+  ['a stream', (response) => respondStream(response, ended(finishing('error', STATED)))],
+  ['a whole reply', (response) => respondJson(response, {
+    model: 'test-model',
+    choices: [{ index: 0, message: { role: 'assistant', content: null, reasoning_content: SUBSTANTIAL_REASONING }, finish_reason: 'error' }],
+    ...STATED,
+  })],
+]) {
+  test(`a reply a stated error ended is re-sent and not salvaged — ${name}`, async () => {
+    const handler = (record, response) => {
+      if (record.url.includes('/chat/completions')) reply(response);
+      else respondJson(response, { object: 'list', data: [{ id: 'test-model', object: 'model' }] });
+    };
+    const { dir, server, configPath } = await reviewScenario(handler);
+    try {
+      const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+      assert.equal(result.status, 1, result.stderr);
+      const envelope = JSON.parse(result.stdout);
+      assert.equal(envelope.reason, 'stream-unfinished');
+      assert.match(envelope.partial.reasoning, /still reasoning/);
+      assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 3, 'three sends and no follow-up');
+    } finally {
+      await server.close();
+    }
+  });
+}
+
+test('the same reasoning with a finish reason beside a warning is reasoning-only and salvaged', async () => {
+  let requestCount = 0;
+  const handler = (record, response) => {
+    if (!record.url.includes('/chat/completions')) {
+      respondJson(response, { object: 'list', data: [{ id: 'test-model', object: 'model' }] });
+      return;
+    }
+    requestCount += 1;
+    if (requestCount === 1) respondStream(response, ended(finishing('stop', STATED)));
+    else respondStream(response, completionFrames(JSON.stringify({ findings: [], summary: 'concluded' })));
+  };
+  const { dir, server, configPath } = await reviewScenario(handler);
+  try {
+    const result = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).salvaged, true);
+    assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 2);
   } finally {
     await server.close();
   }

@@ -1,7 +1,7 @@
 /**
  * The shapes in which a request dies without the model having said no — and
  * which of them are worth sending again. One exception is named below,
- * `STREAM_ERROR_FRAME`: a refusal the server put inside a 200 stream, kept here
+ * `STREAM_ERROR_FRAME`: a refusal the server put inside a 200 reply, kept here
  * because the whitelists that decide retry and completion-shape membership are
  * here, and a refusal has to be absent from both by construction.
  *
@@ -23,17 +23,21 @@
 export const EMPTY_COMPLETION = 'empty-completion';
 
 /**
- * Text arrived, then the stream stopped without a terminator or a `finish_reason`.
- * Clean at the HTTP layer, truncated as an answer.
+ * An incomplete answer, on either transport: text arrived, then the stream stopped
+ * without a terminator or a `finish_reason`, or the server stated an error with no
+ * finish reason, or ended on an error. Clean at the HTTP layer, truncated as an answer.
  */
 export const STREAM_UNFINISHED = 'stream-unfinished';
 
 /**
- * The one shape here in which the server DID say no: an HTTP 200 stream whose
- * data frame, arriving before any text on either channel, is an error envelope rather than a
- * completion chunk (LM Studio streams a context overflow or a rejected sampling
- * value this way, with `event: error` and no `[DONE]`). Tagged by
- * `stream-collect.mjs`, which owns the before-any-text boundary.
+ * The one shape here that states an error with no text: an HTTP 200 reply,
+ * streamed or whole, with nothing on either channel, stating an error by an error
+ * envelope or a `finish_reason` of `error`, with or without `choices` (LM Studio
+ * streams a context overflow or a rejected sampling value with `event: error` and
+ * no `[DONE]`; MTPLX sends the error on a chunk and then `[DONE]`). Tagged by
+ * `refusalIfStated` in `completion.mjs`; the name covers whole replies too. A bare
+ * `finish_reason` of `error` says nothing of the cause, so it is here for want of
+ * text, not because the server was shown to be refusing this request.
  *
  * In neither `RETRYABLE` nor `COMPLETION_SHAPES`, each for its own reason. Not
  * retryable because a refusal stated before generation begins is not a delivery
@@ -41,11 +45,12 @@ export const STREAM_UNFINISHED = 'stream-unfinished';
  * throws with no reason (a 413 excepted, which carries `request-too-large`) and
  * which the transport never resends either — an identical resend is refused
  * again. (`/oai:review` re-plans once at a reply budget a 413 states, which is
- * a different request.) Not a completion shape because no reply document was
- * produced, and bench's `serverUnwell` reads that set as server-health
- * evidence, which a refusal is not. An error frame after text has streamed is
- * a different case — a mid-generation failure a resend may survive — and stays
- * `stream-unfinished`.
+ * a different request.) Not a completion shape because a stated error
+ * with no text is no failure of delivery, and bench's `serverUnwell` reads that
+ * set as server-health evidence, which a refusal is not. After text, a reply that stated an error with no
+ * finish reason, or ended on an error, is a different case — a mid-generation
+ * failure a resend may survive — and is `stream-unfinished`; a finish reason other
+ * than `error`, after or beside the error, leaves the reply finished.
  */
 export const STREAM_ERROR_FRAME = 'stream-error-frame';
 
@@ -127,8 +132,9 @@ export const TRANSIENT_CONNECT_CODES = new Set([
 const RETRYABLE = new Set([EMPTY_COMPLETION, STREAM_UNFINISHED, BLANK_COMPLETION, TRANSPORT]);
 
 /**
- * The shapes detected AFTER bytes arrived — the server produced a reply document
- * and `finishAnswer` judged it unusable.
+ * The failures of delivery detected AFTER bytes arrived — the server produced a
+ * reply document and `finishAnswer` judged it unusable, a stated error after text
+ * among them.
  *
  * Separate from the transport shape because the difference is evidence: these
  * prove the prompt was read and processed, which is what decides whether an

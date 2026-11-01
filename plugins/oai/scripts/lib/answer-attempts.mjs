@@ -16,7 +16,8 @@ import { budgetError } from './http-errors.mjs';
  *
  * The loop lives here, spanning `postWithDegrade` **and** `finishAnswer`,
  * because that pair is the smallest unit that can see every failure shape: the
- * transport raises one of them and `finishAnswer` raises the other three. Wider
+ * transport raises `transport`, `finishAnswer` raises the others, and both raise
+ * `stream-error-frame`. Wider
  * would be worse, not better — wrapping `requestFindings` would re-run prompt
  * sizing and the oversize ladder, retrying the wrong thing entirely.
  */

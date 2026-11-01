@@ -434,8 +434,7 @@ const RESPONSE_BOUNDARY_FILES = [
   'plugins/oai/scripts/lib/provider.mjs',
   'plugins/oai/scripts/lib/body.mjs',
   'plugins/oai/scripts/lib/sse.mjs',
-  // Builds a UserError from an error frame the server streamed (the refusal
-  // text goes on `.responseBody`), so it sits at the same boundary.
+  // Builds a UserError from what a stream carried, so it sits at the same boundary.
   'plugins/oai/scripts/lib/stream-collect.mjs',
   // Not transport-layer, but the same server-payload risk: `finish_reason`
   // (completion.mjs's applyFrame/applyCompletion) is read off the server's
