@@ -58,6 +58,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- The review prompt no longer calls a file's body "current": on `--commit`, `--base` and `--staged` it is the
+  file after the reviewed change, not the working tree. A sweep's hunks-only note drops its hedge about files
+  no commit review can send.
 - `/oai:review` no longer advises raising `--max-tokens` on a reasoning-only reply when the window held the
   reply budget below the ceiling, whatever cut it. A reasoning-only `/oai:task` failure now reports
   `reason: reasoning-only` in `--json`, as a review does.

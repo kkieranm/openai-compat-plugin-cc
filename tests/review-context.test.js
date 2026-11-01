@@ -44,7 +44,7 @@ test('a changed file is sent whole, and the model is told it is whole', async ()
   assert.equal(result.status, 0, result.stderr);
   const prompt = sentPrompt(server);
   assert.match(prompt, /--- FILE: seed\.txt ---/, 'the whole file, not just the hunk');
-  assert.match(prompt, /complete current content of every changed file/);
+  assert.match(prompt, /complete content of every changed file after the change/);
   assert.match(prompt, /--- DIFF ---/, 'the diff still says what changed');
 });
 
@@ -79,7 +79,7 @@ test('--diff-only still carries the caveat, and never claims completeness', asyn
   assert.equal(result.status, 0, result.stderr);
   const prompt = sentPrompt(server);
   assert.doesNotMatch(prompt, /--- FILE: seed\.txt ---/);
-  assert.doesNotMatch(prompt, /complete current content/, 'nothing was sent whole');
+  assert.doesNotMatch(prompt, /complete content of every changed file/, 'nothing was sent whole');
   assert.match(result.stdout, /only the diff hunks/);
 });
 
@@ -106,7 +106,7 @@ test('a file that could not be read is named, and voids the completeness claim',
   await server.close();
 
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(sentPrompt(server), /complete current content/, 'a body never arrived');
+  assert.doesNotMatch(sentPrompt(server), /complete content of every changed file/, 'a body never arrived');
   assert.match(result.stdout, /could not be read/);
   assert.match(result.stdout, /seed\.txt/);
 });
@@ -170,7 +170,7 @@ test('an unknown window withholds the files, and the report says why', async () 
   const prompt = sentPrompt(server);
   // The witness is what the SERVER received, not what the report said about it.
   assert.doesNotMatch(prompt, /--- FILE: seed\.txt ---/, 'the body is withheld: nothing could size it');
-  assert.doesNotMatch(prompt, /complete current content/, 'and the claim is still not made');
+  assert.doesNotMatch(prompt, /complete content of every changed file/, 'and the claim is still not made');
   // The cause and the remedy, on the path a human reads.
   assert.match(result.stdout, /could not be determined/, 'the report names the cause');
   assert.match(result.stdout, /contextLength/, 'and the remedy');
@@ -261,6 +261,7 @@ test('a failed read beside a file that went whole gets its own note, not the hun
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(sentPrompt(server), /--- FILE: seed\.txt ---/);
+  assert.doesNotMatch(sentPrompt(server), /complete content of every changed file/, 'blob.bin never arrived');
   assert.doesNotMatch(result.stdout, HUNKS_NOTE);
   assert.match(result.stdout, /blob\.bin/);
 });

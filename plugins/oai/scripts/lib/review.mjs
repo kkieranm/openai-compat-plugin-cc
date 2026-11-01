@@ -124,8 +124,8 @@ export function parseReviewLenses(raw) {
 }
 
 /**
- * `wholeFiles` says the complete current content of every changed file is in the
- * request, so the model can resolve an identifier defined outside the hunks
+ * `wholeFiles` says the complete content of every changed file after the change is
+ * in the request, so the model can resolve an identifier defined outside the hunks
  * rather than reporting it missing. It is passed only when that is *verified* —
  * with the context window unknown we cannot rule out the server truncating the
  * request, and telling a model it has a whole file it does not have is the very
@@ -142,7 +142,7 @@ export function buildReviewPrompt({ label, diff, instructions, wholeFiles }) {
 
   if (wholeFiles) {
     parts.push(
-      'You have been given the complete current content of every changed file, plus a diff showing ' +
+      'You have been given the complete content of every changed file after the change, plus a diff showing ' +
         'what changed. Use the files to resolve anything the diff refers to but does not show. ' +
         'Report defects in the changed code. If you find a real defect in code this change did not ' +
         'touch, report it too, but begin its summary with "pre-existing:".',

@@ -29,7 +29,7 @@ export function incompleteness(entry) {
   if (entry.dropped) notes.push(`${safeInline(entry.dropped) || 'an unknown number of'} finding(s) the model emitted were discarded as unusable (they named no file or no defect)`);
   // State, not cause — `--diff-only` reaches this too. The cause is the next
   // line, and it is separate so that neither has to guess at the other.
-  if (entry.hunksOnly) notes.push('the diff-covered changed files were reviewed only as hunks, not whole; files covered by no diff — untracked, or given with --file — may still have been sent whole');
+  if (entry.hunksOnly) notes.push('the diff-covered changed files were reviewed only as hunks, not whole');
   if (entry.skippedUnsizedWindow) notes.push('the provider\'s context window could not be determined, so the whole-file rung was skipped rather than sent unmeasured — set "contextLength" for the provider to enable it');
   if (entry.rawTruncated) notes.push('the raw reply was truncated in the machine record');
   if (entry.stderrTruncated) notes.push('the captured stderr was truncated in the machine record');

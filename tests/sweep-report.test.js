@@ -96,12 +96,11 @@ test('an unsized-window review says WHY, and never re-asserts a measurement', ()
 });
 
 test('the state note is scoped to diff-covered files, not to the whole request', () => {
-  // "Only the diff was reviewed" would be false for a mixed target: collectTarget
-  // pairs diff-covered tracked files with untracked bodies that are sent WHOLE and
-  // are never droppable.
+  // "Only the diff was reviewed" would be false for a mixed target, so the scope
+  // stays, though a sweep reviews commits, which send no file outside the diff.
   const out = render(commit({ outcome: 'clean', hunksOnly: true, model: 'qwen/qwen3.6-27b', findings: [] }));
   assert.match(out, /diff-covered changed files were reviewed only as hunks/);
-  assert.match(out, /may still have been sent whole/, 'the pinned files are not covered by this note');
+  assert.doesNotMatch(out, /files covered by no diff/, 'a commit review has none');
 });
 
 test('a diff-only review with no cause recorded does not invent one', () => {
