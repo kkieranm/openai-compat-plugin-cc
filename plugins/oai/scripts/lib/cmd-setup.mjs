@@ -87,8 +87,9 @@ function jsonRow({ profile, rawProfile, models, error, described, listUnavailabl
     detectedWindow: resolved.detected ?? null,
     // The model a task would use, or why it could not pick one — from the same
     // planner the text report and the task path use. The reason travels beside
-    // it: the text report says the id was chosen because the server reports it
-    // loaded, and a caveat true on one rendering may not be absent from the next.
+    // it: the text report says why the id was chosen, and a caveat true on one
+    // rendering may not be absent from the next. Only `loaded` means the server
+    // reports it loaded.
     selectedModel: resolved.modelId ?? null,
     selectedModelReason: resolved.because ?? null,
     cannotDelegate: resolved.problem?.message ?? null,

@@ -53,6 +53,8 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:setup` gives a reason for a sole model it picks, in text and `selectedModelReason`, and says when the
+  server does not report that model loaded.
 - `/oai:review` no longer says the model saw only diff hunks when a change only deletes files. A file
   removed with `git rm --cached` and kept on disk still goes whole on a default review, unless it is ignored.
 - An error a server states inside a successful response is now read as one. A reply that states

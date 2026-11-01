@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { planSelection } from "../plugins/oai/scripts/lib/model-selection.mjs";
 import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from "./helpers.mjs";
 
 test('task fails clearly when the server has no models and none was named', async () => {
@@ -292,4 +293,66 @@ test('a sole LM Studio chat model is selected even when it is not loaded', async
   assert.equal(result.status, 0, result.stderr);
   const chat = server.requests.find((request) => request.url.endsWith('/chat/completions'));
   assert.equal(chat.body.model, 'chat-a');
+});
+
+const SOLE_TEXT = /selected: chat-a — the one model offered for a chat request$/m;
+const NOT_LOADED_TEXT = /selected: chat-a — the one model offered for a chat request; the server does not report it loaded/;
+
+/** Setup's text and JSON views of one provider, closing the server. */
+async function setupViews(server) {
+  const { path } = localConfig(server);
+  const text = await runCompanion(['setup'], { configPath: path });
+  const json = await runCompanion(['setup', '--json'], { configPath: path });
+  await server.close();
+  return { text: text.stdout, provider: JSON.parse(json.stdout).providers[0] };
+}
+
+test('a sole model the server does not report loaded is selected, and setup says so without predicting the load', async () => {
+  const { text, provider } = await setupViews(await lmStudioServer([chatModel('chat-a', 'not-loaded')]));
+  assert.match(text, NOT_LOADED_TEXT);
+  assert.match(text, /Ready: local/);
+  assert.equal(provider.selectedModel, 'chat-a');
+  assert.equal(provider.selectedModelReason, 'sole-not-loaded');
+});
+
+test('a sole model reported loaded names that, beside an embedder or alone', async () => {
+  const embedder = { id: 'text-embedding-nomic', type: 'embeddings', state: 'loaded', max_context_length: 2048 };
+  for (const entries of [[chatModel('chat-a', 'loaded')], [chatModel('chat-a', 'loaded'), embedder]]) {
+    const { text, provider } = await setupViews(await lmStudioServer(entries));
+    assert.match(text, /selected: chat-a — the chat model the server reports loaded/);
+    assert.equal(provider.selectedModelReason, 'loaded');
+  }
+});
+
+test('a sole model with no state, or a loose join, claims only that it is the one offered', async () => {
+  const stateless = await setupViews(await lmStudioServer([chatModel('chat-a')]));
+  assert.match(stateless.text, SOLE_TEXT);
+  assert.equal(stateless.provider.selectedModelReason, 'sole');
+
+  const loose = await setupViews(await lmStudioServer([chatModel('chat-a', 'loaded')], ['chat-a@4bit']));
+  assert.equal(loose.provider.selectedModel, 'chat-a@4bit');
+  assert.equal(loose.provider.selectedModelReason, 'sole');
+
+  const bare = await startFakeServer((request, response) => {
+    if (request.url.split('?')[0].endsWith('/models')) return respondJson(response, modelList('chat-a'));
+    return respondJson(response, { error: 'not found' }, 404);
+  });
+  assert.equal((await setupViews(bare)).provider.selectedModelReason, 'sole');
+});
+
+test('a model named in the config carries no selection reason', async () => {
+  const server = await lmStudioServer([chatModel('chat-a', 'not-loaded')]);
+  const { path } = writeConfig({
+    defaultProvider: 'local',
+    providers: { local: { baseUrl: server.baseUrl, defaultModel: 'chat-a' } },
+  });
+  const json = await runCompanion(['setup', '--json'], { configPath: path });
+  await server.close();
+  assert.equal(JSON.parse(json.stdout).providers[0].selectedModelReason, null);
+});
+
+test('a model named by --model carries no selection reason', async () => {
+  const plan = planSelection({}, 'chat-a', { models: [chatModel('chat-a', 'not-loaded')] });
+  assert.equal(plan.modelId, 'chat-a');
+  assert.equal(plan.because, undefined);
 });

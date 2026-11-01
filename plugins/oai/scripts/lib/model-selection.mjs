@@ -135,6 +135,17 @@ function statesUsable(candidates) {
 }
 
 /**
+ * Why the one candidate was picked, claiming no more than the server reported. A
+ * sole pick does not depend on its state, so this only names it: an unusable state
+ * is no evidence either way.
+ */
+function soleReason(model, described) {
+  const stateKnown = described.loadedOnly || statesUsable([model]);
+  if (!stateKnown) return 'sole';
+  return model.state === 'loaded' ? 'loaded' : 'sole-not-loaded';
+}
+
+/**
  * The model to use when nothing named one, or why none can be picked.
  *
  * "No model can answer a chat request" and "several can, none is resident" are
@@ -184,7 +195,7 @@ function autoSelect(described) {
   // states come from one payload, so its records are exact joins and `state === 'loaded'` can be read
   // here without `statesUsable`'s exact-match check.
   if (candidates.length === 1 && (!described.loadedOnly || candidates[0].state === 'loaded')) {
-    return { modelId: candidates[0].id };
+    return { modelId: candidates[0].id, because: soleReason(candidates[0], described) };
   }
 
   const nameOne = 'Pass --model <id>, or set "defaultModel" for this provider in the config.';

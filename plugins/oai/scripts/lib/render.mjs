@@ -44,6 +44,15 @@ function describeContext(profile, described) {
   return 'context: unknown — set contextLength to arm the size check';
 }
 
+// "offered for a chat request", not "chat model", for the sole picks: on a vendor
+// that writes no model type nothing says the one candidate is a chat model.
+const SOLE = 'the one model offered for a chat request';
+const SELECTION_REASONS = {
+  loaded: 'the chat model the server reports loaded',
+  sole: SOLE,
+  'sole-not-loaded': `${SOLE}; the server does not report it loaded, and whether it loads on request is the server's decision`,
+};
+
 /**
  * Everything under one provider's header line. Extracted to keep both this and
  * `renderSetupReport` under the size ratchet, and given the row's already-made
@@ -71,15 +80,14 @@ function providerLines({ profile, rawProfile, models, error, built, described, l
   } else {
     lines.push(`      ${models.length} model(s): ${listModelIds(models)}`);
     if (profile.defaultModel) lines.push(`      defaultModel: ${profile.defaultModel}`);
-    // Name the evidence, not just the outcome: several models were on offer and
-    // this one was picked because the server reports it resident. Saying only
-    // "selected: x" would read as a preference the config never expressed.
+    // Name the evidence, not just the outcome: saying only "selected: x" would read
+    // as a preference the config never expressed.
     //
-    // "the chat model", not "the only model": the count behind `because` is over
-    // chat candidates, and an embedder may be loaded beside it. Claiming sole
+    // `loaded` says "the chat model", not "the only model": the count behind it is
+    // over chat candidates, and an embedder may be loaded beside it. Claiming sole
     // residency would assert something the selection never measured.
-    if (plan.because === 'loaded') {
-      lines.push(`      selected: ${plan.modelId} — the chat model the server reports loaded`);
+    if (SELECTION_REASONS[plan.because]) {
+      lines.push(`      selected: ${plan.modelId} — ${SELECTION_REASONS[plan.because]}`);
     }
   }
 

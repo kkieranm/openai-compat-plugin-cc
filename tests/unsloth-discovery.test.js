@@ -193,6 +193,7 @@ test('an entry that does not say whether it is loaded has no state, and selectio
 test('a sole loaded model is selected, and a sole unloaded one is not', async () => {
   const loaded = await discover({ '/v1/models': listing(loadedEntry()) });
   assert.equal(planSelection({}, undefined, loaded.described).modelId, LOADED);
+  assert.equal(planSelection({}, undefined, loaded.described).because, 'loaded');
   const unloaded = await discover({ '/v1/models': listing(unloadedEntry(UNLOADED_A)) });
   const plan = planSelection({}, undefined, unloaded.described);
   assert.equal(plan.modelId, undefined);

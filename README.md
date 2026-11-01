@@ -146,7 +146,10 @@ attempts the load, sizes it by its own settings, and may refuse for want of memo
 sized at 44.87 GB), and on oMLX 0.5.7, which loads on demand successfully. Those are two observations
 at two versions, not an account of every server: if yours is neither, nothing here predicts what it
 will do — including whether it refuses at all, since a server may instead answer from whatever it
-already has loaded. A named provider must exist even when `--base-url` overrides its endpoint, and if
+already has loaded. `/oai:setup` says why it picked a model: reported loaded, the one offered for a chat
+request, or the one offered and not reported loaded. Only a model a server identifies as an embedder is
+excluded, so on a server that gives no model type a sole embedder is selected. A named provider must exist
+even when `--base-url` overrides its endpoint, and if
 that URL points at a different host the profile's API key is **not** sent with it.
 
 Flags go before the request text; from the first word of the request onward, everything is taken
