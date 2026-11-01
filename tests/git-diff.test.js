@@ -138,6 +138,44 @@ test('a review run from a subdirectory still reads the changed files', async () 
   );
 });
 
+test('a pinned file the diff removes is reported, with or without --diff-only', async () => {
+  const dir = await createRepo();
+  const body = 'one\ntwo\nthree\nfour\nfive\nsix\n';
+  writeFileSync(join(dir, 'gone.txt'), body);
+  await git(['add', 'gone.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+
+  await git(['rm', '--quiet', '--cached', 'gone.txt'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'edited\n');
+  assert.equal((await collectTarget({}, dir)).pinnedRemoved, true);
+  assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
+test('nothing is reported when no pinned file is a path the diff removes', async () => {
+  const body = 'one\ntwo\nthree\nfour\nfive\nsix\n';
+  const committed = async () => {
+    const dir = await createRepo();
+    writeFileSync(join(dir, 'file.txt'), body);
+    await git(['add', 'file.txt'], dir);
+    await git(['commit', '--quiet', '-m', 'file'], dir);
+    return dir;
+  };
+
+  const untracked = await committed();
+  writeFileSync(join(untracked, 'seed.txt'), 'edited\n');
+  writeFileSync(join(untracked, 'fresh.txt'), 'fresh\n');
+  assert.equal((await collectTarget({}, untracked)).pinnedRemoved, false);
+
+  const renamed = await committed();
+  await git(['mv', 'file.txt', 'moved.txt'], renamed);
+  assert.equal((await collectTarget({}, renamed)).pinnedRemoved, false);
+
+  const deleted = await committed();
+  await git(['rm', '--quiet', 'file.txt'], deleted);
+  writeFileSync(join(deleted, 'fresh.txt'), 'fresh\n');
+  assert.equal((await collectTarget({}, deleted)).pinnedRemoved, false);
+});
+
 test('--commit refuses whatever is not one commit, and says what --base covers', async () => {
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');

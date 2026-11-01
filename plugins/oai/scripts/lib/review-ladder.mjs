@@ -38,7 +38,8 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // file" depends on. `unreadable` is the one that is easy to forget: a path git
   // listed whose body would not load is absent from `changed` and leaves no
   // other trace, so without this the prompt would vouch for a file that never
-  // arrived.
+  // arrived. `pinnedRemoved` is a block sent for a path the diff removes, which
+  // holds what is on disk and not that file's content after the change.
   //
   // The lens rides the TAIL, after the diff and after any `suffix` (the schema
   // instruction on the structured paths): the server prefix-caches, so keeping
@@ -55,7 +56,7 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
       label: target.label,
       diff: target.diff,
       instructions,
-      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0,
+      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0 && !target.pinnedRemoved,
     });
     return {
       prompt: [prompt, suffix, lens ? lensDirective(lens) : null].filter(Boolean).join('\n\n'),

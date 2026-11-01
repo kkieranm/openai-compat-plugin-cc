@@ -58,6 +58,8 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A review no longer claims it holds every changed file's content after the change when a file it sends
+  is one the diff removes, as after `git rm --cached` beside another edit.
 - `--commit` takes one commit. A range such as `A..B` is refused instead of reviewing a list that
   disagreed with the diff, with empty file bodies, and an empty value is refused instead of falling
   through to uncommitted work. The review notes also now stay true of an untracked file, an added file,

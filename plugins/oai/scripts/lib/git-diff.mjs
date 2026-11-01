@@ -114,18 +114,35 @@ async function untrackedBlocks(root) {
  * silently drop a file, where attempting and failing merely adds a note.
  */
 function changedPaths(raw) {
-  const fields = raw.split(NUL).filter((field) => field !== '');
   const paths = [];
+  for (const { status, path } of statusEntries(raw)) {
+    if (path && !/^D+$/.test(status)) paths.push(path);
+  }
+  return paths;
+}
 
+/**
+ * The paths this change takes away: a deletion's, and a rename's old path. A copy
+ * leaves its source in place.
+ */
+function removedPaths(raw) {
+  const paths = [];
+  for (const { status, from, path } of statusEntries(raw)) {
+    if (/^D+$/.test(status)) paths.push(path);
+    else if (/^R\d*$/.test(status)) paths.push(from);
+  }
+  return paths;
+}
+
+// `path` is the new path for a rename or copy: that is the one with content to read.
+function* statusEntries(raw) {
+  const fields = raw.split(NUL).filter((field) => field !== '');
   for (let i = 0; i < fields.length; ) {
     const status = fields[i];
     const moved = /^[RC]\d*$/.test(status);
-    // The new path, for a rename: that is the one with content to read.
-    const path = fields[i + (moved ? 2 : 1)];
-    if (path && !/^D+$/.test(status)) paths.push(path);
+    yield { status, from: fields[i + 1], path: fields[i + (moved ? 2 : 1)] };
     i += moved ? 3 : 2;
   }
-  return paths;
 }
 
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';
@@ -257,6 +274,8 @@ export async function collectTarget(options, cwd = process.cwd()) {
     // withhold. An empty list proves nothing: a clean merge lists no paths, and a combined `DD` entry
     // sits in a merge whose other changes the list leaves out.
     deletionsOnly: /^(?:D\0[^\0]*\0)+$/.test(nameStatus),
+    // A body sent as this file's content, for a path the diff says is gone.
+    pinnedRemoved: removedPaths(nameStatus).some((path) => pinned.has(path)),
     // Listed as part of this change but with no body to send. Carried out so
     // the request can stop claiming to hold what it does not.
     unreadable: [...untracked.unreadable, ...tracked.unreadable],

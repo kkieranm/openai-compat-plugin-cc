@@ -211,6 +211,62 @@ test('an index-only removal goes whole and the report does not say it went as hu
   assert.equal(JSON.parse(json.stdout).hunksOnly, false);
 });
 
+const CLAIM = /complete content of every changed file/;
+const FALLBACK = /Any file given below in a "--- FILE: ---" block is complete/;
+
+test('a file the diff removes but disk still holds withdraws the whole-files claim', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'gone.txt'), 'gone\n');
+  await git(['add', 'gone.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+  await git(['rm', '--quiet', '--cached', 'gone.txt'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'edited\n');
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const prompt = sentPrompt(server);
+  assert.doesNotMatch(prompt, CLAIM);
+  assert.match(prompt, FALLBACK);
+  assert.match(prompt, /--- FILE: gone\.txt ---/);
+  assert.match(prompt, /--- FILE: seed\.txt ---/);
+  assert.match(prompt, /deleted file mode/);
+});
+
+test('a rename whose old path is back on disk withdraws the claim, and a plain rename keeps it', async () => {
+  const body = 'one\ntwo\nthree\nfour\nfive\nsix\n';
+  const run = async (recreate) => {
+    const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+    writeFileSync(join(dir, 'old.txt'), body);
+    await git(['add', 'old.txt'], dir);
+    await git(['commit', '--quiet', '-m', 'old'], dir);
+    await git(['mv', 'old.txt', 'new.txt'], dir);
+    if (recreate) writeFileSync(join(dir, 'old.txt'), 'back on disk\n');
+    await runCompanion(['review'], { configPath, cwd: dir });
+    await server.close();
+    return sentPrompt(server);
+  };
+
+  assert.doesNotMatch(await run(true), CLAIM);
+  assert.match(await run(false), CLAIM);
+});
+
+test('a deletion from disk too, and an edit beside an unrelated new file, keep the claim', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'gone.txt'), 'gone\n');
+  await git(['add', 'gone.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+  await git(['rm', '--quiet', 'gone.txt'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'edited\n');
+  writeFileSync(join(dir, 'fresh.txt'), 'fresh\n');
+
+  await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.match(sentPrompt(server), CLAIM);
+});
+
 test('a diff of deletions alone withholds nothing', async () => {
   const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072, seed: 'seed\n' });
   await git(['rm', '--quiet', 'seed.txt'], dir);
