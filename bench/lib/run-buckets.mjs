@@ -11,9 +11,7 @@
  * Runs guillotined by the `analysis` cap: complete JSON, `finish_reason: stop`,
  * and reasoning that stopped mid-sentence.
  *
- * **These are scored, and that is a correction.** They used to be discarded
- * wholesale, which cost half the corpus — 17 of 41 runs ever recorded — and with
- * it the two anchored matches they produced. The cut lands on `analysis`, which
+ * **These are scored.** The cut lands on `analysis`, which
  * the schema orders *first*; the model then emits `findings` normally, so a cut
  * run's findings are as checkable as any other's. What is not usable is its
  * silence: a defect it did not name may be one it never reached. Positives

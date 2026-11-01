@@ -8,9 +8,8 @@ import { fileURLToPath } from 'node:url';
  * Scaffolding for the end-to-end harness: a stub `lms`, the repo's fake
  * server, a temp out-dir, and an async launch of the real driver.
  *
- * Split from the test file at the 300-line ratchet, and the seam matches
- * `helpers.mjs`: fixtures here, assertions there. Not a `.test.js` name, so the
- * runner does not treat it as a suite.
+ * The seam matches `helpers.mjs`: fixtures here, assertions there. Not a
+ * `.test.js` name, so the runner does not treat it as a suite.
  *
  * Reading cannot substitute for executing a module whose job is to decide
  * something, so this harness actually runs the driver rather than just
@@ -21,8 +20,7 @@ import { fileURLToPath } from 'node:url';
  *
  * THE OUTER SPAWN MUST BE ASYNC. The fake server shares this process, so a
  * synchronous launch of the driver would block the event loop the server answers
- * on and deadlock until the client timeout — the repo's standing footgun, which
- * once cost a 204-second suite. The driver's OWN `execFileSync` calls to the stub
+ * on and deadlock until the client timeout. The driver's OWN `execFileSync` calls to the stub
  * are fine: they block a child's event loop, not this one.
  */
 
@@ -54,10 +52,9 @@ const PREFILL_MS = 500;
  *
  * `failFromCall` starts failing at the Nth CHAT request, defaulting to never.
  * Calibration is call 1 and the challenge episodes follow, so failing from call 2
- * is how a scenario gets a cleared calibration and failing challenges. The first
- * run of this harness got that wrong — a handler that failed every request failed
- * the calibration too, and the sweep was (correctly) disqualified before a single
- * challenge episode ran.
+ * is how a scenario gets a cleared calibration and failing challenges: a handler
+ * that failed every request would fail the calibration too, and the sweep would be
+ * disqualified before a single challenge episode ran.
  *
  * `replyDelayMs`/`replyDelayFromCall` change the reply delay from a given call, on
  * the same call-2-is-the-first-challenge convention as `failFromCall`. It exists
