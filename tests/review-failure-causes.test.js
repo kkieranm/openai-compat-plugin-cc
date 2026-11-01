@@ -687,6 +687,16 @@ test('a failure after the whole files were withheld by the conservative count sa
   assert.match(text.stderr, FALLBACK_NOTE);
 });
 
+test('a pass line scopes the conservative count to the diff-covered files', async () => {
+  const dir = await fallbackRepo();
+  const server = await scriptedServer((_, response) => respondJson(response, completion(FINDINGS)));
+  const result = await runCompanion(['review', '--passes', '2'], { configPath: configFor(server), cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /pass 1: .*the diff-covered files not sent whole because of the conservative non-ASCII count/);
+});
+
 test('a whitespace-only answer after a conservative reserve cut says so', async () => {
   const dir = await reserveCutRepo();
   const server = await scriptedServer((_, response) => respondJson(response, completion('   ')));

@@ -2,7 +2,8 @@
 // committed yet — including files git does not track at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
 import { createRepo, git, tempDir } from './helpers.mjs';
@@ -70,7 +71,7 @@ test('--commit and --base review history rather than the tree', async () => {
 
 test('an unknown ref fails loudly rather than reviewing something else', async () => {
   const dir = await createRepo();
-  await assert.rejects(() => collectTarget({ commit: 'no-such-ref' }, dir), /git show no-such-ref failed/);
+  await assert.rejects(() => collectTarget({ commit: 'no-such-ref' }, dir), /--commit takes one commit: no-such-ref could not be resolved to one/);
 });
 
 test('an untracked binary file is left out', async () => {
@@ -135,6 +136,84 @@ test('a review run from a subdirectory still reads the changed files', async () 
     ['untracked.txt'],
     'untracked files are collected from the root too, matching the diff',
   );
+});
+
+test('--commit refuses whatever is not one commit, and says what --base covers', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  await git(['commit', '--quiet', '-am', 'second'], dir);
+
+  for (const ref of ['HEAD~1..HEAD', 'HEAD~1...HEAD', 'HEAD^!', '^HEAD', 'HEAD^{tree}', 'HEAD:seed.txt', '--all', '']) {
+    await assert.rejects(() => collectTarget({ commit: ref }, dir), (error) => {
+      assert.match(error.message, /^--commit takes one commit: /, ref);
+      assert.match(error.hint, /--base <ref> reviews from where that ref meets HEAD up to HEAD/, ref);
+      return true;
+    });
+  }
+});
+
+test('--commit refuses an object it cannot read in the same words, with a fetch hint', async () => {
+  const dir = await createRepo();
+  await git(['tag', '-a', 'v1', '-m', 'a tag'], dir);
+  const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  const object = join(dir, '.git', 'objects', head.slice(0, 2), head.slice(2));
+  chmodSync(object, 0o644);
+  writeFileSync(object, 'corrupt');
+
+  for (const ref of ['a'.repeat(40), 'HEAD', 'HEAD^0', 'v1']) {
+    await assert.rejects(() => collectTarget({ commit: ref }, dir), (error) => {
+      assert.match(error.message, /could not be resolved to one/, ref);
+      assert.match(error.hint, /objects may be missing here: fetch them/, ref);
+      return true;
+    });
+  }
+});
+
+test('--commit does not take a damaged object at a path holding the word ambiguous for a short id', async () => {
+  // Git prints the object path absolute only from a linked worktree, and only on a
+  // ref that needs the object to resolve, hence `HEAD^0`.
+  const dir = tempDir('oai-plugin-ambiguous-');
+  await git(['clone', '--quiet', await createRepo(), dir], tempDir());
+  const linked = join(tempDir(), 'worktree');
+  await git(['worktree', 'add', '--quiet', '--detach', linked], dir);
+  const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  const object = join(dir, '.git', 'objects', head.slice(0, 2), head.slice(2));
+  chmodSync(object, 0o644);
+  writeFileSync(object, '');
+
+  await assert.rejects(() => collectTarget({ commit: 'HEAD^0' }, linked), /could not be resolved to one/);
+});
+
+test('--commit relays git\'s reason for an ambiguous short id', async () => {
+  const dir = await createRepo();
+  const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  const prefix = head.slice(0, 4);
+  const blobId = (text) => createHash('sha1').update(`blob ${text.length}\0${text}`).digest('hex');
+  let n = 0;
+  while (!blobId(String(n)).startsWith(prefix)) n += 1;
+  writeFileSync(join(dir, 'twin.txt'), String(n));
+  await git(['hash-object', '-w', 'twin.txt'], dir);
+
+  await assert.rejects(() => collectTarget({ commit: prefix }, dir), (error) => {
+    assert.match(error.message, new RegExp(`^--commit ${prefix}: short object ID ${prefix} is ambiguous`));
+    assert.match(error.hint, /longer id/);
+    return true;
+  });
+});
+
+test('--commit takes anything that names one commit, and the three reads use its id', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  await git(['commit', '--quiet', '-am', 'second'], dir);
+  await git(['tag', '-a', 'v1', '-m', 'a tag message'], dir);
+
+  const tag = await collectTarget({ commit: 'v1' }, dir);
+  assert.equal(tag.label, 'commit v1');
+  assert.deepEqual(tag.changed.map((file) => file.path), ['seed.txt']);
+  assert.match(tag.changed[0].content, /edited/);
+  assert.doesNotMatch(tag.diff, /a tag message/, 'the commit, not the tag object');
+  const named = await collectTarget({ commit: ':/second' }, dir);
+  assert.deepEqual(named.changed.map((file) => file.path), ['seed.txt']);
 });
 
 test('--commit sends the file as it was at that ref, not as it is now', async () => {

@@ -58,7 +58,7 @@ test('the text tag lists severities only when they differ, beside any other diff
 
 test('a readable pass names each caveat it held, and a clean one names none', () => {
   assert.equal(readablePassNote({}, {}), null);
-  assert.equal(readablePassNote({ skipped: 'conservative-count' }, {}), 'whole files withheld by the conservative non-ASCII count');
+  assert.equal(readablePassNote({ skipped: 'conservative-count' }, {}), 'the diff-covered files not sent whole because of the conservative non-ASCII count');
   assert.equal(
     readablePassNote({}, { salvaged: true, analysisCut: true, atCap: true, hunksOnly: true }),
     'its reply came from a salvage follow-up; still reasoning at its length limit; findings list at its limit; saw only diff hunks for the diff-covered files',

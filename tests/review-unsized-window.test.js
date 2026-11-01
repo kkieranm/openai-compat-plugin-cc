@@ -160,7 +160,8 @@ test('on a mixed target the hunks-only note names only the diff-covered files', 
   const prompt = sentPrompt(server);
   assert.ok(prompt.includes(UNTRACKED_LINE), 'the untracked file went whole');
   assert.ok(!prompt.includes(OUTSIDE_THE_HUNK), 'the tracked file went as hunks');
-  assert.match(result.stdout, /the model saw only the diff hunks for the diff-covered changed files, not their whole contents/);
+  assert.match(result.stdout, /so a line those hunks do not show may not have been sent/);
+  assert.match(result.stdout, /the model saw only the diff hunks for the diff-covered changed files/);
 });
 
 test('the JSON and the text report agree that the bodies were withheld', async () => {

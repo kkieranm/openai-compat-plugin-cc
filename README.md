@@ -49,7 +49,7 @@ Foreground `/oai:task` and `/oai:review` run on Node 18.18+. Background jobs (`/
 
 Useful flags: `--provider <name>`, `--model <id>`, `--base-url <url>`, `--file <path>` (repeatable),
 `--prompt-file <path>`, `--timeout <seconds>`, `--max-tokens`, `--temperature`. `/oai:review` adds
-`--staged`, `--base <ref>` and `--commit <ref>`, and takes any trailing text as extra instructions
+`--staged`, `--base <ref>` and `--commit <ref>` (one commit), and takes any trailing text as extra instructions
 for the reviewer.
 
 ## Configuration

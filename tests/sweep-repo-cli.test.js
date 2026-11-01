@@ -81,8 +81,8 @@ test('--repo + --include enumerates the TARGET repo\'s own history, not this too
 // hardcoded ROOT — goes unexercised. This one makes the commit
 // ELIGIBLE and lets the real companion process run, pointed at a closed local
 // port so it fails fast without a network dependency. The two possible
-// failures are distinguishable: wrong cwd resolves `git show <sha>` against
-// THIS repo, where the scratch sha does not exist ("fatal: bad object");
+// failures are distinguishable: wrong cwd resolves the sha against THIS repo,
+// where the scratch sha does not exist ("could not be resolved");
 // correct cwd resolves it, gets past commit resolution, and fails only on the
 // unreachable model server ("connection refused").
 //
@@ -104,5 +104,5 @@ test('--repo + --include roots the COMPANION process too, not just enumeration',
   assert.equal(record.entries.length, 1);
   const envelope = JSON.parse(record.entries[0].raw);
   assert.match(envelope.message, /connection refused|ECONNREFUSED/i, `expected a network failure proving the commit resolved in the target repo, got: ${envelope.message}`);
-  assert.doesNotMatch(envelope.message, /bad object|unknown revision/i, 'a git-resolution failure means invoke() was still rooted at this tool, not the target repo');
+  assert.doesNotMatch(envelope.message, /could not be resolved/i, 'a git-resolution failure means invoke() was still rooted at this tool, not the target repo');
 });

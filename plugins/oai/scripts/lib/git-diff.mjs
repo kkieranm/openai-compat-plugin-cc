@@ -131,16 +131,43 @@ function changedPaths(raw) {
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';
 
 /**
+ * The one commit `--commit` names, as an id, so the diff, the list and the bodies
+ * all read the same object. Two steps: `^{commit}` on the ref itself would refuse
+ * `:/text`, and `--verify` alone passes `^HEAD`, printing `^<id>`, a tree, a blob
+ * and an id whose object is absent. A range exits nonzero though it prints ids, so
+ * the status is read first.
+ */
+async function singleCommit(ref, root) {
+  const resolved = await git(['rev-parse', '--verify', ref], root);
+  const ambiguous = /^error: short object ID \S+ is ambiguous$/m.exec(resolved.stderr);
+  if (ambiguous) {
+    throw new UserError(`--commit ${ref}: ${ambiguous[0].replace(/^error: /, '')}.`, { hint: 'Use a longer id.' });
+  }
+  const id = resolved.status === 0 ? resolved.stdout.trim() : '';
+  const commit = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(id)
+    ? await git(['rev-parse', '--verify', '--quiet', `${id}^{commit}`], root)
+    : null;
+  if (commit?.status !== 0) {
+    throw new UserError(`--commit takes one commit: ${ref || '(empty)'} could not be resolved to one.`, {
+      hint:
+        'A range is refused: --base <ref> reviews from where that ref meets HEAD up to HEAD; to review up to ' +
+        'another commit, check it out first. If the ref is right, its objects may be missing here: fetch them.',
+    });
+  }
+  return commit.stdout.trim();
+}
+
+/**
  * Which diff, and — just as importantly — which revision the whole files come
  * from. Reading the working tree for a `--commit` review would show the model
  * code that was never in the change it is being asked about, so every mode
  * pairs its diff with the matching content reader.
  */
 async function selectDiff(options, root) {
-  if (options.commit) {
-    const ref = options.commit;
+  if (options.commit !== undefined) {
+    const ref = await singleCommit(options.commit, root);
     return {
-      label: `commit ${ref}`,
+      label: `commit ${options.commit}`,
       diff: await runGit(['show', ref], root),
       // --root and --cc exist to make this list agree with `git show` above.
       // Without --root a repository's first commit lists no files; without --cc

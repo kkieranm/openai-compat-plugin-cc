@@ -184,9 +184,9 @@ function renderFinding(finding) {
 export function unreadableNote(unreadable) {
   if (!unreadable?.length) return null;
   return (
-    `NOTE: ${unreadable.length} file(s) changed by this work could not be read, so only their diff ` +
-    `hunks were sent: ${unreadable.join(', ')}. An unmerged path during a conflicted merge does ` +
-    'this. The same caveat applies to any claim naming them.'
+    `NOTE: ${unreadable.length} file(s) changed by this work could not be read or are binary, so their ` +
+    `contents were not sent, beyond any diff hunks: ${unreadable.join(', ')}. An unmerged path during a ` +
+    'conflicted merge also does this. A claim that something in them is undefined or missing may just mean it was not sent.'
   );
 }
 
@@ -328,9 +328,9 @@ export function causeNotes(
  */
 export function hunksOnlyNote(scope = '') {
   return (
-    `NOTE: ${scope}the model saw only the diff hunks for the diff-covered changed files, not their whole contents. ` +
+    `NOTE: ${scope}the model saw only the diff hunks for the diff-covered changed files, so a line those hunks do not show may not have been sent. ` +
     'A claim that something is undefined, unimported or missing may just mean it is defined in ' +
-    'a part of the file that was not sent.'
+    'a part of a file that was not sent.'
   );
 }
 

@@ -58,6 +58,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `--commit` takes one commit. A range such as `A..B` is refused instead of reviewing a list that
+  disagreed with the diff, with empty file bodies, and an empty value is refused instead of falling
+  through to uncommitted work. The review notes also now stay true of an untracked file, an added file,
+  a gitlink and a mixed target.
 - A bench report can no longer lose text between two blank values: an empty code span's backticks
   paired with the next one on the line, swallowing what lay between. A blank value now prints `(none)`
   or the site's own wording, or leaves the attribution out.

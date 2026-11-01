@@ -58,7 +58,7 @@ function failureCauseFields(causes) {
 function causeNote({ skipped, conservativeReserveCut }, { salvaged = false } = {}) {
   const notes = [
     salvaged ? 'its reply came from a salvage follow-up' : null,
-    skipped === 'conservative-count' ? 'whole files withheld by the conservative non-ASCII count' : null,
+    skipped === 'conservative-count' ? 'the diff-covered files not sent whole because of the conservative non-ASCII count' : null,
     // The review request's, never a salvage follow-up's: that runs on its own
     // fixed budget, and a follow-up that threw records no `salvaged` to say so.
     conservativeReserveCut ? "the review request's reply budget reduced by the conservative non-ASCII count" : null,

@@ -247,6 +247,9 @@ test('a tracked file whose read failed keeps the note on the hunks rung', async 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, HUNKS_NOTE);
   assert.match(result.stdout, /seed\.txt/, 'and the unreadable note names it');
+  assert.match(result.stdout, /their contents were not sent, beyond any diff hunks/);
+  assert.match(result.stdout, /may just mean it was not sent/);
+  assert.doesNotMatch(result.stdout, /same caveat/);
 });
 
 test('a failed read beside a file that went whole gets its own note, not the hunks one', async () => {
@@ -264,6 +267,8 @@ test('a failed read beside a file that went whole gets its own note, not the hun
   assert.doesNotMatch(sentPrompt(server), /complete content of every changed file/, 'blob.bin never arrived');
   assert.doesNotMatch(result.stdout, HUNKS_NOTE);
   assert.match(result.stdout, /blob\.bin/);
+  assert.match(result.stdout, /may just mean it was not sent/, 'the note stands alone with no hunks note beside it');
+  assert.match(result.stdout, /could not be read or are binary/);
 });
 
 test('a clean merge keeps the note: its changes reached the model in neither form', async () => {
