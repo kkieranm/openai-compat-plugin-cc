@@ -357,7 +357,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // reasoning channel legitimately carries the answer (see `client.mjs`'s
     // `requireAnswer` docstring), so that branch has no counterpart check.
     if (isReasoningOnly(result)) {
-      const failure = reasoningOnlyFailure(profile, result, { reserveCut: Boolean(built.conservativeReserveCut) });
+      const failure = reasoningOnlyFailure(profile, result, { reserveCut: built.reserveClamped });
       // The ledger already closed this physical attempt `answered` (`settle()`
       // ran inside `chatCompletion` before this check ever saw the result) —
       // reclassify it now, before the failure propagates, or a run that
@@ -472,9 +472,10 @@ const SALVAGE_REASONS = new Set(['token-reserve-cutoff', 'reasoning-only']);
  * follow-up refused before it is sent, a follow-up that itself
  * lands empty-handed (`chatCompletion` succeeding only means the transport
  * worked, not that the model answered — left unchecked this would return as
- * a success and fail much later at `requireAnswer`, which tags nothing, so
- * `isOutage`'s reasonless-failure arm would then read a model repeating its
- * own quirk on retry as a server outage), or the request itself throwing.
+ * a success and fail much later at `requireAnswer`, which tags only a
+ * reasoning-only reply, so `isOutage`'s reasonless-failure arm would then read a
+ * model repeating its own quirk on retry as a server outage), or the request
+ * itself throwing.
  * `content`, not `isReasoningOnly`, because a wholly blank follow-up is the
  * same failure and the follow-up never carries a grammar, so `content` is the
  * only legitimate answer channel here regardless of whether the original

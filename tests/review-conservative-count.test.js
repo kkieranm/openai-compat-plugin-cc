@@ -60,13 +60,16 @@ test('the reserve is flagged only when the conservative count itself cut it', ()
   const cjk = request('中'.repeat(8000));
   assert.ok(cjk.reserve < 16_384, 'the reserve was cut');
   assert.equal(cjk.conservativeReserveCut, true);
+  assert.equal(cjk.reserveClamped, true);
 
   // The discriminating negative: cut just as hard, but by size alone.
   const ascii = request('x'.repeat(8000 * 3 * 3.4));
   assert.ok(ascii.reserve < 16_384, 'the reserve was cut');
   assert.equal(ascii.conservativeReserveCut, false, 'a typical count would have cut it the same');
+  assert.equal(ascii.reserveClamped, true, 'the window clamped it all the same');
 
   assert.equal(request('中'.repeat(100)).conservativeReserveCut, false, 'nothing was cut');
+  assert.equal(request('中'.repeat(100)).reserveClamped, false, 'nothing was clamped');
 
   // Cut for size, with a little non-ASCII on top: the conservative charge took
   // a few hundred tokens of a ~10k reserve, under the 10% that counts.

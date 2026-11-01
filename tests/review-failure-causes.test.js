@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { requireAnswer } from '../plugins/oai/scripts/lib/client.mjs';
 import { withReviewCauses } from '../plugins/oai/scripts/lib/review-ladder.mjs';
 import { allFailedError } from '../plugins/oai/scripts/lib/review-passes.mjs';
 import { errorReport, report } from '../plugins/oai/scripts/lib/review-report.mjs';
@@ -202,6 +203,14 @@ test('a reasoning-only review after a reserve cut does not suggest raising --max
   assert.doesNotMatch(envelope.hint, /Raise --max-tokens/);
 });
 
+test('a reasoning-only review the window clamped by size alone does not suggest raising --max-tokens', async () => {
+  const envelope = await reasoningOnlyEnvelope(['review'], await repoWithNewFile('word '.repeat(14_000)));
+  assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(envelope.conservativeReserveCut, false, 'the conservative count is not the cause');
+  assert.match(envelope.hint, /narrower question/);
+  assert.doesNotMatch(envelope.hint, /--max-tokens/);
+});
+
 test('a reasoning-only review with no reserve cut keeps the --max-tokens remedy', async () => {
   const envelope = await reasoningOnlyEnvelope(['review'], await repoWithNewFile('plain ascii'));
   assert.equal(envelope.reason, 'reasoning-only');
@@ -209,9 +218,18 @@ test('a reasoning-only review with no reserve cut keeps the --max-tokens remedy'
   assert.match(envelope.hint, /Raise --max-tokens/);
 });
 
-test('a reasoning-only task keeps the --max-tokens remedy', async () => {
+test('a reasoning-only task reports the reason a review does and keeps the --max-tokens remedy', async () => {
   const envelope = await reasoningOnlyEnvelope(['task', 'a question'], await createRepo());
+  assert.equal(envelope.reason, 'reasoning-only');
   assert.match(envelope.hint, /Raise --max-tokens/);
+});
+
+test('a reasoning-only refusal carries its reason and the reply\'s usage', () => {
+  const usage = { completion_tokens: 300 };
+  assert.throws(
+    () => requireAnswer({ content: '', reasoning: 'thinking', finishReason: 'stop', usage }, { name: 'local' }),
+    (error) => error.reason === 'reasoning-only' && error.usage === usage,
+  );
 });
 
 test('a salvaged prose reply after a reserve cut names the review request\'s budget', () => {

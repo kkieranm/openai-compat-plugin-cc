@@ -53,6 +53,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` no longer advises raising `--max-tokens` on a reasoning-only reply when the window held the
+  reply budget below the ceiling, whatever cut it. A reasoning-only `/oai:task` failure now reports
+  `reason: reasoning-only` in `--json`, as a review does.
 - `/oai:setup` gives a reason for a sole model it picks, in text and `selectedModelReason`, and says when the
   server does not report that model loaded.
 - `/oai:review` no longer says the model saw only diff hunks when a change only deletes files. A file

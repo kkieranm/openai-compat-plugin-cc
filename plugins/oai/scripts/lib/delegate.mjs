@@ -187,7 +187,11 @@ export function prepareRequest({
   // whose reserve shrank for size alone.
   const conservativeReserveCut = reserveAfter(typical) - reserve >= reserve * MATERIAL_RESERVE_SHARE;
 
-  return { messages, estimatedTokens, budget, reserve, conservativeReserveCut };
+  // The window took the reply budget below the ceiling, so a higher ceiling could
+  // not be sent. Wider than `conservativeReserveCut`, which names one cause of it.
+  const reserveClamped = reserve < maxTokens;
+
+  return { messages, estimatedTokens, budget, reserve, conservativeReserveCut, reserveClamped };
 }
 
 /**

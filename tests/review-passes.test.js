@@ -269,13 +269,17 @@ test('allFailedError keeps a thrown first pass\'s own error and reason', () => {
   assert.deepEqual(error.attemptRecords, [{ id: 'a1' }, { id: 'b1' }]);
 });
 
-test('allFailedError stamps all-passes-unreadable on a reason-less reasoning-only first pass', () => {
-  // A reasoning-only first pass (content empty, reasoning present, finish stop)
-  // routes through `unparsedReply` to `requireAnswer`, which throws WITHOUT a
-  // `reason`. Without the catch-branch fallback the terminal envelope's
-  // `reason` reads null for exactly that shape. Deleting the `error.reason ==
-  // null` fallback in `allFailedError` reds this to undefined.
+test('allFailedError keeps the reason of a reasoning-only first pass', () => {
   const pass = { ok: true, parsed: null, structured: false, result: { content: '', reasoning: 'a long think with no answer', finishReason: 'stop', usage: { completion_tokens: 300 } }, ledger: { entries: () => [{ id: 'r1' }] } };
+  const error = allFailedError([pass], profile);
+  assert.equal(error.reason, 'reasoning-only');
+});
+
+test('allFailedError stamps all-passes-unreadable on a reason-less empty first pass', () => {
+  // A whitespace-only first pass routes through `unparsedReply` to
+  // `requireAnswer`, whose empty-answer refusal carries no `reason`. Deleting the
+  // `error.reason == null` fallback in `allFailedError` reds this to undefined.
+  const pass = { ok: true, parsed: null, structured: false, result: { content: '  ', reasoning: '', finishReason: 'stop', usage: {} }, ledger: { entries: () => [{ id: 'r1' }] } };
   const error = allFailedError([pass], profile);
   assert.equal(error.reason, 'all-passes-unreadable');
 });
