@@ -56,7 +56,7 @@ main().catch((error) => {
   // harness's own 256000 capture ceiling. Setting the code and returning lets
   // Node drain stdout and stderr before it exits on its own.
   if (error instanceof UserError) {
-    // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt`
+    // `transportDetail`'s fields, such as `error.endpoint` and `error.responseBody`,
     // are appended here only — never inside `.message` or `.hint` themselves,
     // which `errorReport()` persists into `jobs.db` and which an uncaught
     // worker error also writes to its own job log (`job-spawn.mjs`'s

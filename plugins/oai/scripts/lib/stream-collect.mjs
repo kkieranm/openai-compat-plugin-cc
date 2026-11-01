@@ -1,4 +1,4 @@
-import { applyFrame, emptyAnswer, endsGeneration, refusalIfStated } from './completion.mjs';
+import { applyFrame, emptyAnswer, endsGeneration, heldError, refusalIfStated } from './completion.mjs';
 import { UserError } from './errors.mjs';
 import { budgetError } from './http-errors.mjs';
 import { readSse } from './sse.mjs';
@@ -232,6 +232,10 @@ export async function collectStream(
     if (failure && failure.answer === undefined) {
       failure.answer = answer;
     }
+    // A stream that failed before finishing never judged a held error, so the
+    // failure keeps its reason and its retries. Off `responseBody`, which capability
+    // decisions read and where a refusal already carries its text.
+    if (failure && failure.responseBody === undefined) failure.heldServerError = heldError(answer);
     throw failure;
   } finally {
     deadline.clear();

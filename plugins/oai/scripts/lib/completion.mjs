@@ -159,6 +159,19 @@ function carryStated(failure, answer) {
   return failure;
 }
 
+function hasText(answer) {
+  return answer.content.length > 0 || answer.reasoning.length > 0;
+}
+
+/**
+ * A stated error no finish has outranked, as bounded display text. Only a reply
+ * with text can outrank one, as `refusalIfStated` and `refuseUnusable` read it.
+ */
+export function heldError(answer) {
+  if (hasText(answer) && answer.finishReason && answer.finishReason !== 'error') return undefined;
+  return answer.serverError?.slice(0, ERROR_BODY_CHARS);
+}
+
 /**
  * The refusal an answer amounts to when the server stated an error and no text
  * had arrived on either channel, else null. Asked of a stream frame that
@@ -167,7 +180,7 @@ function carryStated(failure, answer) {
  * envelope may yet follow it.
  */
 export function refusalIfStated(answer, name) {
-  if (answer.content.length > 0 || answer.reasoning.length > 0) return null;
+  if (hasText(answer)) return null;
   if (answer.serverError === null && answer.finishReason !== 'error') return null;
   return carryStated(new UserError(`${name} reported an error before any text, inside a successful response.`, {
     hint: 'The server stated an error with no text received, so this reply was not retried.',

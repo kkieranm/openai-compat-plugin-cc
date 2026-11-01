@@ -58,6 +58,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A server's stated error is shown when the stream then fails before finishing. The failure keeps its reason
+  and its retries, and the final error of a foreground task or single review request now carries the
+  server's words on stderr.
 - Model discovery ignores a listing entry with no usable id. Such an entry could be selected, so that setup
   printed `selected: undefined` and said Ready; crash setup outright; or hide what the server's other
   endpoints report, letting an embedding model be picked for chat.

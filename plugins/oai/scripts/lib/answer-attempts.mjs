@@ -123,6 +123,12 @@ export async function answerWithRetry(profile, body, options) {
   // request for the schema request's attempts as well.
   const startedAtEntry = ledger.entries().length;
   let waitedMs = 0;
+  // A failed stream's held server text, kept for whichever failure ends this answer.
+  let held;
+  const terminal = (failure) => {
+    if (failure !== null && typeof failure === 'object') failure.heldServerError ??= held;
+    return withLedger(failure, ledger);
+  };
 
   for (let attempt = 1; ; attempt += 1) {
     const budgets = { ...rest, expiresAt, maxMs, ledger, answerAttempt: attempt, waitedMs };
@@ -139,12 +145,13 @@ export async function answerWithRetry(profile, body, options) {
         }),
       );
     } catch (error) {
-      if (!worthRetrying(error, attempt, maxAttempts)) throw withLedger(error, ledger);
+      held = error?.heldServerError ?? held;
+      if (!worthRetrying(error, attempt, maxAttempts)) throw terminal(error);
       // The cap outranks the delivery error once it has fallen due, and says so.
       // The post-wait check below does the same; rethrowing the delivery error
       // here instead would file a wall-clock kill as a server drop depending
       // only on which side of the sleep the deadline happened to land on.
-      if (expired(expiresAt)) throw withLedger(capExpired(profile, maxMs), ledger);
+      if (expired(expiresAt)) throw terminal(capExpired(profile, maxMs));
       process.stderr.write(
         `${profile.name} ${error.reason} on attempt ${attempt} of ${maxAttempts}; retrying in ${retryDelayMs / 1000}s.\n`,
       );
@@ -161,7 +168,7 @@ export async function answerWithRetry(profile, body, options) {
       // Rethrowing the delivery error here would file a wall-clock kill as a
       // server drop — inventing unreliability out of a limit we imposed, in the
       // record built to tell those two apart.
-      if (expired(expiresAt)) throw withLedger(capExpired(profile, maxMs), ledger);
+      if (expired(expiresAt)) throw terminal(capExpired(profile, maxMs));
     }
   }
 }

@@ -186,14 +186,15 @@ function statedMaxTokens(detail) {
  * The server/endpoint-controlled detail an error carries off `.message`
  * — `.endpoint`, `.responseBody`, `.bodyExcerpt`, `.finishReason`
  * (completion.mjs / client.mjs — unvalidated server payload, not transport
- * data, but the same discipline) — joined for a genuinely interactive
+ * data, but the same discipline), and `.heldServerError` (stream-collect.mjs /
+ * answer-attempts.mjs) — joined for a genuinely interactive
  * display. One definition: `oai-companion.mjs`'s top-level catch and
  * `cmd-setup.mjs`'s own error rendering both call this rather than each
  * re-composing the same field list, so a further field only needs naming
  * here.
  */
 export function transportDetail(error) {
-  return [error?.endpoint, error?.responseBody, error?.bodyExcerpt, error?.finishReason]
+  return [error?.endpoint, error?.responseBody, error?.bodyExcerpt, error?.finishReason, error?.heldServerError]
     .filter(Boolean)
     .join(' — ');
 }

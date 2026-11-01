@@ -332,9 +332,9 @@ export function errorReport(error) {
     message: error?.message ?? String(error),
     hint: error?.hint ?? null,
     // `error.endpoint` / `error.responseBody` / `error.bodyExcerpt` /
-    // `error.finishReason` are deliberately never copied here —
+    // `error.finishReason` / `error.heldServerError` are deliberately never copied here —
     // this object is what `publishFailure` persists into `jobs.db`, and all
-    // four fields can be secret-shaped. Absence by construction: this is an
+    // five fields can be secret-shaped. Absence by construction: this is an
     // explicit field list, not a spread of `error`, so a new field on the
     // source error never reaches a persisted job by default.
     // The attempt record survives the failure path, and this is the path where
