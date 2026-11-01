@@ -73,7 +73,7 @@ test('a salvage attempt that itself fails falls back to reporting reasoning-only
     const envelope = JSON.parse(result.stdout);
 
     assert.equal(envelope.reason, 'reasoning-only');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, false);
     // Tier 1's guarantee: the partial reasoning survives even when salvage fails.
     assert.ok(envelope.partial?.reasoning?.includes(SUBSTANTIAL_REASONING.trim().slice(0, 50)));
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 2);
@@ -100,7 +100,7 @@ test('a salvage follow-up that itself lands empty-handed falls back to the origi
     const envelope = JSON.parse(result.stdout);
 
     assert.equal(envelope.reason, 'reasoning-only');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, false);
     assert.ok(envelope.partial?.reasoning?.includes(SUBSTANTIAL_REASONING.trim().slice(0, 50)));
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 2);
   } finally {

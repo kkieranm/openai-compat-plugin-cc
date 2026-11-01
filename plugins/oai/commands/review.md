@@ -53,9 +53,12 @@ With `--json`, stdout is machine-readable on **both** paths: a successful run pr
 failed one prints `{"error": true, "reason": ..., "message": ..., "hint": ...}` plus the run's context
 (`attempts`, `requestedModel`, `declaredServedModel`, `sampling`, `contextWindow`, `contextSource`,
 `detectedWindow`, `serverConfig`, `reasoning`, `partial`) and, once the review request was built, its
-causes (`hunksOnly`, `skippedUnsizedWindow`, `skippedConservativeCount`, `conservativeReserveCut`), and
-still exits 1 with the same prose on stderr. `reason` carries the transport's own vocabulary —
+causes (`hunksOnly`, `skippedUnsizedWindow`, `skippedConservativeCount`, `conservativeReserveCut`,
+`salvaged`, and `multiPass`), and still exits 1 with the same prose on stderr. `reason` carries the transport's own vocabulary —
 `deadline-timeout`, `idle-timeout`, `first-token-timeout`, `oversize`, and so on — or `null` where nothing
 was determined, so
-a caller can tell a wall-clock cap from a server error without matching prose. The one case that stays
+a caller can tell a wall-clock cap from a server error without matching prose. `salvaged` says which request's reply the review could
+not use, `true` for the salvage follow-up and `false` for the review request, or `null` where that was not
+recorded. `multiPass: true`, absent otherwise, means the cause fields are ORed across passes, while `salvaged`
+describes only the failure that supplied `reason`. The one case that stays
 prose-only is a malformed command line: parsing is what establishes that `--json` was passed at all.

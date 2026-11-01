@@ -355,7 +355,7 @@ test('a salvage attempt that itself fails falls back to reporting token-reserve-
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'token-reserve-cutoff');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     // Asserted HERE, on an envelope the watchdog actually minted, rather than
     // against a hand-built error: an absence assertion on a message nothing
     // produced passes for the wrong reason.

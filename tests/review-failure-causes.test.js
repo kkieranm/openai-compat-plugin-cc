@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAnswer } from '../plugins/oai/scripts/lib/client.mjs';
 import { withReviewCauses } from '../plugins/oai/scripts/lib/review-ladder.mjs';
-import { allFailedError } from '../plugins/oai/scripts/lib/review-passes.mjs';
+import { allFailedError, runCauses } from '../plugins/oai/scripts/lib/review-passes.mjs';
 import { errorReport, report } from '../plugins/oai/scripts/lib/review-report.mjs';
 import { reserveFor } from '../plugins/oai/scripts/lib/review-request.mjs';
 import {
@@ -133,7 +133,10 @@ test('withReviewCauses attaches only what a request-shaped object knows, and nev
   assert.equal(kept.reviewCauses, existing, 'the innermost site wins');
 
   const built = withReviewCauses(new Error('x'), { skipped: null, conservativeReserveCut: 1, hunksOnly: 0 });
-  assert.deepEqual(built.reviewCauses, { skipped: null, conservativeReserveCut: true, hunksOnly: false });
+  assert.deepEqual(built.reviewCauses, { skipped: null, conservativeReserveCut: true, hunksOnly: false, salvaged: null });
+
+  const classified = withReviewCauses(new Error('x'), { skipped: null, salvaged: false });
+  assert.equal(classified.reviewCauses.salvaged, false, 'a reply was classified');
 });
 
 test('a reply cut off at the token limit after a conservative reserve cut says so', async () => {
@@ -170,6 +173,7 @@ test('a reply cut off at the token limit with no reserve cut keeps the --max-tok
   assert.equal(json.status, 1, json.stderr);
   const envelope = JSON.parse(json.stdout);
   assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.salvaged, false, 'the review request ran out');
   assert.equal(envelope.conservativeReserveCut, false);
   assert.match(envelope.hint, /Raising --max-tokens helps only when the window has room to spare/);
 });
@@ -214,6 +218,7 @@ test('a reasoning-only review the window clamped by size alone does not suggest 
 test('a reasoning-only review with no reserve cut keeps the --max-tokens remedy', async () => {
   const envelope = await reasoningOnlyEnvelope(['review'], await repoWithNewFile('plain ascii'));
   assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(envelope.salvaged, false, 'the review request\'s own reply');
   assert.equal(envelope.conservativeReserveCut, false);
   assert.match(envelope.hint, /Raise --max-tokens/);
 });
@@ -221,6 +226,8 @@ test('a reasoning-only review with no reserve cut keeps the --max-tokens remedy'
 test('a reasoning-only task reports the reason a review does and keeps the --max-tokens remedy', async () => {
   const envelope = await reasoningOnlyEnvelope(['task', 'a question'], await createRepo());
   assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(Object.hasOwn(envelope, 'salvaged'), false, 'a task envelope gains no review key');
+  assert.equal(Object.hasOwn(envelope, 'multiPass'), false);
   assert.match(envelope.hint, /Raise --max-tokens/);
 });
 
@@ -339,6 +346,7 @@ test('a salvage follow-up that runs out of tokens is named, and the cut is the r
   assert.equal(json.status, 1, json.stderr);
   const envelope = JSON.parse(json.stdout);
   assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.salvaged, true, 'the follow-up ran out, not the review request');
   assert.equal(envelope.conservativeReserveCut, true);
   assert.equal(text.status, 1);
   assert.match(text.stderr, /ran out of tokens in the salvage follow-up/);
@@ -389,6 +397,8 @@ test('a thrown pass in a mixed run carries its causes on its own record and line
   assert.equal(failed.ok, false);
   assert.equal(readable.ok, undefined, 'the second pass was readable');
   assert.deepEqual(causeFields(failed), RESERVE_CUT);
+  assert.equal(Object.hasOwn(failed, 'salvaged'), false, 'an ok: false outcome records no salvage fact');
+  assert.equal(Object.hasOwn(failed, 'multiPass'), false);
   assert.equal(text.status, 0, text.stderr);
   assert.ok(passLine(text.stdout, 1)?.includes(PASS_RESERVE_NOTE), text.stdout);
   assert.ok(passLine(text.stdout, 2), text.stdout);
@@ -435,6 +445,7 @@ test('an all-failed run ORs the causes its passes recorded, whichever pass recor
     conservativeReserveCut: true,
     hunksOnly: true,
     multiPass: true,
+    salvaged: null,
   });
   assert.deepEqual(causeFields(errorReport(error)), {
     hunksOnly: true,
@@ -442,6 +453,49 @@ test('an all-failed run ORs the causes its passes recorded, whichever pass recor
     skippedConservativeCount: true,
     conservativeReserveCut: true,
   });
+});
+
+const recordedPass = (fields) => ({ ok: true, parsed: null, structured: false, skipped: null, ledger: { entries: () => [] }, ...fields });
+const PROSE_REPLY = { content: PROSE, reasoning: '', finishReason: 'stop' };
+
+test('an all-failed run reports the salvage fact of the failure supplying its reason, never an OR', () => {
+  const profile = { name: 'local' };
+  const prose = (salvaged) => recordedPass({ salvaged, result: PROSE_REPLY });
+  const thrown = (reviewCauses) => ({ ok: false, error: Object.assign(new Error('failed'), { reviewCauses }) });
+  const cause = { skipped: null, conservativeReserveCut: false, hunksOnly: false };
+
+  const salvagedFirst = errorReport(allFailedError([prose(true), prose(false)], profile));
+  assert.equal(salvagedFirst.reason, 'all-passes-unreadable');
+  assert.equal(salvagedFirst.salvaged, true, 'carried onto the error made for the prose reply');
+  assert.equal(salvagedFirst.multiPass, true);
+
+  assert.equal(errorReport(allFailedError([prose(false), prose(true)], profile)).salvaged, false);
+  assert.equal(errorReport(allFailedError([thrown({ ...cause, salvaged: false }), prose(true)], profile)).salvaged, false);
+  assert.equal(errorReport(allFailedError([thrown({ ...cause, salvaged: null }), prose(true)], profile)).salvaged, null);
+});
+
+test('a served-model refusal is multi-pass with nothing recorded about salvage', () => {
+  const report = errorReport(Object.assign(new Error('refused'), {
+    reviewCauses: runCauses([recordedPass({ salvaged: true, result: PROSE_REPLY })]),
+  }));
+  assert.equal(report.multiPass, true);
+  assert.equal(report.salvaged, null);
+});
+
+test('a reasoning-only first pass of a multi-pass run reports the review request\'s reply', async () => {
+  const envelope = await reasoningOnlyEnvelope(['review', '--passes', '2'], await repoWithNewFile('plain ascii'));
+  assert.equal(envelope.reason, 'reasoning-only');
+  assert.equal(envelope.salvaged, false);
+  assert.equal(envelope.multiPass, true);
+});
+
+test('a single-request failure has no multiPass key, and a failure with no causes has neither', () => {
+  const single = errorReport(withReviewCauses(new Error('x'), { skipped: null, salvaged: true }));
+  assert.equal(single.salvaged, true);
+  assert.equal(Object.hasOwn(single, 'multiPass'), false);
+  const none = errorReport(new Error('x'));
+  assert.equal(Object.hasOwn(none, 'salvaged'), false);
+  assert.equal(Object.hasOwn(none, 'multiPass'), false);
 });
 
 test('an all-failed run whose passes never built a request asserts no cause', async () => {

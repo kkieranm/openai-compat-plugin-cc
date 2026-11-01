@@ -258,7 +258,8 @@ export function aggregateAttempts(passes) {
  * N…" message is the prose branch's alone. Disclosed trade-off: a leading
  * unreadable-prose pass thus masks a later thrown pass's reason in the top-level
  * headline; the evidence survives in `attempts`. Its request causes, like its
- * attempts, describe the whole run: each flag ORed across the passes that
+ * attempts, describe the whole run, except `salvaged`, which stays the first
+ * failure's: each flag ORed across the passes that
  * recorded one and the first recorded skip (see `runCauses`), scoped "in at
  * least one pass", and left unset when no pass built a request.
  */
@@ -296,7 +297,10 @@ export function allFailedError(passes, profile) {
   // superset.
   if (attemptRecords.length) error.attemptRecords = attemptRecords;
   const causes = runCauses(passes);
-  if (causes) error.reviewCauses = causes;
+  // The run's causes replace the pass's, so the failure supplying `reason` hands
+  // over its own `salvaged` here: it describes that one reply, not the run.
+  const salvaged = first.ok ? Boolean(first.salvaged) : first.error?.reviewCauses?.salvaged ?? null;
+  if (causes) error.reviewCauses = { ...causes, salvaged };
   return error;
 }
 

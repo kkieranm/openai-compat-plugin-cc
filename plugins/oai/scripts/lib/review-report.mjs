@@ -38,6 +38,17 @@ function reviewCauseFields(causes) {
   return { hunksOnly: Boolean(causes.hunksOnly), ...causeFlags(causes) };
 }
 
+// The envelope's fields: `reviewCauseFields` plus the two that belong to the
+// failure as a whole, so a thrown pass's `passes[]` entry never gains them.
+// `multiPass` is absent on a single request, as on a single-pass success.
+function failureCauseFields(causes) {
+  return {
+    ...reviewCauseFields(causes),
+    salvaged: causes.salvaged ?? null,
+    ...(causes.multiPass ? { multiPass: true } : {}),
+  };
+}
+
 // A failed pass's request facts, for its own line in the text report: whether its
 // reply came from a salvage follow-up, and the conservative count's causes. The
 // union's caveats come only from readable passes, so these would otherwise go
@@ -397,7 +408,7 @@ export function errorReport(error) {
     // What a failed review's request was, and why it was narrower than asked
     // for — present only on a review failure whose request was built, so a task
     // or job envelope never gains these keys.
-    ...(error?.reviewCauses ? reviewCauseFields(error.reviewCauses) : {}),
+    ...(error?.reviewCauses ? failureCauseFields(error.reviewCauses) : {}),
   };
 }
 

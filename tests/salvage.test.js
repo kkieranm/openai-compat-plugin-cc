@@ -127,7 +127,7 @@ test('a deadline-timeout keeps the partial reasoning instead of discarding it, a
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     // Tier 1: the reasoning was captured, not thrown away, at the point of failure.
     assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
@@ -194,7 +194,7 @@ test('a deadline-timeout sends no salvage follow-up, even to a server that would
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
 
     // Nothing but the original on the wire, and nothing else in the record.
     assert.equal(server.requests.filter((r) => r.url.includes('/chat/completions')).length, 1);
@@ -235,7 +235,7 @@ test('--structured-output: a deadline-timeout is reported with its partial, not 
     assert.equal(result.status, 1, result.stderr);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
     assert.equal(chatRequests.length, 1);
@@ -258,7 +258,7 @@ test('a deadline-timeout records one physical request — the deadline leaves no
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     assert.deepEqual(envelope.attempts.map((attempt) => [attempt.outcome, attempt.reason]), [['failed', 'deadline-timeout']]);
   } finally {
     stop();
@@ -279,7 +279,7 @@ test('a deadline-timeout is reported plainly, partial still attached, and the fo
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
+    assert.equal(envelope.salvaged, null);
     // Tier 1's guarantee holds without tier 2.
     assert.ok(envelope.partial?.reasoning?.includes(REASONING_CHUNK.trim()));
     assert.equal(followUps, 0);
@@ -318,7 +318,7 @@ test('a failure with no stream progress at all still reports an empty partial, w
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'first-byte-timeout');
     assert.equal(envelope.partial, null, 'nothing streamed, so there is nothing to show');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
   } finally {
     await server.close();
   }
@@ -373,7 +373,7 @@ test('a salvage follow-up grown past the context window is refused, not sent unc
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'token-reserve-cutoff');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     // Tier 1 still preserved the original partial, even though tier 2
     // correctly declined to send an oversized follow-up.
     assert.ok(envelope.partial?.reasoning?.length >= 6_144);
@@ -648,7 +648,7 @@ test('reasoning one character short of SALVAGE_MIN_REASONING_CHARS is not salvag
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'reasoning-only');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, false);
     assert.equal(envelope.partial?.reasoning, 'x'.repeat(SALVAGE_MIN_REASONING_CHARS - 1));
     assert.equal(chatRequestsOf(server).length, 1, 'no follow-up is sent');
   } finally {
@@ -751,7 +751,7 @@ test('a long deadline-timeout reasoning is reported whole as the partial, with n
     assert.equal(result.status, 1, result.stderr);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'deadline-timeout');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     // The cap's own error, word for word — never rewritten as a salvage the
     // deadline ended, which this reason never reaches.
     const host = new URL(server.baseUrl).host.replaceAll('.', '\\.');
@@ -916,7 +916,7 @@ test('a salvage that fails on both the trimmed AND the untrimmed fallback attemp
     assert.equal(result.status, 1);
     const envelope = JSON.parse(result.stdout);
     assert.equal(envelope.reason, 'token-reserve-cutoff');
-    assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
+    assert.equal(envelope.salvaged, null);
     assert.equal(
       server.requests.filter((r) => r.url.includes('/chat/completions')).length,
       3,
@@ -947,7 +947,7 @@ test('a salvage that fails on both the trimmed AND the untrimmed fallback attemp
     // fail — never the reasoning-only reason either salvage attempt itself
     // carried.
     assert.equal(envelope.reason, 'token-reserve-cutoff');
-    assert.equal(envelope.salvaged, undefined, 'a failure envelope has no salvaged field at all — only a success does');
+    assert.equal(envelope.salvaged, null);
 
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));
     assert.equal(chatRequests.length, 3, 'original + the failed trimmed attempt + the failed untrimmed fallback attempt');
@@ -1210,7 +1210,7 @@ test('a trimmed follow-up refused as request-too-large ends salvage: no untrimme
     const envelope = JSON.parse(result.stdout);
     // The ORIGINAL failure, with its tier-1 partial — never the follow-up's refusal.
     assert.equal(envelope.reason, 'token-reserve-cutoff');
-    assert.equal(envelope.salvaged, undefined);
+    assert.equal(envelope.salvaged, null);
     assert.ok(envelope.partial?.reasoning?.length >= 70_656);
 
     const chatRequests = server.requests.filter((r) => r.url.includes('/chat/completions'));

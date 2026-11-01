@@ -365,7 +365,7 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
       // entries in one `attempts[]` array. The same reclassification
       // `attemptSalvage` below applies to a losing salvage attempt.
       result.markUnanswered(failure);
-      throw failure;
+      throw withReviewCauses(failure, { ...built, salvaged: false });
     }
     return { result, structured: false, ...built };
   } catch (fallbackError) {

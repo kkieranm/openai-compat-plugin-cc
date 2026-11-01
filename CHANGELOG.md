@@ -38,6 +38,8 @@ All notable changes to this project are documented here, loosely following the
   identifies vMLX, while an unidentified `/health`, or a 401/403 for `/v1/models` without the query,
   sends `/v1/models` with it, which can wake the model). A cap set with `--max-prompt-tokens` above
   the model's own context is taken as given; set `contextLength` in that case.
+- A failed review's `--json` envelope reports `salvaged`, which request's reply the review could not use, and
+  `multiPass: true` when its cause fields are ORed across passes.
 
 ### Changed
 

@@ -139,6 +139,11 @@ export function withReviewCauses(error, built) {
       skipped: built.skipped ?? null,
       conservativeReserveCut: Boolean(built.conservativeReserveCut),
       hunksOnly: Boolean(built.hunksOnly),
+      // Which request's reply the review's own classifiers failed: true for the
+      // salvage follow-up, false for the review request. Null is "not recorded",
+      // never a negative: a failure no classifier produced carries no such key on
+      // `built`, whether or not a reply arrived.
+      salvaged: Object.hasOwn(built, 'salvaged') ? Boolean(built.salvaged) : null,
     };
   }
   return error;
