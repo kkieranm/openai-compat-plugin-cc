@@ -710,12 +710,56 @@ test('safeCodeSpan keeps a value verbatim except a backtick and a pipe, which it
   assert.equal(safeCodeSpan('a`b'), 'a.b');
   assert.equal(safeCodeSpan('a|b'), 'a.b');
   assert.equal(safeCodeSpan('line one\n\nline two\r\tend'), 'line one line two end');
-  assert.equal(safeCodeSpan(undefined), '');
-  assert.equal(safeCodeSpan(null), '');
+  assert.equal(safeCodeSpan(undefined), '(none)');
+  assert.equal(safeCodeSpan(null), '(none)');
   assert.equal(safeCodeSpan(['a_b', 'c`d']), 'a_b, c.d');
   assert.equal(safeCodeSpan({ toJSON() { throw new Error('boom'); } }), '(unrenderable object)');
   assert.equal(safeCodeSpan('x'.repeat(5000)).length, safeInline('x'.repeat(5000)).length, 'the same length cap');
   for (const v of ['a`b*c_d', 'a|b', '/var/folders/x_y/z']) assert.equal(safeCodeSpan(safeCodeSpan(v)), safeCodeSpan(v));
+});
+
+test('safeCodeSpan never returns blank, and keeps what a value that is not blank carries', () => {
+  for (const blank of ['', '   ', '\n', [], [''], [' ']]) {
+    assert.equal(safeCodeSpan(blank), '(none)');
+    assert.equal(safeCodeSpan(blank, 'HEAD'), 'HEAD');
+    assert.equal(safeCodeSpan(blank, ''), '(none)');
+    assert.equal(safeCodeSpan(blank, '  '), '(none)');
+  }
+  assert.equal(safeCodeSpan(undefined, 'a`b|c'), 'a.b.c', 'a fallback is escaped like a value');
+  assert.equal(safeCodeSpan('x', 'HEAD'), 'x');
+  assert.equal(safeCodeSpan(0), '0');
+});
+
+test('blank fields cannot pair their backticks and swallow the text between them', () => {
+  for (const outcome of ['clean', 'failed']) {
+    const out = render(commit({ sha: '', model: [], outcome, findings: [] }));
+    assert.ok(out.includes('`(none)` a commit'), out);
+    assert.doesNotMatch(out, /``/);
+    assert.doesNotMatch(out, /answered by/, 'a blank model is not a model that answered');
+  }
+  assert.doesNotMatch(render(commit({ model: false, outcome: 'failed' })), /answered by/);
+  const named = render(commit({ model: '(none)', outcome: 'clean', findings: [] }));
+  assert.match(named, /answered by `\(none\)`/, 'a model with that very name keeps its attribution');
+});
+
+test('a blank model keeps each site\'s own wording', () => {
+  const found = render(commit({ outcome: 'findings', model: '', findings: [{ file: 'a', line: 1, summary: 's' }] }));
+  assert.ok(found.includes('*answered by `unknown`*'), found);
+  const declared = render(commit({ outcome: 'clean', findings: [], model: 'B', requestedModel: '', declaredServedModel: 'B' }));
+  assert.ok(declared.includes('`(not recorded)` answered as `B`'), declared);
+});
+
+test('a whole report of blank fields renders a span for each', () => {
+  const out = renderRecord({ repo: '', requestedModel: '', from: '' }, commit({
+    outcome: '',
+    findings: [{ file: '', line: '', severity: 'low', summary: 's' }, { file: null, line: null, summary: 's' }],
+  }));
+  assert.ok(out.includes('`(not recorded)`'), out);
+  assert.ok(out.includes('`(provider default)`'), out);
+  assert.ok(out.includes('`HEAD`'), out);
+  assert.ok(out.includes('`(none):(none)`'), out);
+  assert.ok(out.includes('`(no location given)`'), out);
+  assert.doesNotMatch(out, /``/);
 });
 
 test('a model id, sha and finding location print verbatim inside their code spans', () => {

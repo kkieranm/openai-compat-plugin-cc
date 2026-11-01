@@ -133,7 +133,7 @@ function modelCell(runs) {
   for (const run of runs) {
     const report = run.report ?? {};
     if (report.error) continue;
-    seen.add(`\`${safeCodeSpan(report.model) || 'unknown'}\`${report.modelReported === false ? '?' : ''}`);
+    seen.add(`\`${safeCodeSpan(report.model, 'unknown')}\`${report.modelReported === false ? '?' : ''}`);
   }
   return seen.size === 0 ? '—' : [...seen].sort().join(', ');
 }

@@ -461,6 +461,8 @@ test('a sampling-knob arm names the knob in its caveats, and a default arm does 
   assert.doesNotMatch(off, /--max-tokens/);
   // temperature 0 is the edge case the forwarding guards — it must still render.
   assert.match(temp, /`--temperature 0` was on/);
+  // `--temperature=` validates as 0 and is recorded raw.
+  assert.match(renderReport(results, { ...base, temperature: '' }), /`--temperature 0` was on/);
   assert.doesNotMatch(off, /--temperature/);
 });
 
@@ -614,4 +616,13 @@ test('a requested sampling or budget value prints verbatim inside its code span'
   for (const shown of ['`--reasoning-effort very_high`', '`--max-tokens 4_096`', '`--temperature 0.[5]`', '`--timeout 6*0`', '`--max-seconds 9_0`']) {
     assert.ok(report.includes(shown), `${shown} missing:\n${report}`);
   }
+});
+
+test('a blank model keeps each site\'s own wording in a benchmark report', () => {
+  const good = goodRun();
+  const report = (run) => renderReport([{ caseDef: CASE, runs: [run] }], { runsPerCase: 1, model: 'm', provider: 'p' });
+  const declared = report({ ...good, report: { ...good.report, requestedModel: '', model: 'B', declaredServedModel: 'B' } });
+  assert.ok(declared.includes('`(not recorded)` answered as `B`'), declared);
+  const substituted = report({ ...good, score: undefined, reason: 'model-substituted', report: { ...good.report, requestedModel: 'A', model: '' } });
+  assert.ok(substituted.includes('`unknown` answered.'), substituted);
 });

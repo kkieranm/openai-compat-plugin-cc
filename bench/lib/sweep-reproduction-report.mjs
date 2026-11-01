@@ -31,8 +31,7 @@ const axisValue = (axis) => (axis.state === 'known' ? JSON.stringify(axis.value)
 // A run stamp as a code span, so a stamp starting with a list marker cannot open a nested list after the
 // line's `- `. A missing one is fixed prose outside any span, which no recorded stamp can render as.
 function stampLabel(stamp) {
-  const span = `\`${safeCodeSpan(stamp)}\``;
-  return span.length === 2 ? 'unstamped run' : span; // two backticks: an empty span
+  return safeInline(stamp) ? `\`${safeCodeSpan(stamp)}\`` : 'unstamped run';
 }
 
 // One run's identity line: stamp, observed model, and the window it ran under.

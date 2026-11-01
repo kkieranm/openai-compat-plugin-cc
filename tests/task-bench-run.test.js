@@ -163,3 +163,9 @@ test('a `|` in a model id keeps its report row at the header\'s column count', a
   assert.ok(rows.some((row) => row.includes('| `m.n` |')), rows.join('\n'));
   for (const row of rows) assert.equal(pipes(row), pipes(rows[0]), row);
 });
+
+test('a blank model prints as unknown in the task report', () => {
+  const runs = [{ arm: 'pointed', report: { model: '' } }];
+  const out = renderReport({ results: [{ caseDef: { id: 'x' }, runs }], arms: ['pointed'] });
+  assert.ok(out.includes('`unknown`'), out);
+});

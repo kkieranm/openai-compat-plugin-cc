@@ -205,7 +205,7 @@ function flagNotes(rows, { diffOnly, cold, structuredOutput, timeoutSeconds, max
   }
   if (temperature !== undefined) {
     notes.push(
-      `**\`--temperature ${safeCodeSpan(temperature)}\` was on**: this arm did not use the model's default sampling `
+      `**\`--temperature ${safeCodeSpan(temperature, '0')}\` was on**: this arm did not use the model's default sampling `
       + 'temperature, so its findings and their variance are not comparable to an arm run at the default.',
     );
   }

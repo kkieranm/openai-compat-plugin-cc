@@ -58,6 +58,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A bench report can no longer lose text between two blank values: an empty code span's backticks
+  paired with the next one on the line, swallowing what lay between. A blank value now prints `(none)`
+  or the site's own wording, or leaves the attribution out.
 - The review prompt no longer calls a file's body "current": on `--commit`, `--base` and `--staged` it is the
   file after the reviewed change, not the working tree. A sweep's hunks-only note drops its hedge about files
   no commit review can send.

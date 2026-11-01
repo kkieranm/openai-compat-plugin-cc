@@ -210,7 +210,7 @@ function declaredIdNotes(results) {
       const identities = [report, ...passes];
       for (const identity of identities) {
         if (declaredMatch(identity)) {
-          pairs.add(`\`${safeCodeSpan(identity.requestedModel) || '(not recorded)'}\` answered as \`${safeCodeSpan(identity.model)}\``);
+          pairs.add(`\`${safeCodeSpan(identity.requestedModel, '(not recorded)')}\` answered as \`${safeCodeSpan(identity.model)}\``);
         }
       }
     }
@@ -290,7 +290,7 @@ function failureSections(results) {
   const substituted = results.flatMap(({ caseDef, runs }) =>
     runs.filter((run) => run.reason === 'model-substituted')
       .map((run) => `- \`${safeCodeSpan(caseDef.id)}\`: asked for \`${safeCodeSpan(run.report?.requestedModel)}\`, `
-        + `\`${safeCodeSpan(run.report?.model)}\` answered.`));
+        + `\`${safeCodeSpan(run.report?.model, 'unknown')}\` answered.`));
   if (substituted.length > 0) {
     lines.push(
       '## Runs answered by a different model',

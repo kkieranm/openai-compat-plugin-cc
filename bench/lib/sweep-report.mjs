@@ -197,7 +197,7 @@ const WHY = {
  * actually served the request, which this plugin must not do.
  */
 function answeredBy(entry) {
-  return entry.model ? ` *(answered by \`${safeCodeSpan(entry.model)}\`)*` : '';
+  return entry.model && safeInline(entry.model) ? ` *(answered by \`${safeCodeSpan(entry.model)}\`)*` : '';
 }
 
 /**
@@ -242,7 +242,7 @@ function findingLines(entry) {
     if (hasFile && hasLine) {
       return `- ${severity}\`${safeCodeSpan(finding.file)}:${safeCodeSpan(finding.line)}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
     }
-    return `- ${severity}\`${safeCodeSpan(hasFile ? finding.file : finding.line) || '(no location given)'}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
+    return `- ${severity}\`${safeCodeSpan(hasFile ? finding.file : finding.line, '(no location given)')}\` — ${safeInline(finding.summary) || '(no summary)'}${evidence}`;
   });
 }
 
@@ -271,7 +271,7 @@ function findingsBlock(entry, indent = '', { attribute = true } = {}) {
   // The caller may already have named the answering model on its own row — a
   // coverage row does. Naming it twice for one commit is noise the tests could
   // not see, since they assert the string is PRESENT.
-  const lines = attribute ? [`${indent}*answered by \`${safeCodeSpan(entry.model) || 'unknown'}\`*`, ''] : [];
+  const lines = attribute ? [`${indent}*answered by \`${safeCodeSpan(entry.model, 'unknown')}\`*`, ''] : [];
   for (const note of incompleteness(entry)) lines.push(`${indent}> **Incomplete:** ${note}`, '');
   for (const line of findingLines(entry)) lines.push(`${indent}${line}`);
   lines.push('');
@@ -330,11 +330,9 @@ function coverageSection(entries) {
 }
 
 // An outcome as a code span, which a leading list marker cannot open a list from. A missing one is fixed
-// prose outside any span: an empty span would print as two backticks and pair with the next one on the
-// line, and no recorded value can render as unquoted prose, so the two cannot be confused.
+// prose outside any span: no recorded value can render as unquoted prose, so the two cannot be confused.
 function outcomeLabel(outcome) {
-  const span = `\`${safeCodeSpan(outcome)}\``;
-  return span.length === 2 ? 'no outcome recorded' : span; // two backticks: an empty span
+  return safeInline(outcome) ? `\`${safeCodeSpan(outcome)}\`` : 'no outcome recorded';
 }
 
 function tally(entries) {
@@ -381,15 +379,15 @@ function header(record) {
     `- **Started** ${safeInline(record.startedAt)} · **ended** ${safeInline(record.endedAt) || 'not observed'}`,
     // Always, even for a self-review: its ABSENCE is exactly what would let a
     // foreign --repo run's artifact go unattributed.
-    `- **Repository** \`${safeCodeSpan(record.repo) || '(not recorded)'}\``,
+    `- **Repository** \`${safeCodeSpan(record.repo, '(not recorded)')}\``,
     `- **Stopped because** ${safeInline(record.stoppedBecause)}`,
-    `- **Model requested** \`${safeCodeSpan(record.requestedModel) || '(provider default)'}\``,
+    `- **Model requested** \`${safeCodeSpan(record.requestedModel, '(provider default)')}\``,
     `- **Enumerated** ${safeInline(enumerated)} commits · **reviewed** ${safeInline(reviewed)} · **no review** ${safeInline(enumerated - reviewed)}`,
     `- **Per-commit cap** ${safeInline(record.maxSeconds)}s · **paths included** ${safeInline(record.include)}`,
     // The window this run walked. Without it the artifact cannot say what it
     // enumerated FROM, and two arms of a benchmark cannot be shown to have
     // reviewed the same commits.
-    `- **Enumerated from** \`${safeCodeSpan(record.from) || 'HEAD'}\`${shortfall(record)}`,
+    `- **Enumerated from** \`${safeCodeSpan(record.from, 'HEAD')}\`${shortfall(record)}`,
     `- ${tally(record.entries)}`,
     '',
   ];
@@ -409,7 +407,7 @@ function declaredPairings(entries) {
   const pairs = new Set();
   for (const entry of entries) {
     if (declaredMatch(entry)) {
-      pairs.add(`\`${safeCodeSpan(entry.requestedModel) || '(not recorded)'}\` answered as \`${safeCodeSpan(entry.model)}\``);
+      pairs.add(`\`${safeCodeSpan(entry.requestedModel, '(not recorded)')}\` answered as \`${safeCodeSpan(entry.model)}\``);
     }
   }
   if (pairs.size === 0) return [];

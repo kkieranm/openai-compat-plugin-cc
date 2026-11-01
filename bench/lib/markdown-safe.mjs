@@ -11,16 +11,18 @@
 // test lists), that every value interpolated inside a code span in `bench/` is a `safeCodeSpan` call,
 // and that `safeCodeSpan` is called nowhere else — so a new sink cannot be added unwrapped.
 //
-// NO OPTIONS, deliberately. Each helper takes exactly one argument. A caller's fallback is a Markdown
-// literal appended as `safeInline(x) || '(none)'` (checked by the grammar as a whole string literal),
-// never an option value — because an option value is a place unsanitised data can ride into the output,
-// and a grammar that has to prove an options object safe is a grammar that keeps finding holes.
+// NO OPTIONS, deliberately. A caller's fallback is a Markdown literal appended as
+// `safeInline(x) || '(none)'`, or for `safeCodeSpan`, which never returns blank, a second argument
+// `safeCodeSpan(x, '(none)')`. The grammar checks either as a whole string literal, never an option
+// value — because an option value is a place unsanitised data can ride into the output, and a grammar
+// that has to prove an options object safe is a grammar that keeps finding holes.
 
 const MD_METACHARS = /[`*_[\]()<>#|~\\]/g;
 const CODE_SPAN_METACHARS = /[`|]/g;
 const INLINE_CAP = 1000; // roomy backstop against a runaway reply; an id or path is short, a summary fits
 const BLOCKQUOTE_CAP = 2000;
 const REASON_CAP = 120; // reason codes; the historical displayReason cap, preserved
+const NO_VALUE = '(none)';
 const EVIDENCE_CONTINUATION = '\n    > ';
 
 // A string keeps its own text; anything else is JSON, never `String()`, which would turn an object into
@@ -93,9 +95,16 @@ export function safeInline(value) {
  * replaced, as `safeInline` replaces them, and whitespace is folded to one space so a line break cannot
  * end the span or the line. The coercion, array handling and length cap are `safeInline`'s. A prose
  * position still needs `safeInline`.
+ *
+ * Never blank: two empty spans on one line pair their backticks and swallow the text between them, so a
+ * blank value gives `fallback`, escaped the same way, or `(none)` if that is blank too. A site that must
+ * tell "no value" from a recorded value tests `safeInline`, which still returns ''.
  */
-export function safeCodeSpan(value) {
-  return inline(value, INLINE_CAP, CODE_SPAN_METACHARS);
+export function safeCodeSpan(value, fallback) {
+  const shown = inline(value, INLINE_CAP, CODE_SPAN_METACHARS);
+  if (shown.trim() !== '') return shown;
+  const stated = inline(fallback, INLINE_CAP, CODE_SPAN_METACHARS);
+  return stated.trim() === '' ? NO_VALUE : stated;
 }
 
 /**
