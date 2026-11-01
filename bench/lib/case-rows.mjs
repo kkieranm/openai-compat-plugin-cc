@@ -130,8 +130,9 @@ function rateSamples(runs) {
 }
 
 /**
- * The lens one run reviewed at — the rung it took (whole file vs hunks) and the
- * context window that decided the rung — as `whole@154624`, `hunks@61696`,
+ * The lens one run reviewed at — whether whole-file bodies were withheld (a diff of
+ * deletions alone withholds none, so it reads `whole`) and the context window that
+ * decided the rung — as `whole@154624`, `hunks@61696`,
  * `hunks@unsized`, or `diff`.
  *
  * The rung is chosen by how much of the changed set the loaded window can hold

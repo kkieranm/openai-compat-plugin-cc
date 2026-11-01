@@ -295,3 +295,86 @@ test('outside a repository, the default target explains itself', async () => {
   const dir = tempDir('oai-plugin-plain-');
   await assert.rejects(() => collectTarget({}, dir), /Not a git repository/);
 });
+
+test('an index-only removal stays in the diff and goes whole once, with nothing withheld', async () => {
+  const dir = await createRepo();
+  await git(['rm', '--quiet', '--cached', 'seed.txt'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited after the removal\n');
+
+  for (const options of [{}, { 'diff-only': true }]) {
+    const target = await collectTarget(options, dir);
+    assert.match(target.diff, /deleted file mode/, 'the hunk is HEAD\'s copy');
+    assert.deepEqual(target.files.map((file) => file.path), ['seed.txt']);
+    assert.match(target.files[0].content, /edited after the removal/, 'the block is the disk\'s copy');
+    assert.equal(target.deletionsOnly, true);
+  }
+});
+
+test('--staged on an index-only removal sends only the hunk, with nothing withheld', async () => {
+  const dir = await createRepo();
+  await git(['rm', '--quiet', '--cached', 'seed.txt'], dir);
+
+  const target = await collectTarget({ staged: true }, dir);
+  assert.match(target.diff, /deleted file mode/);
+  assert.deepEqual(target.files, []);
+  assert.equal(target.deletionsOnly, true);
+});
+
+test('a plain deletion is deletions only, on every target that lists one', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'other.txt'), 'other\n');
+  await git(['add', 'other.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'other'], dir);
+  await git(['rm', '--quiet', 'seed.txt'], dir);
+
+  assert.equal((await collectTarget({}, dir)).deletionsOnly, true);
+  assert.equal((await collectTarget({ staged: true }, dir)).deletionsOnly, true);
+
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+  assert.equal((await collectTarget({ commit: 'HEAD' }, dir)).deletionsOnly, true);
+});
+
+test('a deletion beside any other change is not deletions only', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'other.txt'), 'other\n');
+  await git(['add', 'other.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'other'], dir);
+  await git(['rm', '--quiet', '--cached', 'seed.txt'], dir);
+  writeFileSync(join(dir, 'other.txt'), 'other\nedited\n');
+
+  for (const options of [{}, { 'diff-only': true }]) {
+    assert.equal((await collectTarget(options, dir)).deletionsOnly, false);
+  }
+});
+
+/** A repository whose HEAD merges a side branch; `alsoDelete` removes a file in the merge. */
+async function mergedRepo({ alsoDelete }) {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'other.txt'), 'other\n');
+  await git(['add', 'other.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'other'], dir);
+  await git(['checkout', '--quiet', '-b', 'side'], dir);
+  writeFileSync(join(dir, 'side.txt'), 'side\n');
+  await git(['add', 'side.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'side'], dir);
+  await git(['checkout', '--quiet', 'main'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nmain\n');
+  await git(['commit', '--quiet', '-am', 'main'], dir);
+  await git(['merge', '--quiet', '--no-ff', '--no-commit', 'side'], dir);
+  if (alsoDelete) await git(['rm', '--quiet', 'other.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'merge'], dir);
+  return dir;
+}
+
+test('a merge is never deletions only, because its list leaves out what it brought in', async () => {
+  for (const alsoDelete of [false, true]) {
+    const target = await collectTarget({ commit: 'HEAD' }, await mergedRepo({ alsoDelete }));
+    assert.equal(target.deletionsOnly, false, `alsoDelete ${alsoDelete}`);
+  }
+});
+
+test('an empty listing proves nothing, so an empty commit is not deletions only', async () => {
+  const dir = await createRepo();
+  await git(['commit', '--quiet', '--allow-empty', '-m', 'empty'], dir);
+  assert.equal((await collectTarget({ commit: 'HEAD' }, dir)).deletionsOnly, false);
+});

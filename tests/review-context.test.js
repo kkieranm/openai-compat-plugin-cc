@@ -192,3 +192,95 @@ test('--commit reviews a commit end to end, whole files and all', async () => {
   assert.match(result.stderr, /Reviewing commit HEAD/);
   assert.match(sentPrompt(server), /--- FILE: seed\.txt ---/);
 });
+
+const HUNKS_NOTE = /only the diff hunks/;
+
+test('an index-only removal goes whole and the report does not say it went as hunks', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072, seed: 'seed\n' });
+  await git(['rm', '--quiet', '--cached', 'seed.txt'], dir);
+
+  const text = await runCompanion(['review'], { configPath, cwd: dir });
+  const json = await runCompanion(['review', '--json'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  const prompt = sentPrompt(server);
+  assert.match(prompt, /--- FILE: seed\.txt ---/, 'the disk\'s copy');
+  assert.match(prompt, /deleted file mode/, 'HEAD\'s copy');
+  assert.doesNotMatch(text.stdout, HUNKS_NOTE);
+  assert.equal(JSON.parse(json.stdout).hunksOnly, false);
+});
+
+test('a diff of deletions alone withholds nothing', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072, seed: 'seed\n' });
+  await git(['rm', '--quiet', 'seed.txt'], dir);
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, HUNKS_NOTE);
+});
+
+test('--diff-only on an index-only removal beside a modification still carries the note', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'gone.txt'), 'gone\n');
+  await git(['add', 'gone.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+  await git(['rm', '--quiet', '--cached', 'gone.txt'], dir);
+
+  const result = await runCompanion(['review', '--diff-only'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(sentPrompt(server), /--- FILE: gone\.txt ---/);
+  assert.match(result.stdout, HUNKS_NOTE);
+});
+
+test('a tracked file whose read failed keeps the note on the hunks rung', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'seed.txt'), Buffer.from([0x73, 0x00, 0x65]));
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, HUNKS_NOTE);
+  assert.match(result.stdout, /seed\.txt/, 'and the unreadable note names it');
+});
+
+test('a failed read beside a file that went whole gets its own note, not the hunks one', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'blob.bin'), 'text\n');
+  await git(['add', 'blob.bin'], dir);
+  await git(['commit', '--quiet', '-m', 'blob'], dir);
+  writeFileSync(join(dir, 'blob.bin'), Buffer.from([0x73, 0x00, 0x65]));
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(sentPrompt(server), /--- FILE: seed\.txt ---/);
+  assert.doesNotMatch(result.stdout, HUNKS_NOTE);
+  assert.match(result.stdout, /blob\.bin/);
+});
+
+test('a clean merge keeps the note: its changes reached the model in neither form', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072, seed: 'seed\n' });
+  await git(['checkout', '--quiet', '-b', 'side'], dir);
+  writeFileSync(join(dir, 'side.txt'), 'side\n');
+  await git(['add', 'side.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'side'], dir);
+  await git(['checkout', '--quiet', 'main'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nmain\n');
+  await git(['commit', '--quiet', '-am', 'main'], dir);
+  await git(['merge', '--quiet', '--no-edit', '--no-ff', 'side'], dir);
+
+  const text = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir });
+  const json = await runCompanion(['review', '--json', '--commit', 'HEAD'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, HUNKS_NOTE);
+  assert.equal(JSON.parse(json.stdout).hunksOnly, true);
+});

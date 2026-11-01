@@ -53,6 +53,8 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` no longer says the model saw only diff hunks when a change only deletes files. A file
+  removed with `git rm --cached` and kept on disk still goes whole on a default review, unless it is ignored.
 - An error a server states inside a successful response is now read as one. A reply that states
   one and carries no text is reported as `stream-error-frame`, with the server's own message where it
   gave one, and not re-sent, instead of `empty-completion` retried twice with the message lost; that covers a chunk

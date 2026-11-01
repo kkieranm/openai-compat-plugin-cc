@@ -18,9 +18,9 @@ import { findingsFirst, schemaInstruction } from './structured.mjs';
  * and there is no drop order to get wrong — a size-ordered shed can drop the
  * very file whose definition the diff depends on.
  *
- * Only `target.changed` is droppable. `target.files` is code no diff covers —
- * untracked files, or `--file` where there is no diff at all — so dropping one
- * would review nothing and report a clean pass.
+ * Only `target.changed` is droppable. `target.files` is code whose current content
+ * no diff carries — untracked files, or `--file` where there is no diff at all — so
+ * dropping one would review nothing and report a clean pass.
  *
  * The first rung needs a CHECKABLE window, not merely a non-empty `changed`
  * list. `windowKnown` gates both the prompt's completeness claim and whether
@@ -93,7 +93,9 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // on the wire. The predicate is evaluated once, at the branch that acts on it.
   return {
     ...prepareRequest({ ...shared, ...build(false) }),
-    hunksOnly: hasDiff,
+    // What was withheld, not which rung ran: a diff of deletions alone has no body
+    // at its tip to withhold.
+    hunksOnly: hasDiff && !target.deletionsOnly,
     rung: 'hunks',
     skipped,
   };

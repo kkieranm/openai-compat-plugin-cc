@@ -188,10 +188,10 @@ async function selectDiff(options, root) {
  * overrides rather than reviewing something the user did not ask for.
  *
  * Two file lists, and the distinction is load-bearing. `files` is the request's
- * *only* copy of that code: untracked files appear in no diff, and `--file`
- * produces no diff at all, so dropping one would review nothing while reporting
- * a clean pass. `changed` is the whole content of tracked files the diff already
- * covers, so it can be dropped to fit the window and still leave the model the
+ * *only* copy of that code: no diff carries an untracked file's current content,
+ * and `--file` produces no diff at all, so dropping one would review nothing while
+ * reporting a clean pass. `changed` is the whole content of tracked files the diff
+ * already covers, so it can be dropped to fit the window and still leave the model the
  * hunks. Only `changed` is ever dropped.
  */
 export async function collectTarget(options, cwd = process.cwd()) {
@@ -212,10 +212,13 @@ export async function collectTarget(options, cwd = process.cwd()) {
     throw new UserError(`Nothing to review: ${label} is empty.`, { hint: OVERRIDES });
   }
 
-  // Keyed by path so a file can never arrive twice — untracked and tracked-
-  // changed are disjoint today, and this keeps that true if either list grows.
+  // An index-only removal still on disk, unless ignored, is both untracked and
+  // deleted in the diff. `changedPaths` drops the deletion, so it arrives once as a
+  // block, and its hunk stays because that is HEAD's copy, not the disk's. Keyed by
+  // path so a file cannot arrive twice if either list grows.
   const pinned = new Set(files.map((file) => file.path));
-  const listed = options['diff-only'] ? [] : changedPaths(await runGit(selected.listArgs, root));
+  const nameStatus = await runGit(selected.listArgs, root);
+  const listed = options['diff-only'] ? [] : changedPaths(nameStatus);
   const tracked = await blocksFor(listed, selected.readContent);
 
   return {
@@ -223,6 +226,10 @@ export async function collectTarget(options, cwd = process.cwd()) {
     diff,
     files,
     changed: tracked.blocks.filter((block) => !pinned.has(block.path)),
+    // Every listed path is a plain deletion, so no path has a body at its tip to
+    // withhold. An empty list proves nothing: a clean merge lists no paths, and a combined `DD` entry
+    // sits in a merge whose other changes the list leaves out.
+    deletionsOnly: /^(?:D\0[^\0]*\0)+$/.test(nameStatus),
     // Listed as part of this change but with no body to send. Carried out so
     // the request can stop claiming to hold what it does not.
     unreadable: [...untracked.unreadable, ...tracked.unreadable],
