@@ -446,3 +446,115 @@ test('a /health that is not vMLX\'s leaves the other probes to run in order', as
   assert.equal(windowFor(described, 'chat-a'), 32768);
   assert.deepEqual(paths, ['/health', '/api/v0/models', '/props', '/info', '/v1/models/status']);
 });
+
+test('a listing entry with no usable id never becomes a model record', async () => {
+  const profile = { name: 'local', baseUrl: 'http://127.0.0.1:9/v1', timeoutMs: 50 };
+  const described = (data) => describeModels(profile, { modelsPayload: { data }, timeoutMs: 50 });
+
+  for (const entry of [{ max_model_len: 4096 }, { id: 42 }, { id: {} }, { id: '   ' }, null]) {
+    const unusable = await described([entry]);
+    assert.deepEqual(unusable.models, [], JSON.stringify(entry));
+    const plan = planSelection({}, undefined, unusable);
+    assert.equal(plan.modelId, undefined, JSON.stringify(entry));
+    assert.ok(plan.problem, JSON.stringify(entry));
+  }
+
+  const mixed = await described([{ max_model_len: 4096 }, { id: 'chat-a', max_model_len: 8192 }]);
+  assert.deepEqual(mixed.models.map((model) => [model.id, model.window]), [['chat-a', 8192]]);
+});
+
+async function describedBeside(routes, data) {
+  const server = await startFakeServer(nativeServer(routes));
+  try {
+    return await describeModels({ name: 'local', baseUrl: server.baseUrl }, { modelsPayload: { data } });
+  } finally {
+    await server.close();
+  }
+}
+
+test('an id-less entry does not end the probing that would have typed its neighbour', async () => {
+  const described = await describedBeside(
+    { '/api/v0/models': { data: [{ id: 'emb', type: 'embeddings', max_context_length: 8192 }] } },
+    [{ id: 'emb' }, { max_model_len: 4096 }],
+  );
+
+  assert.equal(described.models[0].type, 'embeddings');
+  assert.ok(planSelection({}, undefined, described).problem, 'an embedder is not selected for chat');
+});
+
+for (const [name, data] of [
+  ['a window field', [{ id: 'chat-a' }, { max_model_len: 4096 }]],
+  ['a native window field', [{ id: 'chat-a' }]],
+  ['an Unsloth owner', [{ owned_by: 'unsloth-studio', loaded: true }]],
+  ['an MTPLX owner', [{ owned_by: 'mtplx' }]],
+]) {
+  test(`an id-less entry with ${name} does not hide the /props window`, async () => {
+    const native = name === 'a native window field' ? { '/api/v0/models': { data: [{ max_context_length: 1 }] } } : {};
+    const described = await describedBeside(
+      { ...native, '/props': { default_generation_settings: { n_ctx: 16_384 } } },
+      data,
+    );
+
+    assert.equal(described.source, 'llama.cpp /props n_ctx');
+  });
+}
+
+test('a null entry in a native listing does not throw, and its neighbour keeps its window', async () => {
+  const described = await describedBeside(
+    { '/api/v0/models': { data: [null, { id: 'chat-a', type: 'llm', state: 'loaded', loaded_context_length: 8192, max_context_length: 8192 }] } },
+    [{ id: 'chat-a' }],
+  );
+
+  assert.equal(described.models[0].window, 8192);
+});
+
+test('an id-less loaded Unsloth entry is not probed and does not throw', async () => {
+  const asked = [];
+  const routes = nativeServer({});
+  const server = await startFakeServer((request, response) => {
+    asked.push(request.url);
+    return routes(request, response);
+  });
+  try {
+    const described = await describeModels({ name: 'local', baseUrl: server.baseUrl }, {
+      modelsPayload: {
+        data: [
+          { owned_by: 'unsloth-studio', loaded: true, context_length: 4096 },
+          { id: 'chat-a', owned_by: 'unsloth-studio', loaded: true, context_length: 8192 },
+        ],
+      },
+    });
+    assert.deepEqual(described.models.map((model) => model.id), ['chat-a']);
+    assert.ok(!asked.some((url) => url.includes('check-embedding/undefined')), asked.join(' '));
+  } finally {
+    await server.close();
+  }
+});
+
+test('an id-less oMLX status entry claims no dialect', async () => {
+  const described = await describedBeside(
+    { '/v1/models/status': { models: [{ max_context_window: 4096 }] } },
+    [{ id: 'chat-a' }],
+  );
+
+  assert.equal(described.source, null);
+});
+
+test('a blank vMLX model name makes no record', async () => {
+  const described = await describedBeside(
+    { '/health': { ...vmlxEngine(true, 129049), served_model_name: '   ', model_name: '   ' } },
+    [],
+  );
+
+  assert.deepEqual(described.models, []);
+});
+
+test('a bare-string entry counts as a model the owner checks must cover', async () => {
+  const mtplx = await describedBeside({}, ['other', { id: 'm', owned_by: 'mtplx', max_model_len: 4096 }]);
+  assert.equal(mtplx.source, '/v1/models max_model_len');
+  assert.equal(windowFor(mtplx, 'm'), 4096);
+
+  const unsloth = await describedBeside({}, ['other', { id: 'u', owned_by: 'unsloth-studio', loaded: true }]);
+  assert.equal(unsloth.source, null);
+  assert.equal(unsloth.loadedOnly, undefined);
+});

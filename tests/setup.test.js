@@ -156,3 +156,18 @@ test('setup seeds a config file when none exists', async () => {
   const config = JSON.parse(readFileSync(path, 'utf8'));
   assert.deepEqual(Object.keys(config.providers), ['lmstudio', 'omlx', 'unsloth']);
 });
+
+test('setup does not call a listing of id-less entries ready, and a task says no model is offered', async () => {
+  const server = await startFakeServer(route({ models: () => ({ data: [{ max_model_len: 4096 }] }) }));
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: server.baseUrl } } });
+  const setup = await runCompanion(['setup'], { configPath: path });
+  const task = await runCompanion(['task', 'hello'], { configPath: path });
+  await server.close();
+
+  assert.equal(setup.status, 0, setup.stderr);
+  assert.doesNotMatch(setup.stdout, /selected: undefined/);
+  assert.doesNotMatch(setup.stdout, /Ready: local/);
+  assert.match(setup.stdout, /cannot run here: This provider offers no model/);
+  assert.equal(task.status, 1, task.stderr);
+  assert.match(task.stderr, /offers no model/);
+});

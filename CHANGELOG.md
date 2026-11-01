@@ -58,6 +58,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- Model discovery ignores a listing entry with no usable id. Such an entry could be selected, so that setup
+  printed `selected: undefined` and said Ready; crash setup outright; or hide what the server's other
+  endpoints report, letting an embedding model be picked for chat.
 - A review no longer claims it holds every changed file's content after the change when a file it sends
   is one the diff removes, as after `git rm --cached` beside another edit.
 - `--commit` takes one commit. A range such as `A..B` is refused instead of reviewing a list that

@@ -80,9 +80,26 @@ export const CONTEXT_SOURCES = new Set([
   SOURCE_UNSLOTH,
 ]);
 
+/** An id a chat request could name. */
+function usableId(id) {
+  return typeof id === 'string' && id.trim() !== '';
+}
+
+/**
+ * A listing's entries that name a model, a bare string being one with only an id.
+ * An entry with no usable id can establish nothing, so it must not claim a dialect
+ * and end the probing that would have.
+ */
+function namedEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .map((entry) => (typeof entry === 'string' ? { id: entry } : entry))
+    .filter((entry) => usableId(entry?.id));
+}
+
 /** vLLM puts the served length on the standard model object. Costs no extra request. */
 function readVllm(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const entries = namedEntries(payload?.data);
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_model_len))
     .map((entry) => ({ id: entry.id, window: entry.max_model_len }));
@@ -103,7 +120,7 @@ function readVllm(payload) {
  * anything else we know just the ceiling, so the window stays unknown.
  */
 function readLmStudio(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const entries = namedEntries(payload?.data);
   if (!entries.some((entry) => entry?.max_context_length !== undefined)) return null;
 
   const models = entries.map((entry) => ({
@@ -146,7 +163,7 @@ function readTgi(payload) {
  * unverified assumption pointing the other way.
  */
 function readOmlx(payload) {
-  const entries = [payload?.models, payload?.data, payload].find(Array.isArray) ?? [];
+  const entries = namedEntries([payload?.models, payload?.data, payload].find(Array.isArray));
   const models = entries
     .filter((entry) => positiveInteger(entry?.max_context_window))
     .map((entry) => ({ id: entry.id, window: entry.max_context_window }));
@@ -228,7 +245,7 @@ async function probeHealth(url, { headers, timeoutMs }) {
  */
 async function probeVmlx(root, reading, { headers, timeoutMs, query = '' }) {
   const vmlx = (window, id) => ({
-    detected: window && typeof id === 'string' && id ? { models: [{ id, window }], source: SOURCE_VMLX } : null,
+    detected: window && usableId(id) ? { models: [{ id, window }], source: SOURCE_VMLX } : null,
   });
   if (!reading.conclusive) return vmlx();
   const kind = vmlxKind(reading);
@@ -264,7 +281,7 @@ async function probeMtplx(root, ids, { headers, timeoutMs, query }) {
 }
 
 function isMtplxListing(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const entries = namedEntries(payload?.data);
   return entries.length > 0 && entries.every((entry) => entry?.owned_by === 'mtplx');
 }
 
@@ -276,7 +293,7 @@ function isMtplxListing(payload) {
  * the model as unloaded.
  */
 function readUnsloth(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const entries = namedEntries(payload?.data);
   const models = entries.map((entry) => {
     const state = entry.loaded === true ? 'loaded' : entry.loaded === false ? 'not-loaded' : undefined;
     return {
@@ -310,7 +327,7 @@ async function probeUnsloth(root, payload, ids, { headers, timeoutMs, query }) {
 }
 
 function isUnslothListing(payload) {
-  const entries = Array.isArray(payload?.data) ? payload.data : [];
+  const entries = namedEntries(payload?.data);
   return entries.length > 0 && entries.every((entry) => entry?.owned_by === 'unsloth-studio');
 }
 
@@ -372,9 +389,7 @@ const NATIVE_PROBES = [
  * dialect was recognised.
  */
 export async function describeModels(profile, { modelsPayload, timeoutMs = PROBE_TIMEOUT_MS, reading } = {}) {
-  const ids = Array.isArray(modelsPayload?.data)
-    ? modelsPayload.data.map((entry) => (typeof entry === 'string' ? entry : entry?.id)).filter(Boolean)
-    : [];
+  const ids = namedEntries(modelsPayload?.data).map((entry) => entry.id);
 
   const root = probeRoot(profile.baseUrl);
   const headers = authHeaders(profile);
