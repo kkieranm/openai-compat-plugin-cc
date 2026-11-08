@@ -8,25 +8,24 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isAlive } from '../plugins/oai/scripts/lib/job-liveness.mjs';
-import { insertSynthetic } from './job-helpers.mjs';
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+import { isAlive, pidLiveness } from '../plugins/oai/scripts/lib/job-liveness.mjs';
+import { insertSynthetic, pollUntil } from './job-helpers.mjs';
 
 /**
  * Wait for a pid to stop existing.
  *
- * The same observation the plugin makes, made the same way: a cancellation that
- * is never acted on shows up here as a process that is still there, which is a
- * far more useful failure than a row that never changed state.
+ * The same observation the plugin makes, made the same way: a worker that should
+ * have exited shows up here as a process that is still there, which is a far more
+ * useful failure than a row that never changed state. A pid the OS cannot be asked
+ * about is refused rather than waited on: `isAlive` reads it as not alive, which
+ * would pass at once.
  */
-export async function waitForExit(pid, { timeoutMs = 20_000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isAlive(pid)) return;
-    await sleep(100);
-  }
-  throw new Error(`pid ${pid} was still alive after ${timeoutMs}ms: nothing acted on the cancellation`);
+export async function waitForExit(pid, { timeoutMs } = {}) {
+  if (pidLiveness(pid) === 'unreadable') throw new Error(`waitForExit needs a pid the OS can be asked about, got ${pid}`);
+  await pollUntil(() => !isAlive(pid), {
+    timeoutMs,
+    describe: () => `pid ${pid} was still alive at the deadline`,
+  });
 }
 
 export const ackPath = (state, seq) => join(state, 'logs', `${seq}.cancel-ack`);

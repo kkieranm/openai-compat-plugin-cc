@@ -14,7 +14,7 @@ import { writeFileSync } from 'node:fs';
 import { authPolicyFor, queryCommitment, querySalt, resolveCredential } from '../plugins/oai/scripts/lib/job-auth.mjs';
 import { finish } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
-import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, waitForWaiter, withStore } from './job-helpers.mjs';
 
 /**
  * A config on disk for the duration of one call.
@@ -542,17 +542,6 @@ async function heldScenario({ configFor = (server) => vendorConfig(server.baseUr
     submit: () => runCompanion(['task', '--background', 'do it'], { configPath, env }),
     release: () => withStore(state, (db) => finish(db, blocker, { state: 'completed', at: new Date().toISOString() })),
   };
-}
-
-/** Queued is not enough: the worker must be waiting, or the window is not open. */
-async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const row = readJob(state, id);
-    if (row?.waiter_pid) return row;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`job ${id} never had a worker register`);
 }
 
 test('a worker refuses to send a key the profile earned somewhere else, and sends nothing at all', { skip: NEEDS_SQLITE }, async () => {

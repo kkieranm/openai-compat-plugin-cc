@@ -64,11 +64,13 @@ test('the verdicts a readable pid still produces are unchanged', async () => {
   assert.equal(livenessOf({ state: 'running', worker_pid: null }, now), 'malformed');
 });
 
-test('isAlive keeps the exact contract its two test-helper callers rely on', async () => {
-  // `tests/cancel-helpers.mjs` and `tests/abandon-salvage.test.js` ask this of
-  // real pids and would silently change meaning if the projection drifted. It
-  // answers `false` for `gone` and `unreadable` alike — which is precisely why
-  // nothing that DECIDES anything may call it.
+test('isAlive keeps the exact contract its test-helper caller relies on', async () => {
+  // `waitForExit` in `tests/cancel-helpers.mjs` asks this of real pids, live or
+  // gone, and would silently change meaning if that half drifted. It refuses an
+  // unreadable pid before asking, so the `false` for `unreadable` is the
+  // projection's own contract rather than its caller's — and answering `false`
+  // for `gone` and `unreadable` alike is precisely why nothing that DECIDES
+  // anything may call it.
   assert.equal(isAlive(process.pid), true);
   assert.equal(isAlive(await deadPid()), false);
   for (const pid of UNREADABLE) assert.equal(isAlive(pid), false, `isAlive(${JSON.stringify(pid)})`);

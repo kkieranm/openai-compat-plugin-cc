@@ -18,20 +18,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readAck, waitForExit } from './cancel-helpers.mjs';
-import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState } from './job-helpers.mjs';
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** A row is `queued` the instant it is written; a worker registers a moment later. */
-async function waitForWaiter(state, id, { timeoutMs = 10_000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const row = readJob(state, id);
-    if (row?.waiter_pid) return row;
-    await sleep(50);
-  }
-  throw new Error(`no worker ever registered as waiting for job ${id}`);
-}
+import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, setUserVersion, waitForState, waitForWaiter } from './job-helpers.mjs';
 
 test('cancel records the request and terminalizes nothing', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
@@ -71,16 +58,17 @@ test('cancel records the request and terminalizes nothing', { skip: NEEDS_SQLITE
 });
 
 test('a running worker exits at its next check-in, and the next read says cancelled', { skip: NEEDS_SQLITE }, async () => {
-  // Long enough that the model call is unambiguously still in flight when the
-  // cancellation lands: the worker is inside a request, with no signal handler
-  // and nothing sent to it, so the only thing that can end it is the row it
-  // reads at its own heartbeat.
-  const scenario = await queueScenario({ delayMs: 20_000 });
+  // Held, and cancelled only once the request has arrived, so the model call is
+  // still in flight when the cancellation lands: the worker is inside a request,
+  // with no signal handler and nothing sent to it, so the only thing that can end
+  // it is the row it reads at its own heartbeat.
+  const scenario = await queueScenario({ hold: true });
   try {
     const submit = await scenario.submit();
     assert.equal(submit.status, 0, submit.stderr);
     const id = submit.stdout.trim();
     const running = await waitForState(scenario.state, id, ['running']);
+    await scenario.waitForHeldChat(id);
 
     const cancel = await scenario.run(['cancel', id]);
     assert.equal(cancel.status, 0, cancel.stderr);
@@ -101,12 +89,13 @@ test('a running worker exits at its next check-in, and the next read says cancel
     assert.equal(row.outcome, null);
     assert.equal(row.failure, null, 'a cancellation is not a failure and must not be reported as one');
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });
 
 test('cancelling a queued job stops it before it reaches the model at all', { skip: NEEDS_SQLITE }, async () => {
-  const scenario = await queueScenario({ delayMs: 6000 });
+  const scenario = await queueScenario({ hold: true });
   try {
     const first = await scenario.submit();
     const firstId = first.stdout.trim();
@@ -122,20 +111,24 @@ test('cancelling a queued job stops it before it reaches the model at all', { sk
     assert.equal(cancel.status, 0, cancel.stderr);
     assert.match(cancel.stdout, /still queued, so no request will be sent/);
 
+    // The cancellation has landed, so the first job may finish: the queue frees,
+    // and a waiter that ignored the cancellation would now send its request.
+    scenario.release();
     await waitForExit(queued.waiter_pid);
+    await waitForState(scenario.state, firstId, ['completed']);
+    // The assertion the queued case exists for, counted on the server rather
+    // than inferred from the row: a job cancelled before its turn costs no model
+    // call, which on this machine is the difference between seconds and minutes.
+    assert.equal(scenario.chats().length, 1, 'the cancelled job must never have reached the model');
+
     await scenario.run(['status', '--all']);
     assert.equal(readJob(scenario.state, secondId).state, 'cancelled');
     // The witness that the reconciler did not over-reach: a queued row is
     // provably request-free — acquisition is what makes it `running` — so its
     // verdict is reached with NO acknowledgement to consult, and none was left.
     assert.equal(readAck(scenario.state, queued.seq), null, 'a queued exit needs no evidence and produces none');
-
-    await waitForState(scenario.state, firstId, ['completed']);
-    // The assertion the queued case exists for, counted on the server rather
-    // than inferred from the row: a job cancelled before its turn costs no model
-    // call, which on this machine is the difference between seconds and minutes.
-    assert.equal(scenario.chats().length, 1, 'the cancelled job must never have reached the model');
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });

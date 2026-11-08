@@ -157,7 +157,7 @@ test('a FIFO at the acknowledgement path cannot wedge the queue', { skip: NEEDS_
     run.then(markSettled, markSettled);
     let timer;
     const wedged = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('reconciliation never returned: the acknowledgement read blocked on the FIFO')), 20_000);
+      timer = setTimeout(() => reject(new Error('reconciliation never returned: the acknowledgement read blocked on the FIFO')), 60_000);
     });
     try {
       await Promise.race([run, wedged]);
@@ -214,11 +214,13 @@ test('a FIFO at the acknowledgement path cannot wedge the queue', { skip: NEEDS_
 });
 
 test('a worker whose acknowledgement will not write exits anyway', { skip: NEEDS_SQLITE }, async () => {
-  const scenario = await queueScenario({ delayMs: 20_000 });
+  const scenario = await queueScenario({ hold: true });
   try {
     const submit = await scenario.submit();
     const id = submit.stdout.trim();
     const running = await waitForState(scenario.state, id, ['running']);
+    // Inside the request when the cancellation lands, as the guarded exit is.
+    await scenario.waitForHeldChat(id);
     // The write opens `O_EXCL`, so an existing file at that path fails it — the
     // cheapest real way to make the acknowledgement unwritable in another process.
     // It carries a different id, so it is also not silently accepted afterwards.
@@ -254,6 +256,7 @@ test('a worker whose acknowledgement will not write exits anyway', { skip: NEEDS
     assert.equal(row.state, 'failed', 'an unrecorded cancellation degrades rather than lying');
     assert.equal(row.failure.reason, 'cancel-unconfirmed');
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });

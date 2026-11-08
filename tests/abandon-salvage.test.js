@@ -14,12 +14,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
+import { waitForExit } from './cancel-helpers.mjs';
 import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { withBusyRetry } from '../plugins/oai/scripts/lib/job-busy.mjs';
-import { isAlive } from '../plugins/oai/scripts/lib/job-liveness.mjs';
 import { sweep } from '../plugins/oai/scripts/lib/job-retention.mjs';
-import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, pollUntil, readJob, stateDir, waitForState, withStore } from './job-helpers.mjs';
 
 /**
  * A scenario of its own, gating the HTTP REPLY.
@@ -29,12 +30,13 @@ import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, waitForState, withSto
  * QUEUE (it releases by finishing a blocker row). Two different gates under one
  * name in one tree is how a reader greps their way to the wrong mechanism.
  *
- * Local rather than a `hold` option on the shared `queueScenario`: exactly one
- * test needs a worker held mid-request, and that option grew a helper every
- * other test pays to read, past its size budget.
+ * Local rather than `queueScenario`'s `hold`: that one holds every reply until
+ * a release opens the gate for good, while this one holds a single request,
+ * answers a second with a 500, and reports `inFlight()` for the test to wait on.
  */
 async function heldReplyScenario() {
   let held = null;
+  let released = false;
   const server = await startFakeServer((request, response) => {
     if (!request.url.includes('chat/completions')) {
       respondJson(response, { data: [{ id: 'test-model', object: 'model' }] });
@@ -42,15 +44,16 @@ async function heldReplyScenario() {
     }
     // A second chat request would otherwise overwrite `held`, orphan the first
     // socket, and wedge `server.close()` — which waits for open connections —
-    // for the whole suite. Reachable if the abandon ever outran the client's
-    // 30s timeout and the worker retried. Answered rather than thrown: an
+    // for the whole suite. Answered rather than thrown: an
     // uncaughtException in the test process is worse than the hang it replaces.
-    if (held) { respondJson(response, { error: { message: 'unexpected second request' } }, 500); return; }
+    // A chat that arrives after release is refused the same way, so a teardown
+    // release cannot leave a late request holding `server.close()` open.
+    if (held || released) { respondJson(response, { error: { message: 'unexpected second request' } }, 500); return; }
     held = response; // answered only by release()
     response.on('close', () => { if (held === response) held = null; });
   });
   const { path: configPath } = writeConfig({
-    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192, timeoutSeconds: 30 } },
+    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192, timeoutSeconds: 120 } },
     defaultProvider: 'fake',
   });
   const state = stateDir();
@@ -58,23 +61,33 @@ async function heldReplyScenario() {
     server,
     state,
     inFlight: () => held !== null,
-    release: () => { const r = held; held = null; if (r) respondJson(r, completion('ok')); },
+    release: () => { released = true; const r = held; held = null; if (r) respondJson(r, completion('ok')); },
     run: (args) => runCompanion(args, { configPath, env: { OAI_PLUGIN_STATE: state } }),
     submit: () => runCompanion(['task', '--background', 'do it'], { configPath, env: { OAI_PLUGIN_STATE: state } }),
   };
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const until = (predicate, { what }) => pollUntil(predicate, { describe: () => `timed out waiting for ${what}` });
 
-async function until(predicate, { timeoutMs = 15_000, what }) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const value = predicate();
-    if (value) return value;
-    await sleep(50);
+test('a chat that reaches the held-reply server after release is refused, not held', async () => {
+  const scenario = await heldReplyScenario();
+  try {
+    scenario.release();
+    const status = await new Promise((resolve, reject) => {
+      const req = httpRequest(`${scenario.server.baseUrl}/chat/completions`, { method: 'POST' }, (res) => {
+        res.resume();
+        resolve(res.statusCode);
+      });
+      req.on('error', reject);
+      req.setTimeout(60_000, () => req.destroy(new Error('the chat was held after release')));
+      req.end('{}');
+    });
+    assert.equal(status, 500);
+  } finally {
+    scenario.release();
+    await scenario.server.close();
   }
-  throw new Error(`timed out waiting for ${what}`);
-}
+});
 
 test('abandoning a live worker does not destroy the answer it was holding', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await heldReplyScenario();
@@ -146,10 +159,7 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     // `PRAGMA busy_timeout = 10000` — so ONE attempt can sit in SQLite for ten
     // seconds before the budget is consulted at all. Left at its 30s default that
     // is ~40s of blocked event loop in the process that also HOSTS the fake
-    // server, against a worker whose own 30s first-byte clock is running in
-    // another process: it would time out, retry, and hit the deliberate
-    // `unexpected second request` above. 250ms attempts under a 2s budget bound
-    // the whole thing to ~2.25s, far inside that headroom.
+    // server. 250ms attempts under a 2s budget bound the whole thing to ~2.25s.
     //
     // It covers the sweep statement; the `openStore` ahead of it is bounded by
     // its own budget rather than by this wrapper.
@@ -192,7 +202,7 @@ test('abandoning a live worker does not destroy the answer it was holding', { sk
     // Waited on the worker's death first: on the throw arm the crash line lands
     // moments AFTER the salvage line, so reading the instant the marker appears
     // could pass on a snapshot taken mid-crash.
-    await until(() => !isAlive(workerPid), { what: 'the worker process to exit' });
+    await waitForExit(workerPid);
     const final = readFileSync(log, 'utf8');
     assert.doesNotMatch(final, /Unexpected failure:/, 'the completed write must not have thrown');
     assert.doesNotMatch(final, /could not be recorded/, 'and the failure path must not have run either');

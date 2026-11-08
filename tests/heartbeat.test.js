@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { startHeartbeat } from '../plugins/oai/scripts/lib/job-heartbeat.mjs';
 import { openStore } from '../plugins/oai/scripts/lib/job-store.mjs';
-import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
+import { NEEDS_SQLITE, insertSynthetic, pollUntil, queueScenario, readJob, stateDir, waitForState } from './job-helpers.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -38,37 +38,43 @@ test('the heartbeat advances the beat while it runs, and stops when told to', { 
 });
 
 test('a real worker keeps beating across a slow model call', { skip: NEEDS_SQLITE }, async () => {
-  // Deliberately longer than BEAT_MS, because the thing under test is the
-  // wiring: `startHeartbeat` works in isolation whether or not the worker calls
-  // it, and the gap this closes was in the worker, not in the timer.
-  const scenario = await queueScenario({ delayMs: 7000 });
+  // The model call is held until the test has looked for a beat, so it lasts
+  // longer than BEAT_MS however slowly the worker starts. The thing under test
+  // is the wiring: `startHeartbeat` works in isolation whether or not the worker
+  // calls it, and the gap this closes was in the worker, not in the timer.
+  const scenario = await queueScenario({ hold: true });
   try {
     const submit = await scenario.submit();
     assert.equal(submit.status, 0, submit.stderr);
     const id = submit.stdout.trim();
 
-    const running = await waitForState(scenario.state, id, ['running']);
-    // `claimJob` writes started_at and the first beat in the same statement, so
-    // any later value is a beat that landed during the model call itself.
-    const deadline = Date.now() + 12_000;
-    let row = running;
-    while (Date.now() < deadline && row.last_beat_at <= running.started_at) {
-      await sleep(200);
-      row = readJob(scenario.state, id);
-      if (row.state !== 'running') break;
-    }
+    await waitForState(scenario.state, id, ['running']);
+    // The baseline is taken once the request is held, so any later beat landed
+    // during the model call itself rather than before it was sent.
+    await scenario.waitForHeldChat(id);
+    const during = readJob(scenario.state, id);
+    let row = during;
+    await pollUntil(
+      () => {
+        row = readJob(scenario.state, id);
+        return row.last_beat_at > during.last_beat_at || row.state !== 'running';
+      },
+      { describe: () => `no beat landed during the model call: still ${row.last_beat_at} from ${during.last_beat_at} (state ${row.state})` },
+    );
 
-    // The beat first, because that is the defect: with the heartbeat unwired the
-    // loop above simply runs until the job completes, and asserting on the state
-    // first would report "it finished" rather than "it never beat".
+    // The beat first, because that is the defect: the wait above also ends when the
+    // job leaves `running`, and one that finished without beating must report that
+    // it never beat, not that it finished.
     assert.ok(
-      row.last_beat_at > running.started_at,
-      `no beat landed during the run: still ${row.last_beat_at} from started_at ${running.started_at} (state ${row.state})`,
+      row.last_beat_at > during.last_beat_at,
+      `no beat landed during the model call: still ${row.last_beat_at} from ${during.last_beat_at} (state ${row.state})`,
     );
     assert.equal(row.state, 'running', 'the beat must have been observed while the job was still running');
 
-    await waitForState(scenario.state, id, ['completed', 'failed']);
+    scenario.release();
+    assert.equal((await waitForState(scenario.state, id, ['completed', 'failed'])).state, 'completed');
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });

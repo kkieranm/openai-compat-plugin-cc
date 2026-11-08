@@ -113,7 +113,7 @@ export function pidLiveness(pid) {
 /**
  * Alive, as far as the OS will say.
  *
- * A projection of `pidLiveness` kept because two test helpers ask exactly this
+ * A projection of `pidLiveness` kept because a test helper asks exactly this
  * yes/no question of a real pid. It answers `false` for `gone` and `unreadable`
  * alike, so it must not be used where the difference decides anything.
  */

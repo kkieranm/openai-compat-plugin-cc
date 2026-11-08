@@ -34,7 +34,7 @@ test('a completed job hands back its answer and footer, from another directory',
 });
 
 test('a job that has not finished is refused, naming the state', { skip: NEEDS_SQLITE }, async () => {
-  const scenario = await queueScenario({ delayMs: 2000 });
+  const scenario = await queueScenario({ hold: true });
   try {
     const submit = await scenario.submit();
     const id = submit.stdout.trim();
@@ -46,8 +46,10 @@ test('a job that has not finished is refused, naming the state', { skip: NEEDS_S
     assert.match(result.stderr, /\/oai:status/);
     assert.equal(result.stdout, '', 'a job with no answer must produce no output at all');
 
+    scenario.release();
     await waitForState(scenario.state, id, ['completed', 'failed']);
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });

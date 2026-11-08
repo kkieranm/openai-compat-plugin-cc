@@ -185,8 +185,16 @@ export function setUserVersion(state, version) {
  * counted **on the server** rather than derived from timestamps: a row can say
  * two jobs did not overlap while the requests plainly did.
  */
-export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
+export async function queueScenario({ delayMs = 0, failChats = false, hold = false } = {}) {
   const tracker = { inFlight: 0, maxInFlight: 0 };
+  // `hold` keeps every chat reply waiting until `release()`, so a request stays in
+  // flight for exactly as long as the test needs: while a second job's outcome is
+  // settled, a cancellation lands, or a heartbeat is observed. A fixed `delayMs`
+  // cannot promise that: under load, the test's own steps can take longer than
+  // the delay. A held reply sends no headers, so the profile's first-byte budget
+  // is the only bound on it, and it is raised when `hold` is set.
+  const held = new Set();
+  let released = !hold;
   const server = await startFakeServer((request, response) => {
     // Only the chat completion is slow. Matching on `/models` alone is not
     // enough: the provider probe also asks for `/props` and `/info`, and giving
@@ -198,26 +206,39 @@ export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
     }
     tracker.inFlight += 1;
     tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight);
-    const timer = setTimeout(() => {
+    let settled = false;
+    let timer = null;
+    // The one place a request leaves flight, so a reply and a client hang-up
+    // cannot both decrement.
+    const settle = (reply) => {
+      if (settled) return;
+      settled = true;
+      held.delete(answer);
+      clearTimeout(timer);
       tracker.inFlight -= 1;
-      // A server that answers with a refusal rather than a completion, so a test
-      // can watch the whole failure path — worker, envelope, row — instead of
-      // fabricating a `failed` row and asserting on its own fixture.
-      if (failChats) respondJson(response, { error: { message: 'the model is on fire' } }, 500);
-      else respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
-    }, delayMs);
+      if (reply) reply();
+    };
+    const answer = () =>
+      settle(() => {
+        // A server that answers with a refusal rather than a completion, so a test
+        // can watch the whole failure path — worker, envelope, row — instead of
+        // fabricating a `failed` row and asserting on its own fixture.
+        if (failChats) respondJson(response, { error: { message: 'the model is on fire' } }, 500);
+        else respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
+      });
+    if (released) timer = setTimeout(answer, hold ? 0 : delayMs);
+    else held.add(answer);
     // A client that goes away mid-request — which is exactly what cancelling a
     // running job produces — must not leave a long timer pending in the test
     // process, or every cancellation test pays the full delay in wall clock
     // after it has already finished asserting.
     response.on('close', () => {
-      if (!response.writableEnded) tracker.inFlight -= 1;
-      clearTimeout(timer);
+      if (!response.writableEnded) settle(null);
     });
   });
 
   const { path: configPath } = writeConfig({
-    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192, timeoutSeconds: 30 } },
+    providers: { fake: { baseUrl: server.baseUrl, defaultModel: 'test-model', contextLength: 8192, timeoutSeconds: hold ? 120 : 30 } },
     defaultProvider: 'fake',
   });
   const state = stateDir();
@@ -227,6 +248,21 @@ export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
     tracker,
     state,
     chats: () => server.requests.filter((request) => request.url.includes('chat/completions')),
+    // Any held chat request, so callers hold one job's request at a time:
+    // `running` proves a job owns the queue, not that its request has arrived.
+    // Names the job's state on timeout, so a worker that failed before sending
+    // reads as that and not as a slow server.
+    waitForHeldChat: (id, { timeoutMs } = {}) =>
+      pollUntil(() => held.size > 0, {
+        timeoutMs,
+        describe: () => `no chat request was held for job ${id}; its state is ${readJob(state, id)?.state ?? '(no row)'}`,
+      }),
+    // Answers every held reply now, and every later one at once. Idempotent, so a
+    // `finally` can call it whether or not the test already did.
+    release: () => {
+      released = true;
+      for (const answer of [...held]) answer();
+    },
     // Any companion command against this scenario's config and state directory.
     // `cwd` is a parameter because the workspace a job records is the directory
     // it was submitted from, and a bare `/oai:status` filters on it — a test
@@ -244,15 +280,47 @@ export async function queueScenario({ delayMs = 0, failChats = false } = {}) {
  * Returns the row. Throws with the row's actual state on timeout, since "it
  * never got there" is far less useful than "it stopped at `failed`".
  */
-export async function waitForState(state, id, states, { timeoutMs = 15_000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
+export async function waitForState(state, id, states, { timeoutMs } = {}) {
   let last = null;
-  while (Date.now() < deadline) {
-    last = readJob(state, id);
-    if (last && states.includes(last.state)) return last;
+  return pollUntil(
+    () => {
+      last = readJob(state, id);
+      return last && states.includes(last.state) ? last : null;
+    },
+    { timeoutMs, describe: () => `job ${id} never reached ${states.join('|')}; last state was ${last?.state ?? '(no row)'}` },
+  );
+}
+
+/**
+ * The value `probe` returns once it is truthy. Every wait in these tests is one
+ * of these, so they all share its two properties.
+ *
+ * Read, then check the deadline: a poll delayed past it by a starved event loop
+ * still sees the condition as it now is before giving up. And one generous
+ * default: a passing run returns the moment the condition holds, so the budget
+ * only bounds how long a failure takes to report, and under CPU starvation a
+ * detached worker can take many seconds just to start.
+ */
+export async function pollUntil(probe, { timeoutMs = 60_000, describe }) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = probe();
+    if (value) return value;
+    if (Date.now() >= deadline) throw new Error(describe());
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`job ${id} never reached ${states.join('|')}; last state was ${last?.state ?? '(no row)'}`);
+}
+
+/** A queued job whose worker has registered: "waiting", not merely "recorded". */
+export async function waitForWaiter(state, id, { timeoutMs } = {}) {
+  let last = null;
+  return pollUntil(
+    () => {
+      last = readJob(state, id);
+      return last?.waiter_pid ? last : null;
+    },
+    { timeoutMs, describe: () => `no worker registered as waiting for job ${id}; its state is ${last?.state ?? '(no row)'}` },
+  );
 }
 
 /**
@@ -273,13 +341,13 @@ export function submitWithSlowStderr(args, { configPath, state }) {
     // turn the hang into a PASS: `close` reports a null status after a kill, which
     // satisfies the nonzero-exit assertion, and the notice may already have been
     // delivered before the wedge. So the backstop fails by name or not at all.
-    // 30s because this is a hang backstop and not a functional assertion — a tight
-    // timer under load would add a second flake source to the file that most needs
-    // to be trustworthy.
+    // 60s, as `pollUntil`'s waits, because this is a hang backstop and not a
+    // functional assertion: a tight timer under load would add a second flake
+    // source to the file that most needs to be trustworthy.
     const deadline = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error('the companion never exited: the slow-stderr fixture wedged'));
-    }, 30_000);
+    }, 60_000);
     // Stated limit: this reject path is itself UNEXERCISED — nothing in the suite
     // wedges, so the backstop has never fired. It is a hang guard, not a tested
     // invariant, and saying so is cheaper than implying coverage it does not have.
