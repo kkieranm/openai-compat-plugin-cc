@@ -176,6 +176,43 @@ test('nothing is reported when no pinned file is a path the diff removes', async
   assert.equal((await collectTarget({}, deleted)).pinnedRemoved, false);
 });
 
+test('an untracked file whose name git would quote is sent under its own name', async () => {
+  const dir = await createRepo();
+  await git(['config', 'core.quotePath', 'true'], dir);
+  const names = ['tab\there.txt', 'new\nline.txt', 'quote"d.txt', 'café.txt'];
+  for (const name of names) writeFileSync(join(dir, name), `body of ${name}\n`);
+
+  for (const options of [{}, { 'diff-only': true }]) {
+    const target = await collectTarget(options, dir);
+    assert.deepEqual(target.unreadable, []);
+    assert.deepEqual(
+      target.files.map((file) => [file.path, file.content]).sort(),
+      names.map((name) => [name, `body of ${name}\n`]).sort(),
+    );
+  }
+});
+
+test('a pinned file the diff removes under an NFD name is reported though git lists it as NFC', async (t) => {
+  const nfd = 'café.txt';
+  const dir = await createRepo();
+  const raw = ['-c', 'core.precomposeunicode=false'];
+  writeFileSync(join(dir, nfd), 'one\ntwo\n');
+  await git([...raw, 'add', nfd], dir);
+  await git([...raw, 'commit', '--quiet', '-m', 'nfd'], dir);
+  await git([...raw, 'rm', '--quiet', '--cached', nfd], dir);
+  await git(['config', 'core.precomposeunicode', 'true'], dir);
+
+  const removed = await git(['diff', 'HEAD', '--name-status', '-z'], dir);
+  const untracked = await git(['ls-files', '--others', '--exclude-standard', '-z'], dir);
+  if (!(removed.includes(`D\0${nfd}\0`) && untracked === `${nfd.normalize('NFC')}\0`)) {
+    t.skip('the listings do not name the NFD deletion and its NFC untracked copy, so there is no mismatch to test');
+    return;
+  }
+
+  assert.equal((await collectTarget({}, dir)).pinnedRemoved, true);
+  assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
 test('--commit refuses whatever is not one commit, and says what --base covers', async () => {
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');

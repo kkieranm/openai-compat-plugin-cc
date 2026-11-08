@@ -97,10 +97,14 @@ async function blocksFor(paths, readContent) {
 /**
  * Untracked files, as whole-file blocks. Without these the default target would
  * miss every file a feature adds — which is most of what a new feature is.
+ *
+ * `-z`, because without it git C-quotes a name holding a tab, a newline, a double
+ * quote or (under the default `core.quotePath`) a non-ASCII character, and the
+ * quoted string names no file on disk.
  */
 async function untrackedBlocks(root) {
-  const listed = await runGit(['ls-files', '--others', '--exclude-standard'], root);
-  return blocksFor(listed.split('\n').filter(Boolean), (path) => readFileSync(join(root, path), 'utf8'));
+  const listed = await runGit(['ls-files', '--others', '--exclude-standard', '-z'], root);
+  return blocksFor(listed.split(NUL).filter(Boolean), (path) => readFileSync(join(root, path), 'utf8'));
 }
 
 /**
@@ -259,7 +263,9 @@ export async function collectTarget(options, cwd = process.cwd()) {
   // An index-only removal still on disk, unless ignored, is both untracked and
   // deleted in the diff. `changedPaths` drops the deletion, so it arrives once as a
   // block, and its hunk stays because that is HEAD's copy, not the disk's. Keyed by
-  // path so a file cannot arrive twice if either list grows.
+  // exact path, so a path in both lists arrives once, as its untracked block; another
+  // spelling of the same file, such as the NFC alias of a modified file tracked under
+  // an NFD name on macOS, is a different key, so that file can arrive twice.
   const pinned = new Set(files.map((file) => file.path));
   const nameStatus = await runGit(selected.listArgs, root);
   const listed = options['diff-only'] ? [] : changedPaths(nameStatus);
@@ -274,8 +280,14 @@ export async function collectTarget(options, cwd = process.cwd()) {
     // withhold. An empty list proves nothing: a clean merge lists no paths, and a combined `DD` entry
     // sits in a merge whose other changes the list leaves out.
     deletionsOnly: /^(?:D\0[^\0]*\0)+$/.test(nameStatus),
-    // A body sent as this file's content, for a path the diff says is gone.
-    pinnedRemoved: removedPaths(nameStatus).some((path) => pinned.has(path)),
+    // A body sent as this file's content, for a path the diff says is gone. Compared
+    // as NFC: the diff names a removed path in HEAD's bytes, which can be NFD, while
+    // git's macOS precomposition lists the disk copy as NFC. Two distinct names that
+    // are only canonically equal merely withdraw the claim here, which is why the
+    // `changed` filter above, which drops a body, stays byte-exact.
+    pinnedRemoved: removedPaths(nameStatus).some((path) =>
+      files.some((file) => file.path.normalize('NFC') === path.normalize('NFC')),
+    ),
     // Listed as part of this change but with no body to send. Carried out so
     // the request can stop claiming to hold what it does not.
     unreadable: [...untracked.unreadable, ...tracked.unreadable],

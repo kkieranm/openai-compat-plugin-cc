@@ -58,6 +58,13 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` sends an untracked file whose name holds a tab, a newline, a double quote or (under the
+  default `core.quotePath`) a non-ASCII character in a UTF-8 name. Git quoted such a name, so the file could
+  not be read and its body, the request's only copy, was left out. On macOS, a file the change removes from
+  the index under a decomposed (NFD) name, while its disk copy is sent as untracked, now withdraws the claim
+  that the request holds every changed file whole. Also on macOS, git lists a file tracked under an NFD name
+  as untracked under its composed spelling, so that file is now sent as an extra whole-file block, and a tree
+  with nothing else changed is reviewed rather than reported as having nothing to review.
 - A reasoning-only reply on a review's retry at a server's stated cap no longer advises raising `--max-tokens`,
   which the server has ruled out.
 - A server's stated error is shown when the stream then fails before finishing. The failure keeps its reason
