@@ -230,7 +230,7 @@ subdirectory still reads the changed files", plus the deletion, rename and binar
 
 `blockFor` returned `null` for any unreadable file, so a path git had listed as changed simply
 vanished from the collected set with nothing left to say it had ever existed. During a conflicted
-merge `git show :<path>` fails (no stage-0 blob), so `--staged` lost the file — and the prompt then
+merge `git show :0:<path>` fails (no stage-0 blob), so `--staged` lost the file — and the prompt then
 told the model it had *"the complete current content of every changed file"*, vouching for content
 that never arrived. A swallowed error is indistinguishable from "there was nothing there", and the
 difference is exactly what the next claim depends on.
@@ -1362,3 +1362,26 @@ timeout (`reason: 'first-byte-timeout'`) would have passed in place of the conne
 assertion told them apart. Assert the failure the test is about (`failure.reason`, or the message
 the path produces), not that something failed. **Guarded by** `tests/job-failure-redaction.test.js`
 (`failure.reason === 'transport'`; `failure.message` matching `/HTTP 404/`).
+
+## A stored path interpolated into a git revision spec is reinterpreted by git
+
+Confirmed three times in `collectTarget`'s blob reads, each a different git parsing rule:
+
+1. On macOS git precomposes its argv, so an NFD name handed back as `<rev>:<path>` was looked up as
+   NFC: unreadable, or, beside an NFC twin, that twin's body sent silently (`eafb174`).
+2. `--staged` read `:<path>`, and git parses a name such as `0:foo.txt` as stage 0 of `foo.txt`:
+   `foo.txt`'s body sent silently (`758f592`).
+3. A bare `:!x` or `:^x` is pathspec magic in `git show`'s revision-or-filename check. When the index
+   lookup succeeds and `x` exists on disk, `git show` rejects the argument as ambiguous; when the
+   lookup fails it can read the argument as a pathspec instead: for an unmerged `!x.txt` beside a
+   tracked `x.txt` it printed the HEAD commit as the body. The stage-0 spelling in (2) no longer begins `:!`.
+
+The shape: a path git listed is spliced into an argument git parses as a revision, and some byte
+sequence in the path means something to that parser. Each fix closed one rule and left the next.
+`showBlob` still passes the spec with no `--`, so a spec that does not resolve, beside a disk file
+named after the whole spec, is read as a filename: `git show` exits 0 and the path is sent with an
+empty or foreign body. Not yet guarded.
+
+**Cases 1 and 2 guarded by** `tests/git-diff.test.js` — "a file tracked under an NFD name is read from each revision
+though git precomposes argv", "NFC and NFD twins of one name in one tree are each read as their own
+blob", "--staged reads a path that begins with a stage number as its own index entry".
