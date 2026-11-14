@@ -225,8 +225,9 @@ async function selectDiff(options, root) {
       diff: await runGit(['diff', '--cached'], root),
       listArgs: ['diff', '--cached', '--name-status', '-z'],
       // The index blob, not the working tree: --staged reviews what would be
-      // committed, which is not necessarily what is on disk.
-      readContent: (path) => showBlob(`:${path}`, root),
+      // committed, which is not necessarily what is on disk. Stage 0 is named so a
+      // path such as `0:foo.txt` is not read as a stage of another path.
+      readContent: (path) => showBlob(`:0:${path}`, root),
     };
   }
   return {
@@ -280,7 +281,12 @@ export async function collectTarget(options, cwd = process.cwd()) {
   // block, and its hunk stays because that is HEAD's copy, not the disk's. Keyed by
   // exact path, so a path in both lists arrives once, as its untracked block; another
   // spelling of the same file, such as the NFC alias of a modified file tracked under
-  // an NFD name on macOS, is a different key, so that file can arrive twice.
+  // an NFD name on macOS, is a different key, so that file can arrive twice. In the
+  // uncommitted-changes review a listed path is read from disk under its own spelling,
+  // so a tracked spelling that the filesystem resolves to another spelling's file, such
+  // as an NFC/NFD twin on macOS or a case twin on a case-insensitive volume, carries
+  // that file's bytes, which is what git diffed it against; `--staged`, `--base` and
+  // `--commit` read each spelling's own blob.
   const pinned = new Set(files.map((file) => file.path));
   const nameStatus = await runGit(selected.listArgs, root);
   const listed = options['diff-only'] ? [] : changedPaths(nameStatus);

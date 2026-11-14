@@ -72,6 +72,9 @@ All notable changes to this project are documented here, loosely following the
   composed: the lookup failed, so the file was listed as unreadable and only its hunks were sent, or, when
   the tree also tracked the composed spelling of the same name, it silently returned that other file's body,
   which then went out as this file's whole content.
+- `/oai:review --staged` reads a staged file whose name begins with a stage number and a colon, such as
+  `0:foo.txt`, from its own index entry. Git read such a name as a stage of another path, so it was sent
+  with that path's body (`0:foo.txt` with `foo.txt`'s, when `foo.txt` was tracked) or listed as unreadable.
 - `/oai:review` of a tree whose only change is untracked files that cannot be read or are binary names
   those files instead of reporting that there is nothing to review because the change is empty.
 - The review sweep (`npm run review-sweep`) reads a commit's paths NUL-delimited, so a path holding a

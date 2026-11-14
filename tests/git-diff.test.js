@@ -419,6 +419,25 @@ test('--staged sends the index blob, not the working tree', async () => {
   assert.doesNotMatch(target.changed[0].content, /unstaged/, '--staged reviews what would be committed');
 });
 
+test('--staged reads a path that begins with a stage number as its own index entry', async (t) => {
+  const dir = await createRepo();
+  const names = ['foo.txt', '0:foo.txt', '1:foo.txt'];
+  try {
+    for (const name of names) writeFileSync(join(dir, name), `staged ${name}\n`);
+  } catch {
+    t.skip('this filesystem refuses a colon in a file name');
+    return;
+  }
+  await git(['add', '--', ...names], dir);
+  for (const name of names) writeFileSync(join(dir, name), `on disk ${name}\n`);
+
+  const target = await collectTarget({ staged: true }, dir);
+
+  const bodies = Object.fromEntries(target.changed.map((file) => [file.path, file.content]));
+  assert.deepEqual(bodies, Object.fromEntries(names.map((name) => [name, `staged ${name}\n`])));
+  assert.deepEqual(target.unreadable, []);
+});
+
 test('--base sends the file at HEAD, matching the range it diffed', async () => {
   const dir = await createRepo();
   writeFileSync(join(dir, 'seed.txt'), 'seed\non the branch\n');
@@ -484,7 +503,7 @@ test('a merge commit that resolved a conflict still sends its files whole', asyn
 });
 
 test('a file whose content cannot be read is recorded, not silently dropped', async () => {
-  // Mid-conflict there is no stage-0 blob, so `git show :seed.txt` fails. The
+  // Mid-conflict there is no stage-0 blob, so `git show :0:seed.txt` fails. The
   // path is still listed as changed, so without recording the failure it would
   // vanish from `changed` leaving no trace — and the request would go on to
   // claim it held the complete content of every changed file.
