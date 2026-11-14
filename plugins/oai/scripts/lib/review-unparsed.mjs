@@ -9,6 +9,7 @@ import { withLedger } from './attempt-ledger.mjs';
 import { requireAnswer } from './client.mjs';
 import { UserError } from './errors.mjs';
 import { withReviewCauses } from './review-ladder.mjs';
+import { diffOnlyRemedy } from './review-request.mjs';
 
 /**
  * The verbatim reply, for the paths that could not read findings out of it —
@@ -44,6 +45,18 @@ export function unparsedReply(result, context) {
     // A salvage follow-up runs on its own fixed budget, which --max-tokens never
     // reaches, so its exhaustion is named and that remedy left out.
     const where = salvaged ? ' in the salvage follow-up,' : '';
+    // Without the --max-tokens remedy when the conservative count already cut
+    // the reply budget to fit the window: a higher ceiling cannot be sent.
+    const smaller = 'Review a smaller target — a single commit with --commit, or specific files with --file.';
+    const budgetHint = salvaged || context.conservativeReserveCut
+      ? smaller
+      : `${smaller} Raising --max-tokens helps only when the window has room to spare: past that it buys more `
+        + 'reasoning rather than more room for the findings themselves.';
+    // A review that sent the changed files whole and got only reasoning back
+    // also has the input-shrinking remedy. Under a schema the reasoning channel
+    // carries the answer itself, so only an unstructured reply qualifies.
+    const reasonedOnly = context.rung === 'whole' && !structured
+      && !result.content.trim() && Boolean(result.reasoning.trim());
     const failure = new UserError(`${profile.name} ran out of tokens${where} before it finished writing its findings.`, {
       // Tagged so a caller can tell "the budget ran out" from "the server broke"
       // WITHOUT matching this sentence. `bench/lib/outcome.mjs` reads `reason`
@@ -52,13 +65,9 @@ export function unparsedReply(result, context) {
       // separate a starved run from a failed one reports a night that measured
       // nothing as a night that found nothing.
       reason: 'token-exhaustion',
-      // Without the --max-tokens remedy when the conservative count already cut
-      // the reply budget to fit the window: a higher ceiling cannot be sent.
-      hint: salvaged || context.conservativeReserveCut
-        ? 'Review a smaller target — a single commit with --commit, or specific files with --file.'
-        : 'Review a smaller target — a single commit with --commit, or specific files with --file. '
-          + 'Raising --max-tokens helps only when the window has room to spare: past that it buys more '
-          + 'reasoning rather than more room for the findings themselves.',
+      hint: reasonedOnly
+        ? `${diffOnlyRemedy({ effortSent: context.sampling?.reasoningEffort !== undefined })}. ${budgetHint}`
+        : budgetHint,
     });
     // The reply's usage carried onto the error so `errorReport`'s reasoning
     // witness can observe it: this is the failure mode it most wants to see — the

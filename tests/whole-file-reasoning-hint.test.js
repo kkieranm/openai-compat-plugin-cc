@@ -1,11 +1,14 @@
 // What a review that sent the changed files whole tells the user when the model
 // reasons and never answers: remedies that shrink the input or adjust the
-// reasoning effort the request carried, not a higher --max-tokens. A review on
-// the hunks rung keeps its own hint; a salvage the deadline ended is covered in
+// reasoning effort the request carried, not a higher --max-tokens. A reply the
+// server stopped at its token limit with reasoning but no content keeps its
+// budget hint, led by the same --diff-only remedy. A review on the hunks rung
+// keeps its own hint; a salvage the deadline ended is covered in
 // tests/salvage.test.js.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { wholeFileReasoningHint } from '../plugins/oai/scripts/lib/review-request.mjs';
+import { unparsedReply } from '../plugins/oai/scripts/lib/review-unparsed.mjs';
 import {
   chatRequests,
   deltaFrame,
@@ -26,11 +29,16 @@ const WITH_EFFORT = 'The model reasoned without answering while reading the chan
   + '--diff-only, which omits whole-file context for the files the diff covers (less surrounding code, so it '
   + 'can miss defects), or try changing or omitting --reasoning-effort, or review a smaller target.';
 
-/** A clean stream that never left its reasoning channel, too short to salvage. */
-function reasoningOnly(record, response) {
-  if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
-  return respondStream(response, reasoningFrames('thinking'));
+/** A stream that never left its reasoning channel, too short to salvage, finishing as `options` says. */
+function reasoningReply(options) {
+  return (record, response) => {
+    if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+    return respondStream(response, reasoningFrames('thinking', options));
+  };
 }
+
+/** A clean stream that never left its reasoning channel. */
+const reasoningOnly = reasoningReply();
 
 async function failedReview(handler, args, options) {
   const { dir, server, configPath } = await reviewScenario(handler, options);
@@ -131,4 +139,98 @@ test('a multi-pass whole-file review whose passes all end reasoning-only surface
   assert.equal(chats.length, 2, 'one request per pass');
   assert.equal(envelope.reason, 'reasoning-only');
   assert.equal(envelope.hint, WITHOUT_EFFORT);
+});
+
+const REMEDY_WITH_EFFORT = 'Try --diff-only, which omits whole-file context for the files the diff covers (less '
+  + 'surrounding code, so it can miss defects), or try changing or omitting --reasoning-effort.';
+const REMEDY_WITHOUT_EFFORT = 'Try --diff-only, which omits whole-file context for the files the diff covers (less '
+  + 'surrounding code, so it can miss defects).';
+const BUDGET_SHORT = 'Review a smaller target — a single commit with --commit, or specific files with --file.';
+const BUDGET = `${BUDGET_SHORT} Raising --max-tokens helps only when the window has room to spare: past that it `
+  + 'buys more reasoning rather than more room for the findings themselves.';
+
+/** Reasoning only, then the server's own token limit: finish_reason 'length', content empty. */
+const reasoningAtLength = reasoningReply({ finishReason: 'length' });
+
+/** Reasoning beside a findings fragment in content, cut by the server's token limit. */
+function partialContentAtLength(record, response) {
+  if (!record.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+  return respondStream(response, [
+    deltaFrame({ role: 'assistant', content: null }),
+    deltaFrame({ reasoning_content: 'thinking' }),
+    deltaFrame({ content: '{"findings": [{"file": "a.js", "line": 3, "sev' }),
+    { ...deltaFrame({}), choices: [{ index: 0, delta: {}, finish_reason: 'length' }] },
+  ]);
+}
+
+test('a whole-file reply the server stopped at its token limit leads with --diff-only and the effort clause when sent', async () => {
+  const { envelope, chats } = await failedReview(reasoningAtLength, ['--reasoning-effort', 'low']);
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.hunksOnly, false);
+  assert.equal(chats[0].body.reasoning_effort, 'low');
+  assert.equal(envelope.hint, `${REMEDY_WITH_EFFORT} ${BUDGET}`);
+});
+
+test('a whole-file reply the server stopped at its token limit without --reasoning-effort omits the effort clause', async () => {
+  const { envelope, chats } = await failedReview(reasoningAtLength, []);
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(Object.hasOwn(chats[0].body, 'reasoning_effort'), false);
+  assert.equal(envelope.hint, `${REMEDY_WITHOUT_EFFORT} ${BUDGET}`);
+});
+
+test('the token-limit whole-file hint reaches the text-mode stderr', async () => {
+  const { dir, server, configPath } = await reviewScenario(reasoningAtLength);
+  try {
+    const result = await runCompanion(['review', '--reasoning-effort', 'low'], { configPath, cwd: dir });
+    assert.equal(result.status, 1, result.stderr);
+    assert.ok(result.stderr.split('\n').includes(`${REMEDY_WITH_EFFORT} ${BUDGET}`), result.stderr);
+  } finally {
+    await server.close();
+  }
+});
+
+test('a whole-file reply the server stopped mid-findings in content keeps the budget hint alone', async () => {
+  const { envelope } = await failedReview(partialContentAtLength, ['--reasoning-effort', 'low']);
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.hunksOnly, false);
+  assert.equal(envelope.hint, BUDGET);
+});
+
+test('a --diff-only reply the server stopped at its token limit keeps the budget hint alone', async () => {
+  const { envelope } = await failedReview(reasoningAtLength, ['--diff-only', '--reasoning-effort', 'low']);
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.hint, BUDGET);
+});
+
+test('a multi-pass whole-file review whose passes all hit the token limit carries the remedy and effort clause', async () => {
+  const { envelope, chats } = await failedReview(reasoningAtLength, ['--lens', 'correctness,security', '--reasoning-effort', 'low']);
+  assert.equal(chats.length, 2, 'one request per pass');
+  assert.equal(envelope.reason, 'token-exhaustion');
+  assert.equal(envelope.hint, `${REMEDY_WITH_EFFORT} ${BUDGET}`);
+});
+
+/** The hint `unparsedReply` throws for a length-finished reply under `context`. */
+function lengthHint(result, context) {
+  try {
+    unparsedReply({ finishReason: 'length', content: '', reasoning: 'thinking', usage: null, ...result },
+      { structured: false, profile: { name: 'p' }, salvaged: false, rung: 'whole', ...context });
+  } catch (error) {
+    assert.equal(error.reason, 'token-exhaustion');
+    return error.hint;
+  }
+  assert.fail('unparsedReply did not refuse a length-finished reply');
+}
+
+test('the token-limit remedy applies only to an unstructured whole-rung reply with reasoning and no content', () => {
+  assert.equal(lengthHint({}, {}), `${REMEDY_WITHOUT_EFFORT} ${BUDGET}`);
+  assert.equal(lengthHint({}, { structured: true }), BUDGET, 'under a schema the reasoning channel is the answer');
+  assert.equal(lengthHint({}, { rung: 'hunks' }), BUDGET);
+  assert.equal(lengthHint({ reasoning: '' }, {}), BUDGET);
+  assert.equal(lengthHint({ content: '{"findings": [' }, {}), BUDGET);
+});
+
+test('the token-limit remedy keeps the short budget hint for a salvage follow-up and a conservative reserve cut', () => {
+  assert.equal(lengthHint({}, { salvaged: true }), `${REMEDY_WITHOUT_EFFORT} ${BUDGET_SHORT}`);
+  assert.equal(lengthHint({}, { conservativeReserveCut: true }), `${REMEDY_WITHOUT_EFFORT} ${BUDGET_SHORT}`);
+  assert.equal(lengthHint({}, { sampling: { reasoningEffort: 'low' } }), `${REMEDY_WITH_EFFORT} ${BUDGET}`);
 });

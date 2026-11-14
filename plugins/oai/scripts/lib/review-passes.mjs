@@ -16,8 +16,8 @@ import { unparsedReply } from './review-unparsed.mjs';
 
 // A pass OUTCOME as the loop in `cmd-review.mjs` records it:
 //   { ok: true, lens, parsed, result, structured, budget, estimatedTokens,
-//     hunksOnly, skipped, conservativeReserveCut, salvaged, salvageTrim,
-//     durationMs, ledger }
+//     hunksOnly, rung, sampling, skipped, conservativeReserveCut, salvaged,
+//     salvageTrim, durationMs, ledger }
 //   { ok: false, lens, error, ledger, durationMs }   (the request threw)
 // A pass is READABLE when it did not throw AND `parseFindings` returned a
 // findings object (an EMPTY `{findings: []}` is readable — the model looked and

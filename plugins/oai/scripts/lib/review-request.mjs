@@ -255,10 +255,18 @@ function reasoningOnlyFailure(profile, result, { reserveCut = false } = {}) {
  * carried one.
  */
 export function wholeFileReasoningHint({ effortSent }) {
+  return `The model reasoned without answering while reading the changed files whole. ${diffOnlyRemedy({ effortSent })}, `
+    + 'or review a smaller target.';
+}
+
+/**
+ * The remedy clause both whole-file hints carry: `--diff-only` and its
+ * cost, plus the --reasoning-effort clause when the request carried one.
+ */
+export function diffOnlyRemedy({ effortSent }) {
   const effort = effortSent ? ', or try changing or omitting --reasoning-effort' : '';
-  return 'The model reasoned without answering while reading the changed files whole. Try --diff-only, which '
-    + 'omits whole-file context for the files the diff covers (less surrounding code, so it can miss defects)'
-    + `${effort}, or review a smaller target.`;
+  return 'Try --diff-only, which omits whole-file context for the files the diff covers (less surrounding code, so '
+    + `it can miss defects)${effort}`;
 }
 
 /**
