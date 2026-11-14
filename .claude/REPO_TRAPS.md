@@ -512,10 +512,11 @@ had to be fixed, because a false refusal in the status command is a lie about th
 
 `case-rows.mjs` computes `scored + truncated + unreadable + failed = runs`. Three of those buckets
 filtered `!run.error` themselves; `scored` did not, and stayed correct only because `run.mjs`
-declined to attach a score to a failed run. `unreadableRuns` documents this exact hazard about
-itself — "the assumption holds only while run.mjs attaches a score to every parsed reply, and
-nothing here would notice if it stopped" — and it came true the moment a run could carry a report, a
-scoreable reply and a failure at once. Enforce a sum's precondition where the sum is computed.
+declined to attach a score to a failed run. `case-rows.mjs`'s `buckets()` states the same kind of
+assumption for the cut subset — "the assumption holds only while `run.mjs` attaches a score to every
+parsed reply, and nothing here would notice if it stopped" — and the `scored` one came true the
+moment a run could carry a report, a scoreable reply and a failure at once. Enforce a sum's
+precondition where the sum is computed.
 
 ## A figure quoted as measured that traces to nothing in the cited evidence
 
@@ -1341,3 +1342,23 @@ signal").
   Awaiting a promise resolved by an earlier listener observes the later listeners' effects; state set
   alongside the event (`child.exitCode`) may not reflect them (`tests/ttl-episode.test.js`, "a close
   firing after error is a no-op").
+
+## A test gate that holds more than the request it was added for
+
+Confirmed once during review. `tests/job-failure-redaction.test.js` parked every request but
+`/models` on its gate, so in both tests the submission-time `/health` probe waited out
+`model-info.mjs`'s 2s `PROBE_TIMEOUT_MS`, which ended discovery before any other probe was sent. In
+the 404 test that replaced the branch the test was written against, where `/health` is answered and
+the native probes run; in the connection-break test `/health` fails either way, so the cost there
+was the 2s timeout alone. Nothing failed: the only symptom was each test running about 2s slower.
+Scope a gate or held reply to the one request the test needs held, and answer every other request as
+before. No test guards this.
+
+## A failure-path test that accepts any failure
+
+Confirmed once during review. The same tests asserted only `state === 'failed'`, so a first-byte
+timeout (`reason: 'first-byte-timeout'`) would have passed in place of the connection break or the
+404 each test names, leaving the path under test unexercised. Not observed, but nothing in the
+assertion told them apart. Assert the failure the test is about (`failure.reason`, or the message
+the path produces), not that something failed. **Guarded by** `tests/job-failure-redaction.test.js`
+(`failure.reason === 'transport'`; `failure.message` matching `/HTTP 404/`).

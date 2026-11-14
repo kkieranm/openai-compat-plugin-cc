@@ -1,11 +1,13 @@
 // Which bucket a benchmark run belongs to.
 //
-// Split from `report.mjs` at the size budget, and the seam is real: this file
-// decides *what happened to a run*, the other decides how to say it. The four
-// buckets must partition the runs exactly — a run in none of them shrinks a
-// denominator invisibly, a run in two makes the row's arithmetic stop
-// reconciling — so they are defined together, in one place, rather than as four
-// independent predicates that agree by inspection.
+// This file decides *what happened to a run*; `report.mjs` decides how to say
+// it. Scored, truncated, unreadable and failed runs must partition the runs
+// exactly — a run in none of them shrinks a denominator invisibly, a run in two
+// makes the row's arithmetic stop reconciling. The failed runs are the ones
+// carrying `run.error`, which `case-rows.mjs` counts; the other three are defined
+// together here, each excluding `run.error`, rather than as independent
+// predicates that agree by inspection. Analysis-cut runs are not a fifth bucket:
+// `case-rows.mjs` counts them only within the scored runs.
 
 /**
  * Runs guillotined by the `analysis` cap: complete JSON, `finish_reason: stop`,
@@ -25,10 +27,10 @@ export function analysisCutRuns(runs) {
 /**
  * Runs cut off by the token budget rather than by the grammar.
  *
- * Split from the above once cut runs became scoreable, because the two stopped
- * being interchangeable at that moment: an analysis-cut reply is complete JSON
- * carrying real findings, while this one never parsed and has nothing to score.
- * They were safely conflated only while both were excluded.
+ * Kept apart from `analysisCutRuns`: an analysis-cut reply is complete JSON
+ * carrying real findings, while a truncated run is excluded from scoring — even
+ * one that parsed, such as a multi-pass report one of whose passes finished at
+ * the length limit while another parsed.
  */
 export function truncatedRuns(runs) {
   return runs.filter((run) => !run.error && run.report?.finishReason === 'length');
@@ -49,29 +51,21 @@ export function scoredRuns(runs) {
 
 /**
  * Runs that answered, exited 0, and still produced nothing scoreable — a reply
- * that never parsed, without being truncated.
+ * that never parsed, without being truncated, is the usual one.
  *
- * Counted because they used to fall out of *every* bucket at once: not `scored`
- * (no findings), not `cut` (`analysisCut` is null and the finish reason is
- * "stop"), not `failed` (the process succeeded) — while still counting toward
- * the run total, so a row could print "0 cut, 0 failed" over three runs whose
- * recall was computed from two. This is the reachable failure of the degraded
- * rung, where the schema is only a prompt instruction and a weaker model
- * answering in prose is the expected outcome, not a contrived one.
+ * Without this bucket such a run would be in none of the others: not `scored`
+ * (no score), not `cut` (`analysisCut` is not `true`: a single-pass reply that
+ * never parsed carries `null` for it, meaning "not determined", and a merged
+ * multi-pass report `false`; only `=== true` counts as a cut), not `failed` (the
+ * process succeeded) — while still counting toward the run total, so a row could
+ * print "0 cut, 0 failed" over three runs whose recall was computed from two. It
+ * is the expected outcome on the degraded rung, where the schema is only a
+ * prompt instruction and a weaker model may answer in prose.
  *
- * Note the `=== true`: `jsonReport` deliberately emits `null` for these flags
- * when nothing could be parsed, meaning "not determined", and reading that null
- * as false is how the run disappeared in the first place.
- *
- * **Defined as the remainder, not as its own shape** — the second time this
- * bucket has had to be widened for the same reason. Testing `parsed !== true`
- * described one known way to produce nothing scoreable, so a run that parsed and
- * still carried no score belonged to no bucket at all: not scored, not
- * truncated, not failed, not unreadable, while still counting toward the run
- * total. `bench/run.mjs` attaches a score to every parsed reply today, so that
- * was unreachable — but "unreachable" is what this bucket was created for after
- * it happened once. Taking everything left over makes the partition exhaustive
- * by construction instead of by an invariant living in another file.
+ * **Defined as the remainder**: every run that is not an error, not scored and
+ * not truncated, whatever produced it, so given the scored set its caller passes
+ * the partition is exhaustive by construction instead of by an invariant living
+ * in another file.
  */
 export function unreadableRuns(runs, scored = new Set()) {
   return runs.filter((run) => !run.error && !scored.has(run) && !truncatedRuns([run]).length);

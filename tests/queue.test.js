@@ -7,21 +7,79 @@
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
+import { isBusy } from '../plugins/oai/scripts/lib/job-busy.mjs';
+import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
 import { finish } from '../plugins/oai/scripts/lib/job-record.mjs';
 import { waitForExit } from './cancel-helpers.mjs';
 import { NEEDS_SQLITE, deadPid, insertSynthetic, pollUntil, queueScenario, readJob, stateDir, waitForState, waitForWaiter, withStore } from './job-helpers.mjs';
 
 test('two jobs submitted at once run one after the other, never together', { skip: NEEDS_SQLITE }, async () => {
-  const scenario = await queueScenario({ delayMs: 400 });
+  const scenario = await queueScenario({ hold: true });
   try {
-    // Submitted concurrently on purpose: both workers race for the head of the
-    // queue, which is the case the eligibility transaction exists for.
+    // Submitted together, so the two workers may race for the head of the queue,
+    // and the eligibility transaction settles it when they do. What this test
+    // pins is exclusion against an established holder.
     const [first, second] = await Promise.all([scenario.submit(), scenario.submit()]);
     assert.equal(first.status, 0, first.stderr);
     assert.equal(second.status, 0, second.stderr);
+    const ids = [first.stdout.trim(), second.stdout.trim()];
 
-    const a = await waitForState(scenario.state, first.stdout.trim(), ['completed', 'failed']);
-    const b = await waitForState(scenario.state, second.stdout.trim(), ['completed', 'failed']);
+    // The winner's reply is held, so the loser is refused for as long as the test
+    // needs rather than for as long as a fixed delay happens to outlast it.
+    await pollUntil(() => scenario.tracker.inFlight > 0, {
+      describe: () => `no chat request was held; the jobs are ${ids.map((id) => readJob(scenario.state, id)?.state ?? '(no row)').join(' and ')}`,
+    });
+    let rows = [];
+    const [holder, queued] = await pollUntil(
+      () => {
+        rows = ids.map((id) => readJob(scenario.state, id));
+        const holder = rows.find((row) => row?.state === 'running');
+        const waiter = rows.find((row) => row?.state === 'queued' && row.waiter_pid);
+        return holder && waiter ? [holder, waiter] : null;
+      },
+      { describe: () => `expected one running and one waiting job, got ${rows.map((row) => row?.state ?? '(no row)').join(' and ')}` },
+    );
+
+    // `seen` is taken once the holder is running, and two beats after it show the
+    // waiter's loop still running while the holder held the queue: it was still
+    // asking, not idle. A beat does not by itself show a refusal — `awaitTurn`
+    // beats after a busy attempt too, and a claim writes the column as well. The
+    // direct check below establishes that the verdict is `blocked`, and
+    // `inFlight === 1` that the waiter sent nothing.
+    const beatAfter = async (after) => {
+      let beat = null;
+      await pollUntil(
+        () => (beat = readJob(scenario.state, queued.id)?.last_beat_at) > after,
+        { describe: () => `the waiting job never beat after ${after}; its last beat is ${beat}` },
+      );
+      return beat;
+    };
+    const seen = new Date().toISOString();
+    await beatAfter(await beatAfter(seen));
+
+    // The production decision itself, asked as the waiter: only the running-row
+    // check can refuse it, since `claimJob` matches this pid. A contended database
+    // is retried rather than read as a refusal, because the worker's own loop
+    // counts it as `blocked` too.
+    let verdict = null;
+    await pollUntil(
+      () => {
+        try {
+          verdict = withStore(scenario.state, (db) => tryAcquire(db, queued.seq, queued.waiter_pid));
+          return true;
+        } catch (error) {
+          if (isBusy(error)) return false;
+          throw error;
+        }
+      },
+      { describe: () => 'the queue database stayed busy' },
+    );
+    assert.equal(verdict, 'blocked', 'a second job was admitted while the first was running');
+    assert.equal(scenario.tracker.inFlight, 1);
+    assert.equal(readJob(scenario.state, holder.id).state, 'running');
+
+    scenario.release();
+    const [a, b] = await Promise.all(ids.map((id) => waitForState(scenario.state, id, ['completed', 'failed'])));
     assert.equal(a.state, 'completed', JSON.stringify(a.failure));
     assert.equal(b.state, 'completed', JSON.stringify(b.failure));
 
@@ -35,6 +93,7 @@ test('two jobs submitted at once run one after the other, never together', { ski
       `job ${later.seq} started at ${later.started_at}, before job ${earlier.seq} finished at ${earlier.completed_at}`,
     );
   } finally {
+    scenario.release();
     await scenario.server.close();
   }
 });

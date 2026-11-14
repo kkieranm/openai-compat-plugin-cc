@@ -111,10 +111,12 @@ test('cancelling a queued job stops it before it reaches the model at all', { sk
     assert.equal(cancel.status, 0, cancel.stderr);
     assert.match(cancel.stdout, /still queued, so no request will be sent/);
 
-    // The cancellation has landed, so the first job may finish: the queue frees,
-    // and a waiter that ignored the cancellation would now send its request.
-    scenario.release();
+    // The waiter must leave while the first job still holds the queue: one that
+    // checked for the cancellation only at its turn would still be alive here, and
+    // one that ignored it outright would also send its request once the queue
+    // freed.
     await waitForExit(queued.waiter_pid);
+    scenario.release();
     await waitForState(scenario.state, firstId, ['completed']);
     // The assertion the queued case exists for, counted on the server rather
     // than inferred from the row: a job cancelled before its turn costs no model

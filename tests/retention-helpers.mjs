@@ -1,6 +1,6 @@
 // Shared by the two halves of the retention suite: `retention.test.js` for which
 // rows the `DELETE` takes, `retention-files.test.js` for which files the sweep
-// collects afterwards. Split when the two together outgrew the size ratchet.
+// collects afterwards.
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';

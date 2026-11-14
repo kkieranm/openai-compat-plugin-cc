@@ -37,6 +37,7 @@ import { NEEDS_SQLITE, insertSynthetic, pollUntil, readJob, stateDir, waitForSta
 async function heldReplyScenario() {
   let held = null;
   let released = false;
+  let seen = false;
   const server = await startFakeServer((request, response) => {
     if (!request.url.includes('chat/completions')) {
       respondJson(response, { data: [{ id: 'test-model', object: 'model' }] });
@@ -47,8 +48,11 @@ async function heldReplyScenario() {
     // for the whole suite. Answered rather than thrown: an
     // uncaughtException in the test process is worse than the hang it replaces.
     // A chat that arrives after release is refused the same way, so a teardown
-    // release cannot leave a late request holding `server.close()` open.
-    if (held || released) { respondJson(response, { error: { message: 'unexpected second request' } }, 500); return; }
+    // release cannot leave a late request holding `server.close()` open. `seen`
+    // outlives the first request's socket, so a retry sent after that socket
+    // closed is refused too rather than quietly held in its place.
+    if (seen || released) { respondJson(response, { error: { message: 'unexpected second request' } }, 500); return; }
+    seen = true;
     held = response; // answered only by release()
     response.on('close', () => { if (held === response) held = null; });
   });
@@ -69,20 +73,40 @@ async function heldReplyScenario() {
 
 const until = (predicate, { what }) => pollUntil(predicate, { describe: () => `timed out waiting for ${what}` });
 
+function postChat(baseUrl, heldMessage = 'the chat was held') {
+  const req = httpRequest(`${baseUrl}/chat/completions`, { method: 'POST' });
+  const status = new Promise((resolve, reject) => {
+    req.on('response', (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('error', reject);
+    req.setTimeout(60_000, () => req.destroy(new Error(heldMessage)));
+  });
+  req.end('{}');
+  return { req, status };
+}
+
 test('a chat that reaches the held-reply server after release is refused, not held', async () => {
   const scenario = await heldReplyScenario();
   try {
     scenario.release();
-    const status = await new Promise((resolve, reject) => {
-      const req = httpRequest(`${scenario.server.baseUrl}/chat/completions`, { method: 'POST' }, (res) => {
-        res.resume();
-        resolve(res.statusCode);
-      });
-      req.on('error', reject);
-      req.setTimeout(60_000, () => req.destroy(new Error('the chat was held after release')));
-      req.end('{}');
-    });
-    assert.equal(status, 500);
+    assert.equal(await postChat(scenario.server.baseUrl, 'the chat was held after release').status, 500);
+  } finally {
+    scenario.release();
+    await scenario.server.close();
+  }
+});
+
+test('a chat that follows an abandoned one is refused, not held in its place', async () => {
+  const scenario = await heldReplyScenario();
+  try {
+    const first = postChat(scenario.server.baseUrl);
+    first.status.catch(() => {});
+    await until(() => scenario.inFlight(), { what: 'the first chat to be held' });
+    first.req.destroy();
+    await until(() => !scenario.inFlight(), { what: 'the server to see the first chat close' });
+    assert.equal(await postChat(scenario.server.baseUrl, 'the retry was held').status, 500);
   } finally {
     scenario.release();
     await scenario.server.close();

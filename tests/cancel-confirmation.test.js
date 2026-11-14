@@ -163,7 +163,8 @@ test('a FIFO at the acknowledgement path cannot wedge the queue', { skip: NEEDS_
       await Promise.race([run, wedged]);
     } catch (error) {
       // Unwedging the child, under three separate hazards — the requirement is
-      // that the SUITE TERMINATES, and only all three together give that.
+      // that the SUITE TERMINATES, and all three together give that unless the
+      // cap below expires with the child still blocked.
       //
       // O_NONBLOCK, for the opposite reason to the read side: a write-side open of
       // a FIFO blocks until a READER appears, and if `run` rejected for some other
@@ -178,13 +179,13 @@ test('a FIFO at the acknowledgement path cannot wedge the queue', { skip: NEEDS_
       // Then UNLINKED and RACED regardless. Unlinking does not release a descriptor
       // already open, but it stops the next open blocking; and the race is what
       // stops the fixture waiting forever on a child that will never close.
-      // The loop runs WHILE THE CHILD IS STILL ALIVE, never for a fixed count. A
-      // fixed count loses the same race one step later: the last attempt gets ENXIO,
-      // the child then enters its open, and unlinking cannot wake an open already
-      // waiting on the inode. Tied to `run` settling instead, the loop cannot expire
-      // while a child is still able to block — and where the child never opens at
-      // all, `run` settles and there is nothing left to unwedge. The elapsed bound is
-      // a backstop against a hang neither condition covers, not the mechanism.
+      // The loop runs until `run` settles or a writer-open succeeds, never for a
+      // fixed count. A fixed count loses the same race one step later: the last
+      // attempt gets ENXIO, the child then enters its open, and unlinking cannot
+      // wake an open already waiting on the inode. Where the child never opens at
+      // all, `run` settles and there is nothing left to unwedge. The loop is capped
+      // at 30 seconds, and the cap can expire with the child still alive and able
+      // to block.
       const until = Date.now() + 30_000;
       while (!settled && Date.now() < until) {
         try {
