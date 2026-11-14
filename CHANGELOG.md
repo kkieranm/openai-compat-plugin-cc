@@ -46,6 +46,13 @@ All notable changes to this project are documented here, loosely following the
 
 ### Changed
 
+- A `/oai:review` that sent the changed files whole and ended with reasoning but no answer
+  (`token-reserve-cutoff` or `reasoning-only`, with no salvage answer) now suggests `--diff-only` (warning
+  that less surrounding code can miss defects), changing or omitting `--reasoning-effort` when it was
+  passed, or a smaller target, instead of the previous hint, which could advise raising `--max-tokens`.
+  Reviews whose tracked changes went as the diff alone (for example `--diff-only`, or a target with no
+  tracked changes), and a salvage the deadline ended, keep their hints. A reply the server stopped at its
+  token limit (`token-exhaustion`) keeps its hint.
 - `/oai:review --max-seconds` (or a profile's `maxSeconds`) now bounds salvage follow-ups too: each runs
   inside the review's deadline instead of on a fresh 300s budget of its own, so salvage no longer adds up
   to 600s per pass beyond the cap. A `deadline-timeout` is therefore no longer salvaged — it is reported

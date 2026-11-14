@@ -309,7 +309,7 @@ test('a reasoning cutoff whose salvage was refused reports its causes and no sta
   });
   assert.equal(text.status, 1);
   assert.doesNotMatch(text.stderr, /Attempting to conclude/);
-  assert.match(text.stderr, /No answer could be concluded from the partial reasoning/);
+  assert.match(text.stderr, /--diff-only/);
 });
 
 /**

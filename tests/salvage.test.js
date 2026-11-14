@@ -1339,6 +1339,30 @@ test('the follow-up to a cutoff runs inside the review deadline, not on a fresh 
   });
 });
 
+test('a whole-file review whose salvage the deadline ended keeps the deadline hint', async () => {
+  const cap = 10_000;
+  await withClock(async (advance) => {
+    let chats = 0;
+    const server = await startFakeServer((request, response) => {
+      if (!request.url.includes('/chat/completions')) return respondJson(response, modelList('test-model'));
+      chats += 1;
+      if (chats === 1) return cutoffStream(response, () => advance(cap - 300));
+      return setTimeout(() => respondStream(response, completionFrames(salvagedFindings)), 1_500);
+    });
+    try {
+      const ledger = createLedger();
+      const plan = deadlinePlan(ledger, cap);
+      plan.target = { ...plan.target, changed: [{ path: 'seed.txt', content: 'seed\nedited\n' }] };
+      const error = await caught(requestFindings({ name: 'p', baseUrl: server.baseUrl }, plan));
+
+      assert.equal(error.reviewCauses?.hunksOnly, false, 'the changed file went whole');
+      assertDeadlineEndedSalvage(error, { ledger, cap, originalReason: 'token-reserve-cutoff' });
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 test('a cutoff whose review deadline is already spent dispatches no follow-up', async () => {
   const cap = 10_000;
   await withClock(async (advance) => {

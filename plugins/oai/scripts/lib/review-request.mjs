@@ -236,13 +236,29 @@ function replyEnvelope(result) {
  * failure, and so both can hand the same object to `result.markUnanswered()`
  * before using it. Only `unconstrained()` passes the reserve-cut flag: its
  * failure is thrown and shown, while the follow-up's is recorded only as an
- * outcome and a reason, so its hint is never surfaced.
+ * outcome and a reason, so its hint is never surfaced. On a review that sent
+ * the changed files whole, `unconstrained()` replaces the hint with
+ * `wholeFileReasoningHint`.
  */
 function reasoningOnlyFailure(profile, result, { reserveCut = false } = {}) {
   const { message, hint } = reasoningOnlyRefusal(profile, { reserveCut });
   const failure = new UserError(message, { reason: 'reasoning-only', hint });
   failure.answer = replyEnvelope(result);
   return failure;
+}
+
+/**
+ * The remedy for a review that sent the changed files whole and got reasoning
+ * but no answer. It names remedies that shrink the input or adjust the
+ * reasoning effort the request carried, and does not offer a higher
+ * --max-tokens. The --reasoning-effort clause appears only when the request
+ * carried one.
+ */
+export function wholeFileReasoningHint({ effortSent }) {
+  const effort = effortSent ? ', or try changing or omitting --reasoning-effort' : '';
+  return 'The model reasoned without answering while reading the changed files whole. Try --diff-only, which '
+    + 'omits whole-file context for the files the diff covers (less surrounding code, so it can miss defects)'
+    + `${effort}, or review a smaller target.`;
 }
 
 /**
@@ -376,7 +392,14 @@ async function unconstrained({ profile, shared, ladder, send, ledger, refuse, an
     // salvage).
     const salvaged = built ? await trySalvage(profile, built, built.schema, shared, send, fallbackError) : null;
     if (salvaged?.result) return salvaged;
-    throw withLedger(withReviewCauses(salvaged?.failure ?? fallbackError, built), ledger);
+    const surfaced = salvaged?.failure ?? fallbackError;
+    // The whole rung sent the changed files' bodies, which is the part of the
+    // input a reviewer can drop. A salvage the deadline ended surfaces
+    // `deadline-timeout` and keeps its own remedy.
+    if (built?.rung === 'whole' && SALVAGE_REASONS.has(surfaced?.reason)) {
+      surfaced.hint = wholeFileReasoningHint({ effortSent: send.sampling?.reasoningEffort !== undefined });
+    }
+    throw withLedger(withReviewCauses(surfaced, built), ledger);
   }
 }
 

@@ -391,8 +391,8 @@ for (const [name, args, first] of [
   ['by default', [], FIRST_RESERVE],
   ['after an explicit --max-tokens', ['--max-tokens', '30000'], 30_000],
 ]) {
-  test(`a reasoning-only reply on the stated-cap retry does not advise raising the budget, ${name}`, async () => {
-    const run = await review([refuseAbove(SAFE_CAP), reasoningOnly], args);
+  test(`a --diff-only reasoning-only reply on the stated-cap retry does not advise raising the budget, ${name}`, async () => {
+    const run = await review([refuseAbove(SAFE_CAP), reasoningOnly], ['--diff-only', ...args]);
 
     assert.deepEqual(run.chats.map((chat) => chat.body.max_tokens), [first, SAFE_CAP]);
     assert.doesNotMatch(refused(run), REMEDY);
@@ -400,15 +400,27 @@ for (const [name, args, first] of [
   });
 }
 
-test('the stated cap still rules the remedy out once the response_format fallback has run', async () => {
+test('a --diff-only review: the stated cap still rules the remedy out once the response_format fallback has run', async () => {
   const rejectFormat = (response) =>
     respondJson(response, { error: { message: "'response_format.type' must be 'json_schema' or 'text'" } }, 400);
-  const run = await review([refuseAbove(SAFE_CAP), rejectFormat, reasoningOnly], ['--structured-output']);
+  const run = await review(
+    [refuseAbove(SAFE_CAP), rejectFormat, reasoningOnly],
+    ['--structured-output', '--diff-only'],
+  );
 
   assert.deepEqual(run.chats.map((chat) => Boolean(chat.body.response_format)), [true, true, false]);
   assert.doesNotMatch(refused(run), REMEDY);
+  assert.match(refused(run), /Ask a narrower question/);
 });
 
-test('a reasoning-only reply with no stated-cap retry keeps the --max-tokens remedy', async () => {
-  assert.match(refused(await review([reasoningOnly])), REMEDY);
+test('a whole-file reasoning-only reply on the stated-cap retry gets the whole-file hint, not the budget remedy', async () => {
+  const run = await review([refuseAbove(SAFE_CAP), reasoningOnly], []);
+
+  assert.deepEqual(run.chats.map((chat) => chat.body.max_tokens), [FIRST_RESERVE, SAFE_CAP]);
+  assert.doesNotMatch(refused(run), REMEDY);
+  assert.match(refused(run), /--diff-only/);
+});
+
+test('a --diff-only reasoning-only reply with no stated-cap retry keeps the --max-tokens remedy', async () => {
+  assert.match(refused(await review([reasoningOnly], ['--diff-only'])), REMEDY);
 });
