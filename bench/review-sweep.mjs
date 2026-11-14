@@ -67,6 +67,11 @@ function readGit(args, git) {
   return String(git(args) ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
+// `-z` output, kept byte for byte: a path can hold a newline or leading space.
+function readPaths(args, git) {
+  return String(git(args) ?? '').split('\0').filter(Boolean);
+}
+
 /**
  * Commits newest-first from `from` (default `HEAD`), each tagged with whether it
  * is eligible.
@@ -89,7 +94,7 @@ export function enumerateCommits({ include, maxCommits, scanLimit, from = 'HEAD'
   for (const sha of shas) {
     if (eligible >= maxCommits) break;
     const subject = readGit(['log', '-1', '--format=%s', sha], git)[0] ?? '';
-    const paths = readGit(['show', '--name-only', '--format=', sha], git);
+    const paths = readPaths(['show', '--name-only', '--format=', '-z', sha], git);
     const included = touchesIncluded(paths, include);
     if (included) eligible += 1;
     out.push({ sha, subject, eligible: included });

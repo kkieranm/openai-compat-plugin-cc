@@ -149,6 +149,14 @@ function* statusEntries(raw) {
   }
 }
 
+// git precomposes its argv on macOS, so a tracked NFD name handed back to it would be
+// looked up as NFC and not found. The paths here come from git's own `-z` listings, so
+// they are already the bytes the tree stores. Blob reads only: the listings keep git's
+// default spelling.
+function showBlob(spec, root) {
+  return runGit(['-c', 'core.precomposeunicode=false', 'show', spec], root);
+}
+
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';
 
 /**
@@ -197,7 +205,7 @@ async function selectDiff(options, root) {
       // commit that plainly changed them, and nothing would say so. --cc leaves
       // ordinary commits untouched.
       listArgs: ['diff-tree', '--no-commit-id', '--name-status', '-r', '--root', '--cc', '-z', ref],
-      readContent: (path) => runGit(['show', `${ref}:${path}`], root),
+      readContent: (path) => showBlob(`${ref}:${path}`, root),
     };
   }
   if (options.base) {
@@ -208,7 +216,7 @@ async function selectDiff(options, root) {
       label: `branch vs ${options.base}`,
       diff: await runGit(['diff', `${mergeBase}..HEAD`], root),
       listArgs: ['diff', '--name-status', '-z', `${mergeBase}..HEAD`],
-      readContent: (path) => runGit(['show', `HEAD:${path}`], root),
+      readContent: (path) => showBlob(`HEAD:${path}`, root),
     };
   }
   if (options.staged) {
@@ -218,7 +226,7 @@ async function selectDiff(options, root) {
       listArgs: ['diff', '--cached', '--name-status', '-z'],
       // The index blob, not the working tree: --staged reviews what would be
       // committed, which is not necessarily what is on disk.
-      readContent: (path) => runGit(['show', `:${path}`], root),
+      readContent: (path) => showBlob(`:${path}`, root),
     };
   }
   return {
@@ -257,7 +265,14 @@ export async function collectTarget(options, cwd = process.cwd()) {
   const files = untracked.blocks;
 
   if (!diff.trim() && files.length === 0) {
-    throw new UserError(`Nothing to review: ${label} is empty.`, { hint: OVERRIDES });
+    const withheld = untracked.unreadable;
+    let message = `Nothing to review: ${label} is empty.`;
+    if (withheld.length) {
+      message =
+        `Nothing to review: ${label} holds only ${withheld.length} untracked file(s) that could not be read ` +
+        `or are binary: ${withheld.join(', ')}.`;
+    }
+    throw new UserError(message, { hint: OVERRIDES });
   }
 
   // An index-only removal still on disk, unless ignored, is both untracked and

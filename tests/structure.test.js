@@ -1361,3 +1361,38 @@ test('the bounds table holds the domains the commands and the bench document', (
     assert.equal(BENCH_NUMERIC_BOUNDS[flag], NUMERIC_BOUNDS[flag], `${flag}: the bench's bound is the commands' own`);
   }
 });
+
+// Without `-z` a git path listing C-quotes a name holding a tab, a newline, a double
+// quote or a non-ASCII byte, and splitting its output on newlines breaks a name that
+// holds one; either way the listed string names no file. Checked per line, so an argv
+// spread over several lines keeps its `-z` on the listing token's line.
+const PATH_LISTING = /(['"`])(?:--name-(?:only|status)|ls-(?:files|tree)|diff-tree|--numstat|--raw)\1/;
+const NUL_FLAG = /(['"`])-z\1/;
+
+function listingsWithoutZ(source) {
+  const found = { listings: 0, offenders: [] };
+  source.split('\n').forEach((line, index) => {
+    if (/^\s*(?:\/\/|\/?\*)/.test(line) || !PATH_LISTING.test(line)) return;
+    found.listings += 1;
+    if (!NUL_FLAG.test(line)) found.offenders.push(index + 1);
+  });
+  return found;
+}
+
+test('every git path listing in source asks for NUL-delimited output', () => {
+  // Assembled so this file's own lines never hold the token they test for.
+  assert.deepEqual(listingsWithoutZ("git(['show', '--name-" + "only', sha])").offenders, [1], 'positive control');
+  assert.deepEqual(listingsWithoutZ("git('ls-" + "files', '-z')"), { listings: 1, offenders: [] });
+  assert.deepEqual(listingsWithoutZ('git(["diff", "--name-' + 'status", ref])').offenders, [1], 'any quote style');
+  assert.equal(listingsWithoutZ(" * `git ls-files --others` lists paths").listings, 0, 'prose is not a call');
+
+  let listings = 0;
+  const offenders = [];
+  for (const file of sourceFiles(ROOT)) {
+    const found = listingsWithoutZ(readFileSync(file, 'utf8'));
+    listings += found.listings;
+    for (const line of found.offenders) offenders.push(`${relative(ROOT, file)}:${line}`);
+  }
+  assert.ok(listings >= 10, `the scan matched only ${listings} listing(s); it is not reading the source`);
+  assert.deepEqual(offenders, [], "pass '-z' on the same line, and split the output on NUL");
+});

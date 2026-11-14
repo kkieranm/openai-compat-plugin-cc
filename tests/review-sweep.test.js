@@ -162,8 +162,17 @@ test('starvation does not count as a transport failure', () => {
 const gitStub = (log, paths) => (args) => {
   if (args[0] === 'log' && args.includes('--format=%H')) return log.join('\n');
   if (args[0] === 'log') return `subject for ${args[args.length - 1]}`;
-  return (paths[args[args.length - 1]] ?? []).join('\n');
+  assert.ok(args.includes('-z'), `a path listing must be NUL-delimited: ${args.join(' ')}`);
+  return (paths[args[args.length - 1]] ?? []).join('\0');
 };
+
+test('a commit is classified by its paths as stored, neither split at a newline nor trimmed', () => {
+  const found = enumerateCommits(
+    { include: ['scripts'], maxCommits: 5, scanLimit: 10 },
+    gitStub(['c1', 'c2'], { c1: ['docs/x\nscripts/y.mjs'], c2: [' scripts/a.mjs'] }),
+  );
+  assert.deepEqual(found.map((commit) => commit.eligible), [false, false]);
+});
 
 test('--max-commits counts ELIGIBLE commits, not the documentation walked past', () => {
   const found = enumerateCommits(

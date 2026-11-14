@@ -58,6 +58,15 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- On macOS, `/oai:review --commit`, `--base` and `--staged` read a file tracked under a decomposed (NFD)
+  name from its own blob, so it is sent whole whenever the review sends whole files. Git looked the name up
+  composed: the lookup failed, so the file was listed as unreadable and only its hunks were sent, or, when
+  the tree also tracked the composed spelling of the same name, it silently returned that other file's body,
+  which then went out as this file's whole content.
+- `/oai:review` of a tree whose only change is untracked files that cannot be read or are binary names
+  those files instead of reporting that there is nothing to review because the change is empty.
+- The review sweep (`npm run review-sweep`) reads a commit's paths NUL-delimited, so a path holding a
+  newline or leading space is matched against `--include` by its real name.
 - `/oai:review` sends an untracked file whose name holds a tab, a newline, a double quote or (under the
   default `core.quotePath`) a non-ASCII character in a UTF-8 name. Git quoted such a name, so the file could
   not be read and its body, the request's only copy, was left out. On macOS, a file the change removes from

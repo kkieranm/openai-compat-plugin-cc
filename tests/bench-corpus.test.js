@@ -54,9 +54,17 @@ function writeCorpus(manifest, tree = {}, dirName = manifest.id) {
   return root;
 }
 
-/** Non-empty lines of a git listing, which starts with a blank line under --pretty=format:. */
+/** The paths of a `--name-only -z` listing, sorted. */
 function listed(output) {
-  return output.split('\n').filter(Boolean).sort();
+  return output.split('\0').filter(Boolean).sort();
+}
+
+/** A `--name-status -z` listing (STATUS\0path\0 …) as sorted `STATUS<tab>path` entries. */
+function listedStatus(output) {
+  const fields = output.split('\0').filter(Boolean);
+  const entries = [];
+  for (let i = 0; i < fields.length; i += 2) entries.push(`${fields[i]}\t${fields[i + 1]}`);
+  return entries.sort();
 }
 
 test('a materialized case is an ordinary commit with a parent, not a root commit', async (t) => {
@@ -104,13 +112,13 @@ test('the case commit changes exactly the files the case describes', async (t) =
   const { dir } = materialize(loadCases(root)[0], root);
   t.after(() => cleanup(dir));
 
-  const names = listed(await git(['show', '--name-only', '--pretty=format:', 'HEAD'], dir));
+  const names = listed(await git(['show', '--name-only', '--pretty=format:', '-z', 'HEAD'], dir));
   assert.deepEqual(names, ['scripts/lib/added.mjs', 'scripts/lib/gone.mjs', 'scripts/lib/sample.mjs']);
 
   // A file the historical commit removed has to show as a deletion. Writing
   // after/ over before/ without clearing tracked files would leave it present,
   // and the review would see a change that never happened.
-  const status = listed(await git(['show', '--name-status', '--pretty=format:', 'HEAD'], dir));
+  const status = listedStatus(await git(['show', '--name-status', '--pretty=format:', '-z', 'HEAD'], dir));
   assert.deepEqual(status, ['A\tscripts/lib/added.mjs', 'D\tscripts/lib/gone.mjs', 'M\tscripts/lib/sample.mjs']);
 });
 

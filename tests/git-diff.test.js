@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
 import { createRepo, git, tempDir } from './helpers.mjs';
@@ -47,11 +47,44 @@ test('a clean tree says so and names the overrides', async () => {
   await assert.rejects(
     () => collectTarget({}, dir),
     (error) => {
-      assert.match(error.message, /Nothing to review/);
+      assert.match(error.message, /^Nothing to review: uncommitted changes is empty\.$/);
       assert.match(error.hint, /--staged.*--base.*--commit.*--file/);
       return true;
     },
   );
+});
+
+test('a tree whose only change is an untracked file with no sendable body names it rather than claiming emptiness', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'logo.png'), Buffer.from([0x89, 0x50, 0x00, 0x01]));
+  const locked = join(dir, 'locked.txt');
+  writeFileSync(locked, 'secret\n');
+  chmodSync(locked, 0o000);
+  let denied = false;
+  try {
+    readFileSync(locked);
+  } catch {
+    denied = true;
+  }
+  // Root reads a mode-000 file, which would make it an ordinary readable change.
+  if (!denied) unlinkSync(locked);
+
+  await assert.rejects(
+    () => collectTarget({}, dir),
+    (error) => {
+      assert.match(error.message, /^Nothing to review: uncommitted changes holds only \d untracked file\(s\) that could not be read or are binary: /);
+      assert.match(error.message, /logo\.png/);
+      if (denied) assert.match(error.message, /locked\.txt/);
+      assert.doesNotMatch(error.message, /is empty/);
+      assert.match(error.hint, /--staged.*--base.*--commit.*--file/);
+      return true;
+    },
+  );
+
+  writeFileSync(join(dir, 'readable.txt'), 'here\n');
+  const target = await collectTarget({}, dir);
+  assert.deepEqual(target.files.map((file) => file.path), ['readable.txt']);
+  assert.ok(target.unreadable.includes('logo.png'), 'a binary beside a readable file is still noted');
 });
 
 test('--commit and --base review history rather than the tree', async () => {
@@ -211,6 +244,74 @@ test('a pinned file the diff removes under an NFD name is reported though git li
 
   assert.equal((await collectTarget({}, dir)).pinnedRemoved, true);
   assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
+test('a file tracked under an NFD name is read from each revision though git precomposes argv', async (t) => {
+  const nfd = 'cafe\u0301.txt';
+  const nfc = 'na\u00efve.txt';
+  const dir = await createRepo();
+  const raw = ['-c', 'core.precomposeunicode=false'];
+  const write = (body) => {
+    writeFileSync(join(dir, nfd), `nfd ${body}\n`);
+    writeFileSync(join(dir, nfc), `nfc ${body}\n`);
+    writeFileSync(join(dir, 'seed.txt'), `seed ${body}\n`);
+  };
+  write('one');
+  await git([...raw, 'add', '.'], dir);
+  await git([...raw, 'commit', '--quiet', '-m', 'names'], dir);
+  write('two');
+  await git([...raw, 'commit', '--quiet', '-am', 'edit'], dir);
+  write('three');
+  await git([...raw, 'add', '.'], dir);
+  await git(['config', 'core.precomposeunicode', 'true'], dir);
+
+  if (!(await git([...raw, 'ls-files', '-z'], dir)).split('\0').includes(nfd)) {
+    t.skip('the index does not hold the NFD spelling, so there is no stored name to look up');
+    return;
+  }
+
+  for (const [options, body] of [[{ commit: 'HEAD~1' }, 'one'], [{ base: 'HEAD~1' }, 'two'], [{ staged: true }, 'three']]) {
+    const target = await collectTarget(options, dir);
+    const mode = Object.keys(options)[0];
+    assert.deepEqual(target.unreadable, [], mode);
+    assert.deepEqual(
+      Object.fromEntries(target.changed.map((block) => [block.path, block.content])),
+      { [nfd]: `nfd ${body}\n`, [nfc]: `nfc ${body}\n`, 'seed.txt': `seed ${body}\n` },
+      mode,
+    );
+  }
+});
+
+test('NFC and NFD twins of one name in one tree are each read as their own blob', async () => {
+  const nfd = 'cafe\u0301.txt';
+  const nfc = 'caf\u00e9.txt';
+  const dir = await createRepo();
+  const raw = ['-c', 'core.precomposeunicode=false'];
+  // Index-only: APFS cannot hold both spellings on disk, so every commit here is
+  // made from the index alone (`-a` would stage both twins as deletions).
+  const stage = async (body) => {
+    for (const [name, prefix] of [[nfc, 'nfc'], [nfd, 'nfd']]) {
+      const source = join(dir, '.git', 'twin-body');
+      writeFileSync(source, `${prefix} ${body}\n`);
+      const blob = (await git(['hash-object', '-w', source], dir)).trim();
+      await git([...raw, 'update-index', '--add', '--cacheinfo', `100644,${blob},${name}`], dir);
+    }
+  };
+  await stage('one');
+  await git(['commit', '--quiet', '-m', 'one'], dir);
+  await stage('two');
+  await git(['commit', '--quiet', '-m', 'two'], dir);
+  await stage('three');
+  await git(['config', 'core.precomposeunicode', 'true'], dir);
+
+  for (const [options, body] of [[{ commit: 'HEAD~1' }, 'one'], [{ base: 'HEAD~1' }, 'two'], [{ staged: true }, 'three']]) {
+    const target = await collectTarget(options, dir);
+    const mode = Object.keys(options)[0];
+    assert.deepEqual(target.unreadable, [], mode);
+    const bodies = Object.fromEntries(target.changed.map((block) => [block.path, block.content]));
+    assert.equal(bodies[nfd], `nfd ${body}\n`, `${mode}: the NFD path carries its own blob, not its twin's`);
+    assert.equal(bodies[nfc], `nfc ${body}\n`, mode);
+  }
 });
 
 test('--commit refuses whatever is not one commit, and says what --base covers', async () => {
