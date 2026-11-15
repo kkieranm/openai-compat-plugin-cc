@@ -474,14 +474,16 @@ test("a repository's first commit still sends its files whole", async () => {
   assert.deepEqual(target.changed.map((file) => file.path), ['seed.txt']);
 });
 
-/** Leaves the repo mid-merge with a conflict in seed.txt. */
-async function conflictedMerge(dir) {
+/** Leaves the repo mid-merge with a conflict in `name`. */
+async function conflictedMerge(dir, name = 'seed.txt') {
   await git(['checkout', '--quiet', '-b', 'other'], dir);
-  writeFileSync(join(dir, 'seed.txt'), 'other\n');
-  await git(['commit', '--quiet', '-am', 'other'], dir);
+  writeFileSync(join(dir, name), 'other\n');
+  await git(['--literal-pathspecs', 'add', '--', name], dir);
+  await git(['commit', '--quiet', '-m', 'other'], dir);
   await git(['checkout', '--quiet', 'main'], dir);
-  writeFileSync(join(dir, 'seed.txt'), 'main\n');
-  await git(['commit', '--quiet', '-am', 'main'], dir);
+  writeFileSync(join(dir, name), 'main\n');
+  await git(['--literal-pathspecs', 'add', '--', name], dir);
+  await git(['commit', '--quiet', '-m', 'main'], dir);
   await git(['merge', 'other'], dir).catch(() => {}); // Conflicts, by construction.
 }
 
@@ -503,7 +505,7 @@ test('a merge commit that resolved a conflict still sends its files whole', asyn
 });
 
 test('a file whose content cannot be read is recorded, not silently dropped', async () => {
-  // Mid-conflict there is no stage-0 blob, so `git show :0:seed.txt` fails. The
+  // Mid-conflict there is no stage-0 blob, so reading `:0:seed.txt` fails. The
   // path is still listed as changed, so without recording the failure it would
   // vanish from `changed` leaving no trace — and the request would go on to
   // claim it held the complete content of every changed file.
@@ -515,6 +517,88 @@ test('a file whose content cannot be read is recorded, not silently dropped', as
   assert.deepEqual(target.changed, [], 'there is no readable body');
   assert.deepEqual(target.unreadable, ['seed.txt'], 'and the loss is carried out, not swallowed');
 });
+
+test('a --staged path with no stage 0 stays unreadable beside a file named after its index spec', async (t) => {
+  // Mid-conflict `:0:seed.txt` names no object. Taken as a pathspec instead, it
+  // shows nothing, and seed.txt would go out as an empty complete body.
+  const dir = await createRepo();
+  await conflictedMerge(dir);
+  try {
+    writeFileSync(join(dir, ':0:seed.txt'), 'the colliding file\n');
+  } catch {
+    t.skip('this filesystem refuses a colon in a file name');
+    return;
+  }
+
+  const target = await collectTarget({ staged: true }, dir);
+
+  assert.deepEqual(target.changed, []);
+  assert.deepEqual(target.unreadable, ['seed.txt']);
+});
+
+test('a --staged path with no stage 0 stays unreadable when its name holds a glob character', async () => {
+  // `git show` would take `:0:[a].txt` as a pathspec once it names no object,
+  // even with no file on disk to match, and show nothing.
+  const dir = await createRepo();
+  await conflictedMerge(dir, '[a].txt');
+
+  const target = await collectTarget({ staged: true }, dir);
+
+  assert.deepEqual(target.changed, []);
+  assert.deepEqual(target.unreadable, ['[a].txt']);
+});
+
+const BLOB_READERS = [
+  { mode: 'staged', options: { staged: true }, committed: false, spec: async () => ':0:seed.txt' },
+  { mode: 'base', options: { base: 'HEAD~1' }, committed: true, spec: async () => 'HEAD:seed.txt' },
+  {
+    mode: 'commit',
+    options: { commit: 'HEAD' },
+    committed: true,
+    spec: async (dir) => `${(await git(['rev-parse', 'HEAD'], dir)).trim()}:seed.txt`,
+  },
+];
+
+for (const { mode, options, committed, spec } of BLOB_READERS) {
+  test(`--${mode} reads a blob whose spec also names a file in the root`, async (t) => {
+    const dir = await createRepo();
+    writeFileSync(join(dir, 'seed.txt'), 'seed\nchanged\n');
+    await git(['add', 'seed.txt'], dir);
+    if (committed) await git(['commit', '--quiet', '-m', 'change'], dir);
+    writeFileSync(join(dir, 'seed.txt'), 'on disk\n');
+    const colliding = join(dir, await spec(dir));
+    try {
+      writeFileSync(colliding, 'the colliding file\n');
+    } catch {
+      t.skip('this filesystem refuses a colon in a file name');
+      return;
+    }
+
+    const target = await collectTarget(options, dir);
+
+    assert.deepEqual(target.changed, [{ path: 'seed.txt', content: 'seed\nchanged\n' }]);
+    assert.deepEqual(target.unreadable, []);
+  });
+
+  test(`--${mode} reads a path holding .. as its blob, not as a revision range`, async () => {
+    // `seed.txt..other` splits into `<rev>:seed.txt` and `other` for a range parser,
+    // whose log would carry the other branch's content.
+    const dir = await createRepo();
+    await git(['checkout', '--quiet', '-b', 'other'], dir);
+    writeFileSync(join(dir, 'only-on-other.txt'), 'only on other\n');
+    await git(['add', 'only-on-other.txt'], dir);
+    await git(['commit', '--quiet', '-m', 'other'], dir);
+    await git(['checkout', '--quiet', 'main'], dir);
+    writeFileSync(join(dir, 'seed.txt..other'), 'the dotted file\n');
+    await git(['add', 'seed.txt..other'], dir);
+    if (committed) await git(['commit', '--quiet', '-m', 'dotted'], dir);
+
+    const target = await collectTarget(options, dir);
+
+    assert.deepEqual(target.changed, [{ path: 'seed.txt..other', content: 'the dotted file\n' }]);
+    assert.deepEqual(target.unreadable, []);
+  });
+}
 
 test('a renamed file is sent under its new path', async () => {
   const dir = await createRepo();

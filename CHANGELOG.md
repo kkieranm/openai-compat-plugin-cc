@@ -75,6 +75,16 @@ All notable changes to this project are documented here, loosely following the
 - `/oai:review --staged` reads a staged file whose name begins with a stage number and a colon, such as
   `0:foo.txt`, from its own index entry. Git read such a name as a stage of another path, so it was sent
   with that path's body (`0:foo.txt` with `foo.txt`'s, when `foo.txt` was tracked) or listed as unreadable.
+- `/oai:review --staged` no longer reads a file with unresolved conflicts as a pathspec. When the
+  file's name held `*`, `?` or `[`, or the repository root held a file named after the read of its index
+  entry (such as `:<path>`), git took that read as a pathspec, and its output, the HEAD commit's text or
+  nothing, was sent as the conflicted file's complete body; such a file is now listed as unreadable. And
+  `--staged`, `--base` and `--commit` read a file's committed or staged body even when a file in the root
+  is named after that read (such as `HEAD:<path>`), where git refused it as ambiguous and the file was
+  listed as unreadable. Those three modes no longer read a changed file whose path holds `..` (such as
+  `notes..main`) as a revision range: when both sides of the `..` resolved (the text before it naming a
+  tracked file or directory, the text after it empty or naming a revision), git sent what that range
+  produced, such as its log and patches with other branches' commits, as the file's body.
 - `/oai:review` of a tree whose only change is untracked files that cannot be read or are binary names
   those files instead of reporting that there is nothing to review because the change is empty.
 - The review sweep (`npm run review-sweep`) reads a commit's paths NUL-delimited, so a path holding a

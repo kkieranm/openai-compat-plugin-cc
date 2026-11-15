@@ -152,9 +152,11 @@ function* statusEntries(raw) {
 // git precomposes its argv on macOS, so a tracked NFD name handed back to it would be
 // looked up as NFC and not found. The paths here come from git's own `-z` listings, so
 // they are already the bytes the tree stores. Blob reads only: the listings keep git's
-// default spelling.
+// default spelling. `cat-file blob` takes one object name and wants a blob, so a spec
+// that names none fails, and git never reads it as a pathspec, a revision range, or
+// an argument ambiguous with a file on disk.
 function showBlob(spec, root) {
-  return runGit(['-c', 'core.precomposeunicode=false', 'show', spec], root);
+  return runGit(['-c', 'core.precomposeunicode=false', 'cat-file', 'blob', spec], root);
 }
 
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';

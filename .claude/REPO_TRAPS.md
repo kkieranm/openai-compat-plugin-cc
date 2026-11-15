@@ -230,7 +230,7 @@ subdirectory still reads the changed files", plus the deletion, rename and binar
 
 `blockFor` returned `null` for any unreadable file, so a path git had listed as changed simply
 vanished from the collected set with nothing left to say it had ever existed. During a conflicted
-merge `git show :0:<path>` fails (no stage-0 blob), so `--staged` lost the file — and the prompt then
+merge reading `:0:<path>` fails (no stage-0 blob), so `--staged` lost the file — and the prompt then
 told the model it had *"the complete current content of every changed file"*, vouching for content
 that never arrived. A swallowed error is indistinguishable from "there was nothing there", and the
 difference is exactly what the next claim depends on.
@@ -1365,7 +1365,7 @@ the path produces), not that something failed. **Guarded by** `tests/job-failure
 
 ## A stored path interpolated into a git revision spec is reinterpreted by git
 
-Confirmed three times in `collectTarget`'s blob reads, each a different git parsing rule:
+Confirmed five times in `collectTarget`'s blob reads, each a different git parsing rule:
 
 1. On macOS git precomposes its argv, so an NFD name handed back as `<rev>:<path>` was looked up as
    NFC: unreadable, or, beside an NFC twin, that twin's body sent silently (`eafb174`).
@@ -1375,13 +1375,23 @@ Confirmed three times in `collectTarget`'s blob reads, each a different git pars
    lookup succeeds and `x` exists on disk, `git show` rejects the argument as ambiguous; when the
    lookup fails it can read the argument as a pathspec instead: for an unmerged `!x.txt` beside a
    tracked `x.txt` it printed the HEAD commit as the body. The stage-0 spelling in (2) no longer begins `:!`.
+4. `git show` takes a spec that names no object as a pathspec when the name holds `*`, `?` or `[`, or
+   when a disk file is named after the whole spec: an unmerged path's body was sent as nothing or as the
+   HEAD commit's text. A spec that does resolve, beside such a file, was refused as ambiguous.
+5. `git show` splits a path holding `..` into a revision range when both sides resolve, the left side
+   as an object and the right side empty or as a revision, `--` or not: `seed.txt..other` sent the
+   range's log and patches, other branches' commits included.
 
 The shape: a path git listed is spliced into an argument git parses as a revision, and some byte
 sequence in the path means something to that parser. Each fix closed one rule and left the next.
-`showBlob` still passes the spec with no `--`, so a spec that does not resolve, beside a disk file
-named after the whole spec, is read as a filename: `git show` exits 0 and the path is sent with an
-empty or foreign body. Not yet guarded.
+`showBlob` reads with `git cat-file blob <spec>`, which takes one object name and wants a blob: no
+pathspec, no range, no filename ambiguity. The spec is still parsed as an object name, so a name git
+resolves to some other blob is not ruled out.
 
-**Cases 1 and 2 guarded by** `tests/git-diff.test.js` — "a file tracked under an NFD name is read from each revision
-though git precomposes argv", "NFC and NFD twins of one name in one tree are each read as their own
-blob", "--staged reads a path that begins with a stage number as its own index entry".
+**Guarded by** `tests/git-diff.test.js` — cases 1 and 2: "a file tracked under an NFD name is read from
+each revision though git precomposes argv", "NFC and NFD twins of one name in one tree are each read as
+their own blob", "--staged reads a path that begins with a stage number as its own index entry". Case 4:
+"a --staged path with no stage 0 stays unreadable beside a file named after its index spec", "a --staged
+path with no stage 0 stays unreadable when its name holds a glob character", "--staged reads a blob whose
+spec also names a file in the root" and its `--base` and `--commit` twins. Case 5: "--staged reads a path
+holding .. as its blob, not as a revision range" and its `--base` and `--commit` twins.

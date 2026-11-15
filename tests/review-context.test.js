@@ -84,7 +84,7 @@ test('--diff-only still carries the caveat, and never claims completeness', asyn
 });
 
 test('a file that could not be read is named, and voids the completeness claim', async () => {
-  // Mid-conflict `git show :0:path` fails, so the file is listed as changed but
+  // Mid-conflict reading `:0:path` fails, so the file is listed as changed but
   // has no body. Without carrying that out, it vanishes from `changed` with no
   // trace and the prompt goes on to vouch for content that never arrived.
   const dir = await createRepo();
