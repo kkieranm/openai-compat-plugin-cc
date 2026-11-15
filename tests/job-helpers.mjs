@@ -11,7 +11,7 @@ import { COMPANION, respondJson, runCompanion, startFakeServer, tempDir, writeCo
 // `node:sqlite` is a capability, not a given: it is absent on Node 18.18–22.12,
 // on builds compiled without SQLite, and under `--no-experimental-sqlite`. A
 // STATIC import of it here would link before any module body or `skip` ran, so
-// every one of the ten files importing this one died at link with
+// every file importing this one would die at link with
 // `ERR_UNKNOWN_BUILTIN_MODULE` — no test run, no skip reported, nothing said.
 // Detected once, with the caught dynamic import `job-secrets.test.js` uses.
 let parentHasSqlite = true;
@@ -88,11 +88,10 @@ export function readJob(state, id) {
  * out-of-range number would not do — `isAlive` would reject it on shape and the
  * test would pass without ever asking the OS anything.
  *
- * That avoided fixture is now a subject in its own right rather than a hazard:
- * an unreadable pid is `malformed`, not `dead`, and
- * `tests/liveness-unreadable-pid.test.js` covers the shape case ON PURPOSE. This
- * helper is still what the `dead` verdict must be asked with — it is the only one
- * that reaches `ESRCH`.
+ * An unreadable pid is `malformed`, not `dead`, and
+ * `tests/liveness-unreadable-pid.test.js` covers that shape case on purpose. This
+ * helper is what the `dead` verdict must be asked with — it is the only one that
+ * reaches `ESRCH`.
  */
 export async function deadPid() {
   const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
@@ -132,8 +131,7 @@ export function insertSynthetic(state, {
   // carrying `queryHash`/`querySalt`) rather than the inert `mode: 'none'`
   // default, which returns from `resolveCredential` at its first line and so
   // exercises none of the authorization logic a test may want to drive a real
-  // worker through. Every existing caller omits both and keeps the literals
-  // below unchanged.
+  // worker through.
   transport = '{"name":"fake","baseUrl":"http://127.0.0.1:1/v1","query":""}',
   auth = '{"mode":"none"}',
   request = { messages: [{ role: 'user', content: 'synthetic' }] },
@@ -167,7 +165,7 @@ export function setUserVersion(state, version) {
   try {
     // Resolved here rather than at module scope so this file still LINKS without
     // `node:sqlite`, and synchronously — through `require` rather than `import` —
-    // because making this async would ripple into all ten calling files.
+    // because making this async would ripple into every caller.
     const { DatabaseSync } = sqliteModule();
     const db = new DatabaseSync(databasePath());
     db.exec(`PRAGMA user_version = ${version}`);
@@ -185,21 +183,20 @@ export function setUserVersion(state, version) {
  * counted **on the server** rather than derived from timestamps: a row can say
  * two jobs did not overlap while the requests plainly did.
  */
-export async function queueScenario({ delayMs = 0, failChats = false, hold = false } = {}) {
+export async function queueScenario({ failChats = false, hold = false } = {}) {
   const tracker = { inFlight: 0, maxInFlight: 0 };
   // `hold` keeps every chat reply waiting until `release()`, so a request stays in
   // flight for exactly as long as the test needs: while a second job's outcome is
-  // settled, a cancellation lands, or a heartbeat is observed. A fixed `delayMs`
-  // cannot promise that: under load, the test's own steps can take longer than
-  // the delay. A held reply sends no headers, so the profile's first-byte budget
-  // is the only bound on it, and it is raised when `hold` is set.
+  // settled, a cancellation lands, or a heartbeat is observed. A held reply sends
+  // no headers, so the profile's first-byte budget is the only bound on it, and
+  // it is raised when `hold` is set.
   const held = new Set();
   let released = !hold;
   const server = await startFakeServer((request, response) => {
-    // Only the chat completion is slow. Matching on `/models` alone is not
-    // enough: the provider probe also asks for `/props` and `/info`, and giving
-    // *those* the delay makes every later submission block behind the running
-    // job — which looks exactly like a queue that works and is not one.
+    // Only the chat completion is held. Matching on `/models` alone is not
+    // enough: the provider probe also asks for `/props` and `/info`, and holding
+    // *those* makes every later submission block behind the running job — which
+    // looks exactly like a queue that works and is not one.
     if (!request.url.includes('chat/completions')) {
       respondJson(response, { data: [{ id: 'test-model', object: 'model' }] });
       return;
@@ -207,14 +204,12 @@ export async function queueScenario({ delayMs = 0, failChats = false, hold = fal
     tracker.inFlight += 1;
     tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight);
     let settled = false;
-    let timer = null;
     // The one place a request leaves flight, so a reply and a client hang-up
     // cannot both decrement.
     const settle = (reply) => {
       if (settled) return;
       settled = true;
       held.delete(answer);
-      clearTimeout(timer);
       tracker.inFlight -= 1;
       if (reply) reply();
     };
@@ -226,12 +221,11 @@ export async function queueScenario({ delayMs = 0, failChats = false, hold = fal
         if (failChats) respondJson(response, { error: { message: 'the model is on fire' } }, 500);
         else respondJson(response, { model: 'test-model', choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
       });
-    if (released) timer = setTimeout(answer, hold ? 0 : delayMs);
+    if (released) setTimeout(answer, 0);
     else held.add(answer);
     // A client that goes away mid-request — which is exactly what cancelling a
-    // running job produces — must not leave a long timer pending in the test
-    // process, or every cancellation test pays the full delay in wall clock
-    // after it has already finished asserting.
+    // running job produces — leaves flight through `settle`, so `inFlight` and
+    // the held set count only requests still open.
     response.on('close', () => {
       if (!response.writableEnded) settle(null);
     });

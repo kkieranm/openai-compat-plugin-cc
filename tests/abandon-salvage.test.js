@@ -33,11 +33,14 @@ import { NEEDS_SQLITE, insertSynthetic, pollUntil, readJob, stateDir, waitForSta
  * Local rather than `queueScenario`'s `hold`: that one holds every reply until
  * a release opens the gate for good, while this one holds a single request,
  * answers a second with a 500, and reports `inFlight()` for the test to wait on.
+ * `nextHold()` resolves at the next hold after it is called, so a witness fails
+ * on a hold at once rather than at a client timeout.
  */
 async function heldReplyScenario() {
   let held = null;
   let released = false;
   let seen = false;
+  const holdWaiters = [];
   const server = await startFakeServer((request, response) => {
     if (!request.url.includes('chat/completions')) {
       respondJson(response, { data: [{ id: 'test-model', object: 'model' }] });
@@ -54,6 +57,7 @@ async function heldReplyScenario() {
     if (seen || released) { respondJson(response, { error: { message: 'unexpected second request' } }, 500); return; }
     seen = true;
     held = response; // answered only by release()
+    for (const resolve of holdWaiters.splice(0)) resolve();
     response.on('close', () => { if (held === response) held = null; });
   });
   const { path: configPath } = writeConfig({
@@ -65,6 +69,7 @@ async function heldReplyScenario() {
     server,
     state,
     inFlight: () => held !== null,
+    nextHold: () => new Promise((resolve) => holdWaiters.push(resolve)),
     release: () => { released = true; const r = held; held = null; if (r) respondJson(r, completion('ok')); },
     run: (args) => runCompanion(args, { configPath, env: { OAI_PLUGIN_STATE: state } }),
     submit: () => runCompanion(['task', '--background', 'do it'], { configPath, env: { OAI_PLUGIN_STATE: state } }),
@@ -73,7 +78,7 @@ async function heldReplyScenario() {
 
 const until = (predicate, { what }) => pollUntil(predicate, { describe: () => `timed out waiting for ${what}` });
 
-function postChat(baseUrl, heldMessage = 'the chat was held') {
+function postChat(baseUrl) {
   const req = httpRequest(`${baseUrl}/chat/completions`, { method: 'POST' });
   const status = new Promise((resolve, reject) => {
     req.on('response', (res) => {
@@ -81,17 +86,27 @@ function postChat(baseUrl, heldMessage = 'the chat was held') {
       resolve(res.statusCode);
     });
     req.on('error', reject);
-    req.setTimeout(60_000, () => req.destroy(new Error(heldMessage)));
+    req.setTimeout(60_000, () => req.destroy(new Error('the chat got no reply')));
   });
   req.end('{}');
   return { req, status };
+}
+
+/**
+ * The status a fresh chat gets, or `'held'` the moment the server holds it instead.
+ * `nextHold()` is armed before the request is sent, so the request's own hold
+ * cannot be missed.
+ */
+function refusedOrHeld(scenario) {
+  const held = scenario.nextHold().then(() => 'held');
+  return Promise.race([postChat(scenario.server.baseUrl).status, held]);
 }
 
 test('a chat that reaches the held-reply server after release is refused, not held', async () => {
   const scenario = await heldReplyScenario();
   try {
     scenario.release();
-    assert.equal(await postChat(scenario.server.baseUrl, 'the chat was held after release').status, 500);
+    assert.equal(await refusedOrHeld(scenario), 500, 'the chat was held after release');
   } finally {
     scenario.release();
     await scenario.server.close();
@@ -106,7 +121,7 @@ test('a chat that follows an abandoned one is refused, not held in its place', a
     await until(() => scenario.inFlight(), { what: 'the first chat to be held' });
     first.req.destroy();
     await until(() => !scenario.inFlight(), { what: 'the server to see the first chat close' });
-    assert.equal(await postChat(scenario.server.baseUrl, 'the retry was held').status, 500);
+    assert.equal(await refusedOrHeld(scenario), 500, 'the retry was held');
   } finally {
     scenario.release();
     await scenario.server.close();
