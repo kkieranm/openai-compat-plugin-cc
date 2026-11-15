@@ -2,7 +2,7 @@
 // diff text passed through "$ARGUMENTS" walks straight into the prose-vs-shell
 // trap in .claude/REPO_TRAPS.md, and a call from here is testable.
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserError } from './errors.mjs';
 import { readFileBlocks } from './prompt.mjs';
@@ -76,6 +76,32 @@ async function blockFor(path, readContent) {
 }
 
 /**
+ * A listed path's body as it sits in the work tree, never read through a
+ * symlink at the path itself.
+ *
+ * A symlink's body is its link text, the text git stores for a link. Following
+ * it can send the target's bytes, which can sit outside the repository,
+ * labelled as this path.
+ *
+ * The path can change between `lstat` and `open`, so the open refuses a
+ * symlink too (`O_NOFOLLOW`, where the platform has it), and does not block
+ * (`O_NONBLOCK`): on a FIFO there the open itself would otherwise wait.
+ * Anything the descriptor shows is not a regular file throws, and lands in
+ * `unreadable`. A symlinked parent directory is still followed.
+ */
+function readWorktree(root, path) {
+  const full = join(root, path);
+  if (lstatSync(full).isSymbolicLink()) return readlinkSync(full, 'utf8');
+  const fd = openSync(full, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!fstatSync(fd).isFile()) throw new Error(`${path} is not a regular file`);
+    return readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * Blocks for every path that yielded one, and the paths that did not.
  *
  * The failures have to come back. A path git listed as changed whose body could
@@ -104,7 +130,7 @@ async function blocksFor(paths, readContent) {
  */
 async function untrackedBlocks(root) {
   const listed = await runGit(['ls-files', '--others', '--exclude-standard', '-z'], root);
-  return blocksFor(listed.split(NUL).filter(Boolean), (path) => readFileSync(join(root, path), 'utf8'));
+  return blocksFor(listed.split(NUL).filter(Boolean), (path) => readWorktree(root, path));
 }
 
 /**
@@ -237,7 +263,7 @@ async function selectDiff(options, root) {
     diff: await runGit(['diff', 'HEAD'], root),
     listArgs: ['diff', 'HEAD', '--name-status', '-z'],
     // Root-relative, like every path `git diff` emits — see repositoryRoot.
-    readContent: (path) => readFileSync(join(root, path), 'utf8'),
+    readContent: (path) => readWorktree(root, path),
     includeUntracked: true,
   };
 }

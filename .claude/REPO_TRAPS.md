@@ -1395,3 +1395,27 @@ their own blob", "--staged reads a path that begins with a stage number as its o
 path with no stage 0 stays unreadable when its name holds a glob character", "--staged reads a blob whose
 spec also names a file in the root" and its `--base` and `--commit` twins. Case 5: "--staged reads a path
 holding .. as its blob, not as a revision range" and its `--base` and `--commit` twins.
+
+## A work-tree body read that follows a symlink at a listed path
+
+Confirmed once in `collectTarget`'s default target. Git lists a symlink under its own path, and the text git
+stores for a link is its link text, but `readFileSync(join(root, path))` followed the link, so a link to a
+readable text file was sent as that file's bytes, which could sit outside the repository or be one git
+ignores, under the link's own path. A reader that checks a path's type before opening it must also refuse
+what is swapped in between the check and the open: a link, which the open would follow, and anything that is
+not a regular file, such as a FIFO, whose open blocks while nothing writes to it. It must then read the body
+through the descriptor it checked: a read by path would follow whatever is swapped in after the check.
+
+`readWorktree` sends a link's text (`lstatSync`, then `readlinkSync`); any other path is opened with
+`O_NOFOLLOW | O_NONBLOCK`, refused unless `fstatSync` reports a regular file, and read through that
+descriptor. Still open: a parent directory swapped for a link after git lists the path (git never lists
+through one, so only a race reaches it), and the window between `lstatSync` and the open where `O_NOFOLLOW`
+is undefined (Windows). `--file` follows links: the user names those paths.
+
+**Guarded by** `tests/git-diff.test.js` — "an untracked symlink is sent as its link text, dangling or
+pointing outside the repository", "a tracked symlink retargeted in the work tree is sent as its new link
+text, as the diff shows it", "a tracked file replaced in the work tree by a symlink is sent as the link
+text", "an untracked symlink to a directory is sent as its link text", "a path swapped for a symlink after
+its lstat is refused, not followed", "a path swapped for a symlink after its fstat is still read through
+the checked descriptor", "a path swapped for a FIFO after its lstat is refused without blocking", and "a
+review request carries an untracked symlink as its link text on every rung, never its target".

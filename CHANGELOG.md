@@ -67,6 +67,15 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review`'s default target (uncommitted changes) no longer follows a path it sends when that path is
+  itself a symlink. Any path it listed that was a symlink to a readable text file, whether untracked, staged
+  as new, renamed, pointed somewhere new or replacing a tracked file, was sent as the target's bytes,
+  labelled as the link's own path; the target could sit outside the repository or be a file git ignores. A
+  symlink is now sent as its link text, the text git stores for a link; for a tracked link that is what the
+  diff shows and what `--staged`, `--base` and `--commit` already sent. A link that was listed as
+  unreadable, such as a dangling link, a link to a directory or a link to a binary file, is now sent the
+  same way. A path that turns into a FIFO or a device after git lists it is listed as unreadable instead of
+  being waited on or read.
 - On macOS, `/oai:review --commit`, `--base` and `--staged` read a file tracked under a decomposed (NFD)
   name from its own blob, so it is sent whole whenever the review sends whole files. Git looked the name up
   composed: the lookup failed, so the file was listed as unreadable and only its hunks were sent, or, when

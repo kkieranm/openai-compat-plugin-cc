@@ -3,10 +3,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
-import { createRepo, git, tempDir } from './helpers.mjs';
+import {
+  chatRequests,
+  completion,
+  createRepo,
+  git,
+  modelList,
+  respondJson,
+  runCompanion,
+  startFakeServer,
+  tempDir,
+  writeConfig,
+} from './helpers.mjs';
 
 test('the default target is uncommitted work, including untracked files', async () => {
   const dir = await createRepo();
@@ -735,4 +748,233 @@ test('an empty listing proves nothing, so an empty commit is not deletions only'
   const dir = await createRepo();
   await git(['commit', '--quiet', '--allow-empty', '-m', 'empty'], dir);
   assert.equal((await collectTarget({ commit: 'HEAD' }, dir)).deletionsOnly, false);
+});
+
+// A sentinel only the target of a link holds: if it appears anywhere in what
+// collectTarget returns or a review sends, a link was followed.
+const LINK_TARGET_SENTINEL = 'TARGET-BYTES-THAT-MUST-NOT-BE-SENT';
+
+function assertNoTargetBytes(value, message) {
+  assert.ok(!JSON.stringify(value).includes(LINK_TARGET_SENTINEL), message);
+}
+
+function outsideFile() {
+  const outside = tempDir('oai-plugin-outside-');
+  const secret = join(outside, 'secret.txt');
+  writeFileSync(secret, `${LINK_TARGET_SENTINEL}\n`);
+  return { outside, secret };
+}
+
+test('an untracked symlink is sent as its link text, dangling or pointing outside the repository', async () => {
+  const dir = await createRepo();
+  const { secret } = outsideFile();
+  symlinkSync(secret, join(dir, 'outside-link'));
+  symlinkSync('nowhere.txt', join(dir, 'dangling'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(
+    [...target.files].sort((a, b) => a.path.localeCompare(b.path)),
+    [{ path: 'dangling', content: 'nowhere.txt' }, { path: 'outside-link', content: secret }],
+    'a link\'s body is the text git stores for a link',
+  );
+  assert.deepEqual(target.unreadable, []);
+  assertNoTargetBytes(target, 'the target\'s bytes are never read');
+});
+
+test('a tracked symlink retargeted in the work tree is sent as its new link text, as the diff shows it', async () => {
+  const dir = await createRepo();
+  symlinkSync('seed.txt', join(dir, 'tracked-link'));
+  await git(['add', 'tracked-link'], dir);
+  await git(['commit', '--quiet', '-m', 'link'], dir);
+  const { secret } = outsideFile();
+  unlinkSync(join(dir, 'tracked-link'));
+  symlinkSync(secret, join(dir, 'tracked-link'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(target.changed, [{ path: 'tracked-link', content: secret }]);
+  assert.ok(target.diff.includes(`+${secret}`), 'the diff carries the same link text');
+  assertNoTargetBytes(target, 'the target\'s bytes are never read');
+});
+
+test('a tracked file replaced in the work tree by a symlink is sent as the link text', async () => {
+  const dir = await createRepo();
+  const { secret } = outsideFile();
+  unlinkSync(join(dir, 'seed.txt'));
+  symlinkSync(secret, join(dir, 'seed.txt'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(target.changed, [{ path: 'seed.txt', content: secret }]);
+  assertNoTargetBytes(target, 'the target\'s bytes are never read');
+});
+
+test('an untracked symlink to a directory is sent as its link text', async () => {
+  const dir = await createRepo();
+  const { outside } = outsideFile();
+  symlinkSync(outside, join(dir, 'dir-link'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(target.files, [{ path: 'dir-link', content: outside }]);
+  assert.deepEqual(target.unreadable, []);
+  assertNoTargetBytes(target, 'nothing inside the directory is read');
+});
+
+test('a review request carries an untracked symlink as its link text on every rung, never its target', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  const { secret } = outsideFile();
+  symlinkSync(secret, join(dir, 'outside-link'));
+  const REGULAR_LINE = 'export const regularMarker = "sent-as-a-body";';
+  writeFileSync(join(dir, 'regular.js'), `${REGULAR_LINE}\n`);
+  const findings = JSON.stringify({ analysis: 'a', findings: [], summary: 'No defects found.' });
+  const server = await startFakeServer((request, response) => {
+    if (request.url.includes('/models')) return respondJson(response, modelList('test-model'));
+    return respondJson(response, completion(findings));
+  });
+  const prompts = [];
+  try {
+    const local = { baseUrl: server.baseUrl, defaultModel: 'test-model' };
+    const sized = writeConfig({ defaultProvider: 'local', providers: { local: { ...local, contextLength: 131_072 } } }).path;
+    const unsized = writeConfig({ defaultProvider: 'local', providers: { local } }).path;
+    const rungs = [['whole files', sized, []], ['unsized window', unsized, []], ['--diff-only', sized, ['--diff-only']]];
+    for (const [label, configPath, flags] of rungs) {
+      const before = chatRequests(server).length;
+      const result = await runCompanion(['review', ...flags], { configPath, cwd: dir });
+      assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+      const sent = chatRequests(server).slice(before);
+      assert.equal(sent.length, 1, `${label}: one review request`);
+      prompts.push([label, sent[0].body.messages[1].content]);
+    }
+  } finally {
+    await server.close();
+  }
+  for (const [label, prompt] of prompts) {
+    assert.equal(prompt.includes('--- FILE: seed.txt ---'), label === 'whole files', `${label}: the rung it names`);
+    assert.ok(prompt.includes(REGULAR_LINE), `${label}: an untracked file's body reaches the request`);
+    assert.ok(prompt.includes(`--- FILE: outside-link ---\n${secret}\n`), `${label}: the link goes as its link text`);
+    assert.ok(!prompt.includes(LINK_TARGET_SENTINEL), `${label}: the target's bytes are never sent`);
+  }
+});
+
+// collectTarget in a child that renames `replacement` over `victim.txt` at one
+// stage: 'lstat', after the real lstat of the path returns, so the path changes
+// between the check and the open; or 'fstat', after the real fstat of the
+// descriptor opened for it returns, so the path changes between the check of
+// that descriptor and the read. A child, so a read that blocks on a FIFO is
+// killed by collectWithSwap's SIGKILL deadline rather than hanging the suite
+// (a blocked synchronous open cannot be interrupted in-process).
+const SWAP_CHILD = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+import { basename } from 'node:path';
+const [root, replacement, gitDiff, stage] = process.argv.slice(1);
+const realLstat = fs.lstatSync;
+const realOpen = fs.openSync;
+const realFstat = fs.fstatSync;
+let planted = null;
+const plant = (path) => {
+  fs.renameSync(replacement, path);
+  const now = realLstat(path);
+  planted = now.isSymbolicLink() ? 'symlink' : now.isFIFO() ? 'fifo' : 'other';
+};
+if (stage === 'fstat') {
+  let victim = null;
+  fs.openSync = (path, ...rest) => {
+    const fd = realOpen(path, ...rest);
+    if (basename(String(path)) === 'victim.txt') victim = { fd, path };
+    return fd;
+  };
+  fs.fstatSync = (fd, ...rest) => {
+    const stats = realFstat(fd, ...rest);
+    if (replacement && planted === null && victim?.fd === fd) plant(victim.path);
+    return stats;
+  };
+} else {
+  fs.lstatSync = (path, ...rest) => {
+    const stats = realLstat(path, ...rest);
+    if (replacement && planted === null && basename(String(path)) === 'victim.txt') plant(path);
+    return stats;
+  };
+}
+syncBuiltinESMExports();
+const { collectTarget } = await import(gitDiff);
+const { files, changed, unreadable } = await collectTarget({}, root);
+process.stdout.write(JSON.stringify({ planted, files, changed, unreadable }));
+`;
+
+async function collectWithSwap(root, replacement, stage = 'lstat') {
+  const gitDiff = new URL('../plugins/oai/scripts/lib/git-diff.mjs', import.meta.url).href;
+  const run = promisify(execFile)(
+    process.execPath,
+    ['--input-type=module', '-e', SWAP_CHILD, root, replacement, gitDiff, stage],
+    { timeout: 20_000, killSignal: 'SIGKILL' },
+  );
+  const { stdout } = await run.catch((error) => {
+    if (error.signal === 'SIGKILL') assert.fail('the child was killed at the deadline: reading the swapped path blocked');
+    throw error;
+  });
+  return JSON.parse(stdout);
+}
+
+// An untracked victim beside an independent change, so refusing the victim
+// cannot turn the review into "Nothing to review".
+async function swapRepo() {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  writeFileSync(join(dir, 'victim.txt'), 'victim body\n');
+  return dir;
+}
+
+test('with nothing swapped, the swap harness reads the victim\'s own body', async () => {
+  const result = await collectWithSwap(await swapRepo(), '');
+  assert.equal(result.planted, null, 'the hook stayed idle');
+  assert.deepEqual(result.files, [{ path: 'victim.txt', content: 'victim body\n' }]);
+  assert.deepEqual(result.unreadable, []);
+});
+
+test('a path swapped for a symlink after its lstat is refused, not followed', async () => {
+  const dir = await swapRepo();
+  const { secret } = outsideFile();
+  const staged = join(tempDir('oai-plugin-stage-'), 'link');
+  symlinkSync(secret, staged);
+
+  const result = await collectWithSwap(dir, staged);
+
+  assert.equal(result.planted, 'symlink', 'the hook swapped a symlink in between lstat and open');
+  assert.deepEqual(result.unreadable, ['victim.txt']);
+  assertNoTargetBytes(result, 'the swapped-in link is not followed');
+});
+
+test('a path swapped for a symlink after its fstat is still read through the checked descriptor', async () => {
+  const dir = await swapRepo();
+  const { secret } = outsideFile();
+  const staged = join(tempDir('oai-plugin-stage-'), 'link');
+  symlinkSync(secret, staged);
+
+  const result = await collectWithSwap(dir, staged, 'fstat');
+
+  assert.equal(result.planted, 'symlink', 'the hook swapped a symlink in between fstat and the read');
+  assert.deepEqual(result.files, [{ path: 'victim.txt', content: 'victim body\n' }], 'the body is the checked file\'s bytes');
+  assert.deepEqual(result.unreadable, []);
+  assertNoTargetBytes(result, 'the path is not reopened after the check');
+});
+
+test('a path swapped for a FIFO after its lstat is refused without blocking', async (t) => {
+  const dir = await swapRepo();
+  const fifo = join(tempDir('oai-plugin-stage-'), 'fifo');
+  const made = await new Promise((resolve) => {
+    const child = spawn('mkfifo', [fifo], { stdio: 'ignore' });
+    child.on('error', () => resolve(false));
+    child.on('close', (status) => resolve(status === 0));
+  });
+  if (!made) return t.skip('mkfifo is unavailable');
+
+  const result = await collectWithSwap(dir, fifo);
+
+  assert.equal(result.planted, 'fifo', 'the hook swapped a FIFO in between lstat and open');
+  assert.deepEqual(result.unreadable, ['victim.txt'], 'a FIFO is not a body, even an empty one');
+  assert.deepEqual(result.files, []);
 });
