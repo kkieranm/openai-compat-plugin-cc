@@ -57,7 +57,9 @@ async function repositoryRoot(cwd) {
       hint: 'Run this from inside a repository, or pass --file <path> to review whole files instead.',
     });
   }
-  return stdout.trim();
+  // git ends the path with one newline, and only that is removed: a directory
+  // name may itself end in whitespace, and trimming it names another directory.
+  return stdout.endsWith('\n') ? stdout.slice(0, -1) : stdout;
 }
 
 /**

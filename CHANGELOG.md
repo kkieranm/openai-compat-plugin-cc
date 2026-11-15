@@ -67,6 +67,12 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` run in a repository whose directory name ends in whitespace (a space, tab, newline, carriage
+  return, no-break space or similar) now reviews that repository. Every mode that reads the repository (all
+  but `--file`) resolved the root with that whitespace removed and read the directory named without it.
+  When that directory was another repository or sat inside one, that repository was read and sent: its
+  uncommitted changes by default, its staged changes under `--staged`, or the commits `--commit` or `--base`
+  named when they resolved there. Otherwise the review failed with "Could not run git" or a git error.
 - `/oai:review` no longer fails when a file in the repository root is named after the revision it reads:
   `HEAD` for the default review, the commit's full id for `--commit`, or `<merge-base>..HEAD` for `--base`.
   Git refused each such review as ambiguous between a revision and a file. On a branch with no commits, git

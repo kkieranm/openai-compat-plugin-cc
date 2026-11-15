@@ -1444,3 +1444,29 @@ calls loses its `--`; "the default review on a branch with no commits fails on H
 named HEAD that is ignored" and its `staged` twin, red when the default patch call loses its `--`; the
 `untracked` twin, red only when both default calls lose it; and "the default review on a branch with no
 commits fails on HEAD" as their control.
+
+## A path read from git's output is trimmed
+
+Confirmed in `repositoryRoot`. `git rev-parse --show-toplevel` prints the root followed by one
+newline, and `.trim()` also removed whitespace that belonged to the path: a repository whose directory
+name ended in whitespace (a space, tab, newline, carriage return, no-break space or similar) resolved to
+the name without it, in every `/oai:review` mode but `--file`. When that directory was a sibling
+repository, that repository was read and sent: its uncommitted changes by default, its staged changes
+under `--staged`, or the commits `--commit` or `--base` named when they resolved there. When it was a plain
+directory inside an enclosing repository, the default review sent the enclosing repository's diff and the
+untracked files beneath the directory whole, and read each changed body from the directory at the changed
+path's repository-relative name: listed unreadable when nothing was there, and an unrelated file at that
+name sent in its place. Otherwise it failed. The JavaScript form of "Command substitution silently
+truncates the value you are about to validate".
+
+**The rule**: from git's output, remove only the terminator git wrote — the single `\n` after a
+one-path reply, or the NUL of `-z` output. A hex object id may be trimmed; a path may not.
+
+**Guarded by** `tests/git-diff.test.js`. "a review run in a repository whose directory name ends in a
+space reads that repository, not the sibling named without it" and its tab, newline and carriage-return
+twins each fail on the diff's leak check under `.trim()`; the newline twin alone under a strip of every
+trailing newline, and the carriage-return twin alone under a CRLF-tolerant strip. "a review run in a
+repository whose directory name ends in a space reads that repository, not the repository that encloses
+the directory named without it" fails on the same check, and on the untracked-file list when the
+enclosing repository has only an untracked file. "a review run in a repository whose directory name ends
+in a space reads that repository", with nothing of the trimmed name, fails by throwing.

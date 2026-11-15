@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
-import { appendFileSync, chmodSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
@@ -183,6 +183,55 @@ test('a review run from a subdirectory still reads the changed files', async () 
     'untracked files are collected from the root too, matching the diff',
   );
 });
+
+const ROOT_SUFFIX_CASES = [
+  { label: 'a space', suffix: ' ', sibling: true },
+  { label: 'a tab', suffix: '\t', sibling: true },
+  { label: 'a newline', suffix: '\n', sibling: true },
+  { label: 'a carriage return', suffix: '\r', sibling: true },
+  { label: 'a space', suffix: ' ' },
+  { label: 'a space', suffix: ' ', enclosing: true },
+];
+
+for (const { label, suffix, sibling, enclosing } of ROOT_SUFFIX_CASES) {
+  const besides = sibling
+    ? ', not the sibling named without it'
+    : enclosing
+      ? ', not the repository that encloses the directory named without it'
+      : '';
+  test(`a review run in a repository whose directory name ends in ${label} reads that repository${besides}`, async () => {
+    let parent;
+    if (enclosing) {
+      parent = await createRepo();
+      mkdirSync(join(parent, 'repo'));
+      writeFileSync(join(parent, 'repo', 'outer.txt'), 'outer\n');
+      await git(['add', 'repo/outer.txt'], parent);
+      await git(['commit', '--quiet', '-m', 'outer'], parent);
+      writeFileSync(join(parent, 'repo', 'outer.txt'), 'outer\nenclosing change\n');
+      writeFileSync(join(parent, 'repo', 'enclosing-new.txt'), 'enclosing untracked\n');
+    } else {
+      parent = tempDir('oai-plugin-ws-');
+    }
+    const own = join(parent, `repo${suffix}`);
+    renameSync(await createRepo(), own);
+    writeFileSync(join(own, 'seed.txt'), 'seed\nown change\n');
+    writeFileSync(join(own, 'own-new.txt'), 'own untracked\n');
+    if (sibling) {
+      const other = join(parent, 'repo');
+      renameSync(await createRepo(), other);
+      writeFileSync(join(other, 'seed.txt'), 'seed\nsibling change\n');
+      writeFileSync(join(other, 'sibling-new.txt'), 'sibling untracked\n');
+    }
+
+    const target = await collectTarget({}, own);
+
+    assert.doesNotMatch(target.diff, /sibling|enclosing/);
+    assert.deepEqual(target.files.map((file) => [file.path, file.content]), [['own-new.txt', 'own untracked\n']]);
+    assert.deepEqual(target.changed.map((file) => [file.path, file.content]), [['seed.txt', 'seed\nown change\n']]);
+    assert.deepEqual(target.unreadable, []);
+    assert.match(target.diff, /^\+own change$/m);
+  });
+}
 
 test('a pinned file the diff removes is reported, with or without --diff-only', async () => {
   const dir = await createRepo();
