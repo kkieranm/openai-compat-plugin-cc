@@ -1,12 +1,10 @@
-// WHICH row `/oai:status` names as the thing starving this workspace — the
-// question it was built to answer and could not, because its filter asked about
-// a row's STATE and blocking is a relation between two rows.
+// WHICH row `/oai:status` names as the thing starving this workspace. Blocking
+// is a relation between two rows, not a property of a row's STATE.
 //
 // The assertion that carries this file is not "the row is visible". It is
 // "the visible row is the one `tryAcquire` blocks on", made in the same run
 // against the same database: a test that only checks visibility would pass
-// against a filter that admits the wrong row, which is exactly the fix that
-// looks plausible.
+// against a plausible filter that admits the wrong row.
 //
 // What the display then SAYS about that row lives in `status-blocker-render`.
 import assert from 'node:assert/strict';
@@ -20,8 +18,8 @@ import { HERE, TEN_MINUTES, THERE, breakStamps, myJob, theirHead, viewHere } fro
 test('the off-workspace head is shown, marked, and is what tryAcquire blocks on', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Alive, but silent for ten minutes. Note this is an ORDINARY row —
-  // `queuedRole` calls it `head`, not `blocks` — which is why admitting only
-  // the pathological shapes would not have fixed it.
+  // `queuedRole` calls it `head`, not `blocks`, so a filter admitting only
+  // `blocks` rows would miss this blocker.
   theirHead(state, { beatAgoMs: TEN_MINUTES });
   const mine = myJob(state);
 
@@ -32,7 +30,6 @@ test('the off-workspace head is shown, marked, and is what tryAcquire blocks on'
 
     const text = renderList(view, { cwd: HERE, all: false });
     assert.match(text, /must clear before this workspace's queued job can proceed/);
-    // The explanation that used to be computed and then discarded one line later.
     assert.match(text, /is alive but has not beaten since/);
 
     // Visible AND the cause. Separately these prove nothing.
@@ -40,9 +37,10 @@ test('the off-workspace head is shown, marked, and is what tryAcquire blocks on'
   });
 });
 
-// Three routes to `blocks`, and a fix that admits one of them would pass a
-// single-shape test. Each gets its own queue: only the lowest-seq non-skip row
-// is ever the head, so three in one database would exercise one of them.
+// Three routes to `blocks`, and a filter that admits only one of them would
+// pass a single-shape test. Each gets its own queue: only the lowest-seq
+// non-skip row is ever the head, so three in one database would exercise one of
+// them.
 const PATHOLOGICAL = [
   ['no worker has registered yet', (state) => theirHead(state, { waiterPid: null, agedMs: 1000 })],
   ['a newer plugin wrote it', (state) => theirHead(state, { version: 99 })],
@@ -183,7 +181,7 @@ test('the blocker is the RUNNING row when one is running, not the queued head', 
   const state = stateDir();
   // `decide` returns `blocked` from its running loop before queue order is ever
   // consulted, so this is what a local job is really waiting on. Marking the
-  // queued head instead named a row the user could clear with no effect.
+  // queued head would name a row the user could clear with no effect.
   const running = insertSynthetic(state, { id: 'runner', state: 'running', workspace: THERE, workerPid: process.pid });
   const head = theirHead(state);
   myJob(state);
@@ -215,7 +213,7 @@ test('a local running job takes the marker off entirely', { skip: NEEDS_SQLITE }
 
   viewHere(state, (view) => {
     // Your own running job needs no explaining, and falling through to the queued
-    // head would re-create the very mismatch the running rung was added to fix.
+    // head would name a row that is not what this job waits on.
     assert.equal(view.blockingSeq, null);
     assert.doesNotMatch(renderList(view, { cwd: HERE, all: false }), /must clear before/);
   });

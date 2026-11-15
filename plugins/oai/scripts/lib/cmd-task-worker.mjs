@@ -92,15 +92,8 @@ function outcomeOf(result, durationMs, template) {
 /**
  * Run the model call and return what to persist — **it writes nothing**.
  *
- * The completed write used to live at the end of this function, inside the try
- * whose catch publishes `failed`. So when that write exhausted its retry budget
- * the busy error propagated into that catch, which then wrote `failed` — and by
- * then contention had had thirty seconds to clear, so that write very likely
- * SUCCEEDED. An answer that existed was published as a task failure, which is
- * the precise outcome the retry was added to prevent.
- *
- * Returning the outcome instead of writing it puts the completed write outside
- * that catch's scope, which makes the defect impossible rather than handled.
+ * Returning the outcome instead of writing it keeps the completed write out of
+ * `runAndPublish`'s `failed` catch; the comment at that write says why.
  */
 async function runJob(job) {
   const startedAt = Date.now();
@@ -220,10 +213,9 @@ function salvageOutcome(seq, outcome) {
 /**
  * Beat, run, and publish exactly one terminal verdict — the whole guarded stretch.
  *
- * Extracted from `runTaskWorker` when the placement fix pushed it past this
- * repo's function-size budget: the terminal-write discipline below is one
- * cohesive stage and reads better named than inlined among argument parsing and
- * queue acquisition.
+ * The terminal-write discipline below is one cohesive stage and reads better
+ * named than inlined in `runTaskWorker` among argument parsing and queue
+ * acquisition.
  */
 async function runAndPublish(db, seq, job) {
   // Only now: a queued worker is already visible through the wait loop's beat,
@@ -240,13 +232,12 @@ async function runAndPublish(db, seq, job) {
       throw error;
     }
 
-    // OUTSIDE the catch above, and the placement IS the fix. By this line the
-    // model has already answered, so a lock held past the busy timeout does not
-    // cost a retry — it discards work paid for in full. Retried for that; kept
-    // out of the `failed` catch so that exhausting the retry cannot publish an
-    // answer that exists as a task failure. If this throws, no ROW is written:
-    // the row stays `running` with a live pid, and reconciliation later reports
-    // the worker's death.
+    // OUTSIDE the catch above. By this line the model has already answered, so a
+    // lock held past the busy timeout does not cost a retry — it discards work
+    // paid for in full. Retried for that; kept out of the `failed` catch so that
+    // exhausting the retry cannot publish an answer that exists as a task
+    // failure. If this throws, no ROW is written: the row stays `running` with a
+    // live pid, and reconciliation later reports the worker's death.
     //
     // **That report is still a misdiagnosis — the worker answered and then
     // SQLite refused the write — but it is no longer a LOSS.** The answer used

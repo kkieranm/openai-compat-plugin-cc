@@ -23,12 +23,11 @@ const SECRET = 'SUPERSECRET123';
  * The whole sentence, written out here ON PURPOSE rather than imported from
  * `task-submit.mjs`.
  *
- * Importing it was tried and is worse than the duplication it removes: the
- * expectation would move with the code, so adding "accessible only to your
- * account" would change both sides at once and pass — exactly the class this
- * assertion exists to catch. Where the wording IS the security property, the
- * test is the specification and a second copy is the guard; drift between these
- * two strings is the signal, not a defect.
+ * Not imported: an imported expectation would move with the code, so adding
+ * "accessible only to your account" would change both sides at once and pass —
+ * exactly the class this assertion exists to catch. Where the wording IS the
+ * security property, the test is the specification and a second copy is the
+ * guard; drift between these two strings is the signal, not a defect.
  */
 const NOTICE =
   'Note: if this submission creates a job record, its endpoint will be written to jobs.db — a ' +
@@ -39,10 +38,9 @@ const NOTICE =
 /**
  * The notice as a WHOLE LINE, or nothing.
  *
- * `stderr.includes(NOTICE)` was the previous form and could not fail on the case
- * that matters most: appending " It is accessible only to your account." inside
- * the notice leaves the expected substring intact, so the suite passed the exact
- * regression the literal duplication was introduced to catch.
+ * A substring match would pass if text were appended inside the line: adding
+ * " It is accessible only to your account." leaves the expected substring
+ * intact.
  *
  * **Stated limit:** this pins the notice's own line. A reassurance added as a
  * SEPARATE stderr line is not caught, and nothing here claims otherwise — that
@@ -139,15 +137,15 @@ test('a credential in the query string is never printed by the notice about it',
 });
 
 test('a credential in the URL path is covered too, and also not printed', { skip: NEEDS_SQLITE }, async () => {
-  // The case the old notice missed ENTIRELY: `normalizeBaseUrl` keeps a path in
-  // `baseUrl`, which is persisted with the same consequence, and matches no
-  // test of `profile.query`. So this is a coverage claim as well as a leak one.
+  // `normalizeBaseUrl` keeps a path in `baseUrl`, which is persisted with the
+  // same consequence as a stored query, and matches no test of `profile.query`.
+  // So this is a coverage claim as well as a leak one.
   const { submit, row } = await submitAgainst((server) => `${server.baseUrl}/${SECRET}`);
 
   assert.ok(noticeLine(submit.stderr), `notice did not fire exactly: ${JSON.stringify(submit.stderr)}`);
   assert.ok(!submit.stderr.includes(SECRET), `the notice printed the credential: ${JSON.stringify(submit.stderr)}`);
-  // "full endpoint" has to mean the path too, or the notice is false exactly
-  // where the old one was silent.
+  // "its endpoint" has to include the path, or the notice is false for a
+  // credential in the path.
   assert.ok(
     row.transport.baseUrl.includes(SECRET),
     `the path credential was not persisted where the notice says: ${JSON.stringify(row.transport)}`,
@@ -164,8 +162,8 @@ test('the notice is unconditional — a plain endpoint still says what is stored
 });
 
 test('the notice promises nothing about who can read the file', { skip: NEEDS_SQLITE }, async () => {
-  // `job-store.mjs` hardens best-effort and swallows every failure, so
-  // "readable only by you" was a guarantee the code could not give. The exact
+  // `job-store.mjs`'s permission hardening is best-effort and swallows its
+  // failures, so the notice cannot promise "readable only by you". The exact
   // match is what enforces it: any REPLACEMENT assurance changes the sentence,
   // and a changed sentence fails — which naming one phrase cannot do.
   const { submit } = await submitAgainst((server) => `${server.baseUrl}?api_key=${SECRET}`);
@@ -178,13 +176,10 @@ test('a query credential in the CONFIGURED provider is announced too', { skip: N
   // No `--base-url` anywhere: the endpoint comes from the config file, which is
   // where a real one lives. Pins the notice to submission rather than to a flag.
   //
-  // A query string on an endpoint resolved from `providers.json` is no longer
-  // stored raw. So this
-  // no longer asserts `row.transport.query.includes(SECRET)` — that field does
-  // not exist on this row shape at all, and asserting it would TypeError. What
-  // is asserted instead is the commitment shape (`queryHash` + `querySalt`,
-  // present because a real query was committed) and the secret's total absence
-  // from the row, everywhere.
+  // A query string on an endpoint resolved from `providers.json` is stored as a
+  // commitment (`queryHash` + `querySalt`), never raw, so there is no
+  // `transport.query` to check. Asserted instead: the commitment is present and
+  // the secret appears nowhere in the row.
   const { submit, row } = await submitAgainst((server) => `${server.baseUrl}?api_key=${SECRET}`, { viaConfig: true });
 
   assert.ok(noticeLine(submit.stderr), `notice did not fire exactly: ${JSON.stringify(submit.stderr)}`);
@@ -232,11 +227,12 @@ test('the core leak: a configured provider commits its query rather than storing
 });
 
 test('an ad hoc --base-url carrying a non-credential query string still reaches completed', { skip: NEEDS_SQLITE }, async () => {
-  // Catches the `Unknown provider "custom"` regression the widening's own
-  // docblock warns about: keying the widening on the query alone, rather than
-  // on `!adHoc && query`, would send an ad hoc row's synthetic `custom` profile
-  // through `resolveProfile` at worker time and fail every ad hoc job carrying
-  // any query string at all — including one, like this, that carries nothing
+  // Guards the `Unknown provider "custom"` failure: keying `authPolicyFor`'s
+  // widening (`job-auth.mjs`) on the query alone, rather than on
+  // `!adHoc && query`, would send a bare `--base-url` row's synthetic `custom`
+  // profile through `resolveProfile` at worker time. With no configured
+  // provider named `custom`, as in this fixture, that fails any such job
+  // carrying a query string — including one, like this, that carries nothing
   // secret. `?api-version=2024-02-01` is a query that is not a credential, and
   // it must still work end to end. The storage assertion alone would not catch
   // this: it needs the job to actually reach a terminal state, which is why
@@ -291,9 +287,9 @@ test('the notice survives a preamble larger than the pipe buffer', { skip: NEEDS
 });
 
 test('a worker that never starts still leaves the row the notice warned about', { skip: NEEDS_SQLITE }, async () => {
-  // Killed wording #4, made executable — the case the whole sentence is built
-  // around, and the one the five SUCCESSFUL cases above are blind to. (The
-  // delivery test above also fails after `insertJob`, for a different invariant.)
+  // The case the whole sentence is built around, and the one the SUCCESSFUL
+  // cases above are blind to. (The delivery test above also fails after
+  // `insertJob`, for a different invariant.)
   //
   // `spawnWorker` opens `logs/<seq>.log` AFTER `insertJob` has written the row.
   // Putting a directory at that path makes the open fail, so the submission dies
@@ -324,8 +320,8 @@ test('a worker that never starts still leaves the row the notice warned about', 
     assert.ok(!submit.stderr.includes(SECRET), `the notice printed the credential: ${JSON.stringify(submit.stderr)}`);
 
     // …and the row really is there, with the credential, unreachable by any job
-    // id the caller was given. "A later worker-start failure does not remove it"
-    // is now a tested claim rather than a careful sentence.
+    // id the caller was given: the witness for the notice's "A later worker-start
+    // failure does not remove it."
     const rows = readJobs(state);
     assert.equal(rows.length, 1, `expected the orphaned row to survive: ${JSON.stringify(rows)}`);
     assert.ok(

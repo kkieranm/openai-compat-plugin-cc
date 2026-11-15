@@ -1,9 +1,4 @@
-// Fixtures shared by the two blocker suites.
-//
-// Extracted when `status-blocker.test.js` outgrew the 300-line budget: the file
-// had become two questions wearing one name — WHICH row the display names, and
-// WHAT it says about it. They are split rather than allowlisted, so neither
-// suite has to be read whole to change the other.
+// Shared blocker-row fixtures.
 import { realpathSync } from 'node:fs';
 import { statusView } from '../plugins/oai/scripts/lib/job-view.mjs';
 import { tempDir } from './helpers.mjs';
@@ -29,12 +24,12 @@ export const realWorkspace = (tag) => realpathSync(tempDir(`oai-ws-${tag}-`));
  * reaches `malformed` through the *queued* branch cannot be inserted by the
  * helper at all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
  *
- * **It is no longer the only queued malformed shape.** A queued row
- * holding an unreadable `waiter_pid` is malformed too, and that one IS reachable
- * through `insertSynthetic` — `waiterPid: 'garbage'` binds straight through a
- * prepared statement into a non-`STRICT` column. The two are not
- * interchangeable fixtures: this one can still have a worker attach to it, and
- * that one never can.
+ * **It is not the only queued malformed shape.** A queued row holding an
+ * unreadable `waiter_pid` is malformed too, and that one IS reachable through
+ * `insertSynthetic` — `waiterPid: 'garbage'` binds straight through a prepared
+ * statement into a non-`STRICT` column. The two are not interchangeable
+ * fixtures: this one, on a row with no `waiter_pid`, can still have a worker
+ * attach to it, and that one never can.
  */
 export function breakStamps(state, id) {
   withStore(state, (db) =>

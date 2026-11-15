@@ -135,11 +135,9 @@ test('a worker that registered is never abandoned, however long it waits', { ski
 test('a running row with an UNREADABLE pid blocks the queue rather than being collected', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // `'garbage'` reaches the column because
-    // the jobs table is not STRICT, so INTEGER is an affinity rather than a
-    // constraint and a foreign writer's TEXT value lands verbatim. Before the
-    // fix this read as `dead` — no OS probe was even attempted — and
-    // reconciliation terminalized the row on that.
+    // `'garbage'` reaches the column because the jobs table is not STRICT, so
+    // INTEGER is an affinity rather than a constraint and a foreign writer's
+    // TEXT value lands verbatim.
     insertSynthetic(scenario.state, { id: 'unreadable', state: 'running', workerPid: 'garbage' });
 
     const settled = await submitAndSettle(scenario, ['--max-wait', '1']);
@@ -158,21 +156,19 @@ test('a running row with an UNREADABLE pid blocks the queue rather than being co
 test('a queued row with an UNREADABLE waiter pid is not skipped, and takes no new registration', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // `2 ** 40` is
-    // a plausible-looking positive integer no OS will ever hand out, so before
-    // the fix this row was skipped and reconciled away.
+    // `2 ** 40` is a plausible-looking positive integer no OS will ever hand out.
     const seq = insertSynthetic(scenario.state, { id: 'unreadable-queued', waiterPid: 2 ** 40 });
 
     const settled = await submitAndSettle(scenario, ['--max-wait', '1']);
     assert.equal(settled.state, 'queue-timeout');
     assert.equal(readJob(scenario.state, 'unreadable-queued').state, 'queued', 'it must not be collected');
 
-    // The permanence claim, executed rather than asserted in prose. Every message
-    // about this shape rests on it: `registerWaiter` carries `AND waiter_pid IS
-    // NULL`, so no worker can ever take this row — and no automatic path collects
-    // it either, which leaves `/oai:abandon --force` as the operator's way out
-    // rather than the only thing that can end it: a worker that registered before
-    // the corruption can still time the row out.
+    // The permanence claim. Every message about this shape rests on it:
+    // `registerWaiter` carries `AND waiter_pid IS NULL`, so no worker can ever
+    // take this row — and no automatic path collects it either, which leaves
+    // `/oai:abandon --force` as the operator's way out rather than the only thing
+    // that can end it: a worker that registered before the corruption can still
+    // time the row out.
     const attached = withStore(scenario.state, (db) => registerWaiter(db, seq, process.pid, new Date().toISOString()));
     assert.equal(attached, false, 'no worker may attach to a row that already holds an unreadable pid');
   } finally {
@@ -269,7 +265,7 @@ test('a row THIS build understands is not told a newer plugin wrote it', { skip:
 });
 
 /**
- * Made deterministic: `reconcileAll` and `viewOf` each probe
+ * Deterministic: `reconcileAll` and `viewOf` each probe
  * liveness separately, so a row can be fine at the first probe and dead by the
  * second. Calling `renderList`/`statusView` directly, on a row seeded straight
  * into the store, skips `reconcileAll` entirely — which is exactly what a row
@@ -303,7 +299,7 @@ test('a known-schema dead row on a writable database is not blamed on a version 
     + ' its liveness or a timing threshold like the startup grace period may have moved, after'
     + ' reconciliation took its snapshot). If it keeps showing dead across repeated runs rather'
     + ' than clearing on its own, it is in a shape reconciliation does not collect.',
-    'the complete case-B note, verbatim, not just fragments of it, and nothing appended');
+    'the final line exactly matches the complete note for a known-schema row that reads dead at render time on a writable database');
 });
 
 test('a known-schema never-started row on a writable database is not blamed on a worker that never existed', { skip: NEEDS_SQLITE }, () => {
@@ -332,5 +328,5 @@ test('a known-schema never-started row on a writable database is not blamed on a
     + ' moved, after reconciliation took its snapshot). If it keeps showing never-started across'
     + ' repeated runs rather than clearing on its own, it is in a shape reconciliation does not'
     + ' collect.',
-    'the complete case-B note, verbatim, not just fragments of it, and nothing appended');
+    'the final line exactly matches the complete note for a known-schema row that reads never-started at render time on a writable database');
 });

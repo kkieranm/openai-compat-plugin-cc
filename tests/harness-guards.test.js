@@ -1,10 +1,10 @@
 // Structural guards on the TEST HARNESS itself.
 //
-// Separate from `structure.test.js` because that file sits at its own size
-// budget, and because these guard a different thing: not the shape of the source
-// but the ability of the suite to run at all on the runtimes this package
-// declares. A defect here does not make a test fail — it makes a test file
-// vanish, which is the failure mode the repo's zsh rule already exists for.
+// Separate from `structure.test.js` because these guard a different thing: not
+// the shape of the source but the ability of the suite to run at all on the
+// runtimes this package declares. A defect here does not make a test fail — it
+// makes a test file vanish, which is the failure mode the repo's zsh rule
+// already exists for.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -28,8 +28,6 @@ function filesUnder(dir) {
 // two forms this repo uses deliberately.
 const STATIC_IMPORT = /^\s*import\s+(?:[^;'"]*\s+from\s+)?['"]node:sqlite['"]/m;
 
-// `job-helpers.mjs` once carried a static `node:sqlite` import that killed
-// ELEVEN test files at link time on every runtime this package supports.
 // `node:sqlite` is unavailable on Node 18.18–22.12, on builds compiled
 // without SQLite, and under `--no-experimental-sqlite`; this package
 // declares `engines: >=18.18`.
@@ -39,8 +37,8 @@ const STATIC_IMPORT = /^\s*import\s+(?:[^;'"]*\s+from\s+)?['"]node:sqlite['"]/m;
 // disappear behind one `ERR_UNKNOWN_BUILTIN_MODULE` naming no test. A suite that
 // silently shrinks its own matrix has stopped being able to fail.
 //
-// The guard is falsifiable: reinstate `import { DatabaseSync } from 'node:sqlite'`
-// at the top of `tests/job-helpers.mjs` and this test names that file.
+// The guard is falsifiable: adding `import { DatabaseSync } from 'node:sqlite'`
+// at the top of any test file makes this test name that file.
 test('no test file statically imports node:sqlite, which links before any skip can run', () => {
   const offenders = filesUnder(TESTS)
     .filter((file) => STATIC_IMPORT.test(readFileSync(file, 'utf8')))
@@ -63,6 +61,6 @@ test('the harness guard actually reads the test directory', () => {
   assert.ok(files.length > 20, `expected to scan the test suite, found ${files.length} files`);
   assert.ok(
     files.some((file) => file.endsWith('job-helpers.mjs')),
-    'job-helpers.mjs must be in scope — it is the file whose static import prompted this guard',
+    'job-helpers.mjs must be in scope — many test files import it, so a static node:sqlite import there would fail them all at link time',
   );
 });

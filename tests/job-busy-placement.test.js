@@ -1,5 +1,5 @@
-// Three defects that a retry cannot fix, because they are about WHERE the retry
-// sits and what happens when it runs out.
+// Three behaviours that turn on WHERE the retry sits and what happens when it
+// runs out.
 //
 // `job-busy.test.js` proves each wrapped write survives a TRANSIENT busy. None
 // of that says anything about the exhausted case, or about a write whose failure
@@ -28,11 +28,8 @@ function redirect(state, seq, baseUrl) {
 }
 
 test('a storage failure on the COMPLETED write is never republished as a task failure', { skip: NEEDS_SQLITE }, async () => {
-  // The defect: the completed write used to sit inside the try whose catch
-  // publishes `failed`. When it exhausted its retry budget the busy propagated
-  // into that catch, which wrote `failed` — and by then contention had had
-  // thirty seconds to clear, so that write very likely SUCCEEDED. An answer that
-  // existed was published as a task failure.
+  // The completed write sits outside `runAndPublish`'s `failed` catch, so an
+  // exhausted busy cannot republish an existing answer as `failed`.
   //
   // Driven with a NON-busy storage error rather than a thirty-second lock,
   // because the two reach the identical line by the identical route and only one
@@ -104,10 +101,8 @@ test('a storage failure on the COMPLETED write is never republished as a task fa
 });
 
 test('a busy while REGISTERING as the waiter does not silently lose the job', { skip: NEEDS_SQLITE }, async () => {
-  // `registerWaiter`'s caller handles the false RETURN and has no catch at all,
-  // so a busy killed the worker before it had sent anything and the job it was
-  // spawned for simply never ran. The exclusion list in `job-busy.mjs` claimed
-  // this caller "treats a throw as the answer"; it did not.
+  // `registerWaiter`'s caller handles the false RETURN and has no catch, so an
+  // unretried busy would kill the worker before it sent anything.
   const scenario = await queueScenario();
   const { DatabaseSync } = await import('node:sqlite');
   const originalPrepare = DatabaseSync.prototype.prepare;

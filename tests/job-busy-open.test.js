@@ -1,11 +1,10 @@
-// The two things about `openStore` that no witness could previously fail on.
+// Two behaviours of `openStore`, proved by injecting a real busy into the open.
 //
 // `job-busy.test.js` already pins the SHAPE of the open — that the WAL pragma is
 // conditional, and that the busy_timeout is short then long. That inspection
 // runs across two clean opens, so it never raises a busy at all: removing
 // `withBusyRetry` from `openStore`, or deleting the `db.close()` that runs when
-// an attempt throws, left the whole suite green. Both are proved here by
-// injecting a real busy into the open and observing what the code does with it.
+// an attempt throws, would leave `job-busy.test.js` green.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync } from 'node:fs';
@@ -22,9 +21,9 @@ function busyError() {
 /**
  * Make the first `n` executions of the exclusive-lock WAL pragma fail busy.
  *
- * That statement is chosen because it is the one that threw in the wild, and
- * because it runs on a first open — so each retried attempt reaches it again,
- * which is what makes the injection count equal the attempt count.
+ * That statement is chosen because it runs on a first open — so each retried
+ * attempt reaches it again, which is what makes the injection count equal the
+ * attempt count.
  */
 function failWalTimes(DatabaseSync, n) {
   const original = DatabaseSync.prototype.exec;
@@ -58,10 +57,10 @@ test('a busy during the open is RETRIED, not reported', { skip: NEEDS_SQLITE }, 
 });
 
 test('each FAILED open attempt closes its handle before retrying', { skip: NEEDS_SQLITE }, async () => {
-  // The second surviving mutation: deleting the `try { db.close(); } catch {}`
-  // in `openOnce`'s catch. Nothing observed the leak, because a leaked handle
-  // still lets every later assertion pass — so this counts instead. Two injected
-  // busies mean two attempts that throw, and each owes exactly one close.
+  // Deleting the `try { db.close(); } catch {}` in `openOnce`'s catch leaks a
+  // handle per attempt without failing any other assertion, so this counts
+  // closes. Two injected busies mean two attempts that throw, and each owes
+  // exactly one close.
   const state = stateDir();
   const { DatabaseSync } = await import('node:sqlite');
   const injection = failWalTimes(DatabaseSync, 2);

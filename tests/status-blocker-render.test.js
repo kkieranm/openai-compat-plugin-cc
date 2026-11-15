@@ -1,8 +1,8 @@
 // What `/oai:status` SAYS about the row it named — the marker, the notes, the
 // count, and the whole chain through the real command.
 //
-// Split from `status-blocker.test.js`, which answers the other half of the
-// question: which row gets named at all.
+// `status-blocker.test.js` answers the other half of the question: which row
+// gets named at all.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderList } from '../plugins/oai/scripts/lib/job-render.mjs';
@@ -100,8 +100,8 @@ test('the blocker is shown OR counted elsewhere, never both', { skip: NEEDS_SQLI
 test('the blocker reaches the screen through the real command', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // Through the CLI, because everything else tests the two functions and
-    // nothing tests that `cmd-status.mjs` carries the new field between them.
+    // Through the CLI: `cmd-status.mjs` must carry `statusView`'s blocker into
+    // `renderList`.
     const here = realWorkspace('cli');
     insertSynthetic(scenario.state, { id: 'theirs', workspace: THERE, waiterPid: process.pid, beatAgoMs: TEN_MINUTES });
     insertSynthetic(scenario.state, { id: 'mine', workspace: here, waiterPid: process.pid });
@@ -171,11 +171,10 @@ test('a malformed blocker with NO pid recorded is named, and gets no command at 
   // A running row with no worker pid and a stale, PARSEABLE beat.
   //
   // **The universe here is malformed rows with NO PID RECORDED, not every
-  // malformed row** — the title used to claim the latter while the fixture only
-  // ever covered the former. A recorded-but-unreadable pid gets a different
-  // SENTENCE, covered by the two tests below, but the same silence about
-  // commands: `remedyFor` returns null for any row that is not `live`, so no
-  // malformed row of any shape is offered one.
+  // malformed row**. A recorded-but-unreadable pid gets a different SENTENCE,
+  // covered by the two tests below, but the same silence about commands:
+  // `remedyFor` returns null for any row that is not `live`, so no malformed row
+  // of any shape is offered one.
   insertSynthetic(state, {
     id: 'theirs', state: 'running', workerPid: null, workspace: THERE,
     startedAgoMs: 600_000, beatAgoMs: 90_000,
@@ -189,8 +188,8 @@ test('a malformed blocker with NO pid recorded is named, and gets no command at 
     // would pass vacuously the day such rows stopped being marked at all.
     assert.match(text, /must clear before/);
     // And the gate itself: `/oai:abandon` refuses a malformed row without
-    // --force, so naming the plain form here would advertise a refusal. Deleting
-    // that one condition left the whole suite green until this test existed.
+    // --force, so naming the plain form here would advertise a refusal. This
+    // assertion is the witness for that condition.
     assert.doesNotMatch(text, /oai:abandon/);
   });
 });
@@ -209,8 +208,7 @@ test('the remedy reaches the real CLI, and a too-new database withholds it', { s
       id: 'mine', state: 'queued', waiterPid: process.pid, workspace: mine, beatAgoMs: 1_000,
     });
 
-    // The POSITIVE half, and it is new coverage in its own right: nothing before
-    // this drove the remedy line through the actual command.
+    // The POSITIVE half, driving the remedy line through the actual command.
     const writable = await scenario.run(['status'], { cwd: mine });
     assert.match(writable.stdout, /must clear before/);
     assert.match(writable.stdout, /oai:abandon theirs/);
@@ -229,7 +227,7 @@ test('the remedy reaches the real CLI, and a too-new database withholds it', { s
 
 test('a queued row with an unreadable pid is told the truth about its future, not the timestamp shape\'s', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // The two queued malformed shapes have opposite futures, and used to share one
+  // The two queued malformed shapes have opposite futures, so each gets its own
   // sentence. `registerWaiter` carries `AND waiter_pid IS NULL`,
   // so a row already holding a value can never be attached by anything —
   // telling the operator a worker might still pick it up argues them out of the

@@ -1,10 +1,11 @@
 // A pid that cannot be read is not a process that has died.
 //
-// `isAlive` used to answer `false` to three different questions — "this is not a
-// pid at all", "the OS says ESRCH", and "process.kill threw something we do not
-// interpret" — and `livenessOf` turned every one of them into the verdict
-// `dead`. Reconciliation then terminalized the row and `/oai:abandon` told the
-// operator its process was already gone, about a number that never denoted one.
+// `pidLiveness` separates three answers — live, gone (the OS says ESRCH), and
+// unreadable ("this is not a pid at all", or `process.kill` threw something we
+// do not interpret) — and `livenessOf` maps `unreadable` to `malformed`, never
+// `dead`. Were it mapped to `dead`, reconciliation would terminalize the row and
+// `/oai:abandon` would tell the operator its process was already gone, about a
+// number that never denoted one.
 //
 // The fixtures below are the shapes that make the difference observable, and the
 // reason they are worth naming individually is that they reach the answer by
@@ -22,7 +23,7 @@ import { deadPid } from './job-helpers.mjs';
  * `0` and `-1` are the two that must never reach `process.kill`: `kill(0, 0)`
  * signals this process's whole group and `kill(-1, 0)` every process the user
  * may signal, so both SUCCEED. A shape check placed after the probe would report
- * them `live`, which is worse than the defect being fixed.
+ * them `live`.
  */
 const UNREADABLE = [-1, 0, 1.5, 2 ** 40, 'garbage'];
 
@@ -55,12 +56,11 @@ test('livenessOf reports an unreadable pid as malformed, in both states', () => 
   }
 });
 
-test('the verdicts a readable pid still produces are unchanged', async () => {
+test('a readable pid reads live or dead, and a null pid stays malformed', async () => {
   const now = Date.now();
   assert.equal(livenessOf({ state: 'running', worker_pid: process.pid }, now), 'live');
   assert.equal(livenessOf({ state: 'running', worker_pid: await deadPid() }, now), 'dead');
-  // The pre-existing malformed shape, asserted here so the new arm cannot be
-  // shown to work by having swallowed the old one.
+  // Asserted so the unreadable arm cannot pass by swallowing the null case.
   assert.equal(livenessOf({ state: 'running', worker_pid: null }, now), 'malformed');
 });
 

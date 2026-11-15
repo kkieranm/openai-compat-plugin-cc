@@ -1,18 +1,19 @@
 // What happens to the QUEUE when a worker never starts.
 //
 // The defect this guards is not about the job that failed — it is about every
-// job behind it. A rejected spawn used to leave the row `queued` with
-// `spawned_at` NULL, which `livenessOf` calls `starting` and `queuedRole` maps to
-// `blocks`, so a successor waited out the whole 120s startup grace for a worker
-// that, in the usual case, was never coming.
+// job behind it. A queued row with no waiter recorded and a parseable
+// `spawned_at ?? created_at` reads `starting` until the 120s startup grace
+// expires, and `queuedRole` maps that to `blocks`, so a successor would wait out
+// the whole grace for a worker that, in the usual case, is never coming; a
+// failed launch must terminalize it.
 //
 // "In the usual case" is not softening. A rejection does not prove no child
 // exists — `spawnWorker` can reject while a detached worker is alive — which is
-// why the fix uses a compare-and-set. The cases split by ROW SHAPE rather than by
-// what any process is doing: this file covers the row no worker REGISTERED against, and
-// `job-launch-outcome.test.js` covers the row a waiter already holds. Neither
-// case has a second process, and neither needs one — the shape is what the
-// compare-and-set reads.
+// why terminalization is a compare-and-set. The cases split by ROW SHAPE rather
+// than by what any process is doing: this file covers the row no worker
+// REGISTERED against, and `job-launch-outcome.test.js` covers the row a waiter
+// already holds. Neither case has a second process, and neither needs one — the
+// shape is what the compare-and-set reads.
 //
 // `submitTask` takes an injectable `spawn`.
 import assert from 'node:assert/strict';
@@ -48,10 +49,9 @@ async function withSubmission(fn) {
   // restore reaching for a binding that may not exist.
   const previous = { config: process.env.OAI_PLUGIN_CONFIG, state: process.env.OAI_PLUGIN_STATE };
   const server = await startFakeServer(modelsAndChat());
-  // EVERYTHING after the listen is inside the `try`. A throw in `stateDir()` or
-  // `writeConfig()` used to escape before `server.close()` could run, leaving a
-  // listening handle that keeps the event loop alive — this suite has already
-  // lost 204 seconds to that exact class once.
+  // EVERYTHING after the listen is inside the `try`, so `server.close()` runs
+  // even if `stateDir()` or `writeConfig()` throws; a leaked listening handle
+  // would keep the event loop alive.
   let state;
   try {
     state = stateDir();
@@ -81,7 +81,7 @@ const submission = { spec: TASK_SPEC, options: { background: true }, inlinePromp
  * The waiter registration is not ceremony: a queued row with no `waiter_pid` is
  * classified `starting` and BLOCKS ITSELF, so a successor without one reads
  * `blocked` no matter what is ahead of it — and this file would then be
- * measuring its own fixture instead of the fix.
+ * measuring its own fixture instead of the queue behaviour.
  */
 function successorVerdict(state) {
   const seq = insertSynthetic(state, { id: 'successor' });
@@ -112,29 +112,30 @@ test('an unconfirmed launch terminalizes its own UNREGISTERED row and lets the q
   });
 });
 
-test('POSITIVE CONTROL: the pre-fix row shape does block a successor', { skip: NEEDS_SQLITE }, async () => {
+test('POSITIVE CONTROL: a queued row with no waiter blocks a successor inside the grace', { skip: NEEDS_SQLITE }, async () => {
   // What this control does and does not establish. It does NOT make the test above
   // capable of failing — that test reddens on its own when `terminalizeSpawnFailure`
   // is removed, because the row stays `queued` and its `failed` assertion fails
-  // directly. Measured, not assumed.
+  // directly.
   //
   // What it establishes is the meaning of the SUCCESSOR assertion, which is the
-  // weaker half: `acquired` is also what an empty queue, a broken fixture, or a fix
-  // that DELETED the row would return. Only showing the same call return `blocked`
-  // against the shape the defect actually left — queued, no waiter, no spawn stamp,
-  // inside the grace — makes `acquired` mean the queue moved rather than that
-  // nothing was there to hold it.
+  // weaker half: `acquired` is also what an empty queue, a broken fixture, or an
+  // implementation that deleted the row would return. Only showing the same call
+  // return `blocked` against a row `livenessOf` reads as it reads the one a
+  // failed launch leaves unterminalized — queued, no waiter, inside the grace —
+  // makes `acquired` mean the queue moved rather than that nothing was there to
+  // hold it.
   await withSubmission(async ({ state }) => {
     insertSynthetic(state, { id: 'never-spawned', state: 'queued', waiterPid: null, agedMs: 0 });
-    assert.equal(successorVerdict(state), 'blocked', 'this is the behaviour the fix removes — if this ever reads "acquired", the test above proves nothing');
+    assert.equal(successorVerdict(state), 'blocked', 'this row reads like the one terminalization must clear — if the verdict ever reads "acquired", the test above proves nothing');
   });
 });
 
 test('a non-busy sweep failure rejects before a row or a worker exists', { skip: NEEDS_SQLITE }, async () => {
   // The sweep still rethrows — that is deliberate, because a --json caller cannot
   // see a stderr warning and retention would fail silently forever.
-  // What changed is WHERE it lands: before anything is created, so a broken
-  // sweep costs a retry rather than a job whose worker may already be spending.
+  // It lands before anything is created, so a broken sweep costs a retry rather
+  // than a job whose worker may already be spending.
   await withSubmission(async ({ state }) => {
     const { DatabaseSync } = await import('node:sqlite');
     const original = DatabaseSync.prototype.prepare;
@@ -150,7 +151,7 @@ test('a non-busy sweep failure rejects before a row or a worker exists', { skip:
         /SQLITE_CORRUPT/,
         'a defect in the sweep is still raised, never swallowed',
       );
-      assert.equal(spawned, 0, 'nothing was spawned: the sweep now runs before the worker exists');
+      assert.equal(spawned, 0, 'nothing was spawned: the sweep runs before the worker exists');
       // The half that catches a sweep placed between the insert and the spawn;
       // asserting only the rejection would let that placement pass.
       assert.deepEqual(readJobs(state), [], 'and no queued orphan was left to block the queue');
@@ -183,13 +184,11 @@ test('a non-busy sweep failure rejects before a row or a worker exists', { skip:
 //
 // One thing it does NOT cover, and the gap is recorded rather than papered over:
 // deleting the stderr warning in `spawnAndStamp` leaves this test green, so the
-// "reported by message" half of the new behaviour has no witness here.
+// "reported by message" half of the behaviour has no witness here.
 //
-// This pairs with the busy case already settled elsewhere. The distinction that
-// used to live at this line — busy is survivable, anything else is fatal — was
-// wrong in the one direction that costs money: a corrupt database is no more
-// recoverable for the user than a locked one, and both leave the same worker
-// running with the same id unprinted.
+// This pairs with the busy case already settled elsewhere. A corrupt database is
+// no more recoverable for the user than a locked one, so treating either as
+// fatal would withhold the job id while a spawned worker may still be running.
 test('a NON-BUSY fault stamping the row still returns the id', { skip: NEEDS_SQLITE }, async () => {
   await withSubmission(async ({ state }) => {
     const { DatabaseSync } = await import('node:sqlite');
@@ -241,9 +240,9 @@ test('a stderr that throws does not cost the caller its id', { skip: NEEDS_SQLIT
     };
     // Only THIS message throws. `submitTask` writes the endpoint notice and the
     // ETA to stderr before it ever spawns, so a stderr that throws for everything
-    // fails the submission earlier and the test would pass for the wrong reason —
-    // it did exactly that on the first attempt. Restored in a `finally` that
-    // cannot be skipped: a stderr left throwing takes the whole run with it.
+    // fails the submission earlier, before the warning this test is about.
+    // Restored in a `finally` that cannot be skipped: a stderr left throwing
+    // takes the whole run with it.
     process.stderr.write = function guarded(chunk, ...rest) {
       if (typeof chunk === 'string' && chunk.includes('start time could not be recorded')) {
         throw new Error('EPIPE: broken pipe');

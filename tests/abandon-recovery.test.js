@@ -1,10 +1,4 @@
 // What `/oai:abandon` says about a row it did NOT simply write off.
-//
-// Split from `abandon-messages.test.js` at its size budget, on the seam the
-// command itself has: that file covers what is said about an ordinary write-off,
-// this one covers the refusals and the two recovery paths — the cases where the
-// operator's verb did not apply as asked, and the reply has to explain why
-// without crediting or blaming the wrong actor.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';
@@ -22,9 +16,8 @@ function wedge(state, overrides = {}) {
 test('a never-started row is not described as a process that was already gone', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // Queued, no waiter ever registered, PAST the grace. Nothing was ever
-    // spawned, so "its process was already gone" would be false — the sentence
-    // that shape inherited when both recoveries shared one message.
+    // Queued, no waiter ever registered, PAST the grace. The row holds no pid,
+    // so "its process was already gone" would describe a process it never named.
     insertSynthetic(scenario.state, {
       id: 'nevers', state: 'queued', waiterPid: null, agedMs: 200_000, beatAgoMs: null,
     });
@@ -68,8 +61,8 @@ test('a forced malformed row claims no knowledge the record denies', { skip: NEE
 test('a row already settled by recovery is reported, not refused', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // What a CONCURRENT reconcile leaves behind. Before this, the operator whose
-    // queue had just been freed got exit 1 and "--force will not change that".
+    // A row shaped like one a CONCURRENT reconcile has settled. Reporting a row
+    // that reconcile already settled exits 0, not 1.
     insertSynthetic(scenario.state, {
       id: 'settled', state: 'failed', workerPid: null, startedAgoMs: 600_000,
       failure: { error: true, reason: 'worker-died', message: 'gone', hint: null },
@@ -110,8 +103,7 @@ test('a recovered blocker reports drainage when a job really can start', { skip:
     const { deadPid } = await import('./job-helpers.mjs');
     // The positive twin of the empty-queue negative in `abandon-cli.test.js`.
     // Recovery terminalizes this blocker inside the transaction, so the successor
-    // becomes runnable and the sentence is earned — the path used to stay silent
-    // on the grounds that it did not compute drainage, which was circular.
+    // becomes runnable and the sentence is earned.
     insertSynthetic(scenario.state, {
       id: 'reaped', state: 'running', workerPid: await deadPid(), startedAgoMs: 600_000, beatAgoMs: STALE,
     });
@@ -203,8 +195,8 @@ test('a pending cancellation is reported as still standing, and bounded', { skip
     // MC/DC twin of the plain stale wedge above: identical but for
     // `cancel_requested_at`. `finish` does not clear that column and the
     // heartbeat's read of it is not state-guarded, so an abandoned-but-alive
-    // worker still sees the request and exits — the operator's best news, and it
-    // was being contradicted by a flat "never asked to stop".
+    // worker still sees the request and exits — the operator's best news, so a
+    // pending cancellation must not be reported as "never asked to stop".
     wedge(scenario.state, { cancelAgoMs: 1_000 });
 
     const { status, stdout } = await scenario.run(['abandon', 'wedged']);
@@ -227,8 +219,6 @@ test('the sleep caveat rides on a STALE beat, not on --force', { skip: NEEDS_SQL
     assert.match(stale.stdout, /may simply resume/);
     // The positive control for the two `doesNotMatch` on this phrase in this same
     // file: a plain wedge with no cancellation pending prints the default arm.
-    // It lived here before a file split carried it away from the branch it
-    // proved, and its absence is invisible to a green run.
     assert.match(stale.stdout, /never asked to stop/);
 
     // The twin differs in exactly one predicate: beat freshness. `--force` is
@@ -248,8 +238,9 @@ test('the pid shown is the one the row STATE makes relevant', { skip: NEEDS_SQLI
   const scenario = await queueScenario();
   try {
     // Both columns populated: a running row carrying a stale `waiter_pid` from
-    // before it was claimed. Printing "whichever is populated" put two different
-    // pids in one invocation — the descriptor's and the stored record's.
+    // before it was claimed. Printing whichever column is populated would show
+    // two different pids in one invocation — the descriptor's and the stored
+    // record's.
     insertSynthetic(scenario.state, {
       id: 'twopids', state: 'running', workerPid: process.pid, waiterPid: 999_999,
       startedAgoMs: 600_000, beatAgoMs: STALE,

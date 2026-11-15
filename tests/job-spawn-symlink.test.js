@@ -1,6 +1,6 @@
-// `spawnWorker`'s log-file open used to be `openSync(logPathFor(seq), 'a', 0o600)`
-// — no `O_NOFOLLOW`. The path is predictable (`logs/<seq>.log`), so a symlink
-// planted there ahead of the worker would be followed and appended to.
+// `spawnWorker` opens the log with `O_NOFOLLOW`: `logs/<seq>.log` is
+// predictable, so a symlink planted there ahead of the worker would otherwise
+// be followed and appended to.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
