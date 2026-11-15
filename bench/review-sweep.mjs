@@ -347,7 +347,7 @@ function main() {
   const commits = enumerateCommits(options, gitAtRepo);
   if (options.foreignRepo) process.stderr.write(`Reviewing ${options.repo}\n`);
   process.stderr.write(`Sweeping ${commits.filter((c) => c.eligible).length} eligible of ${commits.length} enumerated commits.\n`);
-  // Stamped from the START, not from the end as this once was: the ledger must
+  // Stamped from the START: the ledger must
   // be named before the first review, and the report it may become has to carry
   // the same stamp or recovery cannot name its output after the run it recovers.
   const stamp = new Date(startMs).toISOString().replace(/[:.]/g, '-');

@@ -218,21 +218,23 @@ async function singleCommit(ref, root) {
  * Which diff, and — just as importantly — which revision the whole files come
  * from. Reading the working tree for a `--commit` review would show the model
  * code that was never in the change it is being asked about, so every mode
- * pairs its diff with the matching content reader.
+ * pairs its diff with the matching content reader. Each revision handed to
+ * `show`, `diff-tree` or `diff` is followed by `--`, so a file named like it is
+ * never read as a path.
  */
 async function selectDiff(options, root) {
   if (options.commit !== undefined) {
     const ref = await singleCommit(options.commit, root);
     return {
       label: `commit ${options.commit}`,
-      diff: await runGit(['show', ref], root),
+      diff: await runGit(['show', ref, '--'], root),
       // --root and --cc exist to make this list agree with `git show` above.
       // Without --root a repository's first commit lists no files; without --cc
       // neither does a merge, though `git show` prints a combined diff for any
       // merge that resolved a conflict. Both would drop whole files for a
       // commit that plainly changed them, and nothing would say so. --cc leaves
       // ordinary commits untouched.
-      listArgs: ['diff-tree', '--no-commit-id', '--name-status', '-r', '--root', '--cc', '-z', ref],
+      listArgs: ['diff-tree', '--no-commit-id', '--name-status', '-r', '--root', '--cc', '-z', ref, '--'],
       readContent: (path) => showBlob(`${ref}:${path}`, root),
     };
   }
@@ -242,8 +244,8 @@ async function selectDiff(options, root) {
     const mergeBase = (await runGit(['merge-base', options.base, 'HEAD'], root)).trim();
     return {
       label: `branch vs ${options.base}`,
-      diff: await runGit(['diff', `${mergeBase}..HEAD`], root),
-      listArgs: ['diff', '--name-status', '-z', `${mergeBase}..HEAD`],
+      diff: await runGit(['diff', `${mergeBase}..HEAD`, '--'], root),
+      listArgs: ['diff', '--name-status', '-z', `${mergeBase}..HEAD`, '--'],
       readContent: (path) => showBlob(`HEAD:${path}`, root),
     };
   }
@@ -260,8 +262,8 @@ async function selectDiff(options, root) {
   }
   return {
     label: 'uncommitted changes',
-    diff: await runGit(['diff', 'HEAD'], root),
-    listArgs: ['diff', 'HEAD', '--name-status', '-z'],
+    diff: await runGit(['diff', 'HEAD', '--'], root),
+    listArgs: ['diff', 'HEAD', '--name-status', '-z', '--'],
     // Root-relative, like every path `git diff` emits — see repositoryRoot.
     readContent: (path) => readWorktree(root, path),
     includeUntracked: true,

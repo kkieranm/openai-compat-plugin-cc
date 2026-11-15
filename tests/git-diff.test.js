@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
@@ -610,6 +610,80 @@ for (const { mode, options, committed, spec } of BLOB_READERS) {
 
     assert.deepEqual(target.changed, [{ path: 'seed.txt..other', content: 'the dotted file\n' }]);
     assert.deepEqual(target.unreadable, []);
+  });
+}
+
+/** A root file git ignores, so it is never review content itself. */
+async function plantIgnored(dir, name) {
+  mkdirSync(join(dir, '.git', 'info'), { recursive: true });
+  // A template's exclude file need not end in a newline.
+  appendFileSync(join(dir, '.git', 'info', 'exclude'), `\n/${name}\n`);
+  writeFileSync(join(dir, name), 'named like the revision\n');
+  await git(['check-ignore', '--quiet', '--', name], dir);
+}
+
+// Each mode's revision word, as the name of a file in the root.
+const REVISION_NAMED_FILES = [
+  { mode: 'default', options: {}, committed: false, name: async () => 'HEAD' },
+  {
+    mode: '--base',
+    options: { base: 'HEAD~1' },
+    committed: true,
+    name: async (dir) => `${(await git(['merge-base', 'HEAD~1', 'HEAD'], dir)).trim()}..HEAD`,
+  },
+  {
+    mode: '--commit',
+    options: { commit: 'HEAD' },
+    committed: true,
+    name: async (dir) => (await git(['rev-parse', 'HEAD'], dir)).trim(),
+  },
+];
+
+for (const { mode, options, committed, name } of REVISION_NAMED_FILES) {
+  test(`the ${mode} review reads its revision as a revision beside a root file of that name`, async () => {
+    const dir = await createRepo();
+    writeFileSync(join(dir, 'seed.txt'), 'seed\nchanged\n');
+    if (committed) await git(['commit', '--quiet', '-am', 'change'], dir);
+    await plantIgnored(dir, await name(dir));
+
+    const target = await collectTarget(options, dir);
+
+    assert.match(target.diff, /^\+changed$/m);
+    assert.deepEqual(target.changed, [{ path: 'seed.txt', content: 'seed\nchanged\n' }]);
+    if (!committed) assert.deepEqual(target.files, [], 'the planted file is not review content');
+    assert.deepEqual(target.unreadable, []);
+  });
+}
+
+const UNBORN_HEAD_FILES = [
+  { shape: '', plant: async () => {} },
+  { shape: ', beside a root file named HEAD that is ignored', plant: async (dir) => plantIgnored(dir, 'HEAD') },
+  {
+    shape: ', beside a root file named HEAD that is staged',
+    plant: async (dir) => {
+      writeFileSync(join(dir, 'HEAD'), 'named like the revision\n');
+      await git(['add', 'HEAD'], dir);
+    },
+  },
+  {
+    shape: ', beside a root file named HEAD that is untracked',
+    plant: async (dir) => writeFileSync(join(dir, 'HEAD'), 'named like the revision\n'),
+  },
+];
+
+for (const { shape, plant } of UNBORN_HEAD_FILES) {
+  test(`the default review on a branch with no commits fails on HEAD${shape}`, async () => {
+    const dir = tempDir('oai-plugin-repo-');
+    await git(['init', '--quiet', '--initial-branch=main'], dir);
+    writeFileSync(join(dir, 'a.txt'), 'staged\n');
+    await git(['add', 'a.txt'], dir);
+    await plant(dir);
+
+    await assert.rejects(collectTarget({}, dir), (error) => {
+      assert.match(error.message, /failed: [\s\S]*HEAD/, "git's own refusal names HEAD");
+      assert.doesNotMatch(error.message, /Nothing to review/, 'a staged change is not an empty review');
+      return true;
+    });
   });
 }
 

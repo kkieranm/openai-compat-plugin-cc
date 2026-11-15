@@ -1386,7 +1386,8 @@ The shape: a path git listed is spliced into an argument git parses as a revisio
 sequence in the path means something to that parser. Each fix closed one rule and left the next.
 `showBlob` reads with `git cat-file blob <spec>`, which takes one object name and wants a blob: no
 pathspec, no range, no filename ambiguity. The spec is still parsed as an object name, so a name git
-resolves to some other blob is not ruled out.
+resolves to some other blob is not ruled out. The revision-or-filename check behind cases 3 and 4 also
+reaches a revision argument: see "A revision argument git can read as a path".
 
 **Guarded by** `tests/git-diff.test.js` — cases 1 and 2: "a file tracked under an NFD name is read from
 each revision though git precomposes argv", "NFC and NFD twins of one name in one tree are each read as
@@ -1419,3 +1420,27 @@ text", "an untracked symlink to a directory is sent as its link text", "a path s
 its lstat is refused, not followed", "a path swapped for a symlink after its fstat is still read through
 the checked descriptor", "a path swapped for a FIFO after its lstat is refused without blocking", and "a
 review request carries an untracked symlink as its link text on every rung, never its target".
+
+## A revision argument git can read as a path
+
+Confirmed in `selectDiff`, and a further instance of the revision-or-filename check behind cases 3 and
+4 of "A stored path interpolated into a git revision spec is reinterpreted by git". Given no `--`, a
+git command that takes both revisions and paths decides what a bare argument is by looking at the work
+tree: an argument that also names a file in the root is refused as ambiguous, and one that names no
+revision but does name a file is read as a path. A root file named `HEAD`, a commit's full id or
+`<merge-base>..HEAD` made `/oai:review` fail on its own revision; on a branch with no commits, `git
+diff HEAD` beside a file named `HEAD` read it as a path, so with that file ignored or staged the review
+reported nothing to review over staged changes.
+
+Every `git show`, `diff-tree` and `git diff` call `selectDiff` builds with a revision ends it with
+`--`; `merge-base` and `rev-parse --verify` take revisions only. The blob reads of cases 3 and 4 were
+cured instead by `git cat-file blob`, and `--` does not stop case 5's `..` split. No structural test
+checks the rule, and `bench/review-sweep.mjs`'s `enumerateCommits` hands `git log` and `git show` a
+revision without `--`.
+
+**Guarded by** `tests/git-diff.test.js` — "the default review reads its revision as a revision beside
+a root file of that name" and its `--base` and `--commit` twins, each red when either of its mode's two
+calls loses its `--`; "the default review on a branch with no commits fails on HEAD, beside a root file
+named HEAD that is ignored" and its `staged` twin, red when the default patch call loses its `--`; the
+`untracked` twin, red only when both default calls lose it; and "the default review on a branch with no
+commits fails on HEAD" as their control.

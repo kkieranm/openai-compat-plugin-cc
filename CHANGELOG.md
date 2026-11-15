@@ -67,6 +67,12 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` no longer fails when a file in the repository root is named after the revision it reads:
+  `HEAD` for the default review, the commit's full id for `--commit`, or `<merge-base>..HEAD` for `--base`.
+  Git refused each such review as ambiguous between a revision and a file. On a branch with no commits, git
+  read `HEAD` as a path when a file of that name existed: an ignored or staged one made the default review
+  report nothing to review although changes were staged, and an untracked one made it fail on an unrelated
+  option-order error. That review now fails on the missing `HEAD` revision, as it does without the file.
 - `/oai:review`'s default target (uncommitted changes) no longer follows a path it sends when that path is
   itself a symlink. Any path it listed that was a symlink to a readable text file, whether untracked, staged
   as new, renamed, pointed somewhere new or replacing a tracked file, was sent as the target's bytes,
