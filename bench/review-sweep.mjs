@@ -88,13 +88,13 @@ function readPaths(args, git) {
  * nothing while reporting that it had reached its limit.
  */
 export function enumerateCommits({ include, maxCommits, scanLimit, from = 'HEAD' }, git) {
-  const shas = readGit(['log', '--no-merges', '--format=%H', '-n', String(scanLimit), from], git);
+  const shas = readGit(['log', '--no-merges', '--format=%H', '-n', String(scanLimit), from, '--'], git);
   const out = [];
   let eligible = 0;
   for (const sha of shas) {
     if (eligible >= maxCommits) break;
-    const subject = readGit(['log', '-1', '--format=%s', sha], git)[0] ?? '';
-    const paths = readPaths(['show', '--name-only', '--format=', '-z', sha], git);
+    const subject = readGit(['log', '-1', '--format=%s', sha, '--'], git)[0] ?? '';
+    const paths = readPaths(['show', '--name-only', '--format=', '-z', sha, '--'], git);
     const included = touchesIncluded(paths, include);
     if (included) eligible += 1;
     out.push({ sha, subject, eligible: included });

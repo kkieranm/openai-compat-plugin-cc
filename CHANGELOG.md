@@ -67,6 +67,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- The review sweep (`npm run review-sweep`) no longer stops when the directory it reviews (the
+  repository root, or the one `--repo` names) holds a file named after a commit it walks. Git read the
+  commit id as ambiguous between a revision and that file.
 - A default `/oai:review` now sends the staged content of a changed file marked skip-worktree or
   assume-unchanged, which is what its diff shows. It sent the file on disk instead, or listed the file
   unreadable when sparse checkout had left it off disk.

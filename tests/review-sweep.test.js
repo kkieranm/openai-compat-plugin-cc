@@ -1,7 +1,7 @@
 // The overnight sweep runs while nobody is watching, so every claim it makes in
 // the morning has to survive being read cold. These tests drive the whole loop
-// with injected executor, clock and git reader — no model, no child process, no
-// waiting.
+// with injected executor, clock and git reader — no model and no waiting. One
+// enumeration test replays the git calls it recorded through real git.
 //
 // The classification tests carry most of the weight. On this hardware a review
 // that starved for tokens and a review that found nothing both end
@@ -9,10 +9,13 @@
 // those are the same thing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { enumerateCommits, optionsFrom, runSweep } from '../bench/review-sweep.mjs';
 import { resolveDeadline } from '../bench/lib/sweep-window.mjs';
 import { resolvePin } from '../bench/lib/sweep-window.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
+import { createRepo, git } from './helpers.mjs';
 
 const ok = (findings, extra = {}) => ({
   status: 0,
@@ -159,11 +162,13 @@ test('starvation does not count as a transport failure', () => {
   assert.ok(entries.every((entry) => entry.outcome === 'starved'));
 });
 
+const revisionOf = (args) => (args.includes('--') ? args[args.indexOf('--') - 1] : args[args.length - 1]);
+
 const gitStub = (log, paths) => (args) => {
   if (args[0] === 'log' && args.includes('--format=%H')) return log.join('\n');
-  if (args[0] === 'log') return `subject for ${args[args.length - 1]}`;
+  if (args[0] === 'log') return `subject for ${revisionOf(args)}`;
   assert.ok(args.includes('-z'), `a path listing must be NUL-delimited: ${args.join(' ')}`);
-  return (paths[args[args.length - 1]] ?? []).join('\0');
+  return (paths[revisionOf(args)] ?? []).join('\0');
 };
 
 test('a commit is classified by its paths as stored, neither split at a newline nor trimmed', () => {
@@ -194,6 +199,41 @@ test('enumeration stops at the scan limit rather than walking all of history', (
   );
   assert.equal(found.length, 2);
   assert.equal(found.filter((commit) => commit.eligible).length, 0);
+});
+
+// enumerateCommits reads git synchronously and tests may not spawn synchronously,
+// so its calls are recorded against a stub, replayed unchanged through real git,
+// and then answered from what real git said.
+test('enumeration runs beside root files named after the commits it walks', async () => {
+  const dir = await createRepo();
+  const seed = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  mkdirSync(join(dir, 'scripts'));
+  writeFileSync(join(dir, 'scripts', 'a.mjs'), 'a\n');
+  await git(['add', 'scripts'], dir);
+  await git(['commit', '--quiet', '-m', 'add a script'], dir);
+  const tip = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  for (const id of [tip, seed]) writeFileSync(join(dir, id), 'a file named after a commit\n');
+  const options = { include: ['scripts'], maxCommits: 5, scanLimit: 10, from: tip };
+
+  const recorded = [];
+  enumerateCommits(options, (args) => {
+    recorded.push(args);
+    if (args[0] === 'log' && args.includes('--format=%H')) return `${tip}\n${seed}`;
+    return args[0] === 'log' ? 'subject' : '';
+  });
+  assert.equal(recorded.length, 5, 'the history walk, then a subject and a path listing for each commit');
+
+  const answers = new Map(await Promise.all(recorded.map(async (args) => [JSON.stringify(args), await git(args, dir)])));
+  const found = enumerateCommits(options, (args) => {
+    const key = JSON.stringify(args);
+    assert.ok(answers.has(key), `a git call the recording did not make: ${args.join(' ')}`);
+    return answers.get(key);
+  });
+
+  assert.deepEqual(found, [
+    { sha: tip, subject: 'add a script', eligible: true },
+    { sha: seed, subject: 'seed', eligible: false },
+  ]);
 });
 
 test('a path is included only on a real segment boundary, not a shared prefix', () => {

@@ -1426,7 +1426,7 @@ review request carries an untracked symlink as its link text on every rung, neve
 Confirmed in `selectDiff`, and a further instance of the revision-or-filename check behind cases 3 and
 4 of "A stored path interpolated into a git revision spec is reinterpreted by git". Given no `--`, a
 git command that takes both revisions and paths decides what a bare argument is by looking at the work
-tree: an argument that also names a file in the root is refused as ambiguous, and one that names no
+tree: an argument that also names a file is refused as ambiguous, and one that names no
 revision but does name a file is read as a path. A root file named `HEAD`, a commit's full id or
 `<merge-base>..HEAD` made `/oai:review` fail on its own revision; on a branch with no commits, `git
 diff HEAD` beside a file named `HEAD` read it as a path, so with that file ignored or staged the review
@@ -1435,15 +1435,16 @@ reported nothing to review over staged changes.
 Every `git show`, `diff-tree` and `git diff` call `selectDiff` builds with a revision ends it with
 `--`; `merge-base` and `rev-parse --verify` take revisions only. The blob reads of cases 3 and 4 were
 cured instead by `git cat-file blob`, and `--` does not stop case 5's `..` split. No structural test
-checks the rule, and `bench/review-sweep.mjs`'s `enumerateCommits` hands `git log` and `git show` a
-revision without `--`.
+checks the rule.
 
 **Guarded by** `tests/git-diff.test.js` — "the default review reads its revision as a revision beside
 a root file of that name" and its `--base` and `--commit` twins, each red when either of its mode's two
 calls loses its `--`; "the default review on a branch with no commits fails on HEAD, beside a root file
 named HEAD that is ignored" and its `staged` twin, red when the default patch call loses its `--`; the
 `untracked` twin, red only when both default calls lose it; and "the default review on a branch with no
-commits fails on HEAD" as their control.
+commits fails on HEAD" as their control; and `tests/review-sweep.test.js` — "enumeration runs beside
+root files named after the commits it walks", red when any of `enumerateCommits`' three calls loses its
+`--`.
 
 ## A path read from git's output is trimmed
 
