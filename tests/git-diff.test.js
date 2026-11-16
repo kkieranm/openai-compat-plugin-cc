@@ -233,6 +233,97 @@ for (const { label, suffix, sibling, enclosing } of ROOT_SUFFIX_CASES) {
   });
 }
 
+const INDEX_TRUSTED_CASES = [
+  { label: 'skip-worktree', flags: [['--skip-worktree']], tag: 'S' },
+  { label: 'assume-unchanged', flags: [['--assume-unchanged']], tag: 'h' },
+  { label: 'skip-worktree and assume-unchanged', flags: [['--skip-worktree'], ['--assume-unchanged']], tag: 's' },
+  { label: 'skip-worktree', note: ' under a name with a space and a tab', flags: [['--skip-worktree']], tag: 'S', path: 'with space\tand tab.txt' },
+  { label: 'skip-worktree', note: ' absent from disk', flags: [['--skip-worktree']], tag: 'S', absent: true },
+  { label: 'skip-worktree', note: ' whose name begins with a stage number', flags: [['--skip-worktree']], tag: 'S', path: '0:x.txt', sibling: 'x.txt' },
+];
+
+for (const { label, note = '', flags, tag, path = 'kept.txt', absent, sibling } of INDEX_TRUSTED_CASES) {
+  test(`a review sends the index copy of a changed ${label} file${note}, which is what its diff shows`, async (t) => {
+    const dir = await createRepo();
+    if (sibling) {
+      writeFileSync(join(dir, sibling), 'x body\n');
+      await git(['add', '--', sibling], dir);
+      try {
+        writeFileSync(join(dir, path), 'a\n');
+      } catch {
+        t.skip('this filesystem refuses a colon in a file name');
+        return;
+      }
+    }
+    writeFileSync(join(dir, path), 'a\n');
+    await git(['add', '--', path], dir);
+    await git(['commit', '--quiet', '-m', 'add'], dir);
+    writeFileSync(join(dir, path), 'a\nindex\n');
+    await git(['add', '--', path], dir);
+    for (const flag of flags) await git(['update-index', ...flag, '--', path], dir);
+    if (absent) unlinkSync(join(dir, path));
+    else writeFileSync(join(dir, path), 'a\nindex\ndisk\n');
+    assert.equal((await git(['ls-files', '-v', '-z', '--', path], dir)).split('\0')[0], `${tag} ${path}`);
+
+    const target = await collectTarget({}, dir);
+
+    assert.doesNotMatch(target.diff, /disk/);
+    assert.deepEqual(target.changed.map((file) => [file.path, file.content]), [[path, 'a\nindex\n']]);
+    assert.deepEqual(target.unreadable, []);
+    assert.match(target.diff, /^\+index$/m);
+  });
+}
+
+test('a review lists a changed skip-worktree gitlink unreadable, since the index holds no blob for it', async () => {
+  const dir = await createRepo();
+  await git(['config', 'diff.ignoreSubmodules', 'none'], dir);
+  const seed = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  await git(['update-index', '--add', '--cacheinfo', `160000,${'1'.repeat(40)},sub`], dir);
+  await git(['commit', '--quiet', '-m', 'gitlink'], dir);
+  await git(['update-index', '--cacheinfo', `160000,${seed},sub`], dir);
+  await git(['update-index', '--skip-worktree', '--', 'sub'], dir);
+  writeFileSync(join(dir, 'sub'), 'a file on disk, not the gitlink\n');
+  assert.equal((await git(['ls-files', '-v', '-z', '--', 'sub'], dir)).split('\0')[0], 'S sub');
+  assert.ok((await git(['diff', 'HEAD', '--name-status', '-z'], dir)).includes('M\0sub\0'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(target.changed, []);
+  assert.deepEqual(target.unreadable, ['sub']);
+});
+
+test('a review reads a changed file with no index flag from disk, and leaves out an unchanged flagged file', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'plain.txt'), 'a\n');
+  writeFileSync(join(dir, 'quiet.txt'), 'a\n');
+  await git(['add', 'plain.txt', 'quiet.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'add'], dir);
+  writeFileSync(join(dir, 'plain.txt'), 'a\nindex\n');
+  await git(['add', 'plain.txt'], dir);
+  writeFileSync(join(dir, 'plain.txt'), 'a\nindex\ndisk\n');
+  await git(['update-index', '--skip-worktree', 'quiet.txt'], dir);
+  writeFileSync(join(dir, 'quiet.txt'), 'a\nhidden\n');
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(target.changed.map((file) => [file.path, file.content]), [['plain.txt', 'a\nindex\ndisk\n']]);
+  assert.doesNotMatch(target.diff, /quiet|hidden/);
+});
+
+test('a default review mid-merge reads a conflicted file from disk', async () => {
+  const dir = await createRepo();
+  await conflictedMerge(dir);
+  assert.ok((await git(['ls-files', '-v', '-z', '--', 'seed.txt'], dir)).startsWith('M seed.txt\0'));
+
+  const target = await collectTarget({}, dir);
+
+  assert.deepEqual(
+    target.changed.map((file) => [file.path, file.content]),
+    [['seed.txt', readFileSync(join(dir, 'seed.txt'), 'utf8')]],
+  );
+  assert.deepEqual(target.unreadable, []);
+});
+
 test('a pinned file the diff removes is reported, with or without --diff-only', async () => {
   const dir = await createRepo();
   const body = 'one\ntwo\nthree\nfour\nfive\nsix\n';

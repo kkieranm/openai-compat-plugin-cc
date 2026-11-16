@@ -67,6 +67,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A default `/oai:review` now sends the staged content of a changed file marked skip-worktree or
+  assume-unchanged, which is what its diff shows. It sent the file on disk instead, or listed the file
+  unreadable when sparse checkout had left it off disk.
 - `/oai:review` run in a repository whose directory name ends in whitespace (a space, tab, newline, carriage
   return, no-break space or similar) now reviews that repository. Every mode that reads the repository (all
   but `--file`) resolved the root with that whitespace removed and read the directory named without it.

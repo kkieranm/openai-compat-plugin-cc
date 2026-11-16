@@ -187,6 +187,23 @@ function showBlob(spec, root) {
   return runGit(['-c', 'core.precomposeunicode=false', 'cat-file', 'blob', spec], root);
 }
 
+/**
+ * Paths whose index entry git trusts over the disk: `git diff HEAD` diffs their
+ * index entry, not the file on disk, so their body is read from the index. A gitlink
+ * has no blob there, so it is listed unreadable, as an unflagged one is.
+ * `ls-files -v -z` writes `<tag> <path>\0`; `S` is skip-worktree, `h` assume-unchanged,
+ * `s` both. Any other tag, such as an unmerged entry's `M`, is diffed from disk.
+ * Default spelling, like the `--name-status -z` listing these keys are matched against.
+ */
+async function indexTrustedPaths(root) {
+  const listed = await runGit(['ls-files', '-v', '-z'], root);
+  const trusted = new Set();
+  for (const record of listed.split(NUL)) {
+    if (record[0] === 'S' || record[0] === 's' || record[0] === 'h') trusted.add(record.slice(2));
+  }
+  return trusted;
+}
+
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';
 
 /**
@@ -262,12 +279,14 @@ async function selectDiff(options, root) {
       readContent: (path) => showBlob(`:0:${path}`, root),
     };
   }
+  const trusted = await indexTrustedPaths(root);
   return {
     label: 'uncommitted changes',
     diff: await runGit(['diff', 'HEAD', '--'], root),
     listArgs: ['diff', 'HEAD', '--name-status', '-z', '--'],
-    // Root-relative, like every path `git diff` emits — see repositoryRoot.
-    readContent: (path) => readWorktree(root, path),
+    // Root-relative, like every path `git diff` emits — see repositoryRoot. An
+    // index-trusted path is read from the index — see indexTrustedPaths.
+    readContent: (path) => (trusted.has(path) ? showBlob(`:0:${path}`, root) : readWorktree(root, path)),
     includeUntracked: true,
   };
 }
@@ -317,8 +336,10 @@ export async function collectTarget(options, cwd = process.cwd()) {
   // uncommitted-changes review a listed path is read from disk under its own spelling,
   // so a tracked spelling that the filesystem resolves to another spelling's file, such
   // as an NFC/NFD twin on macOS or a case twin on a case-insensitive volume, carries
-  // that file's bytes, which is what git diffed it against; `--staged`, `--base` and
-  // `--commit` read each spelling's own blob.
+  // that file's bytes, which is what git diffed it against. A path whose index entry
+  // is skip-worktree or assume-unchanged is read from the index instead, which is
+  // what git diffed for it; `--staged`, `--base` and `--commit` read each spelling's
+  // own blob.
   const pinned = new Set(files.map((file) => file.path));
   const nameStatus = await runGit(selected.listArgs, root);
   const listed = options['diff-only'] ? [] : changedPaths(nameStatus);
