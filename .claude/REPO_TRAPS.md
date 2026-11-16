@@ -1434,8 +1434,12 @@ reported nothing to review over staged changes.
 
 Every `git show`, `diff-tree` and `git diff` call `selectDiff` builds with a revision ends it with
 `--`; `merge-base` and `rev-parse --verify` take revisions only. The blob reads of cases 3 and 4 were
-cured instead by `git cat-file blob`, and `--` does not stop case 5's `..` split. No structural test
-checks the rule.
+cured instead by `git cat-file blob`, and `--` does not stop case 5's `..` split.
+`tests/structure.test.js` checks the rule lexically, per line, over production source. It reads only an
+argv written as one array literal on one line, whose first element is the subcommand, on a line that does
+not start as a comment, and it takes the first element after the subcommand that is not a dash-prefixed
+string literal as the revision, so where that element is an option's value (`-n`'s count), a spread or any
+other non-literal element, a `--` placed after it but before the real revision passes.
 
 **Guarded by** `tests/git-diff.test.js` — "the default review reads its revision as a revision beside
 a root file of that name" and its `--base` and `--commit` twins, each red when either of its mode's two
@@ -1444,7 +1448,8 @@ named HEAD that is ignored" and its `staged` twin, red when the default patch ca
 `untracked` twin, red only when both default calls lose it; and "the default review on a branch with no
 commits fails on HEAD" as their control; and `tests/review-sweep.test.js` — "enumeration runs beside
 root files named after the commits it walks", red when any of `enumerateCommits`' three calls loses its
-`--`.
+`--`; and `tests/structure.test.js` — "every show, log, diff and diff-tree argv in source puts `--` after
+its revision".
 
 ## A path read from git's output is trimmed
 

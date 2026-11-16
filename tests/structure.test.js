@@ -1368,11 +1368,12 @@ test('the bounds table holds the domains the commands and the bench document', (
 // spread over several lines keeps its `-z` on the listing token's line.
 const PATH_LISTING = /(['"`])(?:--name-(?:only|status)|ls-(?:files|tree)|diff-tree|--numstat|--raw)\1/;
 const NUL_FLAG = /(['"`])-z\1/;
+const COMMENT_LINE = /^\s*(?:\/\/|\/?\*)/;
 
 function listingsWithoutZ(source) {
   const found = { listings: 0, offenders: [] };
   source.split('\n').forEach((line, index) => {
-    if (/^\s*(?:\/\/|\/?\*)/.test(line) || !PATH_LISTING.test(line)) return;
+    if (COMMENT_LINE.test(line) || !PATH_LISTING.test(line)) return;
     found.listings += 1;
     if (!NUL_FLAG.test(line)) found.offenders.push(index + 1);
   });
@@ -1395,4 +1396,126 @@ test('every git path listing in source asks for NUL-delimited output', () => {
   }
   assert.ok(listings >= 10, `the scan matched only ${listings} listing(s); it is not reading the source`);
   assert.deepEqual(offenders, [], "pass '-z' on the same line, and split the output on NUL");
+});
+
+// Given no `--`, git decides whether a bare argument is a revision or a path by
+// looking for a file of that name, so a file named like the revision makes the
+// call fail or read the wrong thing. An argv whose subcommand takes both, and
+// that holds anything besides options, must put `--` after the first such
+// element. Lexical and per line: only an argv written as one array literal on one
+// line, whose first element is the subcommand, on a line that does not start as a
+// comment, is read. The first element after the subcommand that is not a
+// dash-prefixed string literal is taken as the revision, so where that element is
+// an option's value (`-n`'s count), a spread or any other non-literal element, a
+// `--` placed after it but before the real revision passes.
+const REVISION_COMMAND = /\[\s*(['"`])(?:show|log|diff|diff-tree)\1/g;
+const DASH_LITERAL = /^(['"`])-[^'"`]*\1$/;
+const SEPARATOR = /^(['"`])--\1$/;
+const QUOTES = `'"\``;
+const REVISION_FLOOR = 9;
+const NOT_A_GIT_ARGV = ["plugins/oai/scripts/lib/job-render.mjs ['log', logPathFor(view.seq)]"];
+
+/** The array literal opening at `start` and its elements, or null when it does not close on this line. */
+function argvElements(line, start) {
+  const elements = [];
+  const stack = [];
+  let current = '';
+  for (let i = start + 1; i < line.length; i += 1) {
+    const char = line[i];
+    const top = stack[stack.length - 1];
+    if (QUOTES.includes(top)) {
+      current += char;
+      if (char === '\\') {
+        current += line[i + 1] ?? '';
+        i += 1;
+      } else if (char === top) stack.pop();
+      else if (top === '`' && char === '$' && line[i + 1] === '{') {
+        current += '{';
+        i += 1;
+        stack.push('${');
+      }
+      continue;
+    }
+    if (char === ']' && stack.length === 0) {
+      elements.push(current.trim());
+      return { elements, literal: line.slice(start, i + 1) };
+    }
+    if (char === ',' && stack.length === 0) {
+      elements.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+    if (QUOTES.includes(char) || '([{'.includes(char)) stack.push(char);
+    else if (')]}'.includes(char)) stack.pop();
+  }
+  return null;
+}
+
+function revisionsWithoutSeparator(source) {
+  const found = { checked: 0, offenders: [] };
+  source.split('\n').forEach((line, index) => {
+    if (COMMENT_LINE.test(line)) return;
+    for (const match of line.matchAll(REVISION_COMMAND)) {
+      const parsed = argvElements(line, match.index);
+      if (!parsed) continue;
+      const rest = parsed.elements.slice(1);
+      const firstOperand = rest.findIndex((element) => !DASH_LITERAL.test(element));
+      if (firstOperand === -1) continue;
+      found.checked += 1;
+      const separator = rest.findIndex((element) => SEPARATOR.test(element));
+      if (separator <= firstOperand) found.offenders.push({ line: index + 1, literal: parsed.literal });
+    }
+  });
+  return found;
+}
+
+test('every show, log, diff and diff-tree argv in source puts `--` after its revision', () => {
+  const offending = (source) => revisionsWithoutSeparator(source).offenders.map((offender) => offender.literal);
+  assert.deepEqual(offending("git(['show', ref])"), ["['show', ref]"], 'positive control');
+  assert.deepEqual(offending("['log', sha]"), ["['log', sha]"]);
+  assert.deepEqual(offending('["diff", ref]'), ['["diff", ref]'], 'any quote style');
+  assert.deepEqual(offending("['diff-tree', '-r', '-z', ref]"), ["['diff-tree', '-r', '-z', ref]"]);
+  assert.deepEqual(offending("['diff', '--', ref]"), ["['diff', '--', ref]"], 'a separator before the revision');
+  assert.deepEqual(offending("['diff', '--', ref, '--']"), ["['diff', '--', ref, '--']"], 'the first separator decides');
+  assert.deepEqual(revisionsWithoutSeparator("['diff', ref, '--', path]"), { checked: 1, offenders: [] }, 'paths may follow the separator');
+  assert.deepEqual(revisionsWithoutSeparator("['diff', 'HEAD', '--name-status', '-z', '--']"), { checked: 1, offenders: [] });
+  assert.deepEqual(offending("['diff', 'HEAD', '--name-status', '-z']"), ["['diff', 'HEAD', '--name-status', '-z']"], 'only an exact separator');
+  assert.deepEqual(offending("['show', ref, a + '--']"), ["['show', ref, a + '--']"], 'a separator must start the element');
+  assert.deepEqual(offending("['show', ref, '--' + a]"), ["['show', ref, '--' + a]"], 'a separator must end the element');
+  assert.deepEqual(revisionsWithoutSeparator("['diff', '--cached']"), { checked: 0, offenders: [] }, 'options only: no revision');
+  assert.deepEqual(revisionsWithoutSeparator("fn(['show', a, '--'], ['log', b])"), { checked: 2, offenders: [{ line: 1, literal: "['log', b]" }] }, 'each array on a line');
+  assert.deepEqual(revisionsWithoutSeparator("['show', f(a, b), '--']"), { checked: 1, offenders: [] }, 'a nested comma');
+  assert.deepEqual(offending("['show', f(a, '--', b)]"), ["['show', f(a, '--', b)]"], 'a separator nested in a call');
+  assert.deepEqual(offending("['show', ref, f(a, '--', b)]"), ["['show', ref, f(a, '--', b)]"], 'a separator nested after the revision');
+  assert.deepEqual(offending("['show', ']', ref]"), ["['show', ']', ref]"], 'a bracket inside a string');
+  assert.deepEqual(offending("['show', 'it\\'s', ref]"), ["['show', 'it\\'s', ref]"], 'an escaped quote inside a string');
+  assert.deepEqual(offending("[`show`, ref]"), ["[`show`, ref]"], 'a template-quoted subcommand');
+  assert.equal(revisionsWithoutSeparator(" * git(['show', ref])").checked, 0, 'prose is not a call');
+  assert.equal(revisionsWithoutSeparator("// git(['show', ref])").checked, 0, 'a line comment is not a call');
+  assert.equal(revisionsWithoutSeparator(" /* git(['show', ref])").checked, 0, 'a block comment is not a call');
+
+  let checked = 0;
+  const exempt = new Set();
+  const offenders = [];
+  for (const dir of ['plugins', 'bench']) {
+    for (const file of sourceFiles(join(ROOT, dir))) {
+      const found = revisionsWithoutSeparator(readFileSync(file, 'utf8'));
+      checked += found.checked;
+      const path = relative(ROOT, file);
+      for (const { line, literal } of found.offenders) {
+        const key = `${path} ${literal}`;
+        if (NOT_A_GIT_ARGV.includes(key)) {
+          exempt.add(key);
+          checked -= 1;
+        } else offenders.push(`${path}:${line} ${literal}`);
+      }
+    }
+  }
+  assert.ok(
+    checked >= REVISION_FLOOR,
+    `the scan checked ${checked} argv(s), fewer than the floor of ${REVISION_FLOOR}: one was removed or is no longer written as a single-line array literal, or the scan is not reading the source`,
+  );
+  for (const key of NOT_A_GIT_ARGV) assert.ok(exempt.has(key), `${key} is listed as not a git argv but no longer appears`);
+  assert.deepEqual(offenders, [], "end the revision with '--' before any path");
 });
