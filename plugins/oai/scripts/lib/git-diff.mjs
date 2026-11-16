@@ -268,7 +268,12 @@ async function selectDiff(options, root) {
       readContent: (path) => showBlob(`${ref}:${path}`, root),
     };
   }
-  if (options.base) {
+  if (options.base !== undefined) {
+    if (options.base === '') {
+      throw new UserError('--base requires a non-empty ref.', {
+        hint: 'Use --base <ref> to review from where that ref meets HEAD up to HEAD, or omit --base.',
+      });
+    }
     refuseOptionShaped('--base', options.base);
     // Computed once and reused: a second `merge-base` call could disagree with
     // the one the diff was taken against.

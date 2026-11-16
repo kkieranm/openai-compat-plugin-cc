@@ -7,6 +7,8 @@ import { execFile, spawn } from 'node:child_process';
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
+import { REVIEW_SPEC } from '../plugins/oai/scripts/lib/cmd-review.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
 import {
@@ -529,6 +531,37 @@ test('a ref whose name begins with - is reviewable by its full refname', async (
     base.changed.map((block) => [block.path, block.content]),
     [['seed.txt', 'seed\nsecond\nthird\n']],
   );
+});
+
+test('an empty --base value is refused rather than reviewing another mode', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nstaged\n');
+  await git(['add', 'seed.txt'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nstaged\nunstaged\n');
+
+  const inline = parseCommandLine(['--base='], REVIEW_SPEC);
+  assert.deepEqual(inline.options, { base: '' });
+  assert.equal(inline.prompt, '');
+  const quoted = parseCommandLine(['--base "" text'], REVIEW_SPEC);
+  assert.deepEqual(quoted.options, { base: '' });
+  assert.equal(quoted.prompt, 'text');
+
+  for (const options of [{ base: '' }, { base: '', staged: true }]) {
+    await assert.rejects(() => collectTarget(options, dir), (error) => {
+      assert.ok(error instanceof UserError, JSON.stringify(options));
+      assert.equal(error.message, '--base requires a non-empty ref.');
+      assert.equal(error.hint, 'Use --base <ref> to review from where that ref meets HEAD up to HEAD, or omit --base.');
+      return true;
+    });
+  }
+});
+
+test('--commit and --file take precedence over an empty or option-shaped --base', async () => {
+  const dir = await createRepo();
+
+  assert.equal((await collectTarget({ base: '', commit: 'HEAD' }, dir)).label, 'commit HEAD');
+  assert.equal((await collectTarget({ base: '--staged', commit: 'HEAD' }, dir)).label, 'commit HEAD');
+  assert.equal((await collectTarget({ base: '', file: [join(dir, 'seed.txt')] }, dir)).label, '1 file(s)');
 });
 
 test('--commit refuses an object it cannot read in the same words, with a fetch hint', async () => {
