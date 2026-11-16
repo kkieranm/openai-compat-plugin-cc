@@ -76,6 +76,11 @@ All notable changes to this project are documented here, loosely following the
   argument of its own or as `--base ""` in a single-string command line. Either reviewed uncommitted
   changes (or staged changes with `--staged`) as if `--base` had not been given. `--commit` and `--file`
   still take precedence over `--base`, whatever its value.
+- The review sweep's `--from` pins the one commit its revision names, and refuses a revision that does not
+  name exactly one, naming the flag. A range (`A..B`) swept from its tip; `^X` swept no commits; a `:/<text>`
+  search was refused, or, with `|` in the pattern, could sweep from a different commit; and a revision git
+  could not resolve, beside a file named `<name>^{commit}` in the directory it reviews (the repository root,
+  or the one `--repo` names), failed with git's own error.
 - The review sweep (`npm run review-sweep`) no longer stops when the directory it reviews (the
   repository root, or the one `--repo` names) holds a file named after a commit it walks. Git read the
   commit id as ambiguous between a revision and that file.

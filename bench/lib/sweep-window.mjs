@@ -9,6 +9,7 @@
 // shifted the window and the arms were no longer comparable — so what is
 // recorded here is the RESOLVED commit, never the text the caller typed.
 import { UserError } from '../../plugins/oai/scripts/lib/errors.mjs';
+import { FULL_OBJECT_ID } from '../../plugins/oai/scripts/lib/git-diff.mjs';
 
 /**
  * When to stop STARTING work.
@@ -63,20 +64,29 @@ export function resolvePin(from, git) {
   // here — recording the raw ref would let two benchmark arms enumerate
   // different histories from the same-looking input, which is the whole defect
   // this flag exists to remove.
-  // `git rev-parse` on an unknown revision EXITS 128, so the real caller's
-  // `execFileSync` throws before any empty-result check could run. An earlier
-  // version tested `!sha` and was dead code in production: the user saw a raw
-  // `Command failed: git rev-parse …` instead of this sentence, and the test
-  // passed only because its stub returned an empty string where git throws.
-  let out;
-  try {
-    out = String(git(['rev-parse', `${from}^{commit}`]) ?? '');
-  } catch {
-    throw new UserError(`--from did not resolve to a commit: "${from}".`);
-  }
-  const sha = out.split('\n').map((line) => line.trim()).filter(Boolean)[0];
-  // Kept as well as the catch: a git that someday exits 0 with no output would
-  // otherwise pin `undefined`. Two ways to fail, both answered.
-  if (!sha) throw new UserError(`--from did not resolve to a commit: "${from}".`);
-  return sha;
+  // `git rev-parse` exits 128 on a revision it cannot resolve, so the real
+  // caller's `execFileSync` throws; the catch reports it as this sentence rather
+  // than a raw `Command failed`.
+  // `--verify` makes git turn the argument into one id or fail. Without it a range
+  // prints several lines, and an argument naming a file in the swept repository
+  // is echoed back with exit 0. It still prints `^<sha>` for `^X`, so each
+  // output must also be one full object id.
+  // Two steps, because a suffix appended to the caller's text becomes part of
+  // it: `:/<text>^{commit}` searches for `<text>^{commit}`. The caller's
+  // revision is resolved on its own, and only the id it named is peeled.
+  // `-c core.disambiguate=committish` lets a short id that a commit shares with a
+  // tree or blob name the commit, as a `^{commit}` suffix does, and overrides any
+  // `core.disambiguate` the user set.
+  const refused = () => new UserError(`--from did not resolve to a commit: "${from}".`);
+  const resolve = (revision, config = []) => {
+    let out;
+    try {
+      out = String(git([...config, 'rev-parse', '--verify', revision]) ?? '').trim();
+    } catch {
+      throw refused();
+    }
+    if (!FULL_OBJECT_ID.test(out)) throw refused();
+    return out;
+  };
+  return resolve(`${resolve(from, ['-c', 'core.disambiguate=committish'])}^{commit}`);
 }

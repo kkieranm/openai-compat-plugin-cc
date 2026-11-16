@@ -216,6 +216,9 @@ function refuseOptionShaped(flag, value) {
   }
 }
 
+/** One full object id as git prints it: 40 hex characters, or 64 in a SHA-256 repository. */
+export const FULL_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
 /**
  * The one commit `--commit` names, as an id, so the diff, the list and the bodies
  * all read the same object. Two steps: `^{commit}` on the ref itself would refuse
@@ -231,7 +234,7 @@ async function singleCommit(ref, root) {
     throw new UserError(`--commit ${ref}: ${ambiguous[0].replace(/^error: /, '')}.`, { hint: 'Use a longer id.' });
   }
   const id = resolved.status === 0 ? resolved.stdout.trim() : '';
-  const commit = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(id)
+  const commit = FULL_OBJECT_ID.test(id)
     ? await git(['rev-parse', '--verify', '--quiet', `${id}^{commit}`], root)
     : null;
   if (commit?.status !== 0) {

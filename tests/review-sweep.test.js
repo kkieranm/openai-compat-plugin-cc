@@ -1,7 +1,7 @@
 // The overnight sweep runs while nobody is watching, so every claim it makes in
 // the morning has to survive being read cold. These tests drive the whole loop
-// with injected executor, clock and git reader — no model and no waiting. One
-// enumeration test replays the git calls it recorded through real git.
+// with injected executor, clock and git reader — no model and no waiting. The
+// enumeration and pin tests replay the git calls they recorded through real git.
 //
 // The classification tests carry most of the weight. On this hardware a review
 // that starved for tokens and a review that found nothing both end
@@ -15,7 +15,8 @@ import { enumerateCommits, optionsFrom, runSweep } from '../bench/review-sweep.m
 import { resolveDeadline } from '../bench/lib/sweep-window.mjs';
 import { resolvePin } from '../bench/lib/sweep-window.mjs';
 import { classify, serverUnwell } from '../bench/lib/sweep-outcome.mjs';
-import { createRepo, git } from './helpers.mjs';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
+import { createRepo, git, tempDir } from './helpers.mjs';
 
 const ok = (findings, extra = {}) => ({
   status: 0,
@@ -236,6 +237,127 @@ test('enumeration runs beside root files named after the commits it walks', asyn
   ]);
 });
 
+const ID40 = 'a'.repeat(40);
+const ID64 = 'b'.repeat(64);
+const firstCall = (from) => ['-c', 'core.disambiguate=committish', 'rev-parse', '--verify', from];
+
+// resolvePin reads git synchronously too, so each call it makes is run through
+// real git and answered on a later pass from what real git said: its stdout, or
+// its rejection rethrown. A call with no answer yet ends that pass; resolvePin's
+// catch turns the throw into a refusal, which is discarded. The calls are checked
+// after resolvePin returns, because anything thrown inside the replay would be
+// caught and read as the expected refusal.
+async function pinThroughRealGit(from, dir) {
+  const answers = new Map();
+  for (let pass = 0; pass < 3; pass += 1) {
+    const calls = [];
+    let unanswered = null;
+    let outcome;
+    try {
+      outcome = {
+        value: resolvePin(from, (args) => {
+          calls.push(args);
+          const answer = answers.get(JSON.stringify(args));
+          if (!answer) {
+            unanswered = args;
+            throw new Error('not yet run through git');
+          }
+          if (answer.error) throw answer.error;
+          return answer.stdout;
+        }),
+      };
+    } catch (error) {
+      outcome = { error };
+    }
+    if (!unanswered) return { ...outcome, calls };
+    answers.set(JSON.stringify(unanswered), await git(unanswered, dir).then((stdout) => ({ stdout }), (error) => ({ error })));
+  }
+  assert.fail(`resolvePin kept making new git calls for ${from}`);
+}
+
+const refusedFor = (from) => (error) => error instanceof UserError && error.message === `--from did not resolve to a commit: "${from}".`;
+
+test('a --from is pinned to the one commit it names, or refused, through real git', async () => {
+  const dir = await createRepo();
+  const seed = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  writeFileSync(join(dir, 'next.txt'), 'next\n');
+  await git(['add', 'next.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'next'], dir);
+  const tip = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  await git(['-c', 'tag.gpgSign=false', 'tag', '-a', 'v1', '-m', 'v1', seed], dir);
+  for (const name of ['nope', 'HEAD']) writeFileSync(join(dir, name), 'a file named like a revision\n');
+  const named = async (from) => (await git(['rev-parse', '--verify', from], dir)).trim();
+
+  // `:/seed|.` matches the newest commit; with `^{commit}` appended to it the
+  // search would be for `seed|.^{commit}` and find seed instead.
+  for (const [from, sha] of [['HEAD', tip], ['main', tip], ['v1', seed], [':/seed', seed], [':/seed|.', tip]]) {
+    const { value, error, calls } = await pinThroughRealGit(from, dir);
+    assert.equal(error, undefined, `${from}: ${error?.message}`);
+    assert.equal(value, sha, from);
+    assert.deepEqual(calls, [firstCall(from), ['rev-parse', '--verify', `${await named(from)}^{commit}`]], from);
+  }
+  // Refused at the first step: not one full id.
+  for (const from of ['nope', 'HEAD~1..HEAD', '^HEAD~1', 'nosuchref']) {
+    const { error, calls } = await pinThroughRealGit(from, dir);
+    assert.ok(refusedFor(from)(error), `${from}: ${error?.message}`);
+    assert.deepEqual(calls, [firstCall(from)], from);
+  }
+  // Refused at the second step: one full id, but not a commit.
+  for (const from of ['HEAD^{tree}', 'HEAD:seed.txt', '0'.repeat(tip.length)]) {
+    const { error, calls } = await pinThroughRealGit(from, dir);
+    assert.ok(refusedFor(from)(error), `${from}: ${error?.message}`);
+    assert.deepEqual(calls, [firstCall(from), ['rev-parse', '--verify', `${await named(from)}^{commit}`]], from);
+  }
+});
+
+test('a SHA-256 repository pins its 64-character commit id through real git', async (t) => {
+  const dir = tempDir('oai-plugin-sha256-');
+  try {
+    await git(['init', '--quiet', '--object-format=sha256', '--initial-branch=main'], dir);
+  } catch {
+    return t.skip('this git cannot create a SHA-256 repository');
+  }
+  await git(['config', 'user.email', 'test@example.com'], dir);
+  await git(['config', 'user.name', 'Test'], dir);
+  await git(['-c', 'commit.gpgSign=false', 'commit', '--quiet', '--allow-empty', '-m', 'seed'], dir);
+  const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+  const { value, error, calls } = await pinThroughRealGit('HEAD', dir);
+  assert.equal(error, undefined, error?.message);
+  assert.match(value, /^[0-9a-f]{64}$/);
+  assert.equal(value, head);
+  assert.deepEqual(calls, [firstCall('HEAD'), ['rev-parse', '--verify', `${head}^{commit}`]]);
+});
+
+test('a short id a commit shares with a blob pins the commit, through real git', async (t) => {
+  const dir = tempDir('oai-plugin-short-id-');
+  try {
+    await git(['init', '--quiet', '--object-format=sha1'], dir);
+  } catch {
+    return t.skip('this git cannot be asked for a SHA-1 repository');
+  }
+  const objects = tempDir('oai-plugin-short-id-objects-');
+  const write = async (type, name, content) => {
+    writeFileSync(join(objects, name), content);
+    return (await git(['hash-object', '-w', '--no-filters', '-t', type, join(objects, name)], dir)).trim();
+  };
+  const tree = await write('tree', 'tree', '');
+  const commit = await write('commit', 'commit', `tree ${tree}\nauthor Test <test@example.com> 0 +0000\ncommitter Test <test@example.com> 0 +0000\n\nfixed\n`);
+  const blob = await write('blob', 'blob', 'collide 95968\n');
+  assert.deepEqual([tree, commit, blob], [
+    '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+    'a898e3b81c4c8ada24fd0e3c11faa861862eeed6',
+    'a8982c8a92793cf5a82cb10d5696da4cc273ae2a',
+  ]);
+  // Exactly these two objects share the prefix, so it names no one object unaided.
+  assert.deepEqual((await git(['rev-parse', '--disambiguate=a898'], dir)).split('\n').filter(Boolean).sort(), [blob, commit]);
+
+  const { value, error, calls } = await pinThroughRealGit('a898', dir);
+  assert.equal(error, undefined, error?.message);
+  assert.equal(value, commit);
+  assert.deepEqual(calls, [firstCall('a898'), ['rev-parse', '--verify', `${commit}^{commit}`]]);
+});
+
 test('a path is included only on a real segment boundary, not a shared prefix', () => {
   const found = enumerateCommits(
     { include: ['bench'], maxCommits: 5, scanLimit: 10 },
@@ -295,10 +417,9 @@ test('--from pins where enumeration starts, and defaults to HEAD', () => {
   assert.ok(seen[0].includes('HEAD'), 'and HEAD is the default');
 });
 
-// The stub CAPTURES what was asked for. The previous one returned its configured
-// SHA for any arguments at all, so hardcoding the call to `['rev-parse','HEAD']`
-// — dropping both the ref and the `^{commit}` peel — left the suite green. A
-// stub that cannot disagree with the code is not a test.
+// The stub CAPTURES what was asked for, so a test can disagree with the call:
+// a stub that answers any arguments at all would pass code that dropped the ref
+// or the `^{commit}` peel.
 const capturingGit = (resolved) => {
   const seen = [];
   const git = (args) => { seen.push(args); return resolved; };
@@ -307,23 +428,21 @@ const capturingGit = (resolved) => {
 };
 
 // …and the failure stub THROWS, because that is what git does: `rev-parse` on an
-// unknown revision exits 128, so `execFileSync` throws. A stub returning empty
-// string was gentler than reality and made the refusal below unreachable in
-// production while the test stayed green.
+// unknown revision exits 128, so `execFileSync` throws.
 const throwingGit = () => { throw new Error('Command failed: git rev-parse'); };
 
 test('the requested ref and the commit peel both reach git', () => {
-  const git = capturingGit('abc123def456\n');
-  assert.equal(resolvePin('main', git), 'abc123def456');
-  assert.deepEqual(git.seen[0], ['rev-parse', 'main^{commit}']);
+  const git = capturingGit(`${ID40}\n`);
+  assert.equal(resolvePin('main', git), ID40);
+  assert.deepEqual(git.seen, [firstCall('main'), ['rev-parse', '--verify', `${ID40}^{commit}`]]);
 });
 
 // Without `^{commit}` an annotated tag resolves to the TAG object, and the
 // recorded window would be a SHA no `git log` walk starts at.
 test('the peel is what makes a tag resolve to its commit', () => {
-  const git = capturingGit('deadbeef\n');
+  const git = capturingGit(`${ID40}\n`);
   resolvePin('v1.2.3', git);
-  assert.ok(git.seen[0][1].endsWith('^{commit}'), `no commit peel in ${git.seen[0][1]}`);
+  assert.ok(git.seen.at(-1).at(-1).endsWith('^{commit}'), `no commit peel in ${git.seen.at(-1).at(-1)}`);
 });
 
 // A leading dash reaches git as an OPTION, not a revision.
@@ -337,7 +456,29 @@ test('a revision git rejects is reported as a refusal, not as a raw command fail
   assert.throws(() => resolvePin('nosuchref', throwingGit), /did not resolve/);
 });
 
-// The other way to fail: a git that exits 0 with nothing to say.
-test('an empty resolution is refused too', () => {
-  assert.throws(() => resolvePin('weird', capturingGit('')), /did not resolve/);
+// The other way to fail: git exits 0 but prints something other than one id.
+test('only one full commit id is pinned from what git printed', () => {
+  assert.equal(resolvePin('main', capturingGit(`${ID40}\n`)), ID40);
+  assert.equal(resolvePin('main', capturingGit(`  ${ID64}\n`)), ID64);
+  for (const out of ['', '\n', 'abc123def456\n', `${ID40}0\n`, `${'A'.repeat(40)}\n`, `^${ID40}\n`, 'nope^{commit}\n', `${ID40}\n${ID40}\n`, `${ID40} extra\n`]) {
+    assert.throws(() => resolvePin('main', capturingGit(out)), /did not resolve/, JSON.stringify(out));
+  }
+});
+
+// Each answer is checked on its own: a first step that resolved does not let a
+// failing or malformed second one through, and a malformed first answer is
+// refused even when its peel would print one id.
+test('the peeled commit is checked as closely as the first resolution', () => {
+  const answering = (...outs) => () => {
+    const out = outs.shift();
+    if (out instanceof Error) throw out;
+    return out;
+  };
+  assert.equal(resolvePin('v1', answering(`${ID40}\n`, `${ID64}\n`)), ID64);
+  for (const second of [new Error('Command failed: git rev-parse'), '', `^${ID40}\n`, `${ID40}\n${ID40}\n`, 'nope\n']) {
+    assert.throws(() => resolvePin('v1', answering(`${ID40}\n`, second)), /did not resolve/, String(second));
+  }
+  for (const first of ['', `^${ID40}\n`, `${ID40}\n${ID40}\n`, 'nope\n']) {
+    assert.throws(() => resolvePin('v1', answering(first, `${ID40}\n`)), /did not resolve/, `first ${first}`);
+  }
 });
