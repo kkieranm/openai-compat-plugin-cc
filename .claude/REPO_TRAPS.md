@@ -1078,6 +1078,17 @@ payload defeats the one check the file advertises as not depending on the agent'
 guard's own promise is what it falsifies. **When you replace a helper, re-ask what its argument
 parser does with hostile input — equivalence on the happy path is not equivalence.**
 
+`/oai:review --base` and `--commit` hand their value to `git merge-base` and `git rev-parse --verify`, and
+`git merge-base --octopus HEAD` prints HEAD. Both flags refuse a value beginning with `-` before either call
+(`refuseOptionShaped` in `git-diff.mjs`), as the bench refuses `--from` (`bench/lib/sweep-window.mjs`); a ref
+whose short name begins with `-` is named by its full refname or its commit id. `--` is not used: it would
+serve `merge-base`, but `rev-parse --verify` refuses any revision after it, and one check serves both flags.
+`--end-of-options` is not used either, since the repository states no minimum git version. **Guarded by**
+`tests/git-diff.test.js` — "an option-shaped --base or --commit value is refused, naming the flag", which
+reads only the error, so it pins the refusal's order before git for `--base` through the values git itself
+fails on (`--all`, `-dash`, `-`) but not for `--commit`; and "a ref whose name begins with - is reviewable by
+its full refname".
+
 ## Command substitution silently truncates the value you are about to validate
 
 Found 2026-08-05, one pass after the trap above, in the same six-line block — and it was

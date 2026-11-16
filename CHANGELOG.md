@@ -67,6 +67,11 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review --base` refuses a value beginning with `-`, naming the flag. Git read most such values as
+  an option: `--base --octopus` (or `--independent`, `--fork-point`, or an abbreviation of one such as `--oct`)
+  reported nothing to review, and other such values failed with an error from git. `--commit` refuses one in
+  the same words; it was already refused, as a value that could not be resolved to one commit. A ref whose
+  name begins with `-` is given by its full refname or its commit id.
 - The review sweep (`npm run review-sweep`) no longer stops when the directory it reviews (the
   repository root, or the one `--repo` names) holds a file named after a commit it walks. Git read the
   commit id as ambiguous between a revision and that file.

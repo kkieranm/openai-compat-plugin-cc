@@ -206,6 +206,16 @@ async function indexTrustedPaths(root) {
 
 const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> to choose what to review.';
 
+// `merge-base --octopus HEAD` prints HEAD, so `--base --octopus` would report nothing to review
+// rather than refuse the value.
+function refuseOptionShaped(flag, value) {
+  if (value.startsWith('-')) {
+    throw new UserError(`${flag} refuses a value beginning with '-': ${value}.`, {
+      hint: "A ref whose name begins with '-' can be named by its full refname (such as refs/heads/<name>) or its commit id.",
+    });
+  }
+}
+
 /**
  * The one commit `--commit` names, as an id, so the diff, the list and the bodies
  * all read the same object. Two steps: `^{commit}` on the ref itself would refuse
@@ -214,6 +224,7 @@ const OVERRIDES = 'Use --staged, --base <ref>, --commit <ref>, or --file <path> 
  * the status is read first.
  */
 async function singleCommit(ref, root) {
+  refuseOptionShaped('--commit', ref);
   const resolved = await git(['rev-parse', '--verify', ref], root);
   const ambiguous = /^error: short object ID \S+ is ambiguous$/m.exec(resolved.stderr);
   if (ambiguous) {
@@ -258,6 +269,7 @@ async function selectDiff(options, root) {
     };
   }
   if (options.base) {
+    refuseOptionShaped('--base', options.base);
     // Computed once and reused: a second `merge-base` call could disagree with
     // the one the diff was taken against.
     const mergeBase = (await runGit(['merge-base', options.base, 'HEAD'], root)).trim();

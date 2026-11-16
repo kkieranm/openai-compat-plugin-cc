@@ -7,6 +7,7 @@ import { execFile, spawn } from 'node:child_process';
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
 import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
 import {
   chatRequests,
@@ -472,13 +473,62 @@ test('--commit refuses whatever is not one commit, and says what --base covers',
   writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
   await git(['commit', '--quiet', '-am', 'second'], dir);
 
-  for (const ref of ['HEAD~1..HEAD', 'HEAD~1...HEAD', 'HEAD^!', '^HEAD', 'HEAD^{tree}', 'HEAD:seed.txt', '--all', '']) {
+  for (const ref of ['HEAD~1..HEAD', 'HEAD~1...HEAD', 'HEAD^!', '^HEAD', 'HEAD^{tree}', 'HEAD:seed.txt', '']) {
     await assert.rejects(() => collectTarget({ commit: ref }, dir), (error) => {
       assert.match(error.message, /^--commit takes one commit: /, ref);
       assert.match(error.hint, /--base <ref> reviews from where that ref meets HEAD up to HEAD/, ref);
       return true;
     });
   }
+});
+
+test('an option-shaped --base or --commit value is refused, naming the flag', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nedited\n');
+  await git(['commit', '--quiet', '-am', 'second'], dir);
+  // A real ref git would resolve under --end-of-options: refused all the same.
+  await git(['update-ref', 'refs/heads/-dash', 'HEAD~1'], dir);
+
+  for (const flag of ['base', 'commit']) {
+    for (const value of ['--octopus', '--independent', '--fork-point', '--all', '-dash', '-']) {
+      await assert.rejects(() => collectTarget({ [flag]: value }, dir), (error) => {
+        assert.ok(error instanceof UserError, `${flag} ${value}`);
+        assert.equal(error.message, `--${flag} refuses a value beginning with '-': ${value}.`);
+        assert.equal(
+          error.hint,
+          "A ref whose name begins with '-' can be named by its full refname (such as refs/heads/<name>) or its commit id.",
+        );
+        return true;
+      });
+    }
+  }
+});
+
+test('a ref whose name begins with - is reviewable by its full refname', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nsecond\n');
+  await git(['commit', '--quiet', '-am', 'second'], dir);
+  await git(['update-ref', 'refs/heads/-dash', 'HEAD'], dir);
+  writeFileSync(join(dir, 'seed.txt'), 'seed\nsecond\nthird\n');
+  await git(['commit', '--quiet', '-am', 'third'], dir);
+
+  const commit = await collectTarget({ commit: 'refs/heads/-dash' }, dir);
+  assert.equal(commit.label, 'commit refs/heads/-dash');
+  assert.match(commit.diff, /^\+second$/m);
+  assert.doesNotMatch(commit.diff, /third/);
+  assert.deepEqual(
+    commit.changed.map((block) => [block.path, block.content]),
+    [['seed.txt', 'seed\nsecond\n']],
+  );
+
+  const base = await collectTarget({ base: 'refs/heads/-dash' }, dir);
+  assert.equal(base.label, 'branch vs refs/heads/-dash');
+  assert.match(base.diff, /^\+third$/m);
+  assert.doesNotMatch(base.diff, /^\+second$/m);
+  assert.deepEqual(
+    base.changed.map((block) => [block.path, block.content]),
+    [['seed.txt', 'seed\nsecond\nthird\n']],
+  );
 });
 
 test('--commit refuses an object it cannot read in the same words, with a fetch hint', async () => {
