@@ -67,6 +67,9 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` and `/oai:review --base` on a branch with no commits say the branch has no commits yet,
+  and name `--staged`, which reviews only what is staged, and `--file`, instead of failing with git's error
+  naming `HEAD`. A branch whose ref points at a missing object still gets git's own error.
 - `/oai:review --base` refuses a value beginning with `-`, naming the flag. Git read most such values as
   an option: `--base --octopus` (or `--independent`, `--fork-point`, or an abbreviation of one such as `--oct`)
   reported nothing to review, and other such values failed with an error from git. `--commit` refuses one in
@@ -98,7 +101,7 @@ All notable changes to this project are documented here, loosely following the
   Git refused each such review as ambiguous between a revision and a file. On a branch with no commits, git
   read `HEAD` as a path when a file of that name existed: an ignored or staged one made the default review
   report nothing to review although changes were staged, and an untracked one made it fail on an unrelated
-  option-order error. That review now fails on the missing `HEAD` revision, as it does without the file.
+  option-order error. That review now gets the same refusal as it does without the file.
 - `/oai:review`'s default target (uncommitted changes) no longer follows a path it sends when that path is
   itself a symlink. Any path it listed that was a symlink to a readable text file, whether untracked, staged
   as new, renamed, pointed somewhere new or replacing a tracked file, was sent as the target's bytes,

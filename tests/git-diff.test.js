@@ -894,8 +894,10 @@ const UNBORN_HEAD_FILES = [
   },
 ];
 
+const UNBORN_HINT = /--staged to review only what is staged, or --file <path>/;
+
 for (const { shape, plant } of UNBORN_HEAD_FILES) {
-  test(`the default review on a branch with no commits fails on HEAD${shape}`, async () => {
+  test(`the default review on a branch with no commits says so and names --staged${shape}`, async () => {
     const dir = tempDir('oai-plugin-repo-');
     await git(['init', '--quiet', '--initial-branch=main'], dir);
     writeFileSync(join(dir, 'a.txt'), 'staged\n');
@@ -903,12 +905,141 @@ for (const { shape, plant } of UNBORN_HEAD_FILES) {
     await plant(dir);
 
     await assert.rejects(collectTarget({}, dir), (error) => {
-      assert.match(error.message, /failed: [\s\S]*HEAD/, "git's own refusal names HEAD");
-      assert.doesNotMatch(error.message, /Nothing to review/, 'a staged change is not an empty review');
+      assert.ok(error instanceof UserError);
+      assert.equal(error.message, 'This branch has no commits yet, so there is no HEAD to review uncommitted work against.');
+      assert.match(error.hint, UNBORN_HINT);
       return true;
     });
+    const staged = await collectTarget({ staged: true }, dir);
+    assert.match(staged.diff, /\+staged/, '--staged reviews the index on that branch');
   });
 }
+
+test('--base on a branch with no commits says so, naming the value as given', async () => {
+  const fresh = tempDir('oai-plugin-repo-');
+  await git(['init', '--quiet', '--initial-branch=main'], fresh);
+  const orphan = await createRepo();
+  await git(['checkout', '--quiet', '--orphan', 'fresh'], orphan);
+
+  for (const [dir, base] of [[fresh, 'main'], [fresh, 'no-such-ref'], [orphan, 'main']]) {
+    await assert.rejects(collectTarget({ base }, dir), (error) => {
+      assert.ok(error instanceof UserError);
+      assert.equal(error.message, `This branch has no commits yet, so --base ${base} has no HEAD to compare against.`);
+      assert.match(error.hint, UNBORN_HINT);
+      return true;
+    });
+  }
+});
+
+for (const detached of [false, true]) {
+  const where = detached ? 'a detached HEAD at a missing object' : 'a branch whose ref points at a missing object';
+  test(`${where} keeps git's own error`, async () => {
+    const dir = await createRepo();
+    if (detached) await git(['checkout', '--quiet', '--detach'], dir);
+    const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+    unlinkSync(join(dir, '.git', 'objects', head.slice(0, 2), head.slice(2)));
+
+    for (const options of [{}, { base: 'main' }]) {
+      await assert.rejects(collectTarget(options, dir), (error) => {
+        assert.match(error.message, /^git (diff|merge-base) .* failed: /);
+        assert.equal(error.hint, undefined);
+        return true;
+      });
+    }
+  });
+}
+
+// U+00A0 is legal at the end of a refname and is whitespace to String#trim.
+const NBSP_MAIN = 'refs/heads/main\u00a0';
+
+test('a branch with no commits is recognised beside a branch whose name it extends with whitespace', async () => {
+  const dir = await createRepo();
+  await git(['symbolic-ref', 'HEAD', NBSP_MAIN], dir);
+  writeFileSync(join(dir, 'a.txt'), 'staged\n');
+  await git(['add', 'a.txt'], dir);
+
+  await assert.rejects(collectTarget({}, dir), { message: /^This branch has no commits yet/ });
+});
+
+test("a branch named with trailing whitespace whose commit is missing keeps git's own error", async () => {
+  const dir = tempDir('oai-plugin-repo-');
+  await git(['init', '--quiet', '--initial-branch=main'], dir);
+  await git(['symbolic-ref', 'HEAD', NBSP_MAIN], dir);
+  writeFileSync(join(dir, 'a.txt'), 'a\n');
+  await git(['add', 'a.txt'], dir);
+  await git(['-c', 'user.email=t@example.com', '-c', 'user.name=T', '-c', 'commit.gpgSign=false', 'commit', '--quiet', '-m', 'one'], dir);
+  const head = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  unlinkSync(join(dir, '.git', 'objects', head.slice(0, 2), head.slice(2)));
+
+  await assert.rejects(collectTarget({}, dir), (error) => {
+    assert.match(error.message, /^git diff HEAD -- failed: /);
+    assert.equal(error.hint, undefined);
+    return true;
+  });
+});
+
+test("a branch ref git cannot read keeps git's own error", async () => {
+  const dir = tempDir('oai-plugin-repo-');
+  // The files backend, so the branch ref is a file that can hold what git cannot parse.
+  // GIT_DEFAULT_REF_FORMAT outranks the config setting, so it is left out.
+  const env = { ...process.env };
+  delete env.GIT_DEFAULT_REF_FORMAT;
+  await promisify(execFile)('git', ['-c', 'init.defaultRefFormat=files', 'init', '--quiet', '--initial-branch=main'], {
+    cwd: dir,
+    env,
+  });
+  mkdirSync(join(dir, '.git', 'refs', 'heads'), { recursive: true });
+  writeFileSync(join(dir, '.git', 'refs', 'heads', 'main'), 'garbage\n');
+
+  await assert.rejects(collectTarget({}, dir), (error) => {
+    assert.match(error.message, /^git diff HEAD -- failed: /);
+    assert.equal(error.hint, undefined);
+    return true;
+  });
+});
+
+test("a branch with commits whose packed refs git cannot parse keeps git's own error", async () => {
+  const dir = tempDir('oai-plugin-repo-');
+  // The files backend, so there is a packed-refs file to corrupt.
+  const env = { ...process.env };
+  delete env.GIT_DEFAULT_REF_FORMAT;
+  await promisify(execFile)('git', ['-c', 'init.defaultRefFormat=files', 'init', '--quiet', '--initial-branch=main'], {
+    cwd: dir,
+    env,
+  });
+  // With this false, rev-parse stops at the loose ref and never reads packed-refs.
+  await git(['config', 'core.warnAmbiguousRefs', 'true'], dir);
+  writeFileSync(join(dir, 'a.txt'), 'a\n');
+  await git(['add', 'a.txt'], dir);
+  await git(['-c', 'user.email=t@example.com', '-c', 'user.name=T', '-c', 'commit.gpgSign=false', 'commit', '--quiet', '-m', 'one'], dir);
+  writeFileSync(join(dir, 'a.txt'), 'a\nb\n');
+  writeFileSync(join(dir, '.git', 'packed-refs'), 'zzzz refs/heads/other\n');
+
+  for (const options of [{}, { base: 'main' }]) {
+    await assert.rejects(collectTarget(options, dir), (error) => {
+      assert.match(error.message, /^git (diff|merge-base) .* failed: /);
+      assert.equal(error.hint, undefined);
+      return true;
+    });
+  }
+});
+
+test('an empty or option-shaped --base is refused as such on a branch with no commits', async () => {
+  const dir = tempDir('oai-plugin-repo-');
+  await git(['init', '--quiet', '--initial-branch=main'], dir);
+
+  await assert.rejects(collectTarget({ base: '' }, dir), { message: /^--base requires a non-empty ref\.$/ });
+  await assert.rejects(collectTarget({ base: '-x' }, dir), { message: /^--base refuses a value beginning with '-': -x\.$/ });
+});
+
+test("--base naming no ref on a branch with commits keeps git's own error", async () => {
+  const dir = await createRepo();
+  await assert.rejects(collectTarget({ base: 'no-such-ref' }, dir), (error) => {
+    assert.match(error.message, /^git merge-base no-such-ref HEAD failed: /);
+    assert.equal(error.hint, undefined);
+    return true;
+  });
+});
 
 test('a renamed file is sent under its new path', async () => {
   const dir = await createRepo();

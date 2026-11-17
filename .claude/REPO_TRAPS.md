@@ -1454,10 +1454,10 @@ other non-literal element, a `--` placed after it but before the real revision p
 
 **Guarded by** `tests/git-diff.test.js` — "the default review reads its revision as a revision beside
 a root file of that name" and its `--base` and `--commit` twins, each red when either of its mode's two
-calls loses its `--`; "the default review on a branch with no commits fails on HEAD, beside a root file
-named HEAD that is ignored" and its `staged` twin, red when the default patch call loses its `--`; the
-`untracked` twin, red only when both default calls lose it; and "the default review on a branch with no
-commits fails on HEAD" as their control; and `tests/review-sweep.test.js` — "enumeration runs beside
+calls loses its `--`; "the default review on a branch with no commits says so and names --staged, beside
+a root file named HEAD that is ignored" and its `staged` and `untracked` twins, red when the default patch
+call loses its `--`; and "the default review on a branch with no commits says so and names --staged" as
+their control; and `tests/review-sweep.test.js` — "enumeration runs beside
 root files named after the commits it walks", red when any of `enumerateCommits`' three calls loses its
 `--`; and `tests/structure.test.js` — "every show, log, diff and diff-tree argv in source puts `--` after
 its revision".

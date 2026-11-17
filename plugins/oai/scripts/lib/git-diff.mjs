@@ -216,6 +216,37 @@ function refuseOptionShaped(flag, value) {
   }
 }
 
+/**
+ * Whether HEAD names a branch that has no commits yet. Asked only once a git call
+ * reading HEAD has failed, and with `HEAD` itself as the argument: the name
+ * `symbolic-ref` prints comes back decoded as UTF-8, and a name rebuilt from it can
+ * name another ref. `symbolic-ref` must succeed, which a branch ref git cannot read
+ * prevents (it exits 128), and `rev-parse` must find nothing for HEAD. It is not
+ * asked to peel, so a branch whose commit object is missing still resolves and
+ * keeps git's own error. A probe that cannot run says no, so the original error is kept.
+ */
+async function onUnbornBranch(root) {
+  try {
+    const head = await git(['symbolic-ref', '--quiet', 'HEAD'], root);
+    if (head.status !== 0) return false;
+    const ref = await git(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
+    return ref.status === 1;
+  } catch {
+    return false;
+  }
+}
+
+const UNBORN_HINT = 'Use --staged to review only what is staged, or --file <path> to review whole files.';
+
+async function runGitOnHead(args, root, unbornMessage) {
+  try {
+    return await runGit(args, root);
+  } catch (error) {
+    if (await onUnbornBranch(root)) throw new UserError(unbornMessage, { hint: UNBORN_HINT });
+    throw error;
+  }
+}
+
 /** One full object id as git prints it: 40 hex characters, or 64 in a SHA-256 repository. */
 export const FULL_OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
@@ -280,7 +311,13 @@ async function selectDiff(options, root) {
     refuseOptionShaped('--base', options.base);
     // Computed once and reused: a second `merge-base` call could disagree with
     // the one the diff was taken against.
-    const mergeBase = (await runGit(['merge-base', options.base, 'HEAD'], root)).trim();
+    const mergeBase = (
+      await runGitOnHead(
+        ['merge-base', options.base, 'HEAD'],
+        root,
+        `This branch has no commits yet, so --base ${options.base} has no HEAD to compare against.`,
+      )
+    ).trim();
     return {
       label: `branch vs ${options.base}`,
       diff: await runGit(['diff', `${mergeBase}..HEAD`, '--'], root),
@@ -302,7 +339,11 @@ async function selectDiff(options, root) {
   const trusted = await indexTrustedPaths(root);
   return {
     label: 'uncommitted changes',
-    diff: await runGit(['diff', 'HEAD', '--'], root),
+    diff: await runGitOnHead(
+      ['diff', 'HEAD', '--'],
+      root,
+      'This branch has no commits yet, so there is no HEAD to review uncommitted work against.',
+    ),
     listArgs: ['diff', 'HEAD', '--name-status', '-z', '--'],
     // Root-relative, like every path `git diff` emits — see repositoryRoot. An
     // index-trusted path is read from the index — see indexTrustedPaths.
