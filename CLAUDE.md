@@ -127,5 +127,8 @@ model server.
 
 ## Tracker
 
-Shipped work is summarised in [`CHANGELOG.md`](CHANGELOG.md); open work and bugs live in the
-repository's issue tracker.
+Open work lives in `BACKLOG.md` (ordered, stable global IDs). Completed items move to
+`BACKLOG_DONE.md`; blocked/refuted/not-worth-doing items to `BACKLOG_PARKED.md`. "Pick next item" =
+the lowest-ID open item; "mark done" = move its entry to `BACKLOG_DONE.md`. IDs are never reused and
+continue the GitHub issue/PR numbering (`#1`–`#48`), which is no longer used for the owner's own
+work. Shipped work is also summarised in [`CHANGELOG.md`](CHANGELOG.md).
