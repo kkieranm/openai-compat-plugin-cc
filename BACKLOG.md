@@ -68,9 +68,6 @@ The next ID is `max+1` over all three files (highest used: #48).
     `BACKLOG_PARKED.md` with their evidence.
 
   Live:
-  - **2. A case-only rename leaves `pinnedRemoved` false** (original entry 4). Reproduces on macOS:
-    `Dir/gone.txt`, renamed to `dir` on disk and `rm --cached`, is sent as `files: ["dir/gone.txt"]` with
-    `pinnedRemoved: false`. `git-diff.mjs` compares NFC spellings only, with no case folding.
   - **3. A merge reviewed with `--commit` can claim completeness for files it does not hold** (original
     entry 5). Reproduced: a merge that resolves `a.txt` and brings `c.txt` in from one parent gives
     `changed: ["a.txt"]` (`diff-tree --cc`). `c.txt` is in neither the blocks nor the combined diff, and no
@@ -85,6 +82,6 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785 and 042ac83.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83 and 83c109c.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.

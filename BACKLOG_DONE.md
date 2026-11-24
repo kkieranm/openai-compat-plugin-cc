@@ -4,6 +4,36 @@ Completed (or dropped) items, newest first. Each keeps its stable ID. Items clos
 tracker moved into the repo are listed by title only; their full record is the GitHub issue of the
 same number. Shipped work is also summarised in `CHANGELOG.md`.
 
+- **#48 sweep item 2. A case-only rename leaves `pinnedRemoved` false** (2026-11-24): 83c109c. #48 stays open.
+  - The symptom: on a case-insensitive volume, `Dir/gone.txt`, renamed to `dir` on disk and then `rm --cached`, was sent as untracked `dir/gone.txt` with `pinnedRemoved: false`. The cause: `git-diff.mjs` compared NFC spellings only, with no case folding.
+  - The fix: a removed path now also matches a sent untracked block by lstat dev:ino. The NFC compare is kept, and any lstat error counts as no match.
+  - Grill: the design was settled unanimously over two rounds. The plan was dual-gated at 07b09152d332. Dual approval at pass digest ac195e9d7ecf.
+  - The scope review fired at 161 lines (estimate ~80). It was settled unanimously to continue at ~165.
+  - Per-pass ledger:
+    - `pass 1 diff | acceptance-checklist raised 5 fixed B0 T1 D0 deferred 0 dismissed 4 below-bar 0 open 0 | fork-opener raised 3 fixed B0 T1 D1 deferred 0 dismissed 1 below-bar 0 open 0 | opus-adversarial raised 0 | fable-adversarial raised 0 | agent-closer raised 2 fixed B0 T0 D0 deferred 0 dismissed 2 below-bar 0 open 0 | accepted 2 prev-batch 0 | gaps none`
+    - `pass 2 diff | acceptance-checklist raised 1 fixed B0 T0 D0 deferred 0 dismissed 1 below-bar 0 open 0 | fork-opener raised 0 | opus-adversarial raised 0 | fable-adversarial raised 0 | agent-closer raised 1 fixed B0 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | accepted 0 prev-batch 0 | gaps none`
+    - `pass 3 full | acceptance-checklist raised 2 fixed B0 T0 D0 deferred 0 dismissed 2 below-bar 0 open 0 | acceptance-whole raised 0 | fork-opener raised 0 | opus-adversarial raised 0 | fable-adversarial raised 0 | agent-closer raised 1 fixed B0 T1 D0 deferred 0 dismissed 0 below-bar 0 open 0 | accepted 1 prev-batch 1 | gaps none`
+    - `pass 4 diff | acceptance-checklist raised 2 fixed B0 T0 D0 deferred 0 dismissed 2 below-bar 0 open 0 | fork-opener raised 0 | opus-adversarial raised 0 | fable-adversarial raised 1 fixed B0 T0 D0 deferred 0 dismissed 0 below-bar 1 open 0 | agent-closer raised 0 | accepted 0 prev-batch 0 | gaps none`
+    - `pass 5 full | acceptance-checklist raised 3 fixed B0 T0 D0 deferred 0 dismissed 3 below-bar 0 open 0 | acceptance-whole raised 4 fixed B0 T0 D0 deferred 0 dismissed 4 below-bar 0 open 0 | fork-opener raised 2 fixed B0 T0 D0 deferred 0 dismissed 2 below-bar 0 open 0 | opus-adversarial raised 1 fixed B0 T0 D0 deferred 0 dismissed 1 below-bar 0 open 0 | fable-adversarial raised 1 fixed B0 T0 D0 deferred 0 dismissed 1 below-bar 0 open 0 | agent-closer raised 0 | accepted 0 prev-batch 0 | gaps none`
+  - Below-bar findings:
+    - The tests' appends to `.git/info/exclude` write through a symlinked template exclude. This needs init.templateDir or GIT_TEMPLATE_DIR set, and neither is set here. The class predates the change at `plantIgnored`. The three append sites are `tests/git-diff.test.js:391`, `:929` and `tests/review-context.test.js:245`.
+    - `fileIdentity` throws and catches once per removed path that is missing from disk, about 1 s per 10^5.
+  - Recorded, not filed (none clears the WORTH bar):
+    - The two below-bar findings above.
+    - A symlinked parent over-withdraws the claim.
+    - On a case-insensitive volume, `git rm Foo.md` followed by a new `foo.md` over-withdraws.
+    - The lstat on a removed path follows a symlinked parent outside the root. It reads metadata only, and a hang is unreproduced.
+    - The read-then-lstat window.
+    - linkSync has no skip on volumes without hard links.
+    - The NFC arm and `.filter(Boolean)` are unpinned, as declared.
+    - ext4 casefold, NTFS and network-volume inodes are unrun.
+  - REVERT, recorded for the owner and not taken: the consumer test region took accepted findings in passes 1 and 3, then converged in passes 4 and 5.
+  - Residue: the live check is pending, added to item 73.
+  - Trial lines:
+    - Grill: 1 fork. 0 cold picks differed. Round 2 ran, and 0 picks changed. No voter failed.
+    - Sketch: 4 divergences, all 4 adopted. Completed.
+    - fable-adversarial trial: 0 unique behaviour fixes from fable-adversarial and 0 from opus-adversarial. Units, 21:00-00:00: fable-adversarial 6.19M, opus-adversarial 3.67M, Sonnet shadow 1.08M.
+    - The shadow raised 0 of fable's unique fixes, since there were none. Its own findings: the exclude guard in pass 3, also raised by agent-closer, became a T fix; the lstat cost in pass 5 is below-bar. No passes excluded.
 - **#31. Review with reasoning on fails large prompts at the reasoning cutoff** (2026-11-14)
 - **#47. Untracked paths with non-ASCII names are quoted and never sent** (2026-11-08)
 - **#45. A stated-cap retry still advises raising --max-tokens on a reasoning-only reply** (2026-11-01)
