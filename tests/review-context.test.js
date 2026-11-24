@@ -4,7 +4,7 @@
 // importantly, where the request must never claim to be something it is not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { appendFileSync, linkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   chatRequests,
@@ -232,6 +232,31 @@ test('a file the diff removes but disk still holds withdraws the whole-files cla
   assert.match(prompt, /--- FILE: gone\.txt ---/);
   assert.match(prompt, /--- FILE: seed\.txt ---/);
   assert.match(prompt, /deleted file mode/);
+});
+
+test('a file sent under another name that is a removed path\'s file on disk withdraws the whole-files claim', async () => {
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072 });
+  writeFileSync(join(dir, 'a.txt'), 'linked\n');
+  await git(['add', 'a.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'a'], dir);
+  await git(['rm', '--quiet', '--cached', 'a.txt'], dir);
+  mkdirSync(join(dir, '.git', 'info'), { recursive: true });
+  // A template's exclude file need not end in a newline.
+  appendFileSync(join(dir, '.git', 'info', 'exclude'), '\n/a.txt\n');
+  await git(['check-ignore', '--quiet', '--', 'a.txt'], dir);
+  linkSync(join(dir, 'a.txt'), join(dir, 'b.txt'));
+  writeFileSync(join(dir, 'seed.txt'), 'edited\n');
+
+  const result = await runCompanion(['review'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  const prompt = sentPrompt(server);
+  assert.doesNotMatch(prompt, CLAIM);
+  assert.match(prompt, FALLBACK);
+  assert.match(prompt, /--- FILE: b\.txt ---/);
+  assert.match(prompt, /--- FILE: seed\.txt ---/);
+  assert.doesNotMatch(prompt, /--- FILE: a\.txt ---/);
 });
 
 test('a rename whose old path is back on disk withdraws the claim, and a plain rename keeps it', async () => {

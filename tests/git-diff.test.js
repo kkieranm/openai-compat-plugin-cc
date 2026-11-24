@@ -4,7 +4,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
-import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
@@ -338,6 +350,80 @@ test('a pinned file the diff removes is reported, with or without --diff-only', 
   writeFileSync(join(dir, 'seed.txt'), 'edited\n');
   assert.equal((await collectTarget({}, dir)).pinnedRemoved, true);
   assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
+test('a pinned file the diff removes under another case on a case-insensitive volume is reported', async (t) => {
+  const dir = await createRepo();
+  mkdirSync(join(dir, 'Dir'));
+  writeFileSync(join(dir, 'Dir', 'gone.txt'), 'one\ntwo\n');
+  await git(['add', 'Dir/gone.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'gone'], dir);
+  renameSync(join(dir, 'Dir'), join(dir, 'dir'));
+  await git(['rm', '--quiet', '--cached', 'Dir/gone.txt'], dir);
+
+  let folds = true;
+  try {
+    lstatSync(join(dir, 'Dir', 'gone.txt'));
+  } catch {
+    folds = false;
+  }
+  const removed = await git(['diff', 'HEAD', '--name-status', '-z'], dir);
+  const untracked = await git(['ls-files', '--others', '--exclude-standard', '-z'], dir);
+  if (!(folds && removed === 'D\0Dir/gone.txt\0' && untracked === 'dir/gone.txt\0')) {
+    t.skip('the volume does not resolve Dir/gone.txt onto the untracked dir/gone.txt, so there is no alias to test');
+    return;
+  }
+
+  assert.equal((await collectTarget({}, dir)).pinnedRemoved, true);
+  assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
+// `a.txt` leaves the index but stays on disk, excluded so it is not itself sent;
+// `b.txt` is the only block.
+async function removedBeside(link) {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n');
+  await git(['add', 'a.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'a'], dir);
+  await git(['rm', '--quiet', '--cached', 'a.txt'], dir);
+  mkdirSync(join(dir, '.git', 'info'), { recursive: true });
+  // A template's exclude file need not end in a newline.
+  appendFileSync(join(dir, '.git', 'info', 'exclude'), '\n/a.txt\n');
+  await git(['check-ignore', '--quiet', '--', 'a.txt'], dir);
+  if (link) linkSync(join(dir, 'a.txt'), join(dir, 'b.txt'));
+  else writeFileSync(join(dir, 'b.txt'), 'one\ntwo\n');
+  return dir;
+}
+
+test('a pinned file the volume resolves a removed path to is reported, whatever its name', async () => {
+  const dir = await removedBeside(true);
+  const target = await collectTarget({}, dir);
+  assert.deepEqual(target.files.map((file) => file.path), ['b.txt']);
+  assert.equal(target.pinnedRemoved, true);
+  assert.equal((await collectTarget({ 'diff-only': true }, dir)).pinnedRemoved, true);
+});
+
+test('a pinned file with the same bytes as a removed path, but another file, is not reported', async () => {
+  const dir = await removedBeside(false);
+  const target = await collectTarget({}, dir);
+  assert.deepEqual(target.files.map((file) => file.path), ['b.txt']);
+  assert.equal(target.pinnedRemoved, false);
+});
+
+test('a removed path the volume cannot look up is no match, not a failure', async () => {
+  const dir = await createRepo();
+  mkdirSync(join(dir, 'a'));
+  writeFileSync(join(dir, 'a', 'x.txt'), 'one\n');
+  await git(['add', 'a/x.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'a'], dir);
+  await git(['rm', '--quiet', '--cached', 'a/x.txt'], dir);
+  rmSync(join(dir, 'a'), { recursive: true });
+  // A file where the removed path's directory was: its lookup fails with ENOTDIR.
+  writeFileSync(join(dir, 'a'), 'now a file\n');
+
+  const target = await collectTarget({}, dir);
+  assert.deepEqual(target.files.map((file) => file.path), ['a']);
+  assert.equal(target.pinnedRemoved, false);
 });
 
 test('nothing is reported when no pinned file is a path the diff removes', async () => {

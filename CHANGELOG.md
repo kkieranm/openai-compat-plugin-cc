@@ -67,6 +67,12 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review` no longer tells the model it holds every changed file whole when an untracked file it
+  sends is, on disk, the file at a path the change removes under another spelling. On a case-insensitive
+  volume, a tracked `Dir/gone.txt` whose directory was renamed to `dir` and which was removed from the
+  index was sent as untracked `dir/gone.txt`, and when another changed file was sent whole beside it the
+  request kept that claim. The two paths are now matched by the file the volume resolves each to, as well
+  as by name.
 - `/oai:review` and `/oai:review --base` on a branch with no commits say the branch has no commits yet,
   and name `--staged`, which reviews only what is staged, and `--file`, instead of failing with git's error
   naming `HEAD`. A branch whose ref points at a missing object still gets git's own error.

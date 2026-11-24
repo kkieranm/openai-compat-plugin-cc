@@ -103,6 +103,34 @@ function readWorktree(root, path) {
   }
 }
 
+// The volume's own identity for a path, or null when it has none to give: any
+// error, a missing file or a name Node refuses alike, means "no match", never a throw.
+function fileIdentity(root, path) {
+  try {
+    const stat = lstatSync(join(root, path), { bigint: true });
+    return `${stat.dev}:${stat.ino}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a block sent for an untracked file is the file at a path the diff
+ * removes. Matched by the volume's identity of the two names, so any spelling
+ * the volume resolves onto a sent file is caught: a case twin on a
+ * case-insensitive volume, an NFC/NFD twin on macOS. The NFC name compare also
+ * matches when a block's own lstat fails after it was read, and on a volume that
+ * keeps NFC and NFD apart it matches two different files. A false match only
+ * withdraws the whole-files claim, which is why the `changed` filter in
+ * collectTarget, which drops a body, stays byte-exact.
+ */
+function isPinnedRemoved(root, removed, files) {
+  if (!files.length || !removed.length) return false;
+  const names = new Set(files.map((file) => file.path.normalize('NFC')));
+  const ids = new Set(files.map((file) => fileIdentity(root, file.path)).filter(Boolean));
+  return removed.some((path) => names.has(path.normalize('NFC')) || ids.has(fileIdentity(root, path)));
+}
+
 /**
  * Blocks for every path that yielded one, and the paths that did not.
  *
@@ -415,14 +443,10 @@ export async function collectTarget(options, cwd = process.cwd()) {
     // withhold. An empty list proves nothing: a clean merge lists no paths, and a combined `DD` entry
     // sits in a merge whose other changes the list leaves out.
     deletionsOnly: /^(?:D\0[^\0]*\0)+$/.test(nameStatus),
-    // A body sent as this file's content, for a path the diff says is gone. Compared
-    // as NFC: the diff names a removed path in HEAD's bytes, which can be NFD, while
-    // git's macOS precomposition lists the disk copy as NFC. Two distinct names that
-    // are only canonically equal merely withdraw the claim here, which is why the
-    // `changed` filter above, which drops a body, stays byte-exact.
-    pinnedRemoved: removedPaths(nameStatus).some((path) =>
-      files.some((file) => file.path.normalize('NFC') === path.normalize('NFC')),
-    ),
+    // A body sent as this file's content, for a path the diff says is gone. The diff
+    // names a removed path in HEAD's bytes, which can differ from the spelling the
+    // untracked listing gives the same file on disk — see isPinnedRemoved.
+    pinnedRemoved: isPinnedRemoved(root, removedPaths(nameStatus), files),
     // Listed as part of this change but with no body to send. Carried out so
     // the request can stop claiming to hold what it does not.
     unreadable: [...untracked.unreadable, ...tracked.unreadable],
