@@ -4,6 +4,73 @@ Completed (or dropped) items, newest first. Each keeps its stable ID. Items clos
 tracker moved into the repo are listed by title only; their full record is the GitHub issue of the
 same number. Shipped work is also summarised in `CHANGELOG.md`.
 
+- **#48 sweep item 3. A merge reviewed with `--commit` can claim completeness for files it does not hold** (2026-11-25): 8c19e34. #48 stays open.
+  - The symptom: a merge that resolves `a.txt` and takes `c.txt` whole from another parent gave `changed: ["a.txt"]`; `c.txt` was in neither the blocks nor the combined diff, and the prompt still claimed the complete content of every changed file.
+  - The fix: `mergeOmitted` (first-parent `diff-tree --no-renames -z` listing minus the `--cc` listing; null plus `mergeListError` when that listing fails or holds U+FFFD) withdraws the whole-files claim and prints a count-only NOTE. Both fields are in single- and multi-pass `--json` and the failure envelope. review.md licenses one `--json` rerun through a fixed extractor to name the paths. A merge's diff is read with `--no-renames`; ordinary commits keep renames; test repos pin repo-local `diff.renames true`. terminal-text.mjs (`safeJson`, `displayPath`, `stripUnsafe`) escapes every path and server string reaching a `--json` writer or a NOTE.
+  - Grill: 6 forks and 2 scope reviews, all converged (fork 4 reversed fork 1's name-every-path note to a count-only note; the owner adopted fork 4(b) on 2026-11-25, "ok do b, stop after this issue"). Plan dual-gated over 9 episodes, last at 250ed17a4723 (receipts `plans/48i3.approved/`). Dual approval at pass digest bdc03d88a3de.
+  - Size: estimate about 190 lines; the scope review fired twice and settled at 640 FINAL (605+, 35-, BACKLOG.md excluded).
+  - Per-pass ledger:
+    - `pass 1 diff | acceptance-checklist raised 2 fixed B1 T0 D0 deferred 0 dismissed 0 below-bar 1 open 0 | fork-opener raised 5 fixed B0 T1 D2 deferred 0 dismissed 2 below-bar 0 open 0 | opus-adversarial raised 2 fixed B2 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | fable-adversarial raised 3 fixed B3 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | agent-closer raised 5 fixed B4 T0 D1 deferred 0 dismissed 0 below-bar 0 open 0 | accepted 13 (deduplicated 11) prev-batch 0 | gaps none`
+    - `pass 2 diff | acceptance-checklist raised 0 fixed B0 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | fork-opener raised 3 fixed B1 T0 D1 deferred 0 dismissed 1 below-bar 0 open 0 | opus-adversarial raised 1 fixed B1 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | fable-adversarial raised 3 fixed B3 T0 D0 deferred 0 dismissed 0 below-bar 0 open 0 | agent-closer raised 6 fixed B4 T0 D1 deferred 0 dismissed 0 below-bar 1 open 0 | accepted 11 prev-batch 7 | gaps none`
+    - `pass 3 diff | acceptance-checklist raised 0 | fork-opener raised 2 fixed 0 below-bar 1 steering 1 | opus-adversarial raised 1 fixed B1 | fable-adversarial raised 2 fixed B2 | agent-closer raised 8 fixed B3 T2 dismissed 2 below-bar 1 | accepted 7 prev-batch 7 | gaps none`
+    - `pass 4 diff | acceptance-checklist raised 0 | fork-opener raised 2 steering 2 | opus-adversarial raised 3 fixed B3 | fable-adversarial raised 4 fixed B2 T1 (A1 shared with opus) | agent-closer raised 3 fixed B3 | accepted 9 prev-batch 9 | gaps none`
+    - `pass 5 diff | acceptance-checklist raised 0 | fork-opener raised 2 steering 2 | opus-adversarial raised 3 fixed B2 T1 | fable-adversarial raised 3 fixed B3 | agent-closer raised 7 fixed B4 T3 | accepted 10 prev-batch 10 | gaps none`
+    - `pass 6 diff | acceptance-checklist raised 1 (nit) | fork-opener raised 2 dismissed 1 | opus-adversarial raised 1 fixed D1 | fable-adversarial raised 2 fixed B1 D1 | agent-closer raised 4 fixed D2 below-bar 1 (plan K4 fixed) | accepted 4 distinct (docs, it-wording, K1/K2 wording, plan K4) prev-batch 4 | gaps none`
+    - `pass 7 diff | acceptance-checklist raised 1 fixed D1 | fork-opener raised 2 fixed D2 (dup) | opus-adversarial raised 0 | fable-adversarial raised 2 fixed D2 (dup) | agent-closer raised 0 | accepted 2 distinct, all exempt; prev-batch 2 | gaps none`
+    - `pass 8 full | acceptance-checklist raised 0 | acceptance-whole raised 0 | fork-opener raised 0 | opus-adversarial raised 9 (dedup: B1x6, B5x2, B2 note) fixed B1 T0 | fable-adversarial raised 11 (dedup: B1x2, B2x2, B3, B4, B5x3, ...) fixed B1 T2 below-bar 1 (B4 wording) | agent-closer raised 6 fixed B1 (K1,K2 folded) below-bar 0 widening 1 (K3) | accepted 5 distinct (B1 B2 B3 B4-pins B5) below-bar 5 prev-batch 0 | gaps none`
+    - `pass 9 diff | acceptance-checklist raised 0 | fork-opener raised 3 fixed D2 below-bar 1 | opus-adversarial raised 0 | fable-adversarial raised 2 fixed T1 below-bar 1 | agent-closer raised 3 fixed T1 (K1) D0 (FO1 folded) below-bar 1 | accepted 4 (FO1 FO2 F1 K1) prev-batch 4 | gaps none`
+    - `pass 10 full | acceptance-checklist raised 0 below-bar 1 | acceptance-whole raised 0 | fork-opener raised 0 | opus-adversarial raised 3 fixed D3 dismissed 1 below-bar 0 | fable-adversarial raised 2 fixed B1 deferred 0 dismissed 1 below-bar 2 (F10-2: widening, recorded, not taken) | agent-closer raised 5 fixed B1 T1 D3 | accepted 10 (F10-1 N1 N2 N3 F10-3 C1-C5) prev-batch 0 | gaps opus-adversarial fable-adversarial (hold3-docs-only/after/BACKLOG_DONE.md unread)`
+    - `pass 11 diff | acceptance-checklist raised 0 | fork-opener raised 0 | opus-adversarial raised 1 below-bar 1 (K11-2, first dismissed) | fable-adversarial raised 1 fixed T1 (K11-1, first below-bar) | agent-closer raised 4 fixed D1 (K11-3; K11-1 and K11-2 deduplicated to their raisers) | accepted 2 (K11-1 K11-3) prev-batch 2 | gaps none`
+    - `pass 12 diff | acceptance-checklist raised 0 | fork-opener raised 0 | opus-adversarial raised 1 fixed T1 | fable-adversarial raised 1 fixed T1 (dup) | agent-closer raised 2 below-bar 2 | accepted 1 (P12-1) prev-batch 0 | gaps none`
+    - `pass 13 diff | acceptance-checklist raised 0 | fork-opener raised 0 | opus-adversarial raised 0 below-bar 1 (K11-2 re-raised) | fable-adversarial raised 0 | agent-closer raised 1 below-bar 1 (K11-2 reason corrected) | accepted 0 prev-batch 0 | gaps none`
+    - `pass 14 full | acceptance-checklist raised 0 | acceptance-whole raised 0 | fork-opener raised 0 | opus-adversarial raised 0 | fable-adversarial raised 3 fixed B0 T0 D1 deferred 1 dismissed 0 below-bar 0 open 0 | agent-closer raised 1 fixed B0 T0 D1 deferred 0 dismissed 0 below-bar 0 open 0 | accepted 2 prev-batch 0 | gaps none`
+  - Exempt post-approval batch: README.md:55 reworded in place (P14-2), test-green 2100/2100.
+  - Below-bar findings (as handed to the last pass's finders; reasons in the pass records):
+    - the cleanly auto-merged no-hunk file (fork 3, filed at close);
+    - the ordinary-commit test's uncommitted leg runs only on a root HEAD (no failing input in shipped code);
+    - production --commit on a non-merge honours a user's diff.renames=false (base behaviour);
+    - GIT_CONFIG_PARAMETERS or -c can override the test pin;
+    - a submodule `ignore = all` hides a gitlink bump in every mode (pre-existing at HEAD, assessed at close);
+    - the test git helper inherits other global git config (pre-existing class);
+    - wide single-line comments traded for the line budget; the H2 tail wording has no direct pin;
+    - safeJson with a string `space`; no raw-byte fixture; the unguarded `if (from) named.add(from)`; delC ignores cName;
+    - format characters pass through;
+    - the ambiguous-id ref;
+    - stripUnsafe deletes separators;
+    - non-ASCII is escaped;
+    - a CR progress first line;
+    - a forged or model-written NOTE (an extra rerun, or a false "incomplete");
+    - a triple-backtick fence break;
+    - middle truncation;
+    - a non-string entry (unreachable);
+    - line-21 tension;
+    - the "give that count" antecedent;
+    - unpinned case order;
+    - no shell-quoting test of the extractor;
+    - null-with-null (unreachable);
+    - README:54's long line;
+    - no end-to-end multi-pass merge assertion;
+    - errorReport's double property read;
+    - safeJson(undefined) throws;
+    - commitConflictMerge does not assert two parents;
+    - mergeScenario's server leak when a helper throws;
+    - the rerun's --json placement wording;
+    - a valid name holding U+FFFD always withdraws the claim (fail-closed, accepted);
+    - README says nothing of the comparison-failure note;
+    - the signal-killed test's text leg does not assert the reason;
+    - the git-diff.mjs merge comment wraps wider than its block.
+    - The licensed rerun re-resolves a symbolic `--commit` ref after the session may have committed; with the claim withdrawn the prompt does not say files are missing; no test reviews a merge that is not HEAD; no test drives an empty list with a non-zero count.
+  - Filed into #48: items 85 (the no-hunk merge file, with the empty-combined-diff merge folded in), 86 (raw server text outside the `--json` writers), 87 (lossy-decode collisions in `pinned` and `indexTrustedPaths`), 88 (submodule `ignore = all`).
+  - Recorded, not filed (none clears the WORTH bar):
+    - The below-bar findings above.
+    - Amendment F's step-8 control was met by a denied `| python3 -c` pipe, not the `| cat` pipe the plan named.
+    - Toolchain: a challenger reply once arrived only in the hand-back tool input, not plain text; the receipt was rebuilt from the transcript.
+  - REVERT, recorded for the owner and not taken: README.md:54-55's merge sentence took findings in several passes (its long line, the missing comparison-failure note, then P14-2).
+  - Residue: the live check is pending (nothing listening), added to item 73.
+  - Trial lines:
+    - Grill: 6 forks plus 2 scope reviews voted by a Fable and a Sonnet agent; round-1 picks differed on at least forks 1 (sonnet C, fable A) and 5, and later rounds converged them; no voter failure was recorded.
+    - Sketch: 10 divergences (S1-S10); 6 adopted (S3, S5, S7-S10), 2 rejected (S1, S6), 1 grilled (S2, fork 2), 1 already in the plan (S4). Completed.
+    - fable-adversarial trial: B fixes by stage over 14 passes, from the ledger, fable-adversarial 16 and opus-adversarial 10; uniqueness per finding was not tallied. Units 2026-11-24T22 to 2026-11-25T18 (usage-audit --stages --opus-equivalent): fable-adversarial 42.45M, opus-adversarial 25.27M, Sonnet shadow 8.45M. Session effort as run; no passes excluded.
 - **#48 sweep item 2. A case-only rename leaves `pinnedRemoved` false** (2026-11-24): 83c109c. #48 stays open.
   - The symptom: on a case-insensitive volume, `Dir/gone.txt`, renamed to `dir` on disk and then `rm --cached`, was sent as untracked `dir/gone.txt` with `pinnedRemoved: false`. The cause: `git-diff.mjs` compared NFC spellings only, with no case folding.
   - The fix: a removed path now also matches a sent untracked block by lstat dev:ino. The NFC compare is kept, and any lstat error counts as no match.

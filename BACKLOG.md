@@ -68,10 +68,6 @@ The next ID is `max+1` over all three files (highest used: #48).
     `BACKLOG_PARKED.md` with their evidence.
 
   Live:
-  - **3. A merge reviewed with `--commit` can claim completeness for files it does not hold** (original
-    entry 5). Reproduced: a merge that resolves `a.txt` and brings `c.txt` in from one parent gives
-    `changed: ["a.txt"]` (`diff-tree --cc`). `c.txt` is in neither the blocks nor the combined diff, and no
-    note names it.
   - **26. `oai-delegate.md` takes the root through command substitution, which strips trailing
     newlines.** The class ("a path value loses trailing bytes") has two fixed occurrences and no
     structural test.
@@ -82,6 +78,27 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83 and 83c109c.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c and 8c19e34.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
+  - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
+    2026-11-25 from item 3's review). Under `--diff-only`, or when only hunks are sent, a file that
+    differs from every parent yet matches one of them in every region it changes has no hunk in the
+    combined diff. `--cc` lists it, so it is not in `mergeOmitted`, and no note names it. Reproduced:
+    f.txt (lines 1..30, side edits line 1, main edits line 30, a clean combine); g.txt and p (two
+    conflicting regions resolved to different sides); a resolution that reverts both edits. A merge whose
+    files are all of this kind reaches the model as a bare commit header and reports "No defects
+    reported" (exit 0). That was already true at 0713afa: `git-diff.mjs:408` refuses only an empty diff
+    with no files. README.md:55 states the gap.
+  - **86. Server or model text reaches the terminal raw outside the review and task `--json` writers**
+    (filed 2026-11-25 from item 3's review), `/oai:setup --json` included. Item 3 escaped only the merge
+    NOTE, `unreadableNote` and those writers. A server's error text carrying ESC sequences can erase or
+    rewrite the terminal lines that show the failure.
+  - **87. Lossy-decode name collisions in collectTarget's `pinned` filter and `indexTrustedPaths`**
+    (filed 2026-11-25 from item 3's review). Two undecodable names decode to the same U+FFFD
+    spelling, so one file's state stands for another's with no error. Item 3 closed this for the merge
+    listing only (a U+FFFD there gives `mergeOmitted: null`). Pre-existing at 0713afa; it needs a Linux
+    non-UTF-8 name plus a literal U+FFFD twin (the parked non-UTF-8 class).
+  - **88. A submodule with `ignore = all` hides a gitlink bump in every review mode** (filed
+    2026-11-25 from item 3's review). git's `diff.ignoreSubmodules` drops the bump from the diff and
+    from every listing, so the review never sees it and no note says so. Pre-existing at 0713afa.
