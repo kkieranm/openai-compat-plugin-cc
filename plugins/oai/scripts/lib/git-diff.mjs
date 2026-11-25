@@ -6,6 +6,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, rea
 import { join } from 'node:path';
 import { UserError } from './errors.mjs';
 import { readFileBlocks } from './prompt.mjs';
+import { displayPath, stripUnsafe } from './terminal-text.mjs';
 
 const NUL = String.fromCharCode(0);
 
@@ -35,7 +36,12 @@ function git(args, cwd) {
 async function runGit(args, cwd) {
   const result = await git(args, cwd);
   if (result.status !== 0) {
-    throw new UserError(`git ${args.join(' ')} failed: ${result.stderr.trim() || `exit ${result.status}`}`);
+    const detail = result.stderr
+      .split(/\r\n|\r|\n/)
+      .map((line) => stripUnsafe(line).trim())
+      .filter(Boolean)
+      .join('; ');
+    throw new UserError(`git ${args.join(' ')} failed: ${detail || `exit ${result.status ?? 'signal'}`}`);
   }
   return result.stdout;
 }
@@ -290,7 +296,7 @@ async function singleCommit(ref, root) {
   const resolved = await git(['rev-parse', '--verify', ref], root);
   const ambiguous = /^error: short object ID \S+ is ambiguous$/m.exec(resolved.stderr);
   if (ambiguous) {
-    throw new UserError(`--commit ${ref}: ${ambiguous[0].replace(/^error: /, '')}.`, { hint: 'Use a longer id.' });
+    throw new UserError(`--commit ${ref}: ${stripUnsafe(ambiguous[0]).replace(/^error: /, '')}.`, { hint: 'Use a longer id.' });
   }
   const id = resolved.status === 0 ? resolved.stdout.trim() : '';
   const commit = FULL_OBJECT_ID.test(id)
@@ -317,10 +323,14 @@ async function singleCommit(ref, root) {
 async function selectDiff(options, root) {
   if (options.commit !== undefined) {
     const ref = await singleCommit(options.commit, root);
+    const [, ...parents] = (await runGit(['rev-list', '--parents', '-n', '1', ref, '--'], root)).trim().split(/\s+/);
+    const diff = await runGit(['show', ...(parents.length >= 2 ? ['--no-renames'] : []), ref, '--'], root);
     return {
       label: `commit ${options.commit}`,
-      diff: await runGit(['show', ref, '--'], root),
-      // --root and --cc exist to make this list agree with `git show` above.
+      commitId: ref,
+      firstParent: parents.length >= 2 ? parents[0] : null,
+      diff,
+      // A merge is shown without renames, as this list is; --root and --cc keep the list from missing what `git show` prints.
       // Without --root a repository's first commit lists no files; without --cc
       // neither does a merge, though `git show` prints a combined diff for any
       // merge that resolved a conflict. Both would drop whole files for a
@@ -394,7 +404,7 @@ async function selectDiff(options, root) {
 export async function collectTarget(options, cwd = process.cwd()) {
   if (options.file?.length) {
     const files = readFileBlocks(options.file);
-    return { label: `${options.file.length} file(s)`, diff: '', files, changed: [], unreadable: [] };
+    return { label: `${options.file.length} file(s)`, diff: '', files, changed: [], unreadable: [], mergeOmitted: [], mergeListError: null };
   }
 
   // Everything below is resolved against the repository root, so a review run
@@ -411,7 +421,7 @@ export async function collectTarget(options, cwd = process.cwd()) {
     if (withheld.length) {
       message =
         `Nothing to review: ${label} holds only ${withheld.length} untracked file(s) that could not be read ` +
-        `or are binary: ${withheld.join(', ')}.`;
+        `or are binary: ${withheld.map(displayPath).join(', ')}.`;
     }
     throw new UserError(message, { hint: OVERRIDES });
   }
@@ -434,13 +444,36 @@ export async function collectTarget(options, cwd = process.cwd()) {
   const listed = options['diff-only'] ? [] : changedPaths(nameStatus);
   const tracked = await blocksFor(listed, selected.readContent);
 
+  // `--cc` lists the paths that differ from every parent, cleanly auto-merged ones included. `mergeOmitted` is
+  // the other paths that differ from the first parent, such as one taken whole from another parent. `null`, never
+  // an empty list, means the first-parent listing failed or holds U+FFFD, which every undecodable byte decodes to.
+  let mergeOmitted = [];
+  let mergeListError = null;
+  if (selected.firstParent) {
+    const listing = await git(
+      ['diff-tree', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', selected.firstParent, selected.commitId, '--'],
+      root,
+    );
+    if (listing.status !== 0 || listing.stdout.includes('\uFFFD')) {
+      mergeOmitted = null;
+      mergeListError = listing.status !== 0 ? listErrorText(listing.status, listing.stderr) : 'a path name holds U+FFFD, so the two listings cannot be matched';
+    } else {
+      const named = new Set();
+      for (const { from, path } of statusEntries(nameStatus)) {
+        if (from) named.add(from);
+        if (path) named.add(path);
+      }
+      mergeOmitted = listing.stdout.split(NUL).filter((path) => path !== '' && !named.has(path));
+    }
+  }
+
   return {
     label,
     diff,
     files,
     changed: tracked.blocks.filter((block) => !pinned.has(block.path)),
     // Every listed path is a plain deletion, so no path has a body at its tip to
-    // withhold. An empty list proves nothing: a clean merge lists no paths, and a combined `DD` entry
+    // withhold. An empty list proves nothing: a merge taking each path from a parent lists none, and a combined `DD` entry
     // sits in a merge whose other changes the list leaves out.
     deletionsOnly: /^(?:D\0[^\0]*\0)+$/.test(nameStatus),
     // A body sent as this file's content, for a path the diff says is gone. The diff
@@ -450,5 +483,20 @@ export async function collectTarget(options, cwd = process.cwd()) {
     // Listed as part of this change but with no body to send. Carried out so
     // the request can stop claiming to hold what it does not.
     unreadable: [...untracked.unreadable, ...tracked.unreadable],
+    mergeOmitted,
+    mergeListError,
   };
+}
+
+/**
+ * The first non-blank line of git's stderr, stripped of control, Bidi_Control and
+ * line/paragraph separator characters, for a note shown to the user; `exit <status>`
+ * (or `exit signal`) when nothing readable is left.
+ */
+export function listErrorText(status, stderr) {
+  const line = (stderr ?? '')
+    .split(/\r\n|\r|\n/)
+    .map((text) => stripUnsafe(text).trim())
+    .find(Boolean);
+  return line || `exit ${status ?? 'signal'}`;
 }

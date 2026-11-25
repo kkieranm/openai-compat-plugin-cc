@@ -10,6 +10,7 @@ import { reasoningWitness } from './reasoning-witness.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { artifactNote } from './task-artifact.mjs';
 import { artifactKind, templateNotes } from './task-template.mjs';
+import { safeJson } from './terminal-text.mjs';
 
 /**
  * One finished run as one object — the machine-readable half of this command.
@@ -143,7 +144,7 @@ export function report(outcome, { json = false } = {}) {
   const answer = requireAnswer(outcome.result, outcome.profile).trim();
 
   if (json) {
-    process.stdout.write(`${JSON.stringify(jsonTaskReport(outcome, answer), null, 2)}\n`);
+    process.stdout.write(`${safeJson(jsonTaskReport(outcome, answer), 2)}\n`);
     return;
   }
 

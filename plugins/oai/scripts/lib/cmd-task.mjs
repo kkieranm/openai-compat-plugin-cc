@@ -11,6 +11,7 @@ import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { executeTask } from './task-execute.mjs';
 import { report } from './task-report.mjs';
 import { submitTask } from './task-submit.mjs';
+import { safeJson } from './terminal-text.mjs';
 
 // Exported so `tests/plugin.test.js` can prove every flag this command accepts
 // is documented in `commands/task.md`. The markdown is the only description a
@@ -60,7 +61,7 @@ export async function runTask(argv) {
     await taskFlow(options, inlinePrompt, terminated, sampling);
   } catch (error) {
     attachSampling(error, sampling);
-    if (wantsJson) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
+    if (wantsJson) process.stdout.write(`${safeJson(errorReport(error))}\n`);
     throw error;
   }
 }

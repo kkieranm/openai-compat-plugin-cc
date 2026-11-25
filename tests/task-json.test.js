@@ -8,14 +8,17 @@
 // carries is in it, and that a run with nothing to say still fails.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { completion, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
+import { completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';
 import { templateNotes } from '../plugins/oai/scripts/lib/task-template.mjs';
 
-async function serverAnswering(text, { status = 200 } = {}) {
+async function serverAnswering(text, { status = 200, catalogue = false } = {}) {
   return startFakeServer((request, response) => {
     if (request.url.includes('/chat/completions')) {
       if (status !== 200) return respondJson(response, { error: { message: 'the model is on fire' } }, status);
       return respondJson(response, completion(text));
+    }
+    if (catalogue && request.url.includes('/api/v0/models')) {
+      return respondJson(response, { data: [{ id: 'small', type: 'llm', state: 'loaded', max_context_length: 8192, loaded_context_length: 4096 }] });
     }
     if (request.url.includes('/models')) return respondJson(response, { data: [{ id: 'small' }] });
     return respondJson(response, {}, 404);
@@ -227,6 +230,21 @@ test('an ordinary run without --json is byte-for-byte what it always was', async
     assert.match(result.stdout, /^the answer/);
     assert.doesNotMatch(result.stdout, /^\{/, 'the human path never emits an envelope');
     assert.match(result.stdout, /provider: local/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('--json escapes a bidi character in the answer, and in a failed run\'s refused model id', async () => {
+  const server = await serverAnswering('abc\u202edef', { catalogue: true });
+  try {
+    const answered = await runTask(server, ['--json', 'a question']);
+    assert.doesNotMatch(answered.stdout, /\u202e/);
+    assert.equal(JSON.parse(answered.stdout).content, 'abc\u202edef');
+    const refused = await runTask(server, ['--json', '--model', 'x\u202ey', 'a question']);
+    assert.equal(refused.status, 1, refused.stderr);
+    assert.doesNotMatch(refused.stdout, /\u202e/);
+    assert.match(JSON.parse(refused.stdout).message, /is not served here/);
   } finally {
     await server.close();
   }

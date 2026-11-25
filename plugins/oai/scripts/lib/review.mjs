@@ -1,6 +1,7 @@
 // What the model is asked to do, and how its answer is shown.
 import { UserError } from './errors.mjs';
 import { MAX_FINDINGS } from './review-schema.mjs';
+import { displayPath } from './terminal-text.mjs';
 
 // Terse and negative: a small model follows a short list of prohibitions far
 // better than a long description of good reviewing.
@@ -185,8 +186,35 @@ export function unreadableNote(unreadable) {
   if (!unreadable?.length) return null;
   return (
     `NOTE: ${unreadable.length} file(s) changed by this work could not be read or are binary, so their ` +
-    `contents were not sent, beyond any diff hunks: ${unreadable.join(', ')}. An unmerged path during a ` +
+    `contents were not sent, beyond any diff hunks: ${unreadable.map(displayPath).join(', ')}. An unmerged path during a ` +
     'conflicted merge also does this. A claim that something in them is undefined or missing may just mean it was not sent.'
+  );
+}
+
+/**
+ * Whether a merge's combined diff leaves something out: a non-empty list of paths
+ * it took as another parent had them, or `null`, a first-parent listing that
+ * failed or holds U+FFFD. `[]` and an absent field leave it whole.
+ */
+export function mergeIncomplete(mergeOmitted) {
+  return mergeOmitted === null || (mergeOmitted?.length ?? 0) > 0;
+}
+
+/**
+ * A merge's combined diff leaves out the paths it took whole from one parent. `null`
+ * means its first-parent listing failed or holds U+FFFD.
+ */
+export function mergeOmittedNote(mergeOmitted, mergeListError) {
+  if (!mergeIncomplete(mergeOmitted)) return null;
+  if (mergeOmitted === null) {
+    return (
+      `NOTE: this merge's files could not be compared with its first parent (${mergeListError}), so a file it ` +
+      'took as another parent had it may be missing from the combined diff and files this review was sent.'
+    );
+  }
+  return (
+    `NOTE: ${mergeOmitted.length} file(s) differ from this merge's first parent but are not in its combined diff: ` +
+    'each is as another parent had it (a deletion included), and none was sent. Rerun with --json to list them (mergeOmitted).'
   );
 }
 
@@ -347,7 +375,7 @@ export function hunksOnlyNote(scope = '') {
  * speaks of the whole result.
  */
 function caveats(
-  { dropped, atCap, analysisCut, hunksOnly, unreadable, skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged },
+  { dropped, atCap, analysisCut, hunksOnly, unreadable, mergeOmitted, mergeListError, skippedUnsizedWindow, skippedConservativeCount, conservativeReserveCut, multiPass, salvaged },
   profile,
 ) {
   const notes = [];
@@ -405,6 +433,8 @@ function caveats(
   );
   const missing = unreadableNote(unreadable);
   if (missing) notes.push(missing);
+  const mergeNote = mergeOmittedNote(mergeOmitted, mergeListError);
+  if (mergeNote) notes.push(mergeNote);
   if (dropped > 0) {
     notes.push(`(${dropped} finding(s) were dropped: they named no file or no defect, so nothing could be checked.)`);
   }

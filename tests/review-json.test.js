@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { errorReport } from '../plugins/oai/scripts/lib/review-report.mjs';
 import { MAX_FINDINGS, analysisCapFor } from '../plugins/oai/scripts/lib/review-schema.mjs';
 import {
   chatRequests,
@@ -51,7 +52,7 @@ test('--json emits one object carrying the findings and every caveat field', asy
   // Present, not merely truthy: the harness reads each of these, and a missing
   // key reads as `undefined`, which is falsy and therefore silently reassuring.
   for (const key of [
-    'dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'usage', 'finishReason',
+    'dropped', 'atCap', 'analysisCut', 'hunksOnly', 'unreadable', 'mergeOmitted', 'mergeListError', 'usage', 'finishReason',
     // The text footer says when the size guard did not run, and plugins/oai/commands/review.md
     // promises --json carries every caveat the text report does.
     'contextChecked', 'contextNote',
@@ -313,4 +314,10 @@ test('--enable-thinking reaches the review request and the --json envelope; unse
   } finally {
     await server.close();
   }
+});
+
+test('errorReport adds the merge fields only to an error that carries them, copied fail-closed', () => {
+  for (const bad of [null, undefined, 'x']) assert.deepEqual(Object.keys(errorReport(bad)).filter((key) => key.startsWith('merge')), []);
+  const out = errorReport(Object.assign(new Error('e'), { mergeOmitted: ['a', 1], mergeListError: 5 }));
+  assert.deepEqual([out.mergeOmitted, out.mergeListError], [['a'], null]);
 });

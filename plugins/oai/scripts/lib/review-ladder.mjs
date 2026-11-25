@@ -6,7 +6,7 @@
 // decides how much budget there is to show it in and what to do when a request
 // comes back refused.
 import { prepareRequest } from './delegate.mjs';
-import { buildReviewPrompt, lensDirective } from './review.mjs';
+import { buildReviewPrompt, lensDirective, mergeIncomplete } from './review.mjs';
 import { REVIEW_SCHEMA, reviewSchemaFor } from './review-schema.mjs';
 import { findingsFirst, schemaInstruction } from './structured.mjs';
 
@@ -40,6 +40,9 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
   // other trace, so without this the prompt would vouch for a file that never
   // arrived. `pinnedRemoved` is a block sent for a path the diff removes, which
   // holds what is on disk and not that file's content after the change.
+  // `mergeOmitted` is a merge's paths that differ from its first parent and are
+  // absent from the `--cc` name listing (a non-empty list), or a first-parent
+  // listing that failed or holds U+FFFD (`null`).
   //
   // The lens rides the TAIL, after the diff and after any `suffix` (the schema
   // instruction on the structured paths): the server prefix-caches, so keeping
@@ -56,7 +59,7 @@ export function prepareLadder(shared, { target, instructions, windowKnown, suffi
       label: target.label,
       diff: target.diff,
       instructions,
-      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0 && !target.pinnedRemoved,
+      wholeFiles: whole && hasDiff && windowKnown && target.unreadable.length === 0 && !target.pinnedRemoved && !mergeIncomplete(target.mergeOmitted),
     });
     return {
       prompt: [prompt, suffix, lens ? lensDirective(lens) : null].filter(Boolean).join('\n\n'),

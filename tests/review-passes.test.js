@@ -228,6 +228,15 @@ test('either conservative-count cause on any readable pass is true for the union
   }
 });
 
+test('the shared target\'s merge omissions pass through the union unchanged', () => {
+  const flags = caveatUnion([{}], { unreadable: [], mergeOmitted: ['c.txt'], mergeListError: null });
+  assert.deepEqual(flags.mergeOmitted, ['c.txt']);
+  assert.equal(flags.mergeListError, null);
+  const failed = caveatUnion([{}], { unreadable: [], mergeOmitted: null, mergeListError: 'boom' });
+  assert.equal(failed.mergeOmitted, null);
+  assert.equal(failed.mergeListError, 'boom');
+});
+
 test('degraded on any readable pass makes the union degraded', () => {
   // The degraded OR: a union in which any readable pass ran degraded reads
   // degraded, so a bench degradation axis never mistakes it for clean.

@@ -7,11 +7,12 @@
 import { CONTEXT_SOURCES, positiveInteger } from './model-info.mjs';
 import { renderTaskFooter } from './render.mjs';
 import { aggregateAttempts, caveatUnion, contextCheckedAll, isReadable, mergePasses, passReason, passesEnvelope, passesText, totalDuration } from './review-passes.mjs';
-import { causeNotes, hunksOnlyNote, renderFindings, unreadableNote } from './review.mjs';
+import { causeNotes, hunksOnlyNote, mergeOmittedNote, renderFindings, unreadableNote } from './review.mjs';
 import { reconstructServerConfig } from './run-context.mjs';
 import { substitution } from './model-identity.mjs';
 import { reasoningWitness } from './reasoning-witness.mjs';
 import { unparsedReply } from './review-unparsed.mjs';
+import { safeJson } from './terminal-text.mjs';
 
 /**
  * The request-narrowing causes as the report fields name them. `skipped` is read
@@ -72,7 +73,7 @@ function reportFindings(parsed, context) {
   if (parsed) {
     process.stdout.write(
       renderFindings(
-        { ...parsed, hunksOnly, unreadable: target.unreadable, ...causes, salvaged },
+        { ...parsed, hunksOnly, unreadable: target.unreadable, mergeOmitted: target.mergeOmitted, mergeListError: target.mergeListError, ...causes, salvaged },
         // The model that ANSWERED, not the one requested. This block heads the
         // report and the footer closes it; handing one the requested id and the
         // other the served id would produce a single report naming two different
@@ -98,6 +99,7 @@ function reportFindings(parsed, context) {
     hunksOnly ? hunksOnlyNote() : null,
     ...causeNotes({ ...causes, salvaged }, profile),
     unreadableNote(target.unreadable),
+    mergeOmittedNote(target.mergeOmitted, target.mergeListError),
   ].filter(Boolean);
   process.stdout.write(
     `The model did not return findings in the requested shape. Its reply, verbatim:\n\n${text}\n\n` +
@@ -253,6 +255,8 @@ export function jsonReport(parsed, context) {
     // The CAUSES `hunksOnly` cannot carry — it is equally true of `--diff-only`.
     ...causeFlags(context),
     unreadable: target.unreadable,
+    mergeOmitted: target.mergeOmitted,
+    mergeListError: target.mergeListError,
     usage: result.usage ?? null,
     // The reasoning state OBSERVED in this reply — `reasoning-observed` /
     // `no-reasoning-observed` / `unknown`, derived from `usage`'s
@@ -336,7 +340,8 @@ export function errorReport(error) {
     // this object is what `publishFailure` persists into `jobs.db`, and all
     // five fields can be secret-shaped. Absence by construction: this is an
     // explicit field list, not a spread of `error`, so a new field on the
-    // source error never reaches a persisted job by default.
+    // source error never reaches a persisted job by default. Like the review
+    // causes, the `mergeOmitted` / `mergeListError` pair below is copied only when set.
     // The attempt record survives the failure path, and this is the path where
     // it matters most: a run whose every attempt died is the run carrying the
     // most reliability evidence, and the easiest place to lose it. `null` where
@@ -409,6 +414,16 @@ export function errorReport(error) {
     // for — present only on a review failure whose request was built, so a task
     // or job envelope never gains these keys.
     ...(error?.reviewCauses ? failureCauseFields(error.reviewCauses) : {}),
+    // The merge's omitted-file list, present once the review target was collected
+    // (the command-level catch attaches it), copied fail-closed.
+    ...(error !== null && typeof error === 'object' && Object.hasOwn(error, 'mergeOmitted')
+      ? {
+          mergeOmitted: Array.isArray(error.mergeOmitted)
+            ? error.mergeOmitted.filter((path) => typeof path === 'string')
+            : null,
+          mergeListError: typeof error.mergeListError === 'string' ? error.mergeListError : null,
+        }
+      : {}),
   };
 }
 
@@ -420,7 +435,7 @@ export function errorReport(error) {
  */
 export function report(parsed, context) {
   if (context.json) {
-    process.stdout.write(`${JSON.stringify(jsonReport(parsed, context), null, 2)}\n`);
+    process.stdout.write(`${safeJson(jsonReport(parsed, context), 2)}\n`);
     return;
   }
 
@@ -651,7 +666,7 @@ export function reportPasses(passes, context) {
   const merged = mergePasses(readable);
   const perPassReports = passes.map((pass, index) => passEnvelope(pass, index, context));
   const readableReports = perPassReports.filter((report) => report.ok !== false);
-  const caveatFlags = caveatUnion(readableReports, { unreadable: context.target.unreadable });
+  const caveatFlags = caveatUnion(readableReports, context.target);
   const contextChecked = contextCheckedAll(readableReports);
   const usage = sumUsage(readable);
   const reasoning = reasoningWitness(usage);
@@ -678,7 +693,7 @@ export function reportPasses(passes, context) {
 
   if (context.json) {
     process.stdout.write(
-      `${JSON.stringify(
+      `${safeJson(
         passesEnvelope(merged, {
           label: context.target.label,
           provider: context.profile.name,
@@ -702,7 +717,6 @@ export function reportPasses(passes, context) {
           strategy: context.strategy,
           lenses: context.lenses,
         }),
-        null,
         2,
       )}\n`,
     );

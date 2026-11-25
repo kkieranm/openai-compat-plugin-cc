@@ -17,6 +17,7 @@ import { requestFindings, reserveFor } from './review-request.mjs';
 import { attachRunContext, buildRunContext } from './run-context.mjs';
 import { SAMPLING_FLAGS, attachSampling, parseSampling } from './sampling.mjs';
 import { parseFindings } from './structured.mjs';
+import { safeJson } from './terminal-text.mjs';
 
 // Exported so `tests/plugin.test.js` can prove every flag this command accepts
 // is documented in `commands/review.md`. The markdown is the only description a
@@ -50,17 +51,26 @@ export async function runReview(argv) {
   // the settings on — a reasoning-only runaway — are thrown by the report stage
   // *after* the model call returned, so this is the one scope that sees them all.
   let sampling;
+  let target;
   try {
     sampling = parseSampling(options);
-    await reviewFlow(options, instructions, terminated, sampling);
+    await reviewFlow(options, instructions, terminated, sampling, (collected) => {
+      target = collected;
+    });
   } catch (error) {
+    // The merge's omitted-file list rides the failure envelope too, so the rerun a
+    // report's note recommends can still read it when the review request then fails.
+    if (target && error !== null && typeof error === 'object') {
+      error.mergeOmitted = target.mergeOmitted;
+      error.mergeListError = target.mergeListError;
+    }
     // Record the run's sampling on the error so the --json failure envelope can
     // report it — including for a runaway refused after the model call returned.
     attachSampling(error, sampling);
     // Written before the rethrow, so the companion still writes prose to stderr
     // and exits 1 (or 2). The envelope is additive: nothing in it that worked
     // before reads differently.
-    if (options.json) process.stdout.write(`${JSON.stringify(errorReport(error))}\n`);
+    if (options.json) process.stdout.write(`${safeJson(errorReport(error))}\n`);
     // After the envelope, so the notes reach only the text the companion prints.
     if (error?.failureNotes) error.hint = [error.hint, ...error.failureNotes].filter(Boolean).join('\n\n');
     throw error;
@@ -149,7 +159,7 @@ function noteCauses(error) {
   return error;
 }
 
-async function reviewFlow(options, instructions, terminated, sampling) {
+async function reviewFlow(options, instructions, terminated, sampling, onTarget) {
   assertAskable(options, instructions, terminated);
   // The collision is checked BEFORE the numeric parse below, so `--lens x --passes
   // nope` surfaces the more fundamental "cannot be combined" rather than a numeric
@@ -177,6 +187,7 @@ async function reviewFlow(options, instructions, terminated, sampling) {
   }
 
   const target = await collectTarget(options);
+  onTarget(target);
   const { model, contextLength, contextSource, detectedWindow } = await resolveTarget(profile, options);
   // The server configuration this run resolved — the effective
   // window and its provenance, and which server-owned knobs were left at a

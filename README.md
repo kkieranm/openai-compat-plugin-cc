@@ -50,7 +50,9 @@ Foreground `/oai:task` and `/oai:review` run on Node 18.18+. Background jobs (`/
 Useful flags: `--provider <name>`, `--model <id>`, `--base-url <url>`, `--file <path>` (repeatable),
 `--prompt-file <path>`, `--timeout <seconds>`, `--max-tokens`, `--temperature`. `/oai:review` adds
 `--staged`, `--base <ref>` and `--commit <ref>` (one commit), and takes any trailing text as extra instructions
-for the reviewer.
+for the reviewer. For a merge, `--commit` reviews its combined diff; files the merge took as another parent
+had them are counted in a note, not sent; for a parsed report `/oai:review` then runs one more single-pass review with `--json` to list them (`mergeOmitted`), naming them when that list arrives whole. Under `--diff-only`, or
+when only hunks are sent, a file that differs from every parent yet matches one of them in every region it changes, as after a clean combine or a conflict resolved to different sides in different regions, is neither sent nor named.
 
 ## Configuration
 

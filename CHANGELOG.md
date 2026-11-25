@@ -67,6 +67,16 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- `/oai:review --commit` on a merge no longer tells the model it holds every changed file whole when the merge took
+  a file as another parent had it, in neither its combined diff nor the files sent. A note now counts such files
+  and points at `--json` for the list (`mergeOmitted`), which `/oai:review` then fetches, for a parsed report, with
+  one more single-pass review; a merge whose files cannot be compared with its first parent says so, with git's
+  error or the reason (`mergeOmitted: null`, `mergeListError`). Either drops the claim; the failure envelope
+  carries both fields once the review target was collected. A merge's diff no longer hides a deletion as a rename.
+  The unreadable-file note and "Nothing to review" quote a path unless it is plain ASCII letters, digits and
+  `._/+@=-`, writing each character outside printable ASCII as `\uXXXX`; `--json` carries it as is. `/oai:review`
+  and `/oai:task` `--json` escape control, bidi and line-separator characters in every string; git's error text in
+  a message is stripped of them, runGit joins its lines with `; `, and the merge note carries its first line.
 - `/oai:review` no longer tells the model it holds every changed file whole when an untracked file it
   sends is, on disk, the file at a path the change removes under another spelling. On a case-insensitive
   volume, a tracked `Dir/gone.txt` whose directory was renamed to `dir` and which was removed from the

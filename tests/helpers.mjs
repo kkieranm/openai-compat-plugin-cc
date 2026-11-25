@@ -198,6 +198,34 @@ export function reasoningFrames(reasoning, options = {}) {
 }
 
 /**
+ * Commits a merge in `dir`: main and side both edit `aName`, and the merge resolves the conflict. `addC` adds
+ * `cName` on side, `delC` deletes c.txt there (it starts in base), and `delE` has the merge itself delete
+ * e.txt, which both parents keep, or, given a name, move e.txt to that name.
+ */
+export async function commitConflictMerge(dir, { addC = false, delC = false, delE = false, cName = 'c.txt', aName = 'a.txt' } = {}) {
+  writeFileSync(join(dir, aName), 'base\n');
+  writeFileSync(join(dir, 'e.txt'), 'e\n');
+  if (delC) writeFileSync(join(dir, 'c.txt'), 'c\n');
+  await git(['add', '.'], dir);
+  await git(['commit', '--quiet', '-m', 'base'], dir);
+  await git(['checkout', '--quiet', '-b', 'side'], dir);
+  writeFileSync(join(dir, aName), 'side\n');
+  if (addC) writeFileSync(join(dir, cName), 'c\n');
+  await git(['add', '.'], dir);
+  if (delC) await git(['rm', '--quiet', 'c.txt'], dir);
+  await git(['commit', '--quiet', '-m', 'side'], dir);
+  await git(['checkout', '--quiet', 'main'], dir);
+  writeFileSync(join(dir, aName), 'main\n');
+  await git(['commit', '--quiet', '-am', 'main'], dir);
+  await git(['merge', '--quiet', 'side'], dir).catch(() => {}); // Conflicts, by construction.
+  writeFileSync(join(dir, aName), 'resolved\n');
+  await git(['add', aName], dir);
+  if (delE) await git(delE === true ? ['rm', '--quiet', 'e.txt'] : ['mv', 'e.txt', delE], dir);
+  await git(['commit', '--quiet', '--no-edit'], dir);
+  return dir;
+}
+
+/**
  * Async, for the same reason runCompanion is: sync spawn deadlocks the suite.
  * Resolves the command's stdout, so a test can assert on what git *said* and
  * not merely that it exited zero — callers that only sequence commands ignore
@@ -230,6 +258,7 @@ export async function createRepo() {
   await git(['init', '--quiet', '--initial-branch=main'], dir);
   await git(['config', 'user.email', 'test@example.com'], dir);
   await git(['config', 'user.name', 'Test'], dir);
+  await git(['config', 'diff.renames', 'true'], dir);
   writeFileSync(join(dir, 'seed.txt'), 'seed\n');
   await git(['add', 'seed.txt'], dir);
   await git(['commit', '--quiet', '-m', 'seed'], dir);

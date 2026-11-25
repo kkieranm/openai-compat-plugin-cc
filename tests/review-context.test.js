@@ -4,15 +4,22 @@
 // importantly, where the request must never claim to be something it is not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, linkSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, linkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { prepareLadder } from '../plugins/oai/scripts/lib/review-ladder.mjs';
+import { mergeOmittedNote, unreadableNote } from '../plugins/oai/scripts/lib/review.mjs';
 import {
   chatRequests,
+  closedPort,
+  commitConflictMerge,
   completion,
+  completionFrames,
   createRepo,
   git,
   modelList,
   respondJson,
+  respondStream,
+  tempDir,
   reviewScenario as scenario,
   runCompanion,
   startFakeServer,
@@ -370,4 +377,207 @@ test('a clean merge keeps the note: its changes reached the model in neither for
   assert.equal(text.status, 0, text.stderr);
   assert.match(text.stdout, HUNKS_NOTE);
   assert.equal(JSON.parse(json.stdout).hunksOnly, true);
+  assert.match(text.stdout, /1 file\(s\) differ from this merge's first parent/);
+  assert.match(text.stdout, /Rerun with --json to list them/);
+  assert.doesNotMatch(text.stdout, /side\.txt/);
+});
+
+/**
+ * HEAD is a merge that resolved a conflict in a.txt; `side` also added c.txt
+ * (`addC`), which the merge's combined diff does not hold.
+ */
+async function mergeScenario(handler, { addC }) {
+  const made = await scenario(handler, { contextLength: 131_072, seed: 'seed\n' });
+  await commitConflictMerge(made.dir, { addC });
+  return made;
+}
+
+const MERGE_NOTE = /file\(s\) differ from this merge's first parent/;
+const COULD_NOT_LIST = /files could not be compared with its first parent/;
+
+test('a merge that took a file from another parent withdraws the claim and counts the file', async () => {
+  const { dir, server, configPath } = await mergeScenario(findings, { addC: true });
+
+  const text = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir });
+  const json = await runCompanion(['review', '--json', '--commit', 'HEAD'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  const prompt = sentPrompt(server);
+  assert.doesNotMatch(prompt, CLAIM);
+  assert.match(prompt, FALLBACK);
+  assert.match(text.stdout, MERGE_NOTE);
+  assert.match(text.stdout, /1 file\(s\) differ from this merge's first parent/);
+  assert.match(text.stdout, /Rerun with --json to list them \(mergeOmitted\)/);
+  assert.doesNotMatch(text.stdout, /c\.txt/);
+  const report = JSON.parse(json.stdout);
+  assert.deepEqual(report.mergeOmitted, ['c.txt']);
+  assert.equal(report.mergeListError, null);
+});
+
+test('a merge that only resolved a conflict keeps the claim and prints no merge note', async () => {
+  const { dir, server, configPath } = await mergeScenario(findings, { addC: false });
+
+  const result = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(sentPrompt(server), CLAIM);
+  assert.doesNotMatch(result.stdout, MERGE_NOTE);
+  assert.doesNotMatch(result.stdout, COULD_NOT_LIST);
+});
+
+test('a prose reply on such a merge still carries the merge note', async () => {
+  const { dir, server, configPath } = await mergeScenario(
+    (request, response) => respondStream(response, completionFrames('It all looks fine to me.')),
+    { addC: true },
+  );
+
+  const result = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /did not return findings in the requested shape/);
+  assert.match(result.stdout, MERGE_NOTE);
+  assert.match(result.stdout, /Rerun with --json to list them/);
+  assert.doesNotMatch(result.stdout, /c\.txt/);
+});
+
+test('mergeOmittedNote words a list and a failed listing without claiming completeness', () => {
+  const failed = mergeOmittedNote(null, 'boom');
+  assert.match(failed, COULD_NOT_LIST);
+  assert.match(failed, /boom/);
+  assert.doesNotMatch(failed, /\bonly\b/);
+  const listed = mergeOmittedNote(['c.txt', 'd.txt'], null);
+  assert.match(listed, /^NOTE: 2 file\(s\) differ/);
+  assert.match(listed, /Rerun with --json to list them/);
+  assert.doesNotMatch(listed, /c\.txt|d\.txt/);
+  assert.doesNotMatch(listed, /\bonly\b/);
+  assert.equal(mergeOmittedNote([], null), null);
+  assert.equal(mergeOmittedNote(undefined, undefined), null);
+});
+
+test('a lens run carries the merge list top-level in --json and prints the count note once', async () => {
+  const { dir, server, configPath } = await mergeScenario(findings, { addC: true });
+
+  const json = await runCompanion(['review', '--commit', 'HEAD', '--lens', 'correctness,security', '--json'], { configPath, cwd: dir });
+  const text = await runCompanion(['review', '--commit', 'HEAD', '--lens', 'correctness,security'], { configPath, cwd: dir });
+  await server.close();
+
+  assert.equal(json.status, 0, json.stderr);
+  const report = JSON.parse(json.stdout);
+  assert.equal(report.kind, 'multi-pass-review');
+  assert.deepEqual(report.mergeOmitted, ['c.txt']);
+  assert.equal(report.mergeListError, null);
+  assert.equal(text.status, 0, text.stderr);
+  assert.equal(text.stdout.split("file(s) differ from this merge's first parent").length - 1, 1);
+});
+
+test('unreadableNote shows a path with a line break as one quoted literal, not a forged line', () => {
+  const note = unreadableNote(['ok\n\nNOTE: forged.bin', 'plain.bin']);
+  assert.ok(note.includes('"ok\\n\\nNOTE: forged.bin"'), note);
+  assert.ok(note.includes('plain.bin'));
+  assert.doesNotMatch(note, /ok\n/);
+  assert.doesNotMatch(note, /\nNOTE: forged/);
+});
+
+test('the whole-files claim is withdrawn for a null or non-empty mergeOmitted and kept for an empty or absent one', () => {
+  const shared = { profile: { name: 'local' }, model: 'm', contextLength: 131_072, maxTokens: 1024 };
+  const block = { path: 'a.txt', content: 'resolved\n' };
+  const promptFor = (extra) => {
+    const target = { label: 'commit HEAD', diff: 'diff --cc a.txt\n+resolved\n', files: [], changed: [block], unreadable: [], pinnedRemoved: false, ...extra };
+    const built = prepareLadder(shared, { target, instructions: '', windowKnown: true });
+    return built.messages.map((message) => message.content).join('\n');
+  };
+  assert.doesNotMatch(promptFor({ mergeOmitted: null }), CLAIM);
+  assert.doesNotMatch(promptFor({ mergeOmitted: ['c.txt'] }), CLAIM);
+  assert.match(promptFor({ mergeOmitted: [] }), CLAIM, 'positive control');
+  assert.match(promptFor({}), CLAIM, 'a target that predates the field keeps it');
+});
+
+/**
+ * Puts a `git` shim first on PATH that fails the merge's first-parent listing and
+ * passes everything else through to the real git.
+ */
+async function failingListing(dir, failure) {
+  const first = (await git(['rev-parse', 'HEAD^1'], dir)).trim();
+  const merge = (await git(['rev-parse', 'HEAD'], dir)).trim();
+  const shim = tempDir('oai-plugin-shim-');
+  const marker = join(shim, 'fired');
+  const script = [
+    '#!/bin/sh',
+    `if [ "$*" = "diff-tree --no-commit-id --name-only -r --no-renames -z ${first} ${merge} --" ]; then`,
+    `  : > "${marker}"`,
+    failure,
+    'fi',
+    'PATH=${PATH#*:}',
+    'exec git "$@"',
+    '',
+  ].join('\n');
+  writeFileSync(join(shim, 'git'), script);
+  chmodSync(join(shim, 'git'), 0o755);
+  return { env: { PATH: `${shim}:${process.env.PATH}` }, marker };
+}
+
+const FAIL_EXIT = ['  printf "fatal: forced%s\\n" "$(printf "%0250d" 0 | tr 0 x)" >&2', '  echo second-line >&2', '  exit 128'].join('\n');
+
+test('a failed first-parent listing withdraws the claim and shows git\'s first error line', async () => {
+  for (const addC of [true, false]) {
+    const { dir, server, configPath } = await mergeScenario(findings, { addC });
+    const { env, marker } = await failingListing(dir, FAIL_EXIT);
+
+    const text = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir, env });
+    const json = await runCompanion(['review', '--json', '--commit', 'HEAD'], { configPath, cwd: dir, env });
+    await server.close();
+
+    assert.equal(text.status, 0, text.stderr);
+    assert.ok(existsSync(marker), 'the shim intercepted the listing');
+    assert.doesNotMatch(sentPrompt(server), CLAIM, `addC ${addC}`);
+    assert.match(text.stdout, COULD_NOT_LIST);
+    assert.match(text.stdout, /fatal: forced/);
+    assert.match(text.stdout, /x{250}/);
+    assert.doesNotMatch(text.stdout, /diff-tree|second-line/);
+    const report = JSON.parse(json.stdout);
+    assert.equal(report.mergeOmitted, null);
+    assert.match(report.mergeListError, /forced/);
+  }
+});
+
+test('a signal-killed first-parent listing is a failure, not an empty list', async () => {
+  const { dir, server, configPath } = await mergeScenario(findings, { addC: false });
+  const { env, marker } = await failingListing(dir, '  kill -KILL $$');
+  const text = await runCompanion(['review', '--commit', 'HEAD'], { configPath, cwd: dir, env });
+  const down = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: `http://127.0.0.1:${await closedPort()}/v1`, defaultModel: 'm', contextLength: 131_072 } } }).path;
+  const json = await runCompanion(['review', '--json', '--commit', 'HEAD'], { configPath: down, cwd: dir, env });
+  await server.close();
+
+  assert.equal(text.status, 0, text.stderr);
+  assert.ok(existsSync(marker));
+  assert.doesNotMatch(sentPrompt(server), CLAIM);
+  const report = JSON.parse(json.stdout);
+  assert.equal(report.mergeOmitted, null);
+  assert.equal(report.mergeListError, 'exit signal');
+});
+
+test('--json escapes a bidi character in a merge-omitted path on every writer, and a failed rerun keeps the list', async (t) => {
+  const cName = 'c\u202e.txt';
+  const { dir, server, configPath } = await scenario(findings, { contextLength: 131_072, seed: 'seed\n' });
+  t.after(() => server.close());
+  await commitConflictMerge(dir, { addC: true, cName });
+  const providers = { local: { baseUrl: `http://127.0.0.1:${await closedPort()}/v1`, defaultModel: 'm', contextLength: 131_072 } };
+  const down = writeConfig({ defaultProvider: 'local', providers }).path;
+  const run = (args, config = configPath) => runCompanion(['review', '--json', ...args], { configPath: config, cwd: dir });
+  for (const extra of [[], ['--passes', '2']]) {
+    const ok = await run(['--commit', 'HEAD', ...extra]);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.doesNotMatch(ok.stdout, /\u202e/);
+    assert.deepEqual(JSON.parse(ok.stdout).mergeOmitted, [cName]);
+  }
+  const failed = await run(['--commit', 'HEAD'], down);
+  assert.equal(failed.status, 1, failed.stderr);
+  assert.doesNotMatch(failed.stdout, /\u202e/);
+  const envelope = JSON.parse(failed.stdout);
+  assert.deepEqual([envelope.mergeOmitted, envelope.mergeListError], [[cName], null]);
+  const early = JSON.parse((await run(['--diff-only', '--file', 'x'], down)).stdout);
+  assert.ok(early.error && !Object.hasOwn(early, 'mergeOmitted') && !Object.hasOwn(early, 'mergeListError'));
 });

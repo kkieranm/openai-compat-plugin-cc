@@ -338,14 +338,15 @@ export function runCauses(passes) {
  * only hunks, skipped the whole-file rung for either recorded cause, or had its
  * reply budget cut by the conservative count reads with that caveat, never as
  * a clean complete review — while `contextChecked` is the AND (checked only if
- * every pass checked). `dropped` sums, `unreadable` is the shared target's. The
- * per-pass originals stay in `passes[]`, so nothing is concealed; this is only
- * the top-level summary a reader who does not open `passes[]` still sees.
+ * every pass checked). `dropped` sums; `unreadable`, `mergeOmitted` and
+ * `mergeListError` are the shared target's. The per-pass originals stay in
+ * `passes[]`, so nothing is concealed; this is only the top-level summary a
+ * reader who does not open `passes[]` still sees.
  * `degraded` is the same fail-closed OR: a union in which any readable pass ran
  * degraded (a requested `--structured-output` that fell back) is degraded, so a
  * bench degradation axis reading the merged record never mistakes it for clean.
  */
-export function caveatUnion(readableReports, { unreadable }) {
+export function caveatUnion(readableReports, { unreadable, mergeOmitted, mergeListError }) {
   return {
     salvaged: readableReports.some((report) => report.salvaged),
     analysisCut: readableReports.some((report) => report.analysisCut === true),
@@ -357,6 +358,8 @@ export function caveatUnion(readableReports, { unreadable }) {
     degraded: readableReports.some((report) => report.degraded),
     dropped: readableReports.reduce((sum, report) => sum + (report.dropped ?? 0), 0),
     unreadable,
+    mergeOmitted,
+    mergeListError,
   };
 }
 

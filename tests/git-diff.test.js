@@ -22,9 +22,11 @@ import { promisify } from 'node:util';
 import { parseCommandLine } from '../plugins/oai/scripts/lib/args.mjs';
 import { REVIEW_SPEC } from '../plugins/oai/scripts/lib/cmd-review.mjs';
 import { UserError } from '../plugins/oai/scripts/lib/errors.mjs';
-import { collectTarget } from '../plugins/oai/scripts/lib/git-diff.mjs';
+import { collectTarget, listErrorText } from '../plugins/oai/scripts/lib/git-diff.mjs';
+import { displayPath, safeJson } from '../plugins/oai/scripts/lib/terminal-text.mjs';
 import {
   chatRequests,
+  commitConflictMerge,
   completion,
   createRepo,
   git,
@@ -1491,4 +1493,130 @@ test('a path swapped for a FIFO after its lstat is refused without blocking', as
   assert.equal(result.planted, 'fifo', 'the hook swapped a FIFO in between lstat and open');
   assert.deepEqual(result.unreadable, ['victim.txt'], 'a FIFO is not a body, even an empty one');
   assert.deepEqual(result.files, []);
+});
+
+test('a merge names the paths it took from another parent, unless a name holds U+FFFD, which two undecodable names can share', async () => {
+  const dir = await commitConflictMerge(await createRepo(), { addC: true });
+  const fffd = await Promise.all([{ aName: 'z\uFFFD.txt' }, { cName: 'z\uFFFD.txt' }].map(async (name) => collectTarget({ commit: 'HEAD' }, await commitConflictMerge(await createRepo(), { addC: true, ...name }))));
+  assert.deepEqual(fffd.map((t) => [t.mergeOmitted, t.mergeListError]), Array(2).fill([null, 'a path name holds U+FFFD, so the two listings cannot be matched']));
+  const target = await collectTarget({ commit: 'HEAD' }, dir);
+  assert.deepEqual(target.changed.map((file) => file.path), ['a.txt']);
+  assert.deepEqual(target.mergeOmitted, ['c.txt']);
+  assert.deepEqual([target.mergeListError, (await collectTarget({ commit: 'HEAD', 'diff-only': true }, dir)).mergeOmitted], [null, ['c.txt']]);
+});
+
+test('a merge that only resolved a conflict omits nothing', async () => {
+  const dir = await commitConflictMerge(await createRepo());
+  const target = await collectTarget({ commit: 'HEAD' }, dir);
+  assert.deepEqual(target.mergeOmitted, []);
+  assert.equal(target.mergeListError, null);
+});
+
+test('a path the merge omits is named when it is a deletion on the other parent', async () => {
+  const dir = await commitConflictMerge(await createRepo(), { delC: true });
+  assert.deepEqual((await collectTarget({ commit: 'HEAD' }, dir)).mergeOmitted, ['c.txt']);
+});
+
+test('a path the merge itself deletes or moves is in its listing and its diff, so it is not omitted', async () => {
+  const targets = await Promise.all([true, 'moved.txt'].map(async (delE) => collectTarget({ commit: 'HEAD' }, await commitConflictMerge(await createRepo(), { delE }))));
+  assert.deepEqual(targets.map((t) => [t.mergeOmitted, /^diff --cc e\.txt$/m.test(t.diff)]), Array(2).fill([[], true]));
+});
+
+test('an ordinary commit, a root commit and uncommitted work omit nothing, and a commit keeps its renames', async () => {
+  const dir = await createRepo();
+  await git(['mv', 'seed.txt', 'moved.txt'], dir);
+  const root = (await git(['rev-list', '--max-parents=0', 'HEAD'], dir)).trim();
+  const uncommitted = await collectTarget({}, dir);
+  await git(['commit', '--quiet', '-m', 'move'], dir);
+  const commit = await collectTarget({ commit: 'HEAD' }, dir);
+  for (const target of [uncommitted, commit, await collectTarget({ commit: root }, dir)]) assert.deepEqual([target.mergeOmitted, target.mergeListError], [[], null]);
+  assert.match(commit.diff, /^rename from seed\.txt$/m);
+});
+
+test('listErrorText keeps the first line of git\'s error without control characters', () => {
+  assert.equal(listErrorText(128, 'fatal: a\u001b[31mb\tc\nsecond'), 'fatal: a[31mbc');
+  assert.equal(listErrorText(128, ''), 'exit 128');
+  assert.equal(listErrorText(128, '  \n'), 'exit 128');
+  assert.equal(listErrorText(null, ''), 'exit signal');
+  assert.equal(listErrorText(128, 'a\u009bb'), 'ab');
+  assert.deepEqual([listErrorText(128, '\nfatal: x\nsecond'), listErrorText(128, 'a\rb')], ['fatal: x', 'a']);
+});
+
+test('listErrorText drops bidi controls and line separators', () => {
+  assert.equal(listErrorText(128, 'a\u202eb\u2028c'), 'abc');
+  assert.equal(listErrorText(128, 'a\u200eb\u061cc'), 'abc');
+});
+
+// The 79 code points displayPath must never emit raw, listed as numbers apart from the module.
+const UNSAFE_CODE_POINTS = new Set([
+  ...Array.from({ length: 0x20 }, (_, i) => i),
+  ...Array.from({ length: 0x21 }, (_, i) => 0x7f + i),
+  0x61c, 0x200e, 0x200f, 0x2028, 0x2029,
+  ...Array.from({ length: 5 }, (_, i) => 0x202a + i),
+  ...Array.from({ length: 4 }, (_, i) => 0x2066 + i),
+]);
+
+test('displayPath output holds no unsafe code point, whatever the path carries', () => {
+  assert.equal(UNSAFE_CODE_POINTS.size, 79);
+  const cases = [
+    'a\nb', 'a\u001bb', 'a\u007fb', 'a\u009bb', 'a\u2028b', 'a\u2029b',
+    'a\u061cb', 'a\u200eb', 'a\u200fb', 'a\u202eb', 'a\u2066b',
+  ];
+  for (const path of cases) {
+    const shown = displayPath(path);
+    assert.ok(shown.startsWith('"') && shown.endsWith('"'), `${JSON.stringify(path)} is quoted`);
+    for (const char of shown) {
+      assert.ok(!UNSAFE_CODE_POINTS.has(char.codePointAt(0)), `${JSON.stringify(path)} leaks U+${char.codePointAt(0).toString(16)}`);
+    }
+  }
+  assert.equal(displayPath('a\u007fb'), '"a\\u007fb"');
+  assert.equal(displayPath('a\u202eb'), '"a\\u202eb"');
+});
+
+test('displayPath leaves a plain path alone', () => {
+  for (const path of ['plain.txt', 'src/a-b_c.d/e+f@g=h.txt']) assert.equal(displayPath(path), path);
+});
+
+test('safeJson escapes every unsafe character except indentation newlines, and parses back', () => {
+  const chars = Array.from({ length: 0x10000 }, (_, code) => String.fromCharCode(code)).filter((char) => /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/u.test(char));
+  assert.equal(chars.length, 79);
+  for (const [space, char] of [undefined, 2].flatMap((space) => chars.map((char) => [space, char]))) {
+    const value = { [`k${char}`]: [`v${char}`, 'a\nb'] };
+    const out = safeJson(value, space);
+    assert.doesNotMatch(out.replaceAll('\n', ''), /[\p{Cc}\p{Bidi_Control}\u2028\u2029]/u, JSON.stringify(char));
+    assert.deepEqual(JSON.parse(out), value);
+  }
+});
+
+test('displayPath quotes any path outside a plain ASCII allowlist, and its quoted form is printable ASCII', () => {
+  assert.notEqual(displayPath('"a\\u202eb"'), displayPath('a\u202eb'));
+  for (const name of ['a"b', 'a\\b', 'x.bin, y.bin', 'd. NOTE: verified', 'with space.txt', 'd.\u3164NOTE', 'x.bin\u2800y.bin', 'x.bin\uff0cy.bin', 'x.bin\uff02, \uff02y.bin', 'a\u201d. NOTE: x. \u201cb', '\u0338x.bin', '\u{1F600}.txt', '\u00e9.txt']) assert.ok(/^"[\x20-\x7e]*"$/.test(displayPath(name)) && JSON.parse(displayPath(name)) === name, name);
+  assert.equal(displayPath('\u00e9.txt'), '"\\u00e9.txt"');
+});
+
+test('"Nothing to review" shows a hostile untracked name escaped', async () => {
+  const dir = await createRepo();
+  writeFileSync(join(dir, 'a\u202eb.bin'), Buffer.from([0, 1, 2]));
+  await assert.rejects(collectTarget({}, dir), (error) => error.message.includes('"a\\u202eb.bin"') && !error.message.includes('\u202e'));
+});
+
+async function shimmed(body, args) {
+  const shim = tempDir('oai-plugin-shim-');
+  writeFileSync(join(shim, 'git'), `#!/bin/sh\n${body}\nPATH=\${PATH#*:}\nexec git "$@"\n`);
+  chmodSync(join(shim, 'git'), 0o755);
+  const { path } = writeConfig({ defaultProvider: 'local', providers: { local: { baseUrl: 'http://127.0.0.1:9/v1', defaultModel: 'm', contextLength: 8192 } } });
+  return runCompanion(args, { configPath: path, cwd: await createRepo(), env: { PATH: `${shim}:${process.env.PATH}` } });
+}
+
+test('a failing git command reports its stderr one stripped line at a time, or its exit status', async () => {
+  const fail = (stderr) => shimmed(`if [ "$1" = diff ]; then ${stderr}; exit 3; fi`, ['review', '--staged']);
+  for (const lines of ["'first\\n\\n  second  \\n'", "'first\\rsecond\\n'"]) assert.match((await fail(`printf ${lines} >&2`)).stderr, /failed: first; second$/m);
+  assert.match((await fail(':')).stderr, /failed: exit 3$/m);
+  const hostile = (await fail("printf 'bad\\033[31m \\342\\200\\256evil\\n' >&2")).stderr;
+  assert.match(hostile, /failed: bad\[31m evil$/m);
+  assert.doesNotMatch(hostile, /\u001b|\u202e/);
+  const body = `if [ "$1 $2 $3" = "rev-parse --verify abc" ]; then printf 'error: short object ID ab\\342\\200\\256 is ambiguous\\n' >&2; exit 128; fi`;
+  const ambiguous = (await shimmed(body, ['review', '--commit', 'abc'])).stderr;
+  assert.match(ambiguous, /--commit abc: short object ID ab is ambiguous\./);
+  assert.doesNotMatch(ambiguous, /\u202e/);
 });
