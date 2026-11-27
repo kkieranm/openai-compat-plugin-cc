@@ -54,9 +54,9 @@ export function inImmediateTransaction(db, fn) {
  * (it will never run, so it must not hold the line either).
  *
  * Skipping is not abandoning. An unknown-version row is left exactly as it is
- * for the newer plugin that wrote it; the queue simply moves past it. Applying
- * this classification to `running` rows alone left the identical wedge one state
- * over — a dead unknown-version queued row sitting at the head forever.
+ * for the newer plugin that wrote it; the queue simply moves past it. Applied to
+ * `running` rows alone, it would leave the identical wedge one state over: a dead
+ * unknown-version queued row holding the head of this build's queue for good.
  */
 function queuedRole(row, liveness) {
   if (liveness === 'live') return isKnownVersion(row) ? 'head' : 'blocks';
@@ -77,11 +77,12 @@ function queuedRole(row, liveness) {
  * **`onSkip` is a callback and not a returned list, and that is load-bearing —
  * for `decide`.** Its `livenessAt` is `livenessOf`, which asks the OS about a pid
  * at the moment it is called, so a skipped row must be reconciled BEFORE the next
- * row is probed, exactly as the loop this replaced did. (A read-only caller can
- * pass a liveness already resolved elsewhere, and `/oai:status` does exactly that
- * — for it the ordering is moot, and it passes a no-op `onSkip` besides.) Collecting the skips and reconciling them afterwards would move
- * every probe ahead of every reconcile, and a process dying during that window
- * would turn a `tryAcquire` that makes progress into one that returns `blocked`.
+ * row is probed. (A read-only caller can pass a liveness already resolved
+ * elsewhere, and `/oai:status` does exactly that — for it the ordering is moot,
+ * and it passes a no-op `onSkip` besides.) Collecting the skips and reconciling
+ * them afterwards would move every probe ahead of every reconcile, and a process
+ * dying during that window would turn a `tryAcquire` that makes progress into
+ * one that returns `blocked`.
  * Rare, and in the safe direction, but it is a verdict change.
  *
  * Rows after the head are never examined — which is why a row that `blocks` can
@@ -101,7 +102,12 @@ export function scanQueued(rows, livenessAt, onSkip) {
  * The decision itself, run inside the transaction. Returns `acquired`,
  * `blocked`, `cancelled` or `gone`.
  */
-function decide(db, seq, pid, nowMs, at) {
+function decide(db, seq, pid) {
+  // Read once the lock is held: `BEGIN IMMEDIATE` can wait out the store's
+  // busy timeout, and a clock read before it would judge liveness and stamp
+  // `started_at` as of that wait's start. One reading serves both.
+  const nowMs = Date.now();
+  const at = new Date(nowMs).toISOString();
   const mine = jobBySeq(db, seq);
   if (!mine || mine.state !== 'queued') return 'gone';
   // Inside the transaction, and before the claim rather than beside it. Read
@@ -134,8 +140,8 @@ function decide(db, seq, pid, nowMs, at) {
 }
 
 /** One attempt at the head of the queue. */
-export function tryAcquire(db, seq, pid, { nowMs = Date.now(), at = new Date().toISOString() } = {}) {
-  return inImmediateTransaction(db, () => decide(db, seq, pid, nowMs, at));
+export function tryAcquire(db, seq, pid) {
+  return inImmediateTransaction(db, () => decide(db, seq, pid));
 }
 
 function attempt(db, seq, pid) {
@@ -159,13 +165,17 @@ function timeOut(db, job, at) {
     message: `Job ${job.id} waited ${Math.round(job.max_wait_ms / 1000)}s for its turn and gave up.`,
     hint: 'Another background job was still running. Raise --max-wait, or run it again when the queue is clear.',
   });
-  // The THIRD terminal write, and the one most likely to meet contention: this
-  // path is reached only when another background job is still running, so a
-  // competing worker is beating every BEAT_MS at the exact moment of this write.
-  // Unwrapped, a busy here escaped `awaitTurn` — which `cmd-task-worker.mjs`
-  // awaits OUTSIDE the try that guards `runJob` — killing the worker, losing the
-  // diagnosed `queue-timeout` and its actionable hint, and leaving reconciliation
-  // to report `worker-died` for a job that timed out for a reason it could name.
+  // The terminal write most likely to meet contention: this path is reached only
+  // after an attempt returned `blocked` — most often because a running job,
+  // whose worker beats every BEAT_MS, holds the queue, or because the database
+  // itself was busy — so a competing write is likeliest at the exact moment of
+  // this one.
+  // Retried, synchronously, for up to `withBusyRetry`'s budget so a passing busy
+  // does not escape `awaitTurn`, which `cmd-task-worker.mjs` awaits OUTSIDE the
+  // try that guards `runJob`. A busy that outlasts the budget still escapes, and
+  // then kills the worker, loses the diagnosed `queue-timeout` and its actionable
+  // hint, and leaves reconciliation to report `worker-died` for a job that timed
+  // out for a reason it could name.
   return withBusyRetry(() => finish(db, job.seq, { state: 'queue-timeout', failure, at }));
 }
 
@@ -191,18 +201,18 @@ export async function awaitTurn(db, job, pid, { pollMs = POLL_MS } = {}) {
     await sleep(pollMs);
     // Skipped rather than retried on a contended database: this loop IS the
     // retry, with its own deadline below, and an unguarded throw here escapes
-    // `awaitTurn` and kills a worker that is merely waiting its turn — the same
-    // defect the heartbeat carried one phase later in the lifecycle.
+    // `awaitTurn` and kills a worker that is merely waiting its turn.
     try {
       beat(db, job.seq, new Date().toISOString());
     } catch (error) {
       if (!isBusy(error)) throw error;
     }
-    // Immediately before each subsequent attempt, and NOT after it. Checking
-    // afterwards let a job that had waited well past its cap run anyway,
-    // whenever the attempt itself was slow — a contended database can stall one
-    // for the whole `busy_timeout`. The cap governs waiting, so it is read at
-    // the last moment before the thing it authorises.
+    // Checked after the sleep and the heartbeat (which can itself wait out
+    // `busy_timeout`; see the busy catch above) and immediately before each
+    // subsequent attempt. The check bounds the waiting between attempts, not the
+    // attempt itself: an attempt begun inside the cap can still wait out the
+    // whole `busy_timeout` on a contended database and seat its job up to that
+    // much past the cap.
     if (expired()) return timeOut(db, job, new Date().toISOString()) ? 'queue-timeout' : 'gone';
     verdict = attempt(db, job.seq, pid);
   }

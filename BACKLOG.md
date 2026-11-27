@@ -15,7 +15,29 @@ The next ID is `max+1` over all three files (highest used: #48).
   4. **Pre-existing job-test gaps, recorded and not fixed:** cancel-confirmation's FIFO cleanup can leave
      a wedged child; the initial simultaneous-acquisition race is not deterministically exercised; the
      queue hold spans about three waiter polls; the `started_at` ordering assert has a pre-lock stamp
-     window.
+     window (being fixed; see the in-progress record below).
+
+     **In progress (unattended /solo, 2026-11-27).** Owner's standing authorization, given 2026-11-27 before
+     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
+     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
+     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
+     gates" (none exists). Base f69937f. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e4-rW8lYx`.
+     Expected diff size: 100 lines (code + tests; tracker moves excluded); 130 from plan episode 2 (the `abandonRow` sibling, refuted inventory line). 340 from review pass 3's batch (scope review, 2026-11-27: round 1 orchestrator A, fable A, sonnet B (cut back); round 2 fable A, sonnet A — continue, because the owner's rule sweeps narration on sight in the files a change edits; the overage is a comment-only sweep of #33 entry 7/8-class narration in `job-abandon.mjs`, `cmd-abandon.mjs`, `job-queue.mjs`, `tests/abandon-cli.test.js` (comment-only there) and four other test files).
+     - Probe at base f69937f (scout, all TRUE): `tryAcquire` mints `at`/`nowMs` as default parameters
+       (`job-queue.mjs:137`) before `BEGIN IMMEDIATE` (`:35`), which can wait out the 10s `busy_timeout`
+       (`job-store.mjs:381`); `claimJob` writes that `at` as `started_at`. A waiter can therefore record a
+       start earlier than the holder's `completed_at`. `job-abandon.mjs:261` claims the opposite.
+     - Fork 1 (scope), round 1 cold, unanimous A (orchestrator A, fable A, sonnet A; no round 2 — the
+       caveats raised were plan inputs, not amendments): fix G4 (the pre-lock stamp) in production with a
+       deterministic test; park G1 (FIFO cleanup cap), G2 (simultaneous-acquisition race), G3 (three-poll
+       hold) as below the worth bar — G1's loop runs only on an already-failing run, G2's exclusion rests
+       on SQLite's `BEGIN IMMEDIATE`, G3 is observation depth backed by `maxInFlight === 1`. Rejected: B
+       (deterministic G2 test), C (all four), D (park all, G4 included).
+     - Fork 2 (test method, from the independent fable sketch's divergence), round 1 cold, unanimous Y
+       (orchestrator Y, fable Y, sonnet Y): a clock seam that jumps `Date.now` once `BEGIN IMMEDIATE`
+       returns, asserting both the stamp and a grace-boundary liveness verdict. Rejected: X (real
+       cross-process lock contention — its pre-fix red rests on a 400ms race and it cannot pin the `nowMs`
+       half), Z (both).
   6. **False or stale claims in the 12 job test files fb554ce edited, on lines it did not rewrite.** None is narration:
      - `tests/liveness-unreadable-pid.test.js:12-13`: says `1.5` throws a TypeError. `:37-41`: the `deadPid` rationale says the assertion would pass, but `'unreadable'` ≠ `'gone'`, so it would fail.
      - `tests/abandon-recovery.test.js:1`: says the file covers rows `/oai:abandon` did not simply write off, but several of its tests do write rows off. `:29`: "a row that never had one" sits on a synthetic fixture that carries a spawn stamp. `:195`: "the plain stale wedge above" is not above. `:205`: "retention can prune the row".
@@ -26,7 +48,7 @@ The next ID is `max+1` over all three files (highest used: #48).
        - `:233-234`: "the only action that clears it";
        - `:242-243`: "this file".
      - `tests/job-busy-placement.test.js:4`, `:141-143` ("the stamp only shortens a startup grace window"; the stamp's absence does that) and `:210` ("id of a running job").
-     - `tests/blocker-helpers.mjs:20-25`: the `breakStamps` docblock says `ago()` "always yields a parseable ISO string". But `ago(null)` returns `null` (`tests/job-helpers.mjs:111`), and `agedMs: null` feeds both stamps.
+     - `tests/blocker-helpers.mjs:20-25`: the `breakStamps` docblock says `ago()` "always yields a parseable ISO string". But `ago(null)` returns `null` (`ago` in `tests/job-helpers.mjs`), and `agedMs: null` feeds both stamps.
   7. **Narration and stale claims in runtime files, outside fb554ce's comment sites:**
      - `plugins/oai/scripts/lib/cmd-task-worker.mjs`:
        - `:170`: "the row now outlives the sweep";
@@ -35,15 +57,11 @@ The next ID is `max+1` over all three files (highest used: #48).
        - `:241-262`: change narration ("used to be discarded");
        - `:273-274`: "bounded well under STALE_BEAT_MS".
      - `plugins/oai/scripts/lib/task-submit.mjs:42-47`, `:124-132`, `:149`, `:193`, `:267-280`: narration.
-     - `plugins/oai/scripts/lib/job-abandon.mjs:254`: "the placement is the fix".
      - `plugins/oai/scripts/lib/job-auth.mjs:52-54`: says keying on the query alone would "fail every ad hoc job carrying any query string at all". That holds only without a configured `custom` provider.
   8. **Test files outside the 12:**
-     - `tests/job-helpers.mjs:16`: names a `job-secrets.test.js` that does not exist. `:87-89`: loose "rejected on shape" wording.
-     - `tests/abandon-cli.test.js:128-129`: says its twin lives in abandon-messages.
      - `tests/job-busy.test.js:73`: "the three tests above". `:91-92`: "`completed_at = ?` appears in no other statement".
      - `tests/job-busy-diagnosis.test.js:27-31` and `:87-90`: narration.
      - `tests/job-launch-outcome.test.js:4-7`, `:110`, `:160-162` and `:242-248`. The last grounds `writeSync` in "the credential-notice design".
-     - `tests/queue-semantics.test.js:3-5`: ordinal and split narration.
   9. **"Split from" headers** in 17 test files (`command grep -l 'Split from' tests/*.js tests/*.mjs`;
      still 17 on 2026-11-24).
   10. **`tests/job-spawn-failure.test.js:130` overstates**: its assertion message says an `acquired`

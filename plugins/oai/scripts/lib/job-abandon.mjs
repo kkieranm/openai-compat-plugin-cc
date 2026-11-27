@@ -9,7 +9,7 @@
 //
 // **This is the one path that clears a live row, and it costs the queue's
 // mutual-exclusion guarantee.** `job-queue.mjs` and `job-heartbeat.mjs` say why
-// that guarantee exists; both now name this exception. The stale-beat
+// that guarantee exists; both name this exception. The stale-beat
 // precondition is what makes taking it defensible: a beat is the only evidence
 // this design can offer that no model call is in flight, which is why `--force`
 // is a separate act rather than a default.
@@ -45,11 +45,6 @@ const ABANDONABLE = new Set(['queued', 'running']);
  * but the SUBMITTER writes it, and the exit-0 message this set unlocks says the
  * row was "settled by ordinary recovery". Admitting it would make that sentence
  * misattribute who wrote the verdict.
- *
- * An earlier version of this comment argued the case was unreachable — that such
- * a row "cannot race an abandon". The race argument is true and is not the
- * reason: an operator can abandon such a row at any later time, and does get the
- * ordinary refusal. That is correct, and it is correct for the reason above.
  */
 const RECONCILER_FAILURE_REASONS = new Set(['worker-died', 'cancel-unconfirmed', 'worker-never-started']);
 
@@ -57,7 +52,7 @@ function recoveryOwned(row) {
   if (row.state === 'cancelled') return true;
   // Fails CLOSED on an unreadable payload: `decode` nulls a `failure` that will
   // not parse, and inferring "recovery already handled this" from bytes we could
-  // not read is the fabrication class this module has been bitten by twice.
+  // not read would fabricate a provenance claim.
   return row.state === 'failed' && RECONCILER_FAILURE_REASONS.has(row.failure?.reason);
 }
 
@@ -65,14 +60,11 @@ function recoveryOwned(row) {
  * May this row be written off, and on what grounds — a pure question about a row
  * AND the liveness already resolved for it.
  *
- * **Liveness is an argument, not something this function derives.** It used to
- * probe nothing at all: the only `livenessOf` call sat in the `starting` branch,
- * gated on there being no pid to probe, so every ordinary row was authorised on
- * beat staleness alone while the stored failure claimed a probe had answered.
- * The probe that justified that claim ran in another module, before the lock, and
- * a caller invoking `abandonRow` directly never ran it at all. Passing the
- * verdict in makes the evidence and the decision the same fact — the pattern
- * `reconcile` already uses.
+ * **Liveness is taken as an argument where the caller has one.** `abandonRow`
+ * resolves it inside its own transaction and passes it in, so the evidence the
+ * stored failure cites and the decision it authorises are the same fact. That is
+ * the pattern `reconcile` uses, including its fallback for callers that pass
+ * none.
  *
  * The order is deliberate. The refusals no flag can lift come FIRST, so that no
  * amount of operator insistence reaches them — `gone` above them all, then: `unknown-version`
@@ -138,10 +130,10 @@ export function abandonDecision(row, nowMs, { override = false, liveness } = {})
 /**
  * What the row says afterwards.
  *
- * `failed`, never `cancelled`: a stop nobody confirmed
- * must not read as a tidy cancellation, and this stop is confirmed by less than
- * any of those — the process was never even asked. The reason names the ROW's
- * fate rather than the worker's, because the worker's is exactly what is unknown.
+ * `failed`, never `cancelled`: a stop nobody confirmed must not read as a tidy
+ * cancellation, and nothing confirmed this one — no signal was sent and no
+ * acknowledgement was read. The reason names the ROW's fate rather than the
+ * worker's, because the worker's is exactly what is unknown.
  *
  * **Two arms.** A `malformed` row was never probed at all — no pid recorded,
  * timestamps that will not parse, or a value that is not a pid. Only
@@ -158,8 +150,8 @@ function abandonFailure(row, liveness) {
   // stop that number would hand them the exact mistake it will not make itself.
   const pid = relevantPid(row);
   // Keyed on what the transaction resolved: the probe wording is available only
-  // when a probe happened, and claiming otherwise put a false sentence in a
-  // permanent record.
+  // when a probe happened, and claiming otherwise would put a false sentence in
+  // a permanent record.
   const observed = liveness === 'malformed'
     ? `Job ${row.id} was written off by an operator. Its pid or timestamps could not be read, so no`
       + ' liveness judgement was possible for it at all.'
@@ -189,20 +181,20 @@ function abandonFailure(row, liveness) {
 /**
  * This row is ordinary recovery's, not ours — hand it over, under the lock.
  *
- * Safe here and unsafe inside `decide`: `reconcile` writes plain UPDATEs, and the
- * one filesystem read on its path (`cancelAckMatches`) is contractually
- * non-throwing — the same synchronous I/O `decide` already accepts while holding
- * this lock. A throw would roll back and exit the OPERATOR's command, never a
- * waiting worker's.
+ * `reconcile` runs under this lock exactly as it runs under `decide`'s: it writes
+ * plain UPDATEs, and the one filesystem read on its path (`cancelAckMatches`) is
+ * contractually non-throwing. What differs is a throw, such as the invariant
+ * check below: here it rolls back and exits the OPERATOR's command, where inside
+ * `decide` it would escape `awaitTurn` and kill a waiting worker.
  */
 function handOver(db, row, { nowMs, at, liveness }) {
   const recovered = reconcile(db, row, { nowMs, at, liveness });
   if (!recovered) {
     // Same treatment as the sibling CAS miss, for the same reason: both
     // terminalize predicates match a state this transaction just read under the
-    // lock, so a miss means the invariant stopped holding. Inventing a cause —
-    // the previous `?? 'worker-died'` — asserted a death for a row that may never
-    // have had a worker at all.
+    // lock, so a miss means the invariant stopped holding. Inventing a cause,
+    // such as defaulting to `worker-died`, would assert a death for a row that
+    // may never have had a worker at all.
     throw new Error(`abandon invariant broken: reconcile wrote nothing for ${row.id} under the lock`);
   }
   // Keyed on the LIVENESS, not `decision.reason`, which collapses both shapes into
@@ -214,29 +206,25 @@ function handOver(db, row, { nowMs, at, liveness }) {
     recoveryKind: liveness === 'never-started' ? 'never-started' : 'dead',
     reason: recovered,
     state: row.state,
-    // Reported here too, and the omission it replaces was justified circularly:
-    // "there is no such computation on this path, so the claim would be unearned"
-    // — adding the computation earns it. A recovered row was a blocker just as an
-    // abandoned one was, and `reconcile` has already written it terminal inside
-    // this same transaction, so it drops out of both scans exactly as the
-    // abandoned row does.
+    // `reconcile` has already written this row terminal inside this same
+    // transaction, so it drops out of both scans exactly as the abandoned row does.
     couldDrain: couldDrain(db, nowMs),
     row,
   };
 }
 
 /**
- * Resolve, decide and write — all four inside ONE `BEGIN IMMEDIATE`.
+ * Read the clock and the row, probe liveness, decide and write — all inside ONE
+ * `BEGIN IMMEDIATE`.
  *
  * **The read and the liveness probe are as load-bearing as the write.** `beat`
  * refreshes `last_beat_at` on any non-terminal row and `finish` compares only
  * state, so a decision made on bytes read before the lock is one a worker
  * resuming from sleep can invalidate with nothing noticing. And a liveness
- * verdict taken before the lock — in another module, as the command used to —
- * is a fact about a moment that has passed by the time the row is written, while
- * the stored message claims it as evidence. Both are minted here now, and
- * `tests/queue-guards.test.js` enforces the placement structurally rather than
- * trusting this comment.
+ * verdict taken before the lock is a fact about a moment that has passed by the
+ * time the row is written, while the stored message claims it as evidence. Both
+ * are minted here, and `tests/queue-guards.test.js` enforces the placement
+ * structurally rather than trusting this comment.
  *
  * **A `dead` pid returns a RECOVERY, not an abandonment.** Ordinary
  * reconciliation owns that row: recording `operator-abandoned` over a worker that
@@ -249,23 +237,21 @@ function handOver(db, row, { nowMs, at, liveness }) {
  * `failed` it wrote — the caller needs the former to say what abandoning it
  * meant, and only this transaction ever saw it authoritatively.
  */
-export function abandonRow(db, id, { override = false, at }) {
+export function abandonRow(db, id, { override = false } = {}) {
   return inImmediateTransaction(db, () => {
-    // **Sampled HERE, and the placement is the fix.** A default parameter is
-    // evaluated at call time — before `BEGIN IMMEDIATE`, which can block for the
-    // store's whole `busy_timeout` (10s). Every judgement below reads a clock, so
-    // a pre-lock sample judges a beat that went stale, or a successor that
-    // expired, as they were ten seconds ago. ONE sample, not one per rung: the
-    // hazard is entirely in acquiring the lock, everything after is synchronous
-    // and lock-held, and two clocks behind one "At that moment" would be worse.
-    // `tryAcquire` mints one per transaction for both of `decide`'s rungs.
+    // Read once the lock is held: `BEGIN IMMEDIATE` can wait out the store's
+    // `busy_timeout` (10s), and a reading taken before it would judge a beat or a
+    // successor's expiry, and stamp what is written, as of that wait's start.
+    // Everything after the lock is synchronous and lock-held, so this one reading
+    // serves every rung and every stamp, as `decide`'s does.
     const nowMs = Date.now();
+    const at = new Date(nowMs).toISOString();
     const row = jobById(db, id);
     const liveness = row ? livenessOf(row, nowMs) : null;
     const decision = abandonDecision(row, nowMs, { override, liveness });
 
-    // Idempotence, and it is what stops a CONCURRENT reconcile reproducing the
-    // exit-1 refusal this command was once fixed for. Placed after the decision
+    // Idempotence, and it is what stops a CONCURRENT reconcile from turning this
+    // command into a `not-abandonable` refusal. Placed after the decision
     // so it inherits the `unknown-version` rung's ordering: a newer plugin's
     // failure payload is never interpreted, only refused.
     if (!decision.allowed && decision.reason === 'not-abandonable' && recoveryOwned(row)) {

@@ -1,6 +1,7 @@
 // `/oai:abandon` as an operator actually invokes it.
 //
-// Split from `abandon.test.js`, which owns the decision and the transaction.
+// Split from `abandon.test.js`, which owns the decision; `abandon-transaction.test.js`
+// owns the transaction.
 // This file owns everything between the argv and the terminal: which invocation
 // forms work, what is printed, and what the exit code is. That split is not
 // tidiness — a flag that cannot be passed through the invocation the command's
@@ -52,8 +53,9 @@ test('a queued row is written off WITHOUT claiming an overlap that cannot happen
     const { status, stdout } = await scenario.run(['abandon', 'waiting']);
     assert.equal(status, 0, stdout);
     assert.match(stdout, /no request was ever sent and none will be/);
-    // `decide` moves a row to `running` before acquisition succeeds and the model
-    // is called only after that, so a queued row provably has nothing in flight.
+    // `decide` moves a row to `running` in the same write that acquires it, and
+    // the model is called only after that, so a queued row provably has nothing
+    // in flight.
     assert.doesNotMatch(stdout, /overlap/);
     assert.doesNotMatch(stdout, /in flight/);
   } finally {
@@ -78,9 +80,9 @@ test('--force works BEFORE the id, and says so when it is put after', { skip: NE
     assert.equal(readJob(scenario.state, 'wedged').state, 'failed');
 
     // The form an operator will type anyway. `parseArgs` stops reading flags at
-    // the first positional, so this once produced `No job with id "wedged
-    // --force"` — an error about the wrong thing, on the one invocation where
-    // someone was deliberately overriding a refusal.
+    // the first positional, so without `assertNoFlagsInPrompt` this would print
+    // `No job with id "second --force"` — an error about the wrong thing, on the
+    // one invocation where someone is deliberately overriding a refusal.
     wedge(scenario.state, { id: 'second', beatAgoMs: FRESH });
     const misplaced = await scenario.run(['abandon', 'second', '--force']);
     assert.equal(misplaced.status, 1);
@@ -111,9 +113,9 @@ test('a row a newer plugin wrote is refused with --force, and told --force will 
 test('a job whose process is genuinely gone is reported as recovered, not refused', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // The commonest reason anyone reaches for this command. Reconciliation
-    // handles it before `abandonRow` is asked, and the reply has to be the good
-    // news it is rather than a `not-abandonable` refusal at exit 1.
+    // The commonest reason anyone reaches for this command. `abandonRow` finds
+    // the pid dead under its own lock and hands the row to ordinary recovery, and
+    // the reply has to be the good news it is, not a refusal.
     const { deadPid } = await import('./job-helpers.mjs');
     insertSynthetic(scenario.state, {
       id: 'reaped', state: 'running', workerPid: await deadPid(), startedAgoMs: 600_000, beatAgoMs: STALE,
@@ -123,11 +125,10 @@ test('a job whose process is genuinely gone is reported as recovered, not refuse
     assert.equal(status, 0, stderr);
     assert.match(stdout, /needed no writing off/);
     assert.doesNotMatch(stderr, /--force will not change that/);
-    // Recovered with NOTHING WAITING claims no drainage. The justification used
-    // to be "there is no such computation on this path" — which was circular, and
-    // the computation now exists. So this is a real negative about an empty
-    // queue, and its positive twin lives in `abandon-messages.test.js`; without
-    // that twin this assertion could never fail again.
+    // Recovered with NOTHING WAITING claims no drainage. This is a real negative
+    // about an empty queue, and its positive twin lives in
+    // `abandon-recovery.test.js`; without that twin this assertion could never
+    // fail.
     assert.doesNotMatch(stdout, /may start/);
     assert.doesNotMatch(stdout, /blocking the queue/);
     assert.equal(readJob(scenario.state, 'reaped').state, 'failed');
@@ -182,12 +183,12 @@ test('every refusal the decision can return has something to say', { skip: NEEDS
   reasons.delete('forced-malformed'); // an allowed outcome, not a refusal
   // `dead` is a ROUTING value, not a refusal anyone sees: `abandonRow` intercepts
   // it and hands the row to recovery, so it never reaches the REFUSALS table. The
-  // literal stays in the module as the routing key; only its message is gone.
+  // literal stays in the module as the routing key and has no REFUSALS entry.
   reasons.delete('dead');
   reasons.delete('stale');
-  // An EXACT set, not a floor. `>= 4` was written when there were five reasons
-  // and survived a sixth being added — a control that no longer tracks what it
-  // guards. Adding a reason must now edit this line, which is the point.
+  // An EXACT set, not a floor: a count floor keeps passing when a reason is
+  // added, so it stops tracking what it guards. Adding a reason must edit this
+  // line, which is the point.
   assert.deepEqual(
     [...reasons].sort(),
     ['beating', 'gone', 'malformed', 'no-beat', 'not-abandonable', 'starting', 'unknown-version'],

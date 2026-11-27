@@ -67,6 +67,10 @@ All notable changes to this project are documented here, loosely following the
 
 ### Fixed
 
+- A background job that waited for the queue's lock now records its start, and judges the jobs ahead of it, as of
+  the moment it obtained the lock rather than when it began waiting, which could be up to 10 seconds earlier.
+  `/oai:abandon` likewise stamps the row it writes off, or hands back to recovery, with the moment it obtained the
+  lock.
 - `/oai:review --commit` on a merge no longer tells the model it holds every changed file whole when the merge took
   a file as another parent had it, in neither its combined diff nor the files sent. A note now counts such files
   and points at `--json` for the list (`mergeOmitted`), which `/oai:review` then fetches, for a parsed report, with

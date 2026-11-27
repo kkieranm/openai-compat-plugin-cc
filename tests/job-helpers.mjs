@@ -1,7 +1,7 @@
 // Helpers for tests that involve a job database and a detached worker.
 //
-// A separate file from `helpers.mjs` because that one is at its size ceiling,
-// and because these are only useful to the background tests.
+// A separate file from `helpers.mjs` because these are only useful to the
+// background tests.
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { databasePath, openStore } from '../plugins/oai/scripts/lib/job-store.mjs';
@@ -13,7 +13,7 @@ import { COMPANION, respondJson, runCompanion, startFakeServer, tempDir, writeCo
 // STATIC import of it here would link before any module body or `skip` ran, so
 // every file importing this one would die at link with
 // `ERR_UNKNOWN_BUILTIN_MODULE` — no test run, no skip reported, nothing said.
-// Detected once, with the caught dynamic import `job-secrets.test.js` uses.
+// Detected once, with a caught dynamic import; `tests/harness-guards.test.js` forbids the static form.
 let parentHasSqlite = true;
 try {
   await import('node:sqlite');
@@ -84,14 +84,12 @@ export function readJob(state, id) {
 /**
  * A pid that is certainly not running: a child spawned only to be waited on.
  *
- * Reaped before it is returned, so the OS considers it free. A synthetic
- * out-of-range number would not do — `isAlive` would reject it on shape and the
- * test would pass without ever asking the OS anything.
- *
- * An unreadable pid is `malformed`, not `dead`, and
- * `tests/liveness-unreadable-pid.test.js` covers that shape case on purpose. This
- * helper is what the `dead` verdict must be asked with — it is the only one that
- * reaches `ESRCH`.
+ * Reaped before it is returned, so no process holds it and a probe answers
+ * `ESRCH`, barring pid reuse — the answer the `dead` verdict needs. A synthetic
+ * value will not stand in for it: one that is not a positive integer reads as
+ * `unreadable`, which `livenessOf` reports as `malformed`, not `dead`
+ * (`tests/liveness-unreadable-pid.test.js` covers that shape case on purpose),
+ * and a guessed positive one may name a live process.
  */
 export async function deadPid() {
   const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
@@ -283,6 +281,48 @@ export async function waitForState(state, id, states, { timeoutMs } = {}) {
     },
     { timeoutMs, describe: () => `job ${id} never reached ${states.join('|')}; last state was ${last?.state ?? '(no row)'}` },
   );
+}
+
+/**
+ * Call `fn` with a store handle on which the wait for the write lock lasts
+ * `waitMs`. The test's clock is frozen, advanced by `waitMs` the moment
+ * `BEGIN IMMEDIATE` returns, and by 1ms at every statement prepared after that,
+ * so a reading taken before the lock sees the frozen start, one taken as the
+ * lock is acquired (before any statement) sees the start plus the wait, and one
+ * taken after a further statement is prepared differs from both. That relies
+ * on each statement being prepared when it runs, as job-record.mjs does. Every
+ * `Date` API is mocked, `new Date()` included. Only `exec` and `prepare` are
+ * offered, so a path reaching another handle method fails loudly rather than
+ * bypassing the clock. Returns `fn`'s result and `inLock`, the ISO instant of a reading taken
+ * as the lock is acquired.
+ *
+ * It models one transaction per call: `inLock` is the reading at the first
+ * `BEGIN IMMEDIATE`, so a `fn` that opens a second transaction gets readings
+ * `inLock` does not describe.
+ */
+export function withLockWait(t, db, waitMs, fn) {
+  const start = Date.now();
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  let locked = false;
+  try {
+    const result = fn({
+      exec(sql) {
+        const out = db.exec(sql);
+        if (sql === 'BEGIN IMMEDIATE') {
+          t.mock.timers.tick(waitMs);
+          locked = true;
+        }
+        return out;
+      },
+      prepare(sql) {
+        if (locked) t.mock.timers.tick(1);
+        return db.prepare(sql);
+      },
+    });
+    return { result, inLock: new Date(start + waitMs).toISOString() };
+  } finally {
+    t.mock.timers.reset();
+  }
 }
 
 /**

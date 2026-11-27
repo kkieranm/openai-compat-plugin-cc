@@ -10,7 +10,8 @@ import test from 'node:test';
 import { abandonRow } from '../plugins/oai/scripts/lib/job-abandon.mjs';
 import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
 import { beat, jobById } from '../plugins/oai/scripts/lib/job-record.mjs';
-import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, withStore } from './job-helpers.mjs';
+import { STALE_BEAT_MS } from '../plugins/oai/scripts/lib/job-liveness.mjs';
+import { NEEDS_SQLITE, deadPid, insertSynthetic, readJob, stateDir, withLockWait, withStore } from './job-helpers.mjs';
 
 const STALE = 90_000; // past STALE_BEAT_MS (60s)
 const FRESH = 1_000;
@@ -28,7 +29,7 @@ test('a row a newer plugin wrote is refused, and --force does NOT lift it', { sk
   wedged(state, { version: 99 });
 
   for (const override of [false, true]) {
-    const outcome = withStore(state, (db) => abandonRow(db, 'wedged', { override, at: at() }));
+    const outcome = withStore(state, (db) => abandonRow(db, 'wedged', { override }));
     assert.equal(outcome.outcome, 'refused', `--force=${override} must not reach a newer row`);
     assert.equal(outcome.reason, 'unknown-version');
   }
@@ -46,7 +47,7 @@ test('an abandoned row reads failed / operator-abandoned, never cancelled', { sk
   const state = stateDir();
   wedged(state);
 
-  const outcome = withStore(state, (db) => abandonRow(db, 'wedged', { at: at() }));
+  const outcome = withStore(state, (db) => abandonRow(db, 'wedged'));
   assert.equal(outcome.outcome, 'abandoned');
   assert.equal(outcome.state, 'running', 'the returned state is the one FOUND, not the one written');
 
@@ -70,7 +71,7 @@ test('the decision is re-evaluated on the row the transaction reads, not on an e
     const before = jobById(db, 'wedged');
     assert.equal(before.state, 'running');
     beat(db, seq, at());
-    return abandonRow(db, 'wedged', { at: at() });
+    return abandonRow(db, 'wedged');
   });
 
   assert.equal(outcome.outcome, 'refused');
@@ -87,7 +88,7 @@ test('abandoning the running blocker drains the queue, which is the exception be
 
   withStore(state, (db) => {
     assert.equal(tryAcquire(db, waiter, process.pid), 'blocked', 'the wedged row must block first');
-    const outcome = abandonRow(db, 'wedged', { at: at() });
+    const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
     assert.equal(outcome.couldDrain, true);
     // Observed dispatch, not merely a terminal row: nothing dispatches
@@ -103,7 +104,7 @@ test('abandoning a queued HEAD drains the queue too', { skip: NEEDS_SQLITE }, ()
 
   withStore(state, (db) => {
     assert.equal(tryAcquire(db, behind, process.pid), 'blocked', 'the head must block it first');
-    const outcome = abandonRow(db, 'head', { at: at() });
+    const outcome = abandonRow(db, 'head');
     assert.equal(outcome.outcome, 'abandoned');
     assert.equal(outcome.state, 'queued');
     assert.equal(outcome.couldDrain, true);
@@ -121,7 +122,7 @@ test('a queued head abandoned under a LIVE running row does not drain, and does 
   const behind = insertSynthetic(state, { id: 'behind', state: 'queued', waiterPid: process.pid, beatAgoMs: FRESH });
 
   withStore(state, (db) => {
-    const outcome = abandonRow(db, 'head', { at: at() });
+    const outcome = abandonRow(db, 'head');
     assert.equal(outcome.outcome, 'abandoned', 'the head is still written off');
     // The running rung is consulted FIRST and refuses every caller before queue
     // order is reached. Reporting drainage here would be wrong: consulting the
@@ -140,7 +141,7 @@ test('a queued head that cannot itself run is not reported as drainage', { skip:
     id: 'unrunnable', state: 'queued', waiterPid: process.pid, beatAgoMs: FRESH, version: 99,
   });
 
-  const outcome = withStore(state, (db) => abandonRow(db, 'target', { at: at() }));
+  const outcome = withStore(state, (db) => abandonRow(db, 'target'));
   assert.equal(outcome.outcome, 'abandoned');
   assert.equal(outcome.couldDrain, false, 'a head whose role is `blocks` is not a runnable successor');
 });
@@ -152,7 +153,7 @@ test('a cancel-pending head is not a runnable successor either', { skip: NEEDS_S
     id: 'stopping', state: 'queued', waiterPid: process.pid, beatAgoMs: FRESH, cancelAgoMs: 1_000,
   });
 
-  const outcome = withStore(state, (db) => abandonRow(db, 'target', { at: at() }));
+  const outcome = withStore(state, (db) => abandonRow(db, 'target'));
   assert.equal(outcome.couldDrain, false, 'its own worker gets `cancelled`, so it never clears the way');
 });
 
@@ -168,7 +169,7 @@ test('drainage is WITHHELD from a successor the queue would actually seat', { sk
   });
 
   withStore(state, (db) => {
-    const outcome = abandonRow(db, 'wedged', { at: at() });
+    const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
     assert.equal(outcome.couldDrain, false, 'a stale-beat successor is not claimed');
     assert.equal(tryAcquire(db, behind, process.pid), 'acquired', 'yet the queue seats it');
@@ -191,10 +192,10 @@ test('an UNREADABLE failure payload fails closed to the ordinary refusal', { ski
     assert.equal(row.failure, null);
     assert.ok(row.unreadable?.includes('failure'), 'decode must have marked the column unreadable');
 
-    const outcome = abandonRow(db, 'corrupt', { at: at() });
+    const outcome = abandonRow(db, 'corrupt');
     // Fail CLOSED. A fail-OPEN classifier would answer `already-recovered` here,
-    // inferring "recovery settled this" from bytes it could not read — the
-    // fabrication class this module has been bitten by twice.
+    // inferring "recovery settled this" from bytes it could not read — a
+    // fabricated provenance claim.
     assert.equal(outcome.outcome, 'refused');
     assert.equal(outcome.reason, 'not-abandonable');
   });
@@ -212,12 +213,11 @@ test('a successor whose beat cannot be READ earns no drainage claim', { skip: NE
   withStore(state, (db) => db.prepare('UPDATE jobs SET last_beat_at = ? WHERE id = ?').run('not-a-time', 'garbled'));
 
   withStore(state, (db) => {
-    const outcome = abandonRow(db, 'wedged', { at: at() });
+    const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
     // The parse check is LOAD-BEARING, not defensive: `beatIsStale` answers
     // `false` for an unreadable beat, so without it this successor would read as
     // "not stale" and the sentence would be claimed on no evidence at all.
-    // Deleting that one line left the whole suite green until this test existed.
     assert.equal(outcome.couldDrain, false);
     // And the control: the row IS otherwise a live known-version head, so the
     // absence above is caused by the unreadable beat and nothing else.
@@ -236,7 +236,7 @@ test('a successor already past its wait cap earns no drainage claim', { skip: NE
     .run(60_000, new Date(Date.now() - 600_000).toISOString(), 'expiring'));
 
   withStore(state, (db) => {
-    const outcome = abandonRow(db, 'wedged', { at: at() });
+    const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
     // Past its cap, so the queue will time it out rather than seat it — "a
     // waiting job may start"
@@ -261,8 +261,36 @@ test('a successor with a cap it has NOT yet reached still earns the claim', { sk
     .run(600_000, new Date(Date.now() - 60_000).toISOString(), 'roomy'));
 
   withStore(state, (db) => {
-    const outcome = abandonRow(db, 'wedged', { at: at() });
+    const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
     assert.equal(outcome.couldDrain, true, 'a cap in the future must not withhold the claim');
+  });
+});
+
+test('an abandon judges and stamps with the clock read once the write lock is held', { skip: NEEDS_SQLITE }, (t) => {
+  const state = stateDir();
+  // Its beat is 5s short of stale, so the row is still beating on a clock read
+  // before the lock and stale on one read after a 10s wait for it.
+  wedged(state, { beatAgoMs: STALE_BEAT_MS - 5_000 });
+
+  withStore(state, (db) => {
+    const { result: outcome, inLock } = withLockWait(t, db, 10_000, (handle) => abandonRow(handle, 'wedged'));
+
+    assert.equal(outcome.outcome, 'abandoned', 'the beat was judged on a clock read before the lock was held');
+    assert.equal(jobById(db, 'wedged').completed_at, inLock, 'the write-off was not stamped with the reading taken as the lock was acquired');
+  });
+});
+
+test('a dead row handed back to recovery is stamped with the clock read once the lock is held', { skip: NEEDS_SQLITE }, async (t) => {
+  const state = stateDir();
+  wedged(state, { workerPid: await deadPid() });
+
+  withStore(state, (db) => {
+    const { result: outcome, inLock } = withLockWait(t, db, 10_000, (handle) => abandonRow(handle, 'wedged'));
+
+    assert.equal(outcome.outcome, 'recovered');
+    const row = jobById(db, 'wedged');
+    assert.notEqual(row.failure.reason, 'operator-abandoned', 'a dead worker must go to recovery, not be abandoned');
+    assert.equal(row.completed_at, inLock, 'recovery was not stamped with the reading taken as the lock was acquired');
   });
 });

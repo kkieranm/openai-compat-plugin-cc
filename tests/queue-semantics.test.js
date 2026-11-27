@@ -1,15 +1,16 @@
 // What the QUEUE decides, as distinct from what the display says about it.
 //
-// The third file in this group, split off for the same reason as the second:
-// `status-blocker.test.js` had started asking two questions under one name. It
-// owns which row gets named; `status-blocker-render` owns what is said about it;
-// this one owns the verdicts `decide` returns and the ordering it depends on —
-// the transaction-critical half, where a test that cannot fail is worth least.
+// The verdicts `decide` returns and the ordering it depends on — the
+// transaction-critical half of the queue's behaviour, where a test that cannot
+// fail is worth least. Which row `/oai:status` names as the blocker is
+// `status-blocker.test.js`; what it says about that row is
+// `status-blocker-render.test.js`.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { tryAcquire } from '../plugins/oai/scripts/lib/job-queue.mjs';
+import { STARTUP_GRACE_MS } from '../plugins/oai/scripts/lib/job-liveness.mjs';
 import { jobBySeq, rowsInState } from '../plugins/oai/scripts/lib/job-record.mjs';
-import { NEEDS_SQLITE, deadPid, insertSynthetic, stateDir, withStore } from './job-helpers.mjs';
+import { NEEDS_SQLITE, deadPid, insertSynthetic, stateDir, withLockWait, withStore } from './job-helpers.mjs';
 import { HERE, THERE } from './blocker-helpers.mjs';
 
 test('a row a newer plugin wrote is refused, and left exactly as it was', { skip: NEEDS_SQLITE }, () => {
@@ -42,7 +43,7 @@ test('a row a newer plugin wrote is refused, and left exactly as it was', { skip
 });
 
 test('`gone` covers both the state guard and the empty-scan exit', { skip: NEEDS_SQLITE }, async () => {
-  // Two routes reach `gone`: `decide`'s first line — the row is no longer queued —
+  // Two routes reach `gone`: `decide`'s state guard — the row is no longer queued —
   // and `scanQueued` returning a null head. Both are pinned.
   const state = stateDir();
   const finished = insertSynthetic(state, { id: 'over', state: 'completed', workspace: HERE });
@@ -103,5 +104,31 @@ test('a live foreign runner blocks a local job regardless of queue position', { 
 
   withStore(state, (db) => {
     assert.equal(tryAcquire(db, mine, process.pid), 'blocked');
+  });
+});
+
+test('the queue judges and stamps with the clock read once the write lock is held', { skip: NEEDS_SQLITE }, async (t) => {
+  const state = stateDir();
+  // `ahead` is inside the startup grace by 5s, so it holds the line as
+  // `starting` on a clock read before the lock and is written off as
+  // `never-started` on one read after a 10s wait for it. `crashed` is a running
+  // row whose worker is gone, written off by the running rung.
+  const crashed = insertSynthetic(state, { id: 'crashed', state: 'running', workspace: HERE, workerPid: await deadPid(), startedAgoMs: 600_000 });
+  const ahead = insertSynthetic(state, { id: 'ahead', workspace: HERE, agedMs: STARTUP_GRACE_MS - 5_000 });
+  const mine = insertSynthetic(state, { id: 'mine', workspace: HERE, waiterPid: process.pid });
+
+  withStore(state, (db) => {
+    const { result: verdict, inLock } = withLockWait(t, db, 10_000, (handle) => tryAcquire(handle, mine, process.pid));
+
+    assert.equal(verdict, 'acquired', 'liveness was judged on a clock read before the lock was held');
+    const claimed = jobBySeq(db, mine);
+    assert.equal(claimed.started_at, inLock, 'the claim was not stamped with the reading taken as the lock was acquired');
+    assert.equal(claimed.last_beat_at, inLock);
+    const writtenOff = jobBySeq(db, ahead);
+    assert.notEqual(writtenOff.state, 'queued', 'the row ahead was not written off');
+    assert.equal(writtenOff.completed_at, inLock, 'the write-off was not stamped with the reading taken as the lock was acquired');
+    const reconciled = jobBySeq(db, crashed);
+    assert.notEqual(reconciled.state, 'running', 'the crashed runner was not written off');
+    assert.equal(reconciled.completed_at, inLock, 'the running rung did not stamp with the reading taken as the lock was acquired');
   });
 });

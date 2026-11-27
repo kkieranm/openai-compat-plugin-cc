@@ -24,14 +24,12 @@ import { openJobs } from './job-view.mjs';
 // the flag-documentation guard.
 export const ABANDON_SPEC = { booleanFlags: ['force'] };
 
-const now = () => new Date().toISOString();
-
 /**
  * The drainage sentence, defined once because two paths print it.
  *
  * A snapshot taken inside the write transaction, not a statement about the queue
  * as the reader sees it: anything may have started since. Retyping it at the
- * second call site is how the two recovery messages drifted apart once already.
+ * second call site would let the two recovery messages drift apart.
  */
 const DRAINED = 'At that moment nothing else was blocking the queue, so a waiting job may start.';
 
@@ -39,8 +37,8 @@ const DRAINED = 'At that moment nothing else was blocking the queue, so a waitin
  * How much of the startup grace is left, in words.
  *
  * Derived from `STARTUP_GRACE_MS` and the row's own timestamps rather than
- * written as a number in prose: the refusal used to say "try again in a minute"
- * against a two-minute grace, so an operator who obeyed it was refused again.
+ * written as a number in prose, so the wait it names is the one the refusal
+ * enforces.
  * Anchored on `spawned_at ?? created_at`, mirroring `livenessOf`, so it measures
  * the same window the refusal is about. Computed here rather than taken as a
  * parameter because `REFUSALS` entries take the row alone.
@@ -63,7 +61,7 @@ function graceLeft(job) {
  * never even produces an `outcome: 'refused'` for them. `dead` IS
  * refusal-shaped in `abandonDecision`, but `abandonRow` intercepts it first and
  * hands the row to ordinary recovery instead — the literal stays in
- * `job-abandon.mjs` as that routing key, only its message is gone. `gone` is
+ * `job-abandon.mjs` as that routing key, with no message here. `gone` is
  * different again: `abandonRow` genuinely returns `outcome: 'refused', reason:
  * 'gone'` for it, but `runAbandon` (below, before this table is ever reached)
  * intercepts that specific reason and throws its own message, because "no such
@@ -125,9 +123,9 @@ const REFUSALS = {
  *
  * The overlap warning belongs to the `running` arm alone and is not conditional
  * on drainage: the danger is the abandoned process, not its successor. A queued
- * row provably has nothing in flight — `decide` moves a row to `running` before
- * acquisition succeeds and the model is called only after that — so claiming
- * overlap there would be false.
+ * row provably has nothing in flight — `decide` moves a row to `running` in the
+ * same write that acquires it, and the model is called only after that — so
+ * claiming overlap there would be false.
  */
 function report({ state, couldDrain, reason }, job) {
   const lines = [`Job ${job.id} written off as failed (operator-abandoned). Nothing was signalled.`];
@@ -136,8 +134,8 @@ function report({ state, couldDrain, reason }, job) {
       // Two mutually exclusive arms. `finish` does not clear `cancel_requested_at`
       // and the heartbeat's read of it is not state-guarded, so an abandoned but
       // still-live worker WILL see that request at its next tick and exit — which
-      // is the operator's best available news and was being contradicted by a
-      // flat "never asked to stop".
+      // is the operator's best available news and a flat "never asked to stop"
+      // would contradict it.
       (reason === 'forced-malformed'
         // The stored record says no liveness judgement was possible, so the
         // printed text may not imply one. The risk is UNKNOWN rather than absent —
@@ -146,12 +144,8 @@ function report({ state, couldDrain, reason }, job) {
           + ' whether anything is in flight is unknowable and an overlap cannot be ruled out.'
         : (job.cancel_requested_at
           // Bounded by the row's own lifetime, and saying so costs one clause.
-          // That bound used to be short: retention would prune this row, and a
-          // worker waking afterwards would read `cancelRequested` as false. For a
-          // row that RAN it is now indefinite — retention exempts an
-          // `operator-abandoned` row with a `started_at`. A row
-          // abandoned while queued is still pruned on the ordinary schedule, and
-          // it is the one that never had a worker to tell.
+          // For a row that RAN the bound is indefinite: retention exempts an
+          // `operator-abandoned` row with a `started_at`.
           ? 'A cancellation was already pending, and it still stands while this row lasts: if its'
             + ' process is alive it will see that at its next check-in and exit.'
           : 'Its process was never asked to stop')
@@ -187,8 +181,8 @@ function report({ state, couldDrain, reason }, job) {
 function describe(job, cwd) {
   // `relevantPid`, not "whichever column is populated": a running row can carry a
   // stale `waiter_pid` from before it was claimed, and printing that number while
-  // the stored message says the pid was unknown put two different pids in one
-  // invocation. A terminal row has no relevant pid and now prints none.
+  // the stored message says the pid was unknown would put two different pids in
+  // one invocation. A terminal row has no relevant pid and prints none.
   const lines = [`${job.id}  ${job.state}  pid ${relevantPid(job) ?? '—'}  last beat ${relativeAge(job.last_beat_at)}`];
   if (job.workspace && job.workspace !== cwd) lines.push(`  submitted from ${job.workspace}`);
   // What it was asked to do — the field that says whose work this is, which is
@@ -199,19 +193,17 @@ function describe(job, cwd) {
 }
 
 /**
- * The one place a recovery is reported — genuinely one now. It was not: a
- * second, inline template rendered `already-recovered` elsewhere in this file,
- * under a docblock claiming there was only this. Both arms live here.
- *
- * `/oai:abandon` used to reconcile machine-wide BEFORE its transaction and treat
- * the result as a separate exit. That gave one fact two formats, and let a
- * `never-started` row inherit a sentence written for a dead process. The
- * transaction owns it now, and this renders whichever kind it resolved.
+ * The one place a recovery is reported, and it renders both outcomes:
+ * `already-recovered` (the row was already settled by ordinary recovery when the
+ * transaction read it) and
+ * `recovered` (the transaction handed it to ordinary recovery, as a dead process
+ * or a `never-started` row). The transaction resolves which it was, so one fact
+ * has one format.
  */
 function reportRecovery(id, { outcome, recoveryKind, reason, couldDrain }) {
   if (outcome === 'already-recovered') {
-    // No drainage sentence, and that IS the asymmetry: this row was terminal
-    // before the command ran, so nothing it did unblocked anything.
+    // No drainage sentence, and that IS the asymmetry: this row was already
+    // terminal when the transaction read it, so nothing it did unblocked anything.
     return `Job ${id} was already settled by ordinary recovery: recorded as ${reason}.`
       + ' Nothing needed writing off.\n';
   }
@@ -244,7 +236,7 @@ export async function runAbandon(argv) {
   // refuses it outright — as `/oai:cancel` does, and unlike `/oai:status`.
   if (readOnly) throw new DatabaseTooNewError(version);
 
-  const outcome = abandonRow(db, id, { override: Boolean(options.force), at: now() });
+  const outcome = abandonRow(db, id, { override: Boolean(options.force) });
   if (outcome.reason === 'gone' || !outcome.row) {
     throw new UserError(`No job with id "${id}".`, { hint: 'Run /oai:status to list what there is.' });
   }

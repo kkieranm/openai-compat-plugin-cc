@@ -1,9 +1,10 @@
 // A contended database must not destroy work that has already been paid for.
 //
-// Every witness here drives a path where a `SQLITE_BUSY` really is raised, not
-// one where the code merely could have handled one. That distinction is the
-// whole file: a test that composes the retry helper itself would stay green if
-// every call site's wrapping were deleted, which is the one thing these are for.
+// Every witness here but the first drives a path where a `SQLITE_BUSY` really
+// is raised, not one where the code merely could have handled one; the first
+// pins the shape of a clean open and raises none. That distinction is the whole
+// file: a test that composes the retry helper itself would stay green if every
+// call site's wrapping were deleted, which is the one thing the others are for.
 // The heartbeat's witnesses live in `job-busy-heartbeat.test.js`, which needs a
 // child process to observe what it observes.
 import assert from 'node:assert/strict';
@@ -20,12 +21,11 @@ function busyError() {
 }
 
 test('openStore does not re-set WAL on a database that is already WAL', { skip: NEEDS_SQLITE }, async () => {
-  // The actual fix for the third defect, not its symptom. `PRAGMA journal_mode
-  // = WAL` takes an EXCLUSIVE lock and has thrown "database is locked" three
-  // times in the wild — at the line whose comment claimed the preceding
-  // busy_timeout made every later statement wait. The mode persists in the
-  // file, so the statement is needed on the first open and on no other; the
-  // common path now stops taking the lock rather than waiting on it.
+  // `PRAGMA journal_mode = WAL` takes an EXCLUSIVE lock and consults no busy
+  // handler, so it can throw "database is locked" whatever `busy_timeout` is
+  // (`job-store.mjs` says so where it opens the store). The mode persists in the
+  // file, so the statement is needed on the first open and on no other, and the
+  // common path does not take that lock at all.
   const state = stateDir();
   const { DatabaseSync } = await import('node:sqlite');
   try {
@@ -120,8 +120,8 @@ test('the COMPLETED terminal write survives a transient busy', { skip: NEEDS_SQL
   // The headline case, and the only witness that reaches it: the model has
   // ALREADY ANSWERED when the lock is hit. The failed-path witness above cannot
   // stand in for it — reverting the wrapping around the *completed* write leaves
-  // that one green, so without this the defect's whole reason for existing has no
-  // guard. A real server is therefore part of the fixture: an unreachable
+  // that one green, so without this the wrapping around the COMPLETED write has
+  // no guard. A real server is therefore part of the fixture: an unreachable
   // transport can only ever produce the failure path.
   const scenario = await queueScenario();
   const { DatabaseSync } = await import('node:sqlite');
@@ -162,10 +162,10 @@ test('the COMPLETED terminal write survives a transient busy', { skip: NEEDS_SQL
 });
 
 test('a busy beat in the QUEUE wait loop does not kill a waiting worker', { skip: NEEDS_SQLITE }, async () => {
-  // The fourth site. A worker waiting its turn has sent nothing, so the cost of
-  // losing it is smaller than the other three — but it is still a job that
-  // silently never runs, and the loop is its own retry, so the tick is skipped
-  // exactly as the heartbeat's is.
+  // A worker waiting its turn has sent nothing, so losing it costs less than
+  // losing one at the FAILED or COMPLETED write, where a model call has already
+  // been paid for — but it is still a job that silently never runs, and the loop
+  // is its own retry, so the tick is skipped exactly as the heartbeat's is.
   const state = stateDir();
   const { DatabaseSync } = await import('node:sqlite');
   const original = DatabaseSync.prototype.prepare;
@@ -212,11 +212,12 @@ test('a busy beat in the QUEUE wait loop does not kill a waiting worker', { skip
 });
 
 test('the QUEUE-TIMEOUT terminal write survives a transient busy', { skip: NEEDS_SQLITE }, async () => {
-  // The third terminal write, and the one contention is likeliest to meet: it is
-  // reached only while another job is running, so a competing worker is beating
-  // throughout. Unwrapped, the busy escaped `awaitTurn` — which the worker awaits
-  // OUTSIDE its try — so the diagnosed verdict and its hint were lost and
-  // reconciliation later reported `worker-died` instead.
+  // The terminal write contention is likeliest to meet: it is reached only after
+  // an attempt returned `blocked`, most often because a running job whose worker
+  // is beating throughout holds the queue. A busy escaping this write escapes
+  // `awaitTurn`, which the worker awaits OUTSIDE its try, so the diagnosed verdict
+  // and its hint would be lost and reconciliation would report `worker-died`
+  // instead.
   const state = stateDir();
   const { DatabaseSync } = await import('node:sqlite');
   const original = DatabaseSync.prototype.prepare;

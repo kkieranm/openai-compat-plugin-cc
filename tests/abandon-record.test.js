@@ -16,15 +16,14 @@ import { abandonRow } from '../plugins/oai/scripts/lib/job-abandon.mjs';
 import { NEEDS_SQLITE, insertSynthetic, readJob, stateDir, withStore } from './job-helpers.mjs';
 
 const STALE = 90_000; // past STALE_BEAT_MS (60s)
-const at = () => new Date().toISOString();
 
 test('a row with NO pid recorded keeps the wording that says so', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
-  // The arm a recorded-but-unreadable pid now SHARES, pinned so the wording that
+  // The arm a recorded-but-unreadable pid SHARES, pinned so the wording that
   // is true of both is not quietly narrowed to one of them.
   insertSynthetic(state, { id: 'shapeless', state: 'running', workerPid: null, startedAgoMs: 600_000 });
 
-  withStore(state, (db) => abandonRow(db, 'shapeless', { override: true, at: at() }));
+  withStore(state, (db) => abandonRow(db, 'shapeless', { override: true }));
 
   const after = readJob(state, 'shapeless');
   assert.equal(after.failure.reason, 'operator-abandoned');
@@ -42,7 +41,7 @@ test('a READABLE pid records that a probe answered — the control the absence a
     id: 'probed', state: 'running', workerPid: process.pid, startedAgoMs: 600_000, beatAgoMs: STALE,
   });
 
-  withStore(state, (db) => abandonRow(db, 'probed', { at: at() }));
+  withStore(state, (db) => abandonRow(db, 'probed'));
 
   const after = readJob(state, 'probed');
   assert.match(after.failure.message, /answered a liveness probe/);
@@ -56,12 +55,10 @@ test('a recorded-but-unreadable pid takes the malformed arm, and claims no probe
   // may NOT say is that a pid answered a probe.
   //
   // **The recorded value is not kept.** `finish` NULLs `worker_pid`, so it is
-  // lost, and not by oversight: keeping it would mean interpolating an
-  // arbitrary-length column into a payload written inside the queue's write
-  // transaction.
+  // lost.
   insertSynthetic(state, { id: 'unreadable', state: 'running', workerPid: 'garbage', startedAgoMs: 600_000 });
 
-  withStore(state, (db) => abandonRow(db, 'unreadable', { override: true, at: at() }));
+  withStore(state, (db) => abandonRow(db, 'unreadable', { override: true }));
 
   const after = readJob(state, 'unreadable');
   assert.equal(after.state, 'failed');
