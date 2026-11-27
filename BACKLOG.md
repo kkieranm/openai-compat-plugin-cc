@@ -8,36 +8,10 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep) and entry 5 (fb554ce). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked) and entry 5 (fb554ce). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  4. **Pre-existing job-test gaps, recorded and not fixed:** cancel-confirmation's FIFO cleanup can leave
-     a wedged child; the initial simultaneous-acquisition race is not deterministically exercised; the
-     queue hold spans about three waiter polls; the `started_at` ordering assert has a pre-lock stamp
-     window (being fixed; see the in-progress record below).
-
-     **In progress (unattended /solo, 2026-11-27).** Owner's standing authorization, given 2026-11-27 before
-     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
-     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
-     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
-     gates" (none exists). Base f69937f. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e4-rW8lYx`.
-     Expected diff size: 100 lines (code + tests; tracker moves excluded); 130 from plan episode 2 (the `abandonRow` sibling, refuted inventory line). 340 from review pass 3's batch (scope review, 2026-11-27: round 1 orchestrator A, fable A, sonnet B (cut back); round 2 fable A, sonnet A — continue, because the owner's rule sweeps narration on sight in the files a change edits; the overage is a comment-only sweep of #33 entry 7/8-class narration in `job-abandon.mjs`, `cmd-abandon.mjs`, `job-queue.mjs`, `tests/abandon-cli.test.js` (comment-only there) and four other test files).
-     - Probe at base f69937f (scout, all TRUE): `tryAcquire` mints `at`/`nowMs` as default parameters
-       (`job-queue.mjs:137`) before `BEGIN IMMEDIATE` (`:35`), which can wait out the 10s `busy_timeout`
-       (`job-store.mjs:381`); `claimJob` writes that `at` as `started_at`. A waiter can therefore record a
-       start earlier than the holder's `completed_at`. `job-abandon.mjs:261` claims the opposite.
-     - Fork 1 (scope), round 1 cold, unanimous A (orchestrator A, fable A, sonnet A; no round 2 — the
-       caveats raised were plan inputs, not amendments): fix G4 (the pre-lock stamp) in production with a
-       deterministic test; park G1 (FIFO cleanup cap), G2 (simultaneous-acquisition race), G3 (three-poll
-       hold) as below the worth bar — G1's loop runs only on an already-failing run, G2's exclusion rests
-       on SQLite's `BEGIN IMMEDIATE`, G3 is observation depth backed by `maxInFlight === 1`. Rejected: B
-       (deterministic G2 test), C (all four), D (park all, G4 included).
-     - Fork 2 (test method, from the independent fable sketch's divergence), round 1 cold, unanimous Y
-       (orchestrator Y, fable Y, sonnet Y): a clock seam that jumps `Date.now` once `BEGIN IMMEDIATE`
-       returns, asserting both the stamp and a grace-boundary liveness verdict. Rejected: X (real
-       cross-process lock contention — its pre-fix red rests on a 400ms race and it cannot pin the `nowMs`
-       half), Z (both).
   6. **False or stale claims in the 12 job test files fb554ce edited, on lines it did not rewrite.** None is narration:
      - `tests/liveness-unreadable-pid.test.js:12-13`: says `1.5` throws a TypeError. `:37-41`: the `deadPid` rationale says the assertion would pass, but `'unreadable'` ≠ `'gone'`, so it would fail.
      - `tests/abandon-recovery.test.js:1`: says the file covers rows `/oai:abandon` did not simply write off, but several of its tests do write rows off. `:29`: "a row that never had one" sits on a synthetic fixture that carries a spawn stamp. `:195`: "the plain stale wedge above" is not above. `:205`: "retention can prune the row".
@@ -67,6 +41,11 @@ The next ID is `max+1` over all three files (highest used: #48).
   10. **`tests/job-spawn-failure.test.js:130` overstates**: its assertion message says an `acquired`
       verdict means "the test above proves nothing", but `:116-119` says that test fails on its own when
       terminalization is removed (still so on 2026-11-24).
+  11. **`/oai:abandon`'s pending-cancel reply joins two sentences** (filed 2026-11-27 from #33 entry 4's
+      review): `cmd-abandon.mjs:149-153` appends the shared tail " and it may still have a model request
+      in flight" to an arm that already ends in a full stop. Reproduced 2026-11-27 against a stale running
+      row with a pending cancel: "…at its next check-in and exit. and it may still have a model request in
+      flight." No test pins that arm's text (`tests/abandon-cli.test.js:38` matches the tail alone).
 
 - **#48. Residue from #47 onward: collectTarget path and claim gaps, test isolation, structural guards** (filed 2026-11-08)
 
@@ -96,7 +75,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c and 8c19e34.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34 and 1c6a5e3.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed

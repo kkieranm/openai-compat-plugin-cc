@@ -3,6 +3,10 @@
 Blocked, refuted, or not-worth-doing items, with the reasoning that parked them so they aren't
 re-litigated. Each keeps its stable ID.
 
+- **#33 entry 4, G1-G3 (parked 2026-11-27 by fork 1, unanimous A; G4 shipped in 1c6a5e3)**
+  - **G1: cancel-confirmation's FIFO cleanup can leave a wedged child.** Its loop runs only on an already-failing run.
+  - **G2: the initial simultaneous-acquisition race is not deterministically exercised.** The exclusion rests on SQLite's `BEGIN IMMEDIATE`.
+  - **G3: the queue hold spans about three waiter polls.** Observation depth; `maxInFlight === 1` backs the invariant.
 - **#33, sub-items dropped 2026-11-14** (scope vote at 02c4112, issue comment 6881915865)
   - **Entry 1: the TTL no-exposure test overruns under load.** `tests/ttl-challenge-e2e.test.js:193`'s
     100ms reply under a 300ms bar flipped once under background QoS plus 20 `yes` processes. Not
