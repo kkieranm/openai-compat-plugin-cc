@@ -3,6 +3,13 @@
 Blocked, refuted, or not-worth-doing items, with the reasoning that parked them so they aren't
 re-litigated. Each keeps its stable ID.
 
+- **#33 entry 12: `/oai:cancel` writes a newer plugin's row (parked 2026-11-28 by the owner: never
+  observed).** `requestCancel` carries no `schema_version` predicate, so a non-terminal row a newer
+  plugin wrote can get `cancel_requested_at` set; reproduced only with a hand-inserted schema-99 row
+  (2026-11-27). Never hit in real use: the real `~/.local/state/oai-plugin/jobs.db` holds 22 rows, all
+  schema 1 or 3 (2026-08-05 to 2026-08-23), and no plugin above row schema 3 has ever existed. A fix was
+  built (746 lines over three plan episodes: refusal, a strict schema range, an `/oai:abandon --force`
+  escape) and discarded by the owner; its diff is outside the repo. Reopen only on a real occurrence.
 - **#33 entry 4, G1-G3 (parked 2026-11-27 by fork 1, unanimous A; G4 shipped in 1c6a5e3)**
   - **G1: cancel-confirmation's FIFO cleanup can leave a wedged child.** Its loop runs only on an already-failing run.
   - **G2: the initial simultaneous-acquisition race is not deterministically exercised.** The exclusion rests on SQLite's `BEGIN IMMEDIATE`.

@@ -9,20 +9,9 @@ The next ID is `max+1` over all three files (highest used: #48).
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
   02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258), entry 8 (04dd5d1), entry 9 (c40ae10), entry 10 (915babf) and entry 11 (85dc920). Entries 1 and 3 and review residuals R5 and
-  R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
+  R7-R10 were dropped on 2026-11-14, and entry 12 parked on 2026-11-28; all are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  12. **`/oai:cancel` writes a newer plugin's row** (filed 2026-11-28 from #33 entry 6's review):
-      `runCancel` (`cmd-cancel.mjs:55-67`) refuses only a too-new database, and `requestCancel`'s UPDATE
-      (`job-record.mjs:205-213`) carries no `schema_version` predicate, so a non-terminal row a newer
-      plugin wrote gets `cancel_requested_at` set. `reconcileAll` leaves that row non-terminal because of
-      its version. That contradicts `job-reconcile.mjs:17` ("A row a newer plugin wrote is never mutated").
-      Reproduced 2026-11-27 in a scratch state dir with the real companion: a `running`, schema-99 row
-      with a reaped pid got `cancel_requested_at` set, and the reply said "Cancelling job foreign, running
-      since 0s ago. Its worker checks every 5s." for a worker that was gone. The schema-1 control row in
-      the same run was reconciled to `failed` and reported "already failed — nothing was cancelled".
-      Tests whose wording assumes the invariant: `tests/queue-reconcile.test.js:44` (title),
-      `tests/abandon-cli.test.js:106`, `tests/queue-semantics.test.js:29`.
   13. **Same-class comment and hint residue outside entry 7's files** (filed 2026-11-28 from #33 entry 7's
       review; each line unchanged at 0ae7b67 and read by a review stage that day):
       - `plugins/oai/scripts/lib/job-reconcile.mjs:72-73`, a user-facing `cancel-unconfirmed` hint: "a worker
