@@ -119,8 +119,8 @@ test('the blocker reaches the screen through the real command', { skip: NEEDS_SQ
 });
 
 test('the way out is named on the blocker only when taking it would work', { skip: NEEDS_SQLITE }, () => {
-  // Three conditions, and two are not properties of the row: the beat is stale,
-  // the row's version is one this build knows, and the database is writable.
+  // Four conditions: the row's owner is live, the beat is stale, the row's
+  // version is one this build knows, and the database is writable.
   // `/oai:status` reads a database `/oai:abandon` would refuse outright, so
   // naming the command unconditionally is advice a reader can only discover is
   // wrong by taking it.
@@ -131,8 +131,8 @@ test('the way out is named on the blocker only when taking it would work', { ski
     assert.match(renderList(view, { cwd: HERE, all: false }), /\/oai:abandon theirs/);
   });
 
-  // Same fixture, read from a database a newer plugin wrote: every write refuses
-  // there, so the line must not appear.
+  // Same fixture rendered read-only, as for a database a newer plugin wrote:
+  // every write refuses there, so the line must not appear.
   viewHere(stale, (view) => {
     const text = renderList(view, { cwd: HERE, all: false, readOnly: true });
     assert.match(text, /must clear before/, 'the blocker is still named');
@@ -214,8 +214,8 @@ test('the remedy reaches the real CLI, and a too-new database withholds it', { s
     assert.match(writable.stdout, /oai:abandon theirs/);
 
     // One predicate different: the database is now one this build may not write.
-    // `reconcileAll` is skipped under readOnly, so the blocker survives to be
-    // named — but the remedy names a command that would refuse outright.
+    // `reconcileAll` is skipped under readOnly, and this live blocker survives
+    // either way — but the remedy would name a command that refuses outright.
     setUserVersion(scenario.state, 99);
     const readOnly = await scenario.run(['status'], { cwd: mine });
     assert.match(readOnly.stdout, /must clear before/, 'the blocker is still named');
@@ -231,7 +231,7 @@ test('a queued row with an unreadable pid is told the truth about its future, no
   // sentence. `registerWaiter` carries `AND waiter_pid IS NULL`,
   // so a row already holding a value can never be attached by anything —
   // telling the operator a worker might still pick it up argues them out of the
-  // only action that clears it.
+  // action that writes it off.
   theirHead(state, { waiterPid: 'garbage' });
   myJob(state);
 
@@ -239,8 +239,9 @@ test('a queued row with an unreadable pid is told the truth about its future, no
     const text = renderList(view, { cwd: HERE, all: false });
     assert.match(text, /cannot be read as a pid/);
     assert.match(text, /No NEW worker can register against it/);
-    // No command is named from a note: `remedyFor` is the one place this file
-    // advises an action, and it is gated on conditions a note cannot see.
+    // No command is named from a note: `remedyFor` is the one place in
+    // job-render.mjs that advises an action, and it is gated on conditions a note
+    // cannot see.
     assert.doesNotMatch(text, /oai:abandon/);
     // The sentence that belongs to the OTHER queued shape, and is false here.
     assert.doesNotMatch(text, /a timestamp this build cannot read/);
@@ -271,7 +272,7 @@ test('a RUNNING row with an unreadable pid says so without quoting the value', {
   viewHere(state, (view) => {
     const text = renderList(view, { cwd: HERE, all: false });
     assert.match(text, /cannot be read as a pid/);
-    assert.match(text, /It blocks the queue/, 'a running row DOES hold every caller, unlike a queued one');
+    assert.match(text, /It blocks the queue/, 'a running row DOES hold every caller that reaches the scans, unlike a queued one');
     // The no-pid wording, which is false of a row that recorded one.
     assert.doesNotMatch(text, /running with no worker pid recorded/);
   });

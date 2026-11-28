@@ -1,4 +1,4 @@
-// What `/oai:abandon` says about a row it did NOT simply write off.
+// What `/oai:abandon` says about a row it writes off, recovers or refuses.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';
@@ -26,7 +26,7 @@ test('a never-started row is not described as a process that was already gone', 
     assert.equal(status, 0, stdout);
     assert.match(stdout, /never had a worker register against it/);
     assert.match(stdout, /worker-never-started/);
-    // The dead-process wording must not appear for a row that never had one.
+    // The dead-process wording must not appear for a row that names no process.
     assert.doesNotMatch(stdout, /process was already gone/);
     assert.equal(readJob(scenario.state, 'nevers').state, 'failed');
   } finally {
@@ -192,7 +192,7 @@ test('a submitter-diagnosed launch failure is an ordinary refusal, deliberately'
 test('a pending cancellation is reported as still standing, and bounded', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // MC/DC twin of the plain stale wedge above: identical but for
+    // MC/DC twin of the plain stale wedge below: identical but for
     // `cancel_requested_at`. `finish` does not clear that column and the
     // heartbeat's read of it is not state-guarded, so an abandoned-but-alive
     // worker still sees the request and exits — the operator's best news, so a
@@ -202,7 +202,8 @@ test('a pending cancellation is reported as still standing, and bounded', { skip
     const { status, stdout } = await scenario.run(['abandon', 'wedged']);
     assert.equal(status, 0, stdout);
     assert.match(stdout, /cancellation was already pending/);
-    // Bounded, because retention can prune the row out from under the promise.
+    // Bounded by the row's own lifetime; retention keeps an abandoned row that
+    // had started.
     assert.match(stdout, /while this row lasts/);
     assert.doesNotMatch(stdout, /never asked to stop/);
   } finally {
@@ -267,10 +268,10 @@ test('a database a newer plugin wrote refuses at the DATABASE level', { skip: NE
     const { status, stderr } = await scenario.run(['abandon', 'wedged']);
     assert.equal(status, 1);
     assert.match(stderr, /this build understands/);
-    // No `readJob` here, and the reason is the point: the test helper opens the
-    // store the same way the command does, so it refuses the too-new database
-    // too. That the row cannot be read back through the ordinary path IS the
-    // guarantee — a build that would not read it will not have written it.
+    // No `readJob` here: it opens through `openStore`, which throws on a too-new
+    // database. The command opens through `openJobs` instead, gets a read-only
+    // handle and refuses on that before `abandonRow` runs, so nothing here reads
+    // the row back.
   } finally {
     await scenario.server.close();
   }

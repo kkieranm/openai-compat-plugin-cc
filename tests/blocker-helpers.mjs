@@ -20,9 +20,9 @@ export const realWorkspace = (tag) => realpathSync(tempDir(`oai-ws-${tag}-`));
  * The two stamps `livenessOf` reads, corrupted.
  *
  * Raw SQL because `insertSynthetic` builds every timestamp through `ago()`,
- * which always yields a parseable ISO string — so the TIMESTAMP shape that
- * reaches `malformed` through the *queued* branch cannot be inserted by the
- * helper at all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
+ * which yields a parseable ISO string or null, and `created_at` is NOT NULL —
+ * so the TIMESTAMP shape that reaches `malformed` through the *queued* branch
+ * cannot be inserted by the helper at all. Both columns, since `livenessOf` reads `spawned_at ?? created_at`.
  *
  * **It is not the only queued malformed shape.** A queued row holding an
  * unreadable `waiter_pid` is malformed too, and that one IS reachable through

@@ -7,10 +7,12 @@
 // `/oai:abandon` would tell the operator its process was already gone, about a
 // number that never denoted one.
 //
-// The fixtures below are the shapes that make the difference observable, and the
-// reason they are worth naming individually is that they reach the answer by
-// three different roads: `-1` and `0` never touch the OS at all, `1.5` and
-// `2 ** 40` throw a TypeError with no errno, and `'garbage'` is what a foreign
+// The fixtures below are the shapes that make the difference observable. None
+// of them reaches a syscall, and they are refused in two places: `-1`, `0`,
+// `1.5` and `'garbage'` fail `pidLiveness`'s own shape check, which must run
+// before the probe because `kill(0, 0)` and `kill(-1, 0)` would succeed and read
+// `live`; `2 ** 40` passes that check and is rejected by Node's argument
+// validator with a TypeError carrying no errno. `'garbage'` is what a foreign
 // writer leaves in a column SQLite does not type-check.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,9 +38,9 @@ test('an unreadable pid is `unreadable`, never `gone`', () => {
 
 test('only ESRCH reads as gone — a reaped pid, asked of the real OS', async () => {
   // The one fixture that must be a real reaped pid rather than a synthetic
-  // number: a synthetic one would be rejected on shape and this assertion would
-  // pass without the OS ever being asked. `tests/job-helpers.mjs` says the same
-  // thing about `deadPid` and is why that helper exists.
+  // number: one that is not a positive integer reads `unreadable`, not `gone`,
+  // and a guessed positive one may name a live process. `tests/job-helpers.mjs`
+  // says the same thing about `deadPid` and is why that helper exists.
   assert.equal(pidLiveness(await deadPid()), 'gone');
 });
 

@@ -98,7 +98,7 @@ test('a queued row from a newer plugin is skipped, untouched, once its waiter is
 test('a submission whose worker never arrived is failed once the grace has passed', { skip: NEEDS_SQLITE }, async () => {
   const scenario = await queueScenario();
   try {
-    // The submitter died between committing the row and spawning the child.
+    // No worker ever registered against this row, and the grace has passed.
     insertSynthetic(scenario.state, { id: 'orphan', agedMs: THREE_MINUTES, waiterPid: null });
 
     const settled = await submitAndSettle(scenario);
@@ -178,12 +178,15 @@ test('a queued row with an UNREADABLE waiter pid is not skipped, and takes no ne
 
 test('a newer plugin\'s row with an UNREADABLE pid wedges this build, and names the schema it carries', { skip: NEEDS_SQLITE }, async () => {
   // **This pins an exception, not a guarantee, and it sits beside the rule it
-  // contradicts on purpose.** The rule above is that a newer plugin's row neither
-  // blocks nor gets written to. That holds while its pid is READABLE — a dead one
-  // is skipped. An unreadable pid makes it `malformed` instead, which blocks; and
-  // `abandonDecision` refuses an unknown `schema_version` at its FIRST rung,
-  // above liveness, which no flag lifts. So this build can neither run past the
-  // row nor write it off.
+  // is an exception to on purpose.** The rule the tests above pin is the queue's:
+  // a newer plugin's row is passed over, and reconciliation leaves it unwritten,
+  // while its pid reads dead or, for a queued row, no worker registered and the
+  // startup grace has passed. One whose worker or waiter is live, or a queued one
+  // still inside that grace, blocks instead. An unreadable pid makes it
+  // `malformed`, which blocks — a queued one once every row ahead of it has been
+  // passed over; and `abandonDecision` refuses an unknown `schema_version` above
+  // every liveness rung, and no flag lifts that refusal. So this build can
+  // neither run past the row nor write it off.
   //
   // The same combination holds for a newer running row with no pid at all. The
   // row SAYS which schema it carries. It does not say which build can clear it
@@ -211,7 +214,7 @@ test('a newer plugin\'s row with an UNREADABLE pid wedges this build, and names 
       { allowed: true, reason: 'forced-malformed' },
     );
 
-    // (6) and the row names the build that can clear it.
+    // (6) and the row names the schema it carries, not a build that can clear it.
     const note = withStore(scenario.state, (db) => renderList(statusView(db, { cwd: '/tmp/nowhere', all: true }), { cwd: '/tmp/nowhere', all: true }));
     assert.match(note, /cannot be read as a pid/);
     assert.match(note, /row schema is 99/);
@@ -225,7 +228,7 @@ test('a newer plugin\'s row with an UNREADABLE pid wedges this build, and names 
   }
 });
 
-test('a newer plugin\'s row with a READABLE dead pid still skips, and says nothing about schemas twice', { skip: NEEDS_SQLITE }, async () => {
+test('a newer plugin\'s row with a READABLE dead pid still skips', { skip: NEEDS_SQLITE }, async () => {
   // (5) The NEGATIVE control for the test above: the same foreign version, with a
   // pid the OS can answer for, must still be skipped rather than wedge — that is
   // the invariant the exception is an exception TO, and asserting the exception
@@ -236,7 +239,7 @@ test('a newer plugin\'s row with a READABLE dead pid still skips, and says nothi
 
     const settled = await submitAndSettle(scenario);
     assert.equal(settled.state, 'completed', JSON.stringify(settled.failure));
-    assert.equal(readJob(scenario.state, 'skewed-dead').state, 'queued', 'a newer version\'s row is never written to');
+    assert.equal(readJob(scenario.state, 'skewed-dead').state, 'queued', 'the queue never writes a newer version\'s row');
   } finally {
     await scenario.server.close();
   }
@@ -302,17 +305,18 @@ test('a known-schema dead row on a writable database is not blamed on a version 
     'the final line exactly matches the complete note for a known-schema row that reads dead at render time on a writable database');
 });
 
-test('a known-schema never-started row on a writable database is not blamed on a worker that never existed', { skip: NEEDS_SQLITE }, () => {
+test('a known-schema never-started row on a writable database is not blamed on a worker that never registered', { skip: NEEDS_SQLITE }, () => {
   const state = stateDir();
   // Queued, no pid ever registered, aged past STARTUP_GRACE_MS: livenessOf
-  // reads this as 'never-started' with no worker to have changed state at all.
+  // reads this as 'never-started': no worker registered that could have changed
+  // its state.
   insertSynthetic(state, { id: 'raced-never-started', agedMs: STARTUP_GRACE_MS + 1000 });
 
   const text = withStore(state, (db) => renderList(statusView(db, { cwd: '/tmp', all: true }), { cwd: '/tmp', all: true, readOnly: false }));
 
   assert.doesNotMatch(text, /written by a newer plugin/, 'the row is not foreign');
   assert.doesNotMatch(text, /database itself was written by a newer version/, 'the database is writable, not too new');
-  assert.doesNotMatch(text, /worker likely changed state/, 'a never-started row has no worker to have changed state');
+  assert.doesNotMatch(text, /worker likely changed state/, 'a never-started row has no registered worker to have changed state');
   assert.doesNotMatch(text, /this build did reconcile the database this run/, 'reconciliation running this session is not a claim that THIS row was checked');
   assert.doesNotMatch(text, /left this row exactly as found/, 'a row inserted after reconcileAll\'s snapshot was never examined at all, not "examined and left unchanged"');
   assert.doesNotMatch(text, /usually a benign race/, 'no unmeasured frequency lean — the persistence clause, not a base-rate word, discriminates a race from a stuck row');

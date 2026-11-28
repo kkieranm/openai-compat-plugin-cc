@@ -23,6 +23,17 @@ The next ID is `max+1` over all three files (highest used: #48).
        - `:242-243`: "this file".
      - `tests/job-busy-placement.test.js:4`, `:141-143` ("the stamp only shortens a startup grace window"; the stamp's absence does that) and `:210` ("id of a running job").
      - `tests/blocker-helpers.mjs:20-25`: the `breakStamps` docblock says `ago()` "always yields a parseable ISO string". But `ago(null)` returns `null` (`ago` in `tests/job-helpers.mjs`), and `agedMs: null` feeds both stamps.
+
+     **In progress (unattended /solo, 2026-11-27).** Owner's standing authorization, given 2026-11-27 before
+     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
+     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
+     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
+     gates" (none exists). Base 87ab88b. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e6-V0diGS`.
+     Expected diff size: 70 lines (comments only, six test files; tracker moves excluded).
+     - Probe at base 87ab88b (scout): `:12-13` (`1.5` is rejected on shape, `job-liveness.mjs:102`),
+       `:37-41` (a shape-rejected pid reads `unreadable`, so the `gone` assertion would fail),
+       `abandon-recovery.test.js:195` (the plain wedge test is below, `:213`), `queue-reconcile.test.js:214`
+       (contradicts `:188-190` and `:222`) and `blocker-helpers.mjs:20-25` (`ago(null)` is `null`) all hold.
   7. **Narration and stale claims in runtime files, outside fb554ce's comment sites:**
      - `plugins/oai/scripts/lib/cmd-task-worker.mjs`:
        - `:170`: "the row now outlives the sweep";

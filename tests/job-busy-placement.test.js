@@ -1,9 +1,11 @@
 // Three behaviours that turn on WHERE the retry sits and what happens when it
 // runs out.
 //
-// `job-busy.test.js` proves each wrapped write survives a TRANSIENT busy. None
-// of that says anything about the exhausted case, or about a write whose failure
-// is handled by a catch that then publishes something false.
+// `job-busy.test.js` proves the FAILED, COMPLETED and QUEUE-TIMEOUT writes
+// survive a TRANSIENT busy, and that a busy queue-wait beat does not kill the
+// waiting worker. None of that says anything about the exhausted case, or about
+// a write whose failure is handled by a catch that then publishes something
+// false.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { rmSync } from 'node:fs';
@@ -138,9 +140,9 @@ test('a busy while REGISTERING as the waiter does not silently lose the job', { 
 test('an EXHAUSTED spawn-stamp retry still reports the id', { skip: NEEDS_SQLITE }, async () => {
   // The retry narrows the lost-id window; it does not close it. When the budget
   // runs out a detached worker has already been spawned and may be spending
-  // money, so the id is the fact worth keeping — the stamp only shortens a
-  // startup grace window, and stops being consulted once the worker registers
-  // itself.
+  // money, so the id is the fact worth keeping — the stamp only moves the start
+  // of the startup grace window from creation to spawn, and stops being
+  // consulted once the worker registers itself.
   //
   // The warning is asserted as well as the id, and specifically for what it must
   // NOT say: by the time a thirty-second budget is exhausted this process has
@@ -207,7 +209,7 @@ test('an EXHAUSTED spawn-stamp retry still reports the id', { skip: NEEDS_SQLITE
     });
 
     assert.ok(injected >= 1, 'the injection never fired: this witness is examining nothing');
-    assert.match(id, /^[0-9a-f]{8}$/, 'an exhausted stamp retry must not cost the caller the id of a running job');
+    assert.match(id, /^[0-9a-f]{8}$/, 'an exhausted stamp retry must not cost the caller the id of a spawned job');
     const row = readJob(state, id);
     assert.equal(row.spawned_at, null, 'the stamp genuinely did not land — otherwise this tests the transient path');
 

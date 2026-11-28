@@ -124,9 +124,10 @@ test('a queued head abandoned under a LIVE running row does not drain, and does 
   withStore(state, (db) => {
     const outcome = abandonRow(db, 'head');
     assert.equal(outcome.outcome, 'abandoned', 'the head is still written off');
-    // The running rung is consulted FIRST and refuses every caller before queue
-    // order is reached. Reporting drainage here would be wrong: consulting the
-    // queued rung alone misses a running row that still blocks everyone.
+    // The running rung is consulted FIRST and refuses every caller that reaches
+    // the scans before queue order is. Reporting drainage here would be wrong:
+    // consulting the queued rung alone misses a running row that still blocks
+    // every such caller.
     assert.equal(outcome.couldDrain, false);
     assert.equal(tryAcquire(db, behind, process.pid), 'blocked');
   });
@@ -208,8 +209,8 @@ test('a successor whose beat cannot be READ earns no drainage claim', { skip: NE
     id: 'garbled', state: 'queued', waiterPid: process.pid, beatAgoMs: 1_000,
   });
   // Raw SQL: `insertSynthetic` builds every timestamp through `ago()`, which
-  // always yields a parseable ISO string, so the one shape this guard exists for
-  // cannot be inserted through the helper.
+  // yields a parseable ISO string or null, so a beat that is present and will
+  // not parse cannot be inserted through the helper.
   withStore(state, (db) => db.prepare('UPDATE jobs SET last_beat_at = ? WHERE id = ?').run('not-a-time', 'garbled'));
 
   withStore(state, (db) => {
@@ -238,12 +239,12 @@ test('a successor already past its wait cap earns no drainage claim', { skip: NE
   withStore(state, (db) => {
     const outcome = abandonRow(db, 'wedged');
     assert.equal(outcome.outcome, 'abandoned');
-    // Past its cap, so the queue will time it out rather than seat it — "a
-    // waiting job may start"
-    // would be false. The MC/DC twin is the drainage-positive test above, whose
-    // successor is identical but for a NULL `max_wait_ms`; do not add a
-    // `tryAcquire` control here, because `decide` checks no deadline and would
-    // answer `acquired`, framing this as an under-claim when it is not.
+    // Past its cap, so "a waiting job may start" is withheld: the queue times it
+    // out at its next check, unless it has yet to make `awaitTurn`'s free first
+    // attempt — the under-claim `job-drain.mjs` accepts. The MC/DC twin is the
+    // test below, identical but for where the deadline sits. Do not add a
+    // `tryAcquire` control here: `decide` checks no deadline and would answer
+    // `acquired`, which shows only that first-attempt case.
     assert.equal(outcome.couldDrain, false);
   });
 });
@@ -253,7 +254,7 @@ test('a successor with a cap it has NOT yet reached still earns the claim', { sk
   wedged(state);
   insertSynthetic(state, { id: 'roomy', state: 'queued', waiterPid: process.pid, beatAgoMs: FRESH });
   // The MC/DC twin of the expired test above: copied fixture, and the ONLY
-  // difference is where the deadline sits — ten minutes out instead of nine
+  // difference is where the deadline sits — nine minutes out instead of nine
   // minutes past. Without this the guard `deadline === null` survives, because
   // every other drainage positive has a NULL cap and so exercises a different
   // operand entirely.
