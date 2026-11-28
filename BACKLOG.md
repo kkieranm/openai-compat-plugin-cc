@@ -8,20 +8,10 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff) and entry 7 (87e1258). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258) and entry 8 (04dd5d1). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  8. **Test files outside the 12:**
-     - `tests/job-busy.test.js:73`: "the three tests above". `:91-92`: "`completed_at = ?` appears in no other statement".
-     - `tests/job-busy-diagnosis.test.js:27-31` and `:87-90`: narration.
-     - `tests/job-launch-outcome.test.js:4-7`, `:110`, `:160-162` and `:242-248`. The last grounds `writeSync` in "the credential-notice design".
-     - `tests/job-auth.test.js:106-109` says keying the widening on the query alone "fails every such job
-       with `Unknown provider "custom"`", and `:116-121` that a bare `--base-url`'s synthetic profile "will
-       not be in `providers.json`"; `tests/credential-notice.test.js:230` names the same failure. The worker
-       never surfaces that message (`resolveCredential`'s catch replaces it with `credential-unavailable`),
-       and a configured `custom` at the job's exact endpoint passes. Added 2026-11-28 from #33 entry 7's
-       review, which made `job-auth.mjs:39-59` say so.
   9. **"Split from" headers** in 17 test files (`command grep -l 'Split from' tests/*.js tests/*.mjs`;
      still 17 on 2026-11-24).
   10. **`tests/job-spawn-failure.test.js:130` overstates**: its assertion message says an `acquired`
@@ -54,6 +44,22 @@ The next ID is `max+1` over all three files (highest used: #48).
       - `plugins/oai/scripts/lib/config.mjs:361-363` ("Skipping this check let a typo yield …") and
         `:383-385` ("… instead was a real defect"): history narration.
       - `plugins/oai/scripts/lib/job-heartbeat.mjs:110-116`: "… are now attempted independently".
+      - Added 2026-11-28 from #33 entry 8's review (each line read at 04dd5d1):
+        `plugins/oai/scripts/lib/job-auth.mjs:157-160` says `normalizeBaseUrl` quotes a malformed baseUrl
+        "verbatim" and a JSON-parse error "can quote a snippet of the config FILE"; both are false
+        (`config.mjs:232` never interpolates the URL, `config.mjs:109-119` throws a static parse message).
+        `plugins/oai/scripts/lib/job-store.mjs:377-380`: a caller's statement "has no retry loop around it",
+        though seven `withBusyRetry` call sites wrap callers' statements.
+        `tests/job-busy-heartbeat.test.js:50-52` ("Before the fix …") and `:100` ("until this test
+        existed"); `tests/retention.test.js:189-193` ("now has a witness") and `:208` ("predates this
+        one"): history narration.
+  14. **No test discriminates `resolveCredential`'s no-forward catch** (filed 2026-11-28 from #33 entry 8's
+      review). `job-auth.mjs:156-170` is the only layer keeping some raw config values out of a job's
+      failure message: `resolveApiKey` quotes `apiKeyEnv` (`config.mjs:299`), so a key pasted into that
+      field reaches the catch. Every leak test in `tests/job-auth.test.js` drives `normalizeBaseUrl` or
+      `loadConfig`, whose messages are already static. Reproduced 2026-11-28 in a scratch copy: the catch
+      changed to forward `e.message` left all six leak tests green, and `resolveProfile` with
+      `apiKeyEnv: "sk-live-PASTED"` threw a message quoting that value.
 
 
 - **#48. Residue from #47 onward: collectTarget path and claim gaps, test isolation, structural guards** (filed 2026-11-08)
@@ -84,7 +90,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff and 87e1258.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258 and 04dd5d1.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
