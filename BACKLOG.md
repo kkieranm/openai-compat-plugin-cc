@@ -8,15 +8,10 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258), entry 8 (04dd5d1), entry 9 (c40ae10) and entry 10 (915babf). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258), entry 8 (04dd5d1), entry 9 (c40ae10), entry 10 (915babf) and entry 11 (85dc920). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  11. **`/oai:abandon`'s pending-cancel reply joins two sentences** (filed 2026-11-27 from #33 entry 4's
-      review): `cmd-abandon.mjs:149-153` appends the shared tail " and it may still have a model request
-      in flight" to an arm that already ends in a full stop. Reproduced 2026-11-27 against a stale running
-      row with a pending cancel: "…at its next check-in and exit. and it may still have a model request in
-      flight." No test pins that arm's text (`tests/abandon-cli.test.js:38` matches the tail alone).
   12. **`/oai:cancel` writes a newer plugin's row** (filed 2026-11-28 from #33 entry 6's review):
       `runCancel` (`cmd-cancel.mjs:55-67`) refuses only a too-new database, and `requestCancel`'s UPDATE
       (`job-record.mjs:205-213`) carries no `schema_version` predicate, so a non-terminal row a newer
@@ -99,7 +94,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258, 04dd5d1, c40ae10 and 915babf.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258, 04dd5d1, c40ae10, 915babf and 85dc920.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
