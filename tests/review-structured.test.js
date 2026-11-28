@@ -1,10 +1,9 @@
 // `/oai:review --structured-output`: the escape hatch, and only the escape hatch.
 //
-// Split from review.test.js at the size budget, and the seam matches the
-// architecture rather than the line count. That file is now the ordinary path — a
-// review sends no `response_format` at all — and this one is the opt-in grammar:
-// the schema on the wire, the reply channel it forces, the conformance check it
-// makes possible, the caps it enforces, and the fallback when a server refuses it.
+// `review.test.js` covers the ordinary path — a review sends no
+// `response_format` at all — and this one is the opt-in grammar: the schema on
+// the wire, the reply channel it forces, the conformance check it makes
+// possible, the findings cap it enforces, and the fallback when a server refuses it.
 //
 // **A test living here is a test about a code path that is off by default because
 // it crashes the backend.** The grammar LM Studio's LLGuidance builds from a

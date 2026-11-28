@@ -1,11 +1,11 @@
 // The delegate's own shell, extracted and RUN — never a paraphrase of it.
 //
-// Split from `tests/task-template.test.js` at the size ratchet, and the seam is
-// real: that file tests what a template *is*, and this one tests the one place
-// that decides a template is *used*. `plugins/oai/agents/oai-delegate.md` is the agent built
-// to be the advisor's caller, so a broker that silently stopped passing the flag
-// would leave the template reachable only by typing it out by hand — the feature
-// would be present and unreachable.
+// `tests/task-template.test.js` tests what a template *is*, and this one tests
+// the one place that decides a template is *used*.
+// `plugins/oai/agents/oai-delegate.md` is the agent built to be the advisor's
+// caller, so a broker that silently stopped passing the flag would leave the
+// template reachable only by typing it out by hand — the feature would be
+// present and unreachable.
 //
 // **This suite runs the block under EVERY shell on the machine, and that is the
 // whole point of it.** A recipe relying on field splitting —

@@ -1,10 +1,9 @@
 // Witnesses for `job-launch-outcome.mjs` — what a submitter may write about a
 // launch it could not confirm.
 //
-// Split from `job-spawn-failure.test.js` when that file crossed its size budget,
-// and the seam is the subject rather than the line count: that file is about the
-// QUEUE not being held, this one is about the row-level decision underneath it —
-// which verb, which claims, and what happens when the write or the report fails.
+// `job-spawn-failure.test.js` is about the QUEUE not being held; this file is
+// about the row-level decision underneath it — which verb, which claims, and
+// what happens when the write or the report fails.
 //
 // The constraint every test here turns on: a rejected spawn does NOT establish
 // that no child exists, because `spawnWorker` closes its copy of the log

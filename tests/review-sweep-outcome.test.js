@@ -1,13 +1,12 @@
-// What one finished review MEANS — the classifier, on its own.
+// What one finished review MEANS, and what the sweep does about it.
 //
-// Split from `review-sweep.test.js` when that file reached its size budget, and
-// the seam is the module seam: `sweep-outcome.mjs` decides what a reply means,
-// the harness decides what to do next.
+// The seam is the module's own: `sweep-outcome.mjs` decides what a reply means,
+// and the harness decides what to do next.
 //
-// The premise under test: a review that starved for tokens and a review that
-// genuinely found nothing are both an empty findings list, and the CLI already
-// says which in FIELDS rather than prose. Reading `findings` and none of the
-// caveat fields reports a truncated analysis as `clean`.
+// The premise under test: a review whose analysis was cut short and a review
+// that genuinely found nothing can both be an empty findings list, and the CLI
+// already says which in FIELDS rather than prose. Reading `findings` and none of
+// the caveat fields reports a truncated analysis as `clean`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';

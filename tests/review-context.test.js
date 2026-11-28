@@ -1,7 +1,7 @@
-// What context the model is actually given, and what it is told about it.
-// Split from review.test.js at the size budget. These are the paths where the
-// whole changed files and the diff compete for one window — and, more
-// importantly, where the request must never claim to be something it is not.
+// What context the model is actually given, and what it is told about it. These
+// are the paths where the whole changed files and the diff compete for one
+// window — and, more importantly, where the request must never claim to be
+// something it is not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, chmodSync, existsSync, linkSync, mkdirSync, writeFileSync } from 'node:fs';

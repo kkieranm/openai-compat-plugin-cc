@@ -1,8 +1,7 @@
 // What `/oai:abandon` SAYS — the operator-facing half.
 //
-// Split from `abandon-cli.test.js` when that file outgrew the 300-line budget,
-// and the seam is a real one rather than a cut: that file owns which invocations
-// work and what the exit code is, this one owns what the operator is told.
+// `abandon-cli.test.js` owns which invocations work and what the exit code is;
+// this file and `abandon-recovery.test.js` own what the operator is told.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NEEDS_SQLITE, insertSynthetic, queueScenario, readJob } from './job-helpers.mjs';

@@ -1,8 +1,8 @@
-// Which of several bracketed runs in a model's prose is read as the answer, when
-// quoted source and sample shapes compete with the real payload. Split out of
-// `findings-shape.test.js` at the size ceiling — that file covers which CHANNEL
-// carries a reply and what shape counts as findings; this one covers which
-// CANDIDATE within one channel's text wins.
+// Which of several bracketed runs in a model's prose is read as the answer,
+// when quoted source and sample shapes compete with the real payload.
+// `findings-shape.test.js` covers which CHANNEL carries a reply and what shape
+// counts as findings; this one covers which CANDIDATE within one channel's text
+// wins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFindings } from '../plugins/oai/scripts/lib/structured.mjs';

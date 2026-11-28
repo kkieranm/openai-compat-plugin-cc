@@ -1,14 +1,13 @@
 // The sweep CLI's ARGUMENT SURFACE, driven through the real parser and the real
 // spec.
 //
-// Split out of `review-sweep.test.js` when that file reached the repo's size
-// ratchet. It is a coherent subject on its own: everything here answers "does
-// what I typed reach the run".
+// Everything here answers "does what I typed reach the run";
+// `review-sweep.test.js` covers the harness.
 //
-// **These invoke `parseArgs` with the exported `SPEC`.** The versions they
-// replace built the parsed object by hand and called `optionsFrom`, so removing
-// a flag from SPEC would have broken the real command while the tests went on
-// passing — a check named for the parser that never ran it.
+// **These invoke `parseArgs` with the exported `SPEC`.** A test that built the
+// parsed object by hand and called `optionsFrom` would stay green with a flag
+// deleted from SPEC while the real command broke — a check named for the parser
+// that never ran it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';

@@ -5,8 +5,7 @@ import { deltaFrame, reviewScenario, runCompanion, scriptOf } from './helpers.mj
 // The sites that MINT `serverResponded` on an error, driven
 // through the real CLI and a real fake server.
 //
-// Split from `attempt-server-responded.test.js`, and the seam is the whole point
-// rather than a size split. That file asks whether the LEDGER carries the flag —
+// `attempt-server-responded.test.js` asks whether the LEDGER carries the flag —
 // `fail()` is handed an error and the entry is read back. This one asks whether
 // anything SETS it, which is a different question: a test that drives `fail()`
 // with `Object.assign(new Error(r), {reason: r, serverResponded: true})`

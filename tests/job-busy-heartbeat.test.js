@@ -1,9 +1,8 @@
 // The heartbeat's half of "a contended database must not kill live work".
 //
-// Split from `job-busy.test.js` on the shape of the witness rather than to fit a
-// budget: every test here runs in a CHILD PROCESS, because the defect under test
-// is process death and `node:test` cannot let an in-process uncaught exception
-// report as a pass.
+// Every test here runs in a CHILD PROCESS, unlike `job-busy.test.js`, because
+// the defect under test is process death and `node:test` cannot let an
+// in-process uncaught exception report as a pass.
 //
 // No `NEEDS_SQLITE` skip, and that is a property rather than an omission: every
 // witness here drives `startHeartbeat` against a hand-written `db` object, so

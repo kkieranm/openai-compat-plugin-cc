@@ -1,6 +1,6 @@
 // How /oai:review spends the context window, and what it says when it cannot.
-// Split from review.test.js at the size budget; these are the paths where the
-// reply budget and the input compete for one window.
+// These are the paths where the reply budget and the input compete for one
+// window.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';

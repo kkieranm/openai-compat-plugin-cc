@@ -1,18 +1,17 @@
 // The per-commit wall-clock cap's DEFAULT, which nothing could see change.
 //
-// Its own file because `review-sweep.test.js` sat at the size ratchet, and
-// because this guards a different thing from the classification tests there: not
-// what a reply means, but whether a constant this harness's coverage depends on
-// actually reaches the process that enforces it.
+// This guards a different thing from the classification tests in
+// `review-sweep.test.js`: not what a reply means, but whether a constant this
+// harness's coverage depends on actually reaches the process that enforces it.
 //
-// Raised 900 -> 1800 after the first sweep run
-// to completion lost HALF its eligible corpus to the old value — 20 of 40
-// commits, every one `deadline-timeout`. Raised again 1800 -> 3600
-// after a night at 1800 still lost 15 of 34 attempted to
-// `deadline-timeout`. Nothing would have noticed either change going
-// back: every fixture in the sweep suite passes its own `maxSeconds`, so the
-// whole suite stayed green against any value. That is the same shape as the
-// `--abort-after` gap, which is why that test says what it says.
+// The default is 3600 seconds because both shorter caps lost commits to the
+// per-commit cap itself: a sweep run to completion at 900 lost HALF its eligible
+// corpus — 20 of 40 commits, every one `deadline-timeout` — and a night at 1800
+// still lost 15 of 34 attempted to `deadline-timeout`. Nothing else would
+// notice a lower default: every fixture in the sweep suite passes its own
+// `maxSeconds`, so the whole suite stays green against any value. That is the
+// same shape as the `--abort-after` gap in `sweep-args.test.js`, which is why
+// that test says what it says.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { optionsFrom, runSweep } from '../bench/review-sweep.mjs';

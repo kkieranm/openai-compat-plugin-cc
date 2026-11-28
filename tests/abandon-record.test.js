@@ -1,10 +1,10 @@
 // What the failure record SAYS about a row an operator wrote off.
 //
-// Split from `abandon-transaction.test.js` when that file reached its size
-// budget, on the seam the module already has: `abandonRow` decides and writes,
-// and `abandonFailure` decides what the stored payload claims. The second
-// is not a detail of the first — a record that asserts something nobody had
-// established is its own failure.
+// The seam is the module's own: `abandonRow` decides and writes, which
+// `abandon-transaction.test.js` covers, and `abandonFailure` decides what the
+// stored payload claims, which this file checks by reading back what
+// `abandonRow` stores. The second is not a detail of the first — a record that
+// asserts something nobody had established is its own failure.
 //
 // Every assertion here is about a permanent artifact, and a sentence that is
 // merely plausible is one somebody will one day debug against. `finish` clears

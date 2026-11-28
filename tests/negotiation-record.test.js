@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chatRequests, completionFrames, modelList, respondJson, respondStream, reviewScenario, runCompanion, scriptOf } from './helpers.mjs';
 
-// The attempt ledger reclassifies a refused request as benign
-// capability negotiation only as a consequence of the replacement request
-// actually being dispatched. Split from `retry.test.js` at the file size
-// budget, and the seam is real: those tests are about a DROPPED request being
-// sent again, these about a REFUSED shape being replaced — different events,
-// different outcomes in the record.
+// The attempt ledger reclassifies a refused request as benign capability
+// negotiation only as a consequence of the replacement request actually being
+// dispatched. `retry.test.js` is about a DROPPED request being sent again,
+// this file about a REFUSED shape being replaced — different events, different
+// outcomes in the record.
 
 /** A schema-shaped review reply, so the `--json` record can be asserted. */
 const FINDINGS = JSON.stringify({

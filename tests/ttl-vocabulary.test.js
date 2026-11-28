@@ -5,8 +5,8 @@ import {
 } from '../bench/lib/ttl-verdict.mjs';
 
 /**
- * The instrument's VOCABULARY contract, split from the decision rule at
- * the size ratchet.
+ * The instrument's VOCABULARY contract; the decision rule is tested in
+ * `ttl-verdict.test.js`.
  *
  * Two separate sets of names (per-episode verdicts, per-sweep outcomes) and one
  * subset of the second (the outcomes that mean the run produced a result).

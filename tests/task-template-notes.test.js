@@ -1,10 +1,8 @@
 // The template builders themselves: what `templateNotes` says, what
 // `resolveTemplate` refuses, and what `persistRequest` writes.
 //
-// Split from `tests/task-template.test.js` at the size ratchet. The seam is the
-// one that file already had: it drives the CLI and a real worker, and these are
-// pure functions with no server, no process and no database — so they belong
-// apart rather than being the tail of an integration suite.
+// `tests/task-template.test.js` drives the CLI and a real worker; these are
+// pure functions with no server, no process and no database.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { persistRequest } from '../plugins/oai/scripts/lib/job-request.mjs';

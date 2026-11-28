@@ -1,7 +1,7 @@
-// SSE framing. Split from http.test.js the same way sse.mjs is split from
-// http.mjs, and for the same reason: framing defects are invisible to a fake
-// server that writes one whole frame per call, so these drive the byte
-// boundaries a real TCP connection produces.
+// SSE framing, tested apart from `http.test.js` as `sse.mjs` stands apart from
+// `http.mjs`: framing defects are invisible to a fake server that writes one
+// whole frame per call, so these drive the byte boundaries a real TCP
+// connection produces.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startFakeServer } from './helpers.mjs';

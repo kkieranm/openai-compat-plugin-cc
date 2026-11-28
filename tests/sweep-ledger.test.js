@@ -1,7 +1,6 @@
 // The ledger module itself: what one line means, and what happens when a write
-// fails. The crash test that proves the whole mechanism lives beside it in
-// `sweep-recovery.test.js` — split only because this file reached the repo's
-// size ratchet, the same reason `sweep-cap-default.test.js` exists.
+// fails. The crash test that proves the whole mechanism is in
+// `sweep-recovery.test.js`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';

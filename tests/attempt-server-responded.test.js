@@ -12,12 +12,14 @@ import { closedPort } from './helpers.mjs';
 // these pin what the flag means on each closing path rather than merely that the
 // key exists.
 //
-// Scope: this file asks whether the LEDGER carries the flag
-// correctly — every test below hands `fail()`/`refuse()` an error and reads the
-// entry back. Whether anything SETS it is a different question, and lives in
-// `attempt-response-sites.test.js`, which drives the real minting sites through a
-// fake server. That split exists because a test here once claimed to guard those
-// sites while manufacturing their evidence itself.
+// Scope: this file asks whether the LEDGER carries the flag correctly — every
+// test below closes an entry through the ledger's own methods and reads it back,
+// and all but the first — a real `ECONNREFUSED` dial — build that evidence
+// themselves.
+// Whether anything SETS it is a different question, and lives in
+// `attempt-response-sites.test.js`, which drives the real minting sites through
+// a fake server. A test here must not claim to guard those sites: it
+// manufactures their evidence itself.
 
 /** The rejection, or a failure saying nothing was thrown. */
 async function caught(promise) {

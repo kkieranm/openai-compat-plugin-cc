@@ -6,11 +6,12 @@ import { createNegotiation, postWithDegrade } from '../plugins/oai/scripts/lib/c
 import { emptyAnswer, finishAnswer } from '../plugins/oai/scripts/lib/completion.mjs';
 import { COMPLETION_SHAPES, STREAM_ERROR_FRAME, isRetryable } from '../plugins/oai/scripts/lib/failure-shape.mjs';
 
-// The rules in isolation. `retry.test.js` drives these through the real
-// CLI; these pin the two decisions that a request-count assertion cannot see —
-// which replies count as a dropped request, and when a later attempt may be
-// called warm-eligible. Split from that file at the size budget, and the seam is
-// real: those are end-to-end, these are the predicates underneath.
+// The rules in isolation. `retry.test.js` drives the retry rules through the
+// real CLI, and `negotiation-record.test.js` and `review-budget.test.js` the
+// refusal ones; this file pins the predicates underneath that a request-count
+// assertion cannot see — among them which replies count as a dropped request,
+// when a later attempt may be called warm-eligible, and whether a refusal
+// closes as refused or failed.
 
 test('a capability degrade does not make the answering attempt warm-eligible', () => {
   // The messages are byte-identical across a degrade rung — only `stream` and

@@ -1,18 +1,13 @@
 // Shared fixtures for the benchmark-report suites.
 //
-// Split out when `bench-report.test.js` crossed the size ratchet, and the seam
-// it forced is a real one: one suite asks whether every run is accounted for in
-// a bucket, the other asks whether the timing and prompt-size columns describe
-// what their headers say. Both need the same minimal case and the same
-// column-by-name reader, and a second hand-maintained copy of either would drift
-// exactly as silently as the numbers these tests exist to guard.
+// Several of them need the same minimal case, and two the same column-by-name
+// reader; a second hand-maintained copy of either would drift exactly as
+// silently as the numbers these tests exist to guard.
 //
-// `bench-reliability.test.js` split the same way, at the same kind of
-// seam: attempt ACCOUNTING (one logical run, N physical attempts) against the
-// reason-code PROSE in `bench-reason-notes.test.js`. Only `failedAttempt`
-// crosses that seam, so only it moved here — `answered` and `retriedRun` are
-// used by the accounting suite alone and stay there rather than widening this
-// module's surface for one caller.
+// `failedAttempt` lives here because both `bench-reliability.test.js` (attempt
+// ACCOUNTING: one logical run, N physical attempts) and
+// `bench-reason-notes.test.js` (the reason-code PROSE) use it. A helper only
+// one suite uses stays in that suite, keeping this module's surface narrow.
 import assert from 'node:assert/strict';
 
 const CASE = {

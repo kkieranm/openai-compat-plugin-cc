@@ -1,12 +1,12 @@
 // A model that WAS named, and whether the provider is allowed to contradict it.
 //
-// Split from `model-selection.test.js` at the size ratchet, and the seam is the
-// one the source already draws: that file asks which model an unnamed selection
-// lands on (`autoSelect`), this one asks when a named model is refused before
-// the run is spent (`unservedProblem`) — and, just as importantly, when it must
-// not be. The refusal gates on the dialect having published a catalogue, not on
-// a dialect merely being recognised, so a recognised
-// dialect that publishes no per-model list still takes the name on trust.
+// `model-selection.test.js` asks which model a task uses, named or not, and
+// whether setup agrees; this one asks when a named model is refused before the
+// run is spent (`unservedProblem`) — and, just as importantly, when it must not
+// be.
+// The refusal gates on the dialect having published a catalogue, not on a
+// dialect merely being recognised, so a recognised dialect that publishes no
+// per-model list still takes the name on trust.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chatRequests, completion, modelList, respondJson, runCompanion, startFakeServer, writeConfig } from './helpers.mjs';

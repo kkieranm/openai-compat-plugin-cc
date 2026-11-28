@@ -346,14 +346,12 @@ export function chatRequests(server) {
 /**
  * A fake-server handler that plays `scripts` in order, one per **chat** request.
  *
- * Only `/chat/completions` advances the script. `model-info.mjs` probes `/props`,
- * `/info` and `/v1/models/status` by response shape before any chat happens, and
- * feeding those to the script means the first real request already receives the
- * third entry — every assertion then measuring the probe sequence instead.
+ * Only `/chat/completions` advances the script. `model-info.mjs` probes
+ * `/api/v0/models`, `/props`, `/info` and `/v1/models/status` before any chat
+ * happens, and feeding those to the script would shift every entry — every
+ * assertion then measuring the probe sequence instead.
  *
- * Lives here rather than in one suite because two now need it: the retry tests
- * and the negotiation-record tests, which were split apart at the file size
- * budget and would otherwise each carry their own copy of this rule.
+ * Shared because several suites need it.
  */
 export function scriptOf(scripts) {
   let call = 0;

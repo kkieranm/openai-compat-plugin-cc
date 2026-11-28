@@ -1,10 +1,8 @@
 // `abandonRow` — the transaction, and what it leaves behind.
 //
-// Split from `abandon.test.js` when that file reached its size budget, on the
-// seam the module itself has: `abandonDecision` is a pure question about a row
-// and needs no database, while everything here opens a store and asserts what
-// the write transaction did. Keeping them together meant a reader had to hold
-// both to change either.
+// `abandon.test.js` covers `abandonDecision`, a pure question about a row that
+// needs no database; everything here opens a store and asserts what the write
+// transaction did.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { abandonRow } from '../plugins/oai/scripts/lib/job-abandon.mjs';

@@ -1,11 +1,11 @@
 // `/oai:abandon` as an operator actually invokes it.
 //
-// Split from `abandon.test.js`, which owns the decision; `abandon-transaction.test.js`
-// owns the transaction.
-// This file owns everything between the argv and the terminal: which invocation
-// forms work, what is printed, and what the exit code is. That split is not
-// tidiness — a flag that cannot be passed through the invocation the command's
-// own markdown documents is invisible to a unit test of the decision.
+// `abandon.test.js` owns the decision and `abandon-transaction.test.js` the
+// transaction. This file owns everything between the argv and the terminal:
+// which invocation forms work, what is printed, and what the exit code is. That
+// boundary is not tidiness — a flag that cannot be passed through the
+// invocation the command's own markdown documents is invisible to a unit test
+// of the decision.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';

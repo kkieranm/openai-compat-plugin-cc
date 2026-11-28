@@ -1,6 +1,5 @@
 // The other half of retention: which FILES the sweep collects once the rows are
-// gone. `retention.test.js` holds which rows the `DELETE` takes; the two split
-// when they together outgrew the size ratchet.
+// gone. `retention.test.js` holds which rows the `DELETE` takes.
 //
 // The unlink tolerates every failure, so most of what is asserted here is what
 // the sweep LEAVES ALONE: a running job's log, a name of a shape this plugin does

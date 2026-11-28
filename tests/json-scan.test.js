@@ -1,10 +1,8 @@
 // Getting JSON back out of text that was not promised to be JSON.
 //
-// Split out of `tests/structured.test.js` alongside the module itself, and for
-// the same reason: what a reply MEANS is `structured.mjs`'s question, while
-// finding the JSON inside it is this one's. These three cases predate the split
-// and are unchanged by it — they are what proves the move was behaviour-
-// preserving rather than merely green.
+// What a reply MEANS is `structured.mjs`'s question, tested in
+// `tests/structured.test.js`; finding the JSON inside the text is
+// `json-scan.mjs`'s, tested here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractJson } from '../plugins/oai/scripts/lib/json-scan.mjs';
