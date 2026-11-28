@@ -32,19 +32,19 @@ function digestsOf(files) {
  * carrying a credential — `?api_key=…`, or a token sitting in the path, which
  * `normalizeBaseUrl` keeps in `baseUrl` regardless of how the endpoint was
  * named — puts a real secret into persisted state. A query string on an
- * endpoint resolved from `providers.json` no longer does: `buildJob` commits
- * it instead of storing it raw. **"Named profile" is not the
+ * endpoint resolved from `providers.json` does not: `buildJob` commits it
+ * instead of storing it raw. **"Named profile" is not the
  * discriminator** — `--provider vendor --base-url <that vendor's own
  * endpoint>?api_key=…` is a named profile whose query still lands on the raw
  * path, because it takes `resolveProfile`'s `baseUrl` branch and comes back
  * `adHoc`. The notice below is worded around where the endpoint came from,
  * not around whether a provider was named. Three things about this notice are
- * deliberate, and each replaces a wording an execution path falsified:
+ * deliberate:
  *
  * It takes **no argument**, because a function handed the URL is a function
- * that will eventually interpolate it: the version this replaces printed the
- * query string into its own warning about that query string, on stderr, which
- * reaches terminals, CI logs and the delegate agent's captured output.
+ * that will eventually interpolate it, and the notice goes to stderr, which
+ * reaches terminals, CI logs and the delegate agent's captured output — so an
+ * interpolated query string would leak there.
  *
  * It is **unconditional**, because gating needs the code to know which part of
  * a URL is a secret and it cannot: `?SUPERSECRET123` parses as a parameter
@@ -54,8 +54,10 @@ function digestsOf(files) {
  * It is **conditional in what it says** rather than in when it fires. "If this
  * submission creates a job record" survives a failure before `insertJob`, and
  * the worker-start clause is true precisely because `spawnWorker` runs after
- * it. It promises nothing about who can read the file: that guarantee belongs
- * to hardening this tree does not yet have.
+ * it. It promises nothing about who can read the file: the state directory and
+ * database are restricted to the owner (`repairDir` 0o700, the database
+ * `chmodSync` 0o600, the job log opened 0o600), but only best-effort, on a
+ * filesystem that carries modes, so it is not a guarantee the notice can make.
  *
  * The sentence is NOT exported, and `tests/credential-notice.test.js` writes it
  * out again rather than importing it. That duplication is deliberate: an
@@ -121,18 +123,10 @@ function buildJob(prep) {
  * rather than swallowed: a blanket catch would turn a broken sweep into an
  * unbounded table nobody ever hears about.
  *
- * **That first sentence was once FALSE, and the fix was position rather than
- * wording.** This ran AFTER the spawn, so a non-busy throw
- * rejected `submitTask` with a detached worker already created and expected to be
- * calling a paid model, and the id never printed — costing the user their handle
- * on the job they had just submitted, plus a retry that CAN duplicate the spend. Not "precisely
- * that job" and not "duplicates": only creation is established here, so what is
- * lost for certain is the id, and the double spend is a consequence that follows
- * when the worker did in fact survive to call. It now runs before anything
- * is created, where the sentence is simply true: there is no job yet to cost.
- * The rethrow is deliberately KEPT — dropping it would make retention
- * best-effort, and a `--json` caller cannot see the stderr warning that would
- * replace it, so the store could grow unbounded with no signal.
+ * It runs before any row or worker is created, so there is no job yet to cost.
+ * The rethrow is deliberate — dropping it would make retention best-effort, and
+ * a `--json` caller cannot see the stderr warning that would replace it, so
+ * the store could grow unbounded with no signal.
  */
 function sweepQuietly(db) {
   try {
@@ -146,30 +140,31 @@ function sweepQuietly(db) {
  * Launch the worker and record that it exists — the half of submission where a
  * live process may already have been created, and may already be spending.
  *
- * Extracted from `submitTask` when the exhaustion handling pushed it past this
- * repo's function-size budget; it is also the only part of submission whose
- * behaviour turns on how the spawn SETTLED — not on whether a process exists,
- * which the rejection branch cannot determine: "no child" and "live child after a
- * failed cleanup" arrive down the same path.
+ * It is the only part of submission whose behaviour turns on how the spawn
+ * SETTLED — not on whether a process exists, which the rejection branch cannot
+ * determine: "no child" and "live child after a failed cleanup" arrive down the
+ * same path.
  *
  * **Its two branches know different amounts.** Past the `await`, the `'spawn'`
  * event has fired and a child demonstrably existed — the stamp path below can
  * say so. The REJECTION branch cannot: `spawnWorker` closes its copy of the log
  * descriptor after that event, so a rejection may mean no child was ever
  * created, or a child that is alive. `terminalizeSpawnFailure` is written for
- * both, which is why it uses a compare-and-set instead of a terminal write.
+ * both, which is why it writes through `abandonUnstarted`, whose compare-and-set
+ * matches only a row still queued with no worker registered, and never through
+ * `finish`, which would also match a registered or running row.
  *
  * Stamped only once the child is known to exist, because it is what bounds how
  * long a job may sit with no worker registered before it is treated as one
  * that never started. Stamping it before the spawn would start that clock
  * against a process that does not exist yet.
  *
- * Retried, for the reason just given: by here the `'spawn'` event has
- * fired, so a DETACHED WORKER EXISTED and is expected to make a real model
- * call. (Expected, not guaranteed — it may already have died, which the
- * warning in the catch below is careful not to claim either way. What is established
- * is that one was created, and that is what makes the id worth keeping.) A busy that escapes this
- * write rejects `submitTask`, so `cmd-task.mjs` never prints the id — leaving
+ * Retried because by here the `'spawn'` event has fired, so a DETACHED WORKER
+ * EXISTED and is expected to make a real model call. (Expected, not guaranteed
+ * — it may already have died, which the warning in the catch below is careful
+ * not to claim either way. What is established is that one was created, and
+ * that is what makes the id worth keeping.) A busy that escapes this write
+ * rejects `submitTask`, so `cmd-task.mjs` never prints the id — leaving
  * the user liable for a job they cannot name, poll or cancel. `insertJob`,
  * which runs before this, is deliberately NOT wrapped: a busy there
  * means no row and no worker, which is a clean failure with nothing running.
@@ -185,12 +180,12 @@ function sweepQuietly(db) {
  *
  * What that report may SAY is narrower than what this function knows. A spawn
  * happened — that is observed, and it is why the id is worth printing. Whether
- * the worker is still alive thirty seconds later is not: the retry only
- * exhausts after a budget long enough for the child to have registered, run,
- * failed, or died, and this process watched none of it. So the warning states
+ * the worker is still alive by the time the warning prints is not: a busy
+ * failure arrives only after a retry budget long enough for the child to have
+ * registered, run, failed, or died, a non-busy one may arrive at once, and this
+ * process watched none of it. So the warning states
  * the spawn, states that the submitter cannot see what followed, and points at
- * `/oai:status`, which reads the row rather than guessing. Claiming "the job is
- * running" here turned a submission that may have failed into apparent success.
+ * `/oai:status`, which reads the row rather than guessing.
  *
  * Reported on stderr and NOWHERE ELSE, which is a known gap rather than an
  * oversight: a machine caller reads `--json`, whose background envelope is the
@@ -260,24 +255,19 @@ export async function submitTask(args, { spawn = spawnWorker } = {}) {
 
   const db = openStore();
 
-  // BEFORE the row and the worker exist, not after. Submission is still the only
-  // place a row is ever created, so it is still the only place the table grows
-  // and the only place worth sweeping — putting it in the readers would make
-  // `/oai:status` delete history while someone was looking at it, for no gain.
-  // That reasoning is unchanged by the move; what changed is that a sweep defect
-  // can no longer sink a submission whose worker may already be spending. The
-  // row about to be inserted is not finished, so nothing about WHAT gets swept
-  // changes either.
+  // BEFORE the row and the worker exist. Submission is the only place a row is
+  // ever created, so it is the only place the table grows and the only place
+  // worth sweeping — putting it in the readers would make `/oai:status` delete
+  // history while someone was looking at it, for no gain. Running first means
+  // a sweep defect fails the submission before any worker exists to be
+  // spending, and the row about to be inserted does not exist yet, so the sweep
+  // never targets it.
   //
-  // WHEN it gets swept does change, and in one way worth stating rather than
-  // leaving a reader to infer from the line above. A submission that FAILS —
-  // because the insert throws, or the spawn is unconfirmed — has now already run
-  // the sweep, where before the failure path skipped it entirely. So an
-  // unsuccessful submission carries a destructive side effect it did not carry
-  // before. That is accepted rather than overlooked: the rows it deletes are
-  // exactly the retention-eligible ones it would have deleted on the success
-  // path, so nothing is destroyed that a successful run would have kept, and
-  // sweeping is not owed to the submission that triggered it.
+  // A submission that FAILS — because the insert throws, or the spawn is
+  // unconfirmed — has already run the sweep. The rows it deletes are exactly the
+  // retention-eligible ones a successful run would also have deleted, so
+  // nothing is destroyed that a successful run would have kept, and sweeping
+  // is not owed to the submission that triggered it.
   sweepQuietly(db);
 
   const job = buildJob(prep);

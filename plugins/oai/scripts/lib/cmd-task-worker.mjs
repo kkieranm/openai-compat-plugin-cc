@@ -5,9 +5,9 @@
 // left out of the "Unknown command" list, because it is an implementation detail
 // of `--background` and not something anyone should type.
 //
-// Its stdout and stderr are the job's log file, so the ordinary progress
-// heartbeat and the "Checking … for available models" line land there with no
-// plumbing at all. That is why `progress.mjs` needs no change to support this.
+// Its stdout and stderr are the job's log file, so whatever the worker itself
+// writes — retry notices, a cancellation exit, an unrecordable failure, a
+// salvaged answer, an uncaught error — lands there with no plumbing at all.
 import { parseCommandLine } from './args.mjs';
 import { createLedger } from './attempt-ledger.mjs';
 import { chatCompletion, requireAnswer } from './client.mjs';
@@ -34,7 +34,9 @@ const now = () => new Date().toISOString();
  *
  * The endpoint comes from the row: re-deriving it from a provider name would let
  * a profile edited after submission redirect a job that was already validated
- * against somewhere else. Only the secret is looked up fresh, and only when the
+ * against somewhere else. The API key is looked up fresh — and on the
+ * commitment path so is the query, verified against the frozen commitment —
+ * and only when the
  * frozen endpoint still matches what the profile resolves to now.
  *
  * **On the commitment path the query itself comes from the resolver, not from
@@ -49,8 +51,9 @@ const now = () => new Date().toISOString();
  * keeps it raw), so `queryHash` present but a falsy resolved query always
  * means a real failure — including the hand-edited row that carries
  * `queryHash` under `auth.mode === 'none'`, where `resolveCredential` returns
- * early and this is the only check left standing between that row and a
- * silently unauthenticated request.
+ * early and this is the only check left: without it `resolved.query` would
+ * throw a `TypeError` instead of this refusal, and an optional-chained read
+ * there would send the request unauthenticated.
  */
 function transportProfile(job) {
   const resolved = resolveCredential(job.auth, job.transport, job.schema_version);
@@ -105,8 +108,7 @@ async function runJob(job) {
 
   const result = await chatCompletion(profile, request);
   // Refused here rather than persisted: an empty answer stored as a success is a
-  // run that looks like it worked and said nothing, which is the shape this repo
-  // keeps having to unpick.
+  // run that looks like it worked and said nothing.
   requireAnswer(result, profile);
   return outcomeOf(result, Date.now() - startedAt, job.request?.template);
 }
@@ -130,19 +132,19 @@ async function runJob(job) {
  * That claim is **guarded rather than asserted**: the report itself is a write to
  * a real file descriptor — this worker's stderr is its job log — and a write can
  * fail. Unguarded, an `EIO` there would reproduce the whole defect through the
- * reporting of it. Nothing observable is lost by swallowing that one: the
- * rethrown diagnosis travels to `oai-companion.mjs`, which writes it to the same
- * descriptor, so on the only path where this fires there is no channel left for
- * either error to arrive on.
+ * reporting of it. Swallowing that one loses only the storage-fault line: the
+ * rethrown diagnosis still travels to `oai-companion.mjs`, which writes it to
+ * the same descriptor.
  *
  * It does NOT test `isBusy`: catching only the busy and rethrowing everything
  * else would leave a disk error, a corrupt file or a schema fault reproducing
  * the identical loss. Which storage fault it was does not change
  * what a reader needs — the reason the JOB failed — so both errors are kept:
  * this one by message on stderr, which is the job log, and the diagnosis by the
- * caller propagating it. `error.cause` is deliberately not used;
- * `oai-companion.mjs` prints `error.stack`, which does not render a cause, so it
- * would be preserved somewhere nobody reads.
+ * caller propagating it. `error.cause` is deliberately not used:
+ * `oai-companion.mjs` prints a `UserError`'s message and hint, and `error.stack`
+ * for anything else, and neither renders a cause, so it would be preserved
+ * somewhere nobody reads.
  */
 function publishFailure(db, seq, error) {
   try {
@@ -156,8 +158,7 @@ function publishFailure(db, seq, error) {
     try {
       process.stderr.write(`This failure could not be recorded (${code}: ${storageError?.message}). The diagnosis follows.\n`);
     } catch {
-      // Deliberately empty, and it is the narrowest empty catch in this repo:
-      // stderr IS the job log, so a write that fails here has no fallback to
+      // Deliberately empty: stderr IS the job log, so a write that fails here has no fallback to
       // escalate to. Rethrowing would replace the diagnosis with a report about
       // the failure to report — the exact defect this function exists to prevent.
     }
@@ -167,15 +168,18 @@ function publishFailure(db, seq, error) {
 /**
  * The last place an answer can go when its row will not take it.
  *
- * **Its durability is bounded by the row's, and the row now outlives the sweep.**
- * `job-retention.mjs` exempts an `operator-abandoned` row that reached `running`
- * from pruning entirely, precisely so this line cannot be unlinked underneath a
- * worker still writing it — the loss this exists to close. So the answer lasts
- * as long as the row, and the row is kept indefinitely.
+ * **Its durability is bounded by the row's, and how long the row lasts depends
+ * on how it ended.** When the `completed` write matched no row because an
+ * operator abandoned it, the row is `operator-abandoned` after reaching
+ * `running`, which `job-retention.mjs` exempts from pruning entirely — so this
+ * line cannot be unlinked underneath a worker still writing it, and it lasts as
+ * long as that row, which is kept indefinitely. When the write THREW, the row is
+ * later reconciled as a dead worker, an ordinary terminal row: once it falls
+ * outside the retained window it is pruned, and the sweep unlinks this log with
+ * it.
  *
- * What that does NOT buy: this is still not a store. Nothing indexes the line,
- * nothing expires it, and the only reader is a person following the log path
- * `/oai:result` prints.
+ * What that does NOT buy: this is not a store. Nothing indexes the line,
+ * and the only reader is a person following the log path `/oai:result` prints.
  *
  * **Not durable persistence, and deliberately not.** It opens nothing, defines
  * no schema and adds no reader: it writes to the descriptor this worker was
@@ -183,12 +187,14 @@ function publishFailure(db, seq, error) {
  * stdout and stderr — which is a channel the process already owns. A real
  * fallback store would need a lifecycle, retention and something that reads it.
  *
- * The prefix is the whole point. This log also carries the progress heartbeat
- * and the model's own chatter, so an unmarked JSON dump would be recoverable in
+ * The prefix is the whole point. This log also carries retry notices and any
+ * error the worker prints, so an unmarked JSON dump would be recoverable in
  * principle and not in practice — the loss would have moved rather than gone.
- * `SALVAGED_OUTCOME` is fixed, greppable, and named in the `worker-died`
- * discussion above, so a reader told the worker died has one string to
- * search for.
+ * `SALVAGED_OUTCOME` is fixed and greppable, and the `worker-died` discussion in
+ * `runAndPublish` below points a reader of the source at `salvageOutcome`, so
+ * once found there the salvaged answer is one fixed string to search the job
+ * log for. Neither the `worker-died` hint nor `/oai:abandon`'s names the prefix;
+ * both point only at the log.
  *
  * Serialisation can itself throw — `outcome` holds only what `outcomeOf` built,
  * but a future field could be circular — and a throw here would replace the
@@ -211,11 +217,7 @@ function salvageOutcome(seq, outcome) {
 }
 
 /**
- * Beat, run, and publish exactly one terminal verdict — the whole guarded stretch.
- *
- * The terminal-write discipline below is one cohesive stage and reads better
- * named than inlined in `runTaskWorker` among argument parsing and queue
- * acquisition.
+ * Beat, run, and publish at most one terminal verdict — the whole guarded stretch.
  */
 async function runAndPublish(db, seq, job) {
   // Only now: a queued worker is already visible through the wait loop's beat,
@@ -236,28 +238,26 @@ async function runAndPublish(db, seq, job) {
     // lock held past the busy timeout does not cost a retry — it discards work
     // paid for in full. Retried for that; kept out of the `failed` catch so that
     // exhausting the retry cannot publish an answer that exists as a task
-    // failure. If this throws, no ROW is written: the row stays `running` with a
-    // live pid, and reconciliation later reports the worker's death.
+    // failure. If this throws, no ROW is written: the row stays `running` with
+    // this worker's pid recorded; the rethrow ends the process, and once that pid
+    // is observed dead reconciliation terminalizes it as a dead worker —
+    // `worker-died`, or a cancellation outcome if one was pending.
     //
-    // **That report is still a misdiagnosis — the worker answered and then
-    // SQLite refused the write — but it is no longer a LOSS.** The answer used
-    // to exist only in a process about to exit; `salvageOutcome` now writes it
-    // to the job log first, so `worker-died` names a row that is wrong about the
-    // cause while the answer itself remains readable. Publishing it as `failed`
-    // instead was worse (a paid-for answer reported as a model failure, on a
-    // path where contention had by then cleared), which is why this line is
-    // where it is. The residual — the row's own state remaining wrong — is
-    // not fixed by this.
+    // **That report is a misdiagnosis — the worker answered and then SQLite
+    // refused the write — but it is not an immediate LOSS.** `salvageOutcome`
+    // writes the answer to the job log before the error is rethrown, so the
+    // reconciled row is wrong about the cause while the answer itself remains
+    // readable until retention prunes that row (see `salvageOutcome`). The
+    // row's own state stays wrong.
+    //
     // TWO ways this write fails to land, and they differ in whether anything
     // went wrong. A THROW is storage refusing us, and is rethrown. A `false` is
     // the CAS matching no rows because the row is no longer `queued`/`running` —
     // nothing failed, someone else's terminal write simply got there first, and
-    // since `/oai:abandon` that someone may be an operator rather than a race.
+    // that someone may be an operator running `/oai:abandon` rather than a race.
     //
-    // The `false` case used to be discarded entirely: `finish`'s return went
-    // nowhere, no exception was raised, and a paid-for answer was written to
-    // neither the row nor the log. Salvaging it costs one line — see
-    // `salvageOutcome` for what that does and does not guarantee.
+    // Salvaging the `false` case costs one line — see `salvageOutcome` for what
+    // that does and does not guarantee.
     try {
       if (!withBusyRetry(() => finish(db, seq, { state: 'completed', outcome, at: now() }))) {
         salvageOutcome(seq, outcome);
@@ -267,11 +267,22 @@ async function runAndPublish(db, seq, job) {
       throw error;
     }
   } finally {
-    // Stopped only after BOTH terminal writes, so the interval is never cleared
-    // while one is still being retried. That is all this buys: the retry sleeps
-    // synchronously, so no beat actually fires during a contended write — see
-    // `job-busy.mjs`, where the sleep is defined and says so. The silence is
-    // bounded well under `STALE_BEAT_MS`, and `stalled` is not a verdict anyway.
+    // Stopped only after whichever terminal write this run makes, so the interval
+    // is never cleared while one is still being retried. That is all this buys:
+    // the retry sleeps synchronously, so no beat actually fires during a
+    // contended write — see `job-busy.mjs`, where the sleep is defined and says
+    // so. Counted from the start of the terminal write, the silence can run past
+    // `withBusyRetry`'s budget, a floor, by about one in-flight attempt waiting
+    // out the store's busy timeout plus one delay; counted from the last beat
+    // that landed, add up to one `BEAT_MS` — and since a beat's timestamp is
+    // taken before its own write waits on the busy timeout, measured against the
+    // recorded `last_beat_at` add up to one more busy timeout. Beat ticks are
+    // also skipped on busy before the write, so under sustained contention the
+    // silence can approach or exceed `STALE_BEAT_MS`. A stale beat changes no
+    // state on its own, but it lifts `/oai:abandon`'s need for `--force`
+    // (`job-abandon.mjs`); with `--force` an operator can abandon a live worker
+    // at any time. Either way, a `completed` write that loses to the abandon
+    // matches no row and the answer is salvaged.
     stopBeating();
   }
 }

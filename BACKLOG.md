@@ -12,7 +12,7 @@ The next ID is `max+1` over all three files (highest used: #48).
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  7. **Narration and stale claims in runtime files, outside fb554ce's comment sites:**
+  7. **Narration and stale claims in runtime files, outside fb554ce's comment sites (lines at base 0ae7b67):**
      - `plugins/oai/scripts/lib/cmd-task-worker.mjs`:
        - `:170`: "the row now outlives the sweep";
        - `:189`: "the worker-died discussion above" sits below;
@@ -20,7 +20,15 @@ The next ID is `max+1` over all three files (highest used: #48).
        - `:241-262`: change narration ("used to be discarded");
        - `:273-274`: "bounded well under STALE_BEAT_MS".
      - `plugins/oai/scripts/lib/task-submit.mjs:42-47`, `:124-132`, `:149`, `:193`, `:267-280`: narration.
-     - `plugins/oai/scripts/lib/job-auth.mjs:52-54`: says keying on the query alone would "fail every ad hoc job carrying any query string at all". That holds only without a configured `custom` provider.
+     - `plugins/oai/scripts/lib/job-auth.mjs:52-54`: says keying on the query alone would "fail every ad hoc job carrying any query string at all". That holds unless the provider the ad hoc profile is named for (`custom`, or the `--provider` name) is configured at exactly the job's endpoint.
+
+     **In progress (unattended /solo, 2026-11-28).** Owner's standing authorization, given 2026-11-27 before
+     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
+     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
+     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
+     gates" (no absent-operator gate exists). Base 0ae7b67. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e7-AUKk7W`.
+     Expected diff size: 180 lines (comments only, the three files above, every narration or false
+     sentence in them — 31 sites: 29 from a whole-file scout inventory, one from the independent plan sketch and one from the plan challenge; tracker moves excluded).
   8. **Test files outside the 12:**
      - `tests/job-busy.test.js:73`: "the three tests above". `:91-92`: "`completed_at = ?` appears in no other statement".
      - `tests/job-busy-diagnosis.test.js:27-31` and `:87-90`: narration.
