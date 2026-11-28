@@ -131,11 +131,10 @@ function report({ state, couldDrain, reason }, job) {
   const lines = [`Job ${job.id} written off as failed (operator-abandoned). Nothing was signalled.`];
   if (state === 'running') {
     lines.push(
-      // Two mutually exclusive arms. `finish` does not clear `cancel_requested_at`
-      // and the heartbeat's read of it is not state-guarded, so an abandoned but
-      // still-live worker WILL see that request at its next tick and exit — which
-      // is the operator's best available news and a flat "never asked to stop"
-      // would contradict it.
+      // `finish` does not clear `cancel_requested_at` and the heartbeat's read of it
+      // is not state-guarded, so an abandoned but still-live worker WILL see that
+      // request at its next tick and exit — which is the operator's best available
+      // news and a flat "never asked to stop" would contradict it.
       (reason === 'forced-malformed'
         // The stored record says no liveness judgement was possible, so the
         // printed text may not imply one. The risk is UNKNOWN rather than absent —
@@ -147,10 +146,10 @@ function report({ state, couldDrain, reason }, job) {
           // For a row that RAN the bound is indefinite: retention exempts an
           // `operator-abandoned` row with a `started_at`.
           ? 'A cancellation was already pending, and it still stands while this row lasts: if its'
-            + ' process is alive it will see that at its next check-in and exit.'
-          : 'Its process was never asked to stop')
-          + ' and it may still have a model request in flight. If another job'
-          + ' starts, the two will overlap on this machine\'s memory.')
+            + ' process is alive it will see that at its next check-in and exit. It may still have a model'
+            + ' request in flight.'
+          : 'Its process was never asked to stop and it may still have a model request in flight.')
+          + ' If another job starts, the two will overlap on this machine\'s memory.')
       // Only where the beat is what permitted this. `reason === 'forced'` covers
       // TWO grounds (`abandonDecision`'s `no-beat` and `beating` rungs, both
       // collapsed to one reason code) — a beat that is genuinely FRESH (the

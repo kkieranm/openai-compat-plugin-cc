@@ -52,6 +52,10 @@ test('a forced malformed row claims no knowledge the record denies', { skip: NEE
     // The stored record says no liveness judgement was possible; the printed text
     // may not imply one either.
     assert.doesNotMatch(forced.stdout, /never asked to stop/);
+    assert.doesNotMatch(forced.stdout, /may still have a model request in flight/);
+    // The arm is the whole line: nothing shared with the other arms (the overlap
+    // sentence, the sleep caveat) may be appended to it.
+    assert.match(forced.stdout, /^Nothing could be judged about its process — its pid or timestamps could not be read — so whether anything is in flight is unknowable and an overlap cannot be ruled out\.$/m);
     assert.match(readJob(scenario.state, 'shapeless').failure.message, /no liveness judgement was possible/);
   } finally {
     await scenario.server.close();
@@ -205,6 +209,8 @@ test('a pending cancellation is reported as still standing, and bounded', { skip
     // Bounded by the row's own lifetime; retention keeps an abandoned row that
     // had started.
     assert.match(stdout, /while this row lasts/);
+    assert.doesNotMatch(stdout, /\. and /, 'no sentence runs into a lowercase continuation');
+    assert.match(stdout, /^A cancellation was already pending, and it still stands while this row lasts: if its process is alive it will see that at its next check-in and exit\. It may still have a model request in flight\. If another job starts, the two will overlap on this machine's memory\. A beat also looks stale after the machine slept, and the worker may simply resume\.$/m);
     assert.doesNotMatch(stdout, /never asked to stop/);
   } finally {
     await scenario.server.close();
@@ -221,6 +227,7 @@ test('the sleep caveat rides on a STALE beat, not on --force', { skip: NEEDS_SQL
     // The positive control for the two `doesNotMatch` on this phrase in this same
     // file: a plain wedge with no cancellation pending prints the default arm.
     assert.match(stale.stdout, /never asked to stop/);
+    assert.match(stale.stdout, /^Its process was never asked to stop and it may still have a model request in flight\. If another job starts, the two will overlap on this machine's memory\. A beat also looks stale after the machine slept, and the worker may simply resume\.$/m);
 
     // The twin differs in exactly one predicate: beat freshness. `--force` is
     // only what makes the fresh arm reachable at all — a forced STALE row still
@@ -230,6 +237,7 @@ test('the sleep caveat rides on a STALE beat, not on --force', { skip: NEEDS_SQL
     const forced = await scenario.run(['abandon', '--force', 'fresh']);
     assert.equal(forced.status, 0, forced.stderr);
     assert.doesNotMatch(forced.stdout, /may simply resume/);
+    assert.match(forced.stdout, /^Its process was never asked to stop and it may still have a model request in flight\. If another job starts, the two will overlap on this machine's memory\.$/m);
   } finally {
     await scenario.server.close();
   }
