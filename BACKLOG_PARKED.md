@@ -10,6 +10,100 @@ re-litigated. Each keeps its stable ID.
   schema 1 or 3 (2026-08-05 to 2026-08-23), and no plugin above row schema 3 has ever existed. A fix was
   built (746 lines over three plan episodes: refusal, a strict schema range, an `/oai:abandon --force`
   escape) and discarded by the owner; its diff is outside the repo. Reopen only on a real occurrence.
+- **#33 entries 13-14 (parked 2026-11-28 by the backlog sweep: not worth doing — no real occurrence).**
+  Both verified STILL TRUE at 227bee6. Searched for a dated real occurrence (session transcripts under
+  `~/.claude/projects/`, a copy of the real jobs.db, bench/results, the trackers, git history): none. Entry
+  13's search covered the `cancel-unconfirmed` hint text only; the one real `cancel-unconfirmed` job
+  (2026-08-13) carries the older hint. Entry 14: the catch has never forwarded, and no key appears in any
+  transcript or job row. Reopening bar: a dated instance of a session or user misled by one of these
+  comments or hints, or a credential reaching a job's failure message.
+
+  13. **Same-class comment and hint residue outside entry 7's files** (filed 2026-11-28 from #33 entry 7's
+      review; each line unchanged at 0ae7b67 and read by a review stage that day):
+      - `plugins/oai/scripts/lib/job-reconcile.mjs:72-73`, a user-facing `cancel-unconfirmed` hint: "a worker
+        killed after the model answered and before it recorded anything held that answer only in memory".
+        On the path where the worker's `completed` write threw, `salvageOutcome` had already written the
+        answer to the job log, so the hint steers the user away from the one place the answer is, until
+        retention prunes the row and unlinks that log.
+      - `plugins/oai/scripts/lib/job-store.mjs:96`: "Bumped to 2: a `transport` may now carry …".
+      - `plugins/oai/scripts/lib/config.mjs:361-363` ("Skipping this check let a typo yield …") and
+        `:383-385` ("… instead was a real defect"): history narration.
+      - `plugins/oai/scripts/lib/job-heartbeat.mjs:110-116`: "… are now attempted independently".
+      - Added 2026-11-28 from #33 entry 8's review (each line read at 04dd5d1):
+        `plugins/oai/scripts/lib/job-auth.mjs:157-160` says `normalizeBaseUrl` quotes a malformed baseUrl
+        "verbatim" and a JSON-parse error "can quote a snippet of the config FILE"; both are false
+        (`config.mjs:232` never interpolates the URL, `config.mjs:109-119` throws a static parse message).
+        `plugins/oai/scripts/lib/job-store.mjs:377-380`: a caller's statement "has no retry loop around it",
+        though seven `withBusyRetry` call sites wrap callers' statements.
+        `tests/job-busy-heartbeat.test.js:49-51` ("Before the fix …") and `:99` ("until this test
+        existed"); `tests/retention.test.js:189-193` ("now has a witness") and `:208` ("predates this
+        one"): history narration.
+      - Added 2026-11-28 from #33 entry 9 (each read at c40ae10):
+        - Entry 9's class (size-split history in headers and comments) outside `tests/`. Universe:
+          `command grep -rlEi -- "$(cat pattern)" plugins/oai/scripts/lib bench/lib`, with the pattern
+          `split (from|out|off|apart|only|the same way|when|exists)|lifted (out|from)|moved (out|from|here)|extracted (from|out)|carved|outgrew|size (budget|ratchet|ceiling|cap|limit)|ratchet|line budget|[0-9]+-line (budget|limit|cap)|its own file|crossed the|reached its size|used to live|formerly|originally|was copied|forced a split|the two split|that split|the split`,
+          hits 23 files in `plugins/oai/scripts/lib` and 13 in `bench/lib`. Classified as the class: 21 lib
+          files (attempt-ledger, attempt-outcome, capability-ladder, chat, completion, findings-candidate,
+          http-budgets, http-errors, http, job-busy, job-drain, job-record, json-scan, model-selection,
+          render, review-request, review-schema, review-unparsed, stream-collect, task-execute,
+          task-report) and 7 bench/lib files (reason-notes, sweep-window, ttl-calibration, ttl-verdict,
+          ttl-episode, reliability-report, caveats).
+        - `tests/delegate-template.test.js:83-87` says nothing in `tests/` exercises the recipe's
+          containment; `tests/delegate-containment.test.js:134-235` does, and its header says so.
+        - `tests/runtime-capability.test.js:9-11` says the two files "would only share a size budget"; no
+          size budget exists.
+  14. **No test discriminates `resolveCredential`'s no-forward catch** (filed 2026-11-28 from #33 entry 8's
+      review). `job-auth.mjs:156-170` is the only layer keeping some raw config values out of a job's
+      failure message: `resolveApiKey` quotes `apiKeyEnv` (`config.mjs:299`), so a key pasted into that
+      field reaches the catch. Every leak test in `tests/job-auth.test.js` drives `normalizeBaseUrl` or
+      `loadConfig`, whose messages are already static. Reproduced 2026-11-28 in a scratch copy: the catch
+      changed to forward `e.message` left all six leak tests green, and `resolveProfile` with
+      `apiKeyEnv: "sk-live-PASTED"` threw a message quoting that value.
+
+- **#48 items 26, 36, 37, 53, 85, 86, 87, 88 (parked 2026-11-28 by the backlog sweep: not worth doing —
+  no real occurrence).** Items 26-88 here are the 2026-11-17 sweep's numbering plus the 2026-11-25
+  filings; this item 85 (filed 2026-11-25) is not the process-note "Item 85" removed above. All verified
+  STILL TRUE at 227bee6 except 87 (CANNOT TELL: needs Linux). Every recorded occurrence is a review probe
+  or a constructed fixture; the only repo really reviewed has no merges, submodules, filters, eol
+  attributes or skip-worktree files, and the owner's git config sets none of item 36's triggers.
+  Corrections at 227bee6: item 85's `git-diff.mjs:408` refusal is now at `:418` and README's statement
+  spans `:54-55`; item 86's `--json` path already escapes ESC (plain `JSON.stringify`), leaving C1, bidi
+  and U+2028/9 raw, and the setup text path imports no escaping. Reopening bar, each: a dated real
+  occurrence (a real review that sent wrong or missing input, a real test run on the owner's machine
+  that failed for this reason, a real terminal garbled by server text).
+
+  - **26. `oai-delegate.md` takes the root through command substitution, which strips trailing
+    newlines.** The class ("a path value loses trailing bytes") has two fixed occurrences and no
+    structural test.
+  - **36. Test repositories inherit the user's global git config** (`core.ignoreStat`,
+    `core.disambiguate`, a SHA-256 default, `commit.gpgSign`, `tag.gpgSign`).
+  - **37. No REPO_TRAPS entry or structural test for "a whole-file body read from somewhere other than
+    what git diffed".** Open occurrences: under a clean filter or eol conversion the disk branch sends
+    unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
+    spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
+  - **53. No structural test for "a user value reaches a helper's option parser".**
+  - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
+    2026-11-25 from item 3's review). Under `--diff-only`, or when only hunks are sent, a file that
+    differs from every parent yet matches one of them in every region it changes has no hunk in the
+    combined diff. `--cc` lists it, so it is not in `mergeOmitted`, and no note names it. Reproduced:
+    f.txt (lines 1..30, side edits line 1, main edits line 30, a clean combine); g.txt and p (two
+    conflicting regions resolved to different sides); a resolution that reverts both edits. A merge whose
+    files are all of this kind reaches the model as a bare commit header and reports "No defects
+    reported" (exit 0). That was already true at 0713afa: `git-diff.mjs:408` refuses only an empty diff
+    with no files. README.md:55 states the gap.
+  - **86. Server or model text reaches the terminal raw outside the review and task `--json` writers**
+    (filed 2026-11-25 from item 3's review), `/oai:setup --json` included. Item 3 escaped only the merge
+    NOTE, `unreadableNote` and those writers. A server's error text carrying ESC sequences can erase or
+    rewrite the terminal lines that show the failure.
+  - **87. Lossy-decode name collisions in collectTarget's `pinned` filter and `indexTrustedPaths`**
+    (filed 2026-11-25 from item 3's review). Two undecodable names decode to the same U+FFFD
+    spelling, so one file's state stands for another's with no error. Item 3 closed this for the merge
+    listing only (a U+FFFD there gives `mergeOmitted: null`). Pre-existing at 0713afa; it needs a Linux
+    non-UTF-8 name plus a literal U+FFFD twin (the parked non-UTF-8 class).
+  - **88. A submodule with `ignore = all` hides a gitlink bump in every review mode** (filed
+    2026-11-25 from item 3's review). git's `diff.ignoreSubmodules` drops the bump from the diff and
+    from every listing, so the review never sees it and no note says so. Pre-existing at 0713afa.
+
 - **#33 entry 4, G1-G3 (parked 2026-11-27 by fork 1, unanimous A; G4 shipped in 1c6a5e3)**
   - **G1: cancel-confirmation's FIFO cleanup can leave a wedged child.** Its loop runs only on an already-failing run.
   - **G2: the initial simultaneous-acquisition race is not deterministically exercised.** The exclusion rests on SQLite's `BEGIN IMMEDIATE`.

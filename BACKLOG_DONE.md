@@ -4,6 +4,16 @@ Completed (or dropped) items, newest first. Each keeps its stable ID. Items clos
 tracker moved into the repo are listed by title only; their full record is the GitHub issue of the
 same number. Shipped work is also summarised in `CHANGELOG.md`.
 
+- **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
+
+  Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258), entry 8 (04dd5d1), entry 9 (c40ae10), entry 10 (915babf) and entry 11 (85dc920). Entries 1 and 3 and review residuals R5 and
+  R7-R10 were dropped on 2026-11-14, and entry 12 parked on 2026-11-28; all are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
+  are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
+
+  Closed 2026-11-28 by the backlog sweep: entries 2 and 4-11 are done (above), entries 1, 3, 12-14 and
+  R5, R7-R10 are in `BACKLOG_PARKED.md`.
+
 - **#33 entry 11. `/oai:abandon`'s pending-cancel reply joined two sentences** (2026-11-28): 85dc920. #33 stays open.
   - What was wrong (lines at base 6c3dbd1): `report()` in `plugins/oai/scripts/lib/cmd-abandon.mjs:146-153` appended the shared tail " and it may still have a model request in flight. If another job starts, …" to both arms of the cancel ternary, and the pending-cancel arm already ended in a full stop, so a running row abandoned with a cancellation pending printed "…at its next check-in and exit. and it may still have a model request in flight." (reproduced 2026-11-27). No test pinned that arm's text: `tests/abandon-cli.test.js:38` matched the tail alone, and the arms the tests drove were checked by fragments.
   - The fix: each cancel arm carries its own complete in-flight sentence; only the overlap sentence is shared; the never-asked arm prints byte-identical text, and the forced-malformed arm and the stale-beat caveat are unchanged. `tests/abandon-recovery.test.js` pins every running-row arm a test drives by its whole printed line (pending + stale, never-asked + stale, never-asked + forced fresh beat, forced-malformed literal), after a `/\. and /` guard. The comment above the expression no longer says "Two mutually exclusive arms." over three outcomes, and is reflowed. `git diff --stat 6c3dbd1 85dc920`: 2 files, 16 insertions, 9 deletions.
