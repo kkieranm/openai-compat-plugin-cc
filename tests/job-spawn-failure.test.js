@@ -127,7 +127,7 @@ test('POSITIVE CONTROL: a queued row with no waiter blocks a successor inside th
   // hold it.
   await withSubmission(async ({ state }) => {
     insertSynthetic(state, { id: 'never-spawned', state: 'queued', waiterPid: null, agedMs: 0 });
-    assert.equal(successorVerdict(state), 'blocked', 'this row reads like the one terminalization must clear — if the verdict ever reads "acquired", the test above proves nothing');
+    assert.equal(successorVerdict(state), 'blocked', 'this row reads like the one terminalization must clear — if the verdict ever reads "acquired", the successor assertion in the test above proves nothing');
   });
 });
 
@@ -211,7 +211,7 @@ test('a NON-BUSY fault stamping the row still returns the id', { skip: NEEDS_SQL
     }
 
     // The row is still there and still queued: the stamp failed, nothing else did.
-    // Without this, the test above would also pass against an implementation that
+    // Without this, the assertions above would also pass against an implementation that
     // swallowed the fault by abandoning the job.
     const [row] = readJobs(state);
     assert.equal(row.state, 'queued', 'the job was not written off because its start time could not be recorded');
