@@ -1,7 +1,6 @@
 // What a failed TERMINAL WRITE must not cost: the reason the job failed.
 //
-// Its own file rather than a third of `job-busy-placement.test.js`, which this
-// pair pushed past the repo's size budget. The subject is genuinely separate:
+// Separate from `job-busy-placement.test.js` because the subject is separate:
 // placement is about which write happens, and these two are about which ERROR
 // survives when a write does not happen at all.
 import assert from 'node:assert/strict';
@@ -25,10 +24,12 @@ function redirect(state, seq, baseUrl) {
 
 test('an exhausted FAILED write does not replace the diagnosis with the contention', { skip: NEEDS_SQLITE }, async () => {
   // A `throw` raised inside a `catch` block replaces the pending rethrow. So
-  // when the retried `failed` write exhausted its budget, the busy error escaped
-  // and `throw error` never ran — and since the row write is exactly what
-  // failed, the model-failure diagnosis existed in no channel at all. The worker
-  // log said "database is locked" about a job that died of a bad credential.
+  // `publishFailure` returns rather than throws when the retried `failed` write
+  // exhausts its budget, and its caller's `throw error` still runs. The row
+  // write is exactly what failed, so that rethrow is the only channel carrying
+  // the model-failure diagnosis. Had the busy error escaped instead, the worker
+  // log would say only "database is locked" about a job that died of a failed
+  // model call.
   //
   // The budget is exhausted by advancing the clock rather than by holding a real
   // lock for thirty seconds.
@@ -62,8 +63,9 @@ test('an exhausted FAILED write does not replace the diagnosis with the contenti
     performance.now = () => (advancing ? originalNow() + (jumps += 1) * 60_000 : originalNow());
 
     const { runTaskWorker } = await import('../plugins/oai/scripts/lib/cmd-task-worker.mjs');
-    // The assertion is the REJECTION REASON, not that it rejected: both defects
-    // reject, and only one of them says what actually went wrong.
+    // The assertion is the REJECTION REASON, not that it rejected: a worker that
+    // let the storage error escape would reject too; only the reason tells the
+    // two apart.
     await assert.rejects(
       () => runTaskWorker(['--seq', String(seq)]),
       (error) => {
@@ -84,10 +86,11 @@ test('an exhausted FAILED write does not replace the diagnosis with the contenti
 });
 
 test('a NON-BUSY failure of the failed write also leaves the diagnosis propagating', { skip: NEEDS_SQLITE }, async () => {
-  // The sibling above, for the fault class the first fix missed. Catching only
-  // the busy left a disk error, a corrupt file or a schema fault reproducing the
-  // identical loss — the storage error replaced the model failure, and a reader
-  // debugging the job was told about SQLite instead of about the credential.
+  // The sibling above, for a storage fault that is not contention.
+  // `publishFailure` does not test `isBusy`: catching only the busy would let a
+  // disk error, a corrupt file or a schema fault replace the model failure, and a
+  // reader debugging the job would be told about SQLite instead of why the job
+  // failed.
   //
   // No clock advance and no retry budget: a non-busy error is rethrown by
   // `withBusyRetry` on its first attempt, which is what makes this the cheap

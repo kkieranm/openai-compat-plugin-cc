@@ -64,12 +64,13 @@ async function withSubmission(fn) {
 
 const submission = { spec: TASK_SPEC, options: { background: true }, inlinePrompt: 'summarise this', terminated: [] };
 
-// The ordering the containment design ADMITS: `spawnWorker` awaits the
-// `'spawn'` event and only then closes its copy of the log descriptor, so a
-// throw from that close rejects after a detached worker was created and may
-// still be running. The queue-level tests in
-// `job-spawn-failure.test.js` all reject without ever creating a child, so none
-// of them can see a REGISTERED row being terminalized.
+// The ordering `spawnWorker` ADMITS: it awaits the `'spawn'` event and only
+// then closes its copy of the log descriptor, so a throw from that close
+// rejects after a detached worker was created and may still be running. The
+// queue-level tests in `job-spawn-failure.test.js` never create a child: each
+// either never calls `submitTask`, rejects before a spawn, or injects a
+// `spawn` that creates none, so none of them can see a REGISTERED row being
+// terminalized.
 //
 // WHAT THIS TEST IS, EXACTLY: a state-machine witness, not a live child. No
 // second process exists here — the fixture registers THIS process as the waiter
@@ -107,9 +108,10 @@ test('POSITIVE CONTROL: the same row shape under `finish` IS destroyed', { skip:
   //
   // It does NOT establish that production attempted a guarded write at all — a
   // build that simply stopped calling `terminalizeSpawnFailure` would leave both
-  // tests green. That mutation is caught by the no-child test in
-  // job-spawn-failure.test.js, which requires the row to BE `failed`. The two together bracket it: one says the
-  // write happens, the other says it is guarded.
+  // tests green. That mutation is caught by job-spawn-failure.test.js's test
+  // 'an unconfirmed launch terminalizes its own UNREGISTERED row and lets the queue move',
+  // which requires the row to BE `failed`. The two together bracket it:
+  // one says the write happens, the other says it is guarded.
   await withSubmission(async ({ state }) => {
     const seq = insertSynthetic(state, { id: 'live-worker' });
     const flipped = withStore(state, (db) => {
@@ -124,10 +126,10 @@ test('POSITIVE CONTROL: the same row shape under `finish` IS destroyed', { skip:
   });
 });
 
-// EVERY guarded site is claimed to have a witness driving a path where a
-// busy error is really raised. The seventh site is guarded, so it needs one, and
-// every other fault injected in these files is NON-busy. Without this the retry
-// is wrapped on an argument no test can contradict.
+// The launch-outcome write is guarded by `withBusyRetry`, and every other fault
+// injected in this file and in `job-spawn-failure.test.js` is NON-busy, so this
+// test drives a real busy error through that retry. Without it nothing
+// exercises the retry here.
 test('a TRANSIENT busy on the launch-outcome write is retried, not lost', { skip: NEEDS_SQLITE }, async () => {
   await withSubmission(async ({ state }) => {
     const { DatabaseSync } = await import('node:sqlite');
@@ -158,16 +160,14 @@ test('a TRANSIENT busy on the launch-outcome write is retried, not lost', { skip
 });
 
 // The wrapper around the REPORT. A throw raised inside a `catch` replaces the
-// pending rethrow — that defect cost a whole diagnosis once
-// already. No other test here drives a report that THROWS: most never reach
-// the reporting path because their storage write succeeds, and the integrated
-// failing-write witness below does reach it — through the real `writeSync` —
-// but deliberately does not capture fd 2. Either way, deleting the wrapper
-// leaves them all green. That is what made it a safeguard with no witness, and it is
-// why this test calls the helper directly rather than through a submission —
-// the reporting path needs a failing write AND a failing report, and building a
-// server, a config and a spawn around one `catch` would test everything except
-// the thing in question.
+// pending rethrow. No other test here drives a report that THROWS: most never
+// reach the reporting path because their storage write succeeds, and the
+// integrated failing-write witness below does reach it — through the real
+// `writeSync` — but deliberately does not capture fd 2. Either way, deleting
+// the wrapper leaves them all green. So this test calls the helper directly rather
+// than through a submission — the reporting path needs a failing write AND a
+// failing report, and building a server, a config and a spawn around one
+// `catch` would test everything except the thing in question.
 test('a report that throws does not replace the launch error it accompanies', async () => {
   const { terminalizeSpawnFailure } = await import('../plugins/oai/scripts/lib/job-launch-outcome.mjs');
   const launchError = new Error('EACCES: permission denied');
@@ -199,8 +199,8 @@ test('a report that throws does not replace the launch error it accompanies', as
 // The stderr half is deliberately NOT asserted here and is not missing: the
 // report goes out through `writeSync(2, …)`, which the subprocess test below
 // captures, and the modular test above owns that assertion
-// by injecting `report`. Split because each half is checkable somewhere, rather
-// than left as one witness that would have to fake the part it cannot see.
+// by injecting `report`. Each half is checked where it can be observed, so
+// neither has to fake the part it cannot see.
 test('a failing terminal write leaves the launch error intact and the row unwritten', { skip: NEEDS_SQLITE }, async () => {
   await withSubmission(async ({ state }) => {
     const { DatabaseSync } = await import('node:sqlite');
@@ -239,13 +239,11 @@ test('a failing terminal write leaves the launch error intact and the row unwrit
 // A subprocess removes THAT limit — which is the limit about the default being
 // used at all, not the one about drainage. See below.
 //
-// What it does NOT establish, measured rather than assumed: it is not a drainage
-// witness. Swapping `writeSync` for an async `process.stderr.write` leaves this
-// test GREEN — the write happened to survive the exit on this run, which is
-// precisely the timing-dependence that makes `writeSync` the right call.
-// This test pins that the DEFAULT is used and
-// that its content reaches fd 2; the choice of a synchronous write rests on the
-// credential-notice design, not on this assertion.
+// It is not a drainage witness: swapping `writeSync` for an async
+// `process.stderr.write` leaves this test GREEN, because the write can survive
+// the exit. It pins that the DEFAULT is used and that its content reaches fd 2;
+// `writeSync` itself is a defensive choice, argued in `terminalizeSpawnFailure`'s
+// catch.
 //
 // Async `spawn`, never `spawnSync` — a sync spawn in this suite deadlocks anything
 // sharing the event loop (repo footgun), and there is no reason to risk it.
@@ -255,9 +253,8 @@ test('the DEFAULT report reaches fd 2 of a real process', async () => {
   // No `report` option: this is the production call. The db throws SQLITE_CORRUPT,
   // which is NOT a busy error — so `withBusyRetry` rethrows it on the first attempt
   // rather than exhausting a budget, and the reporting path is reached immediately.
-  // (Said precisely because "the retry exhausts" would describe the busy case,
-  // which this test deliberately does not use: a 30-second budget in a subprocess
-  // is not something a test should wait out.)
+  // A busy error is not used: its 30-second budget in a subprocess is not
+  // something a test should wait out.
   const script = `
     const { terminalizeSpawnFailure } = await import(${JSON.stringify(module)});
     const db = { prepare() { throw new Error('SQLITE_CORRUPT: forced'); } };
@@ -267,9 +264,9 @@ test('the DEFAULT report reaches fd 2 of a real process', async () => {
   // The environment is NOT inherited. An inherited `NODE_OPTIONS` can preload a
   // module that alters resolution, writes to stderr itself, or hangs before this
   // script runs at all — so the witness would be reporting on the machine's
-  // environment rather than on this code. PATH is passed because the child
-  // resolves nothing from it but a scrubbed env is easier to reason about than a
-  // filtered one, and the module below is addressed by absolute URL.
+  // environment rather than on this code. PATH is the only variable passed; the
+  // child resolves nothing from it, and the module above is addressed by
+  // absolute URL.
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
     stdio: ['ignore', 'ignore', 'pipe'],
     env: { PATH: process.env.PATH },

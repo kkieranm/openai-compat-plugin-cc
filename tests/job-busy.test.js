@@ -56,8 +56,8 @@ test('openStore does not re-set WAL on a database that is already WAL', { skip: 
     // Measured: at the handle's 10s timeout, one contended `CREATE TABLE` blocks
     // 10755ms — past the 5s budget — so `withBusyRetry` gives up having never
     // retried once. A short timeout during the open is what makes the retry loop
-    // govern; the long one is restored before the handle is returned, because a
-    // caller's own statements have no retry around them.
+    // govern; the long one is set before the handle is returned, because a
+    // caller's statements outside `withBusyRetry` rely on that timeout alone.
     const timeouts = statements.filter((sql) => /busy_timeout/i.test(sql));
     assert.equal(timeouts.length, 2, 'the open must set a busy_timeout twice: short to open, long to hand over');
     assert.match(timeouts[0], /busy_timeout\s*=\s*250\b/, 'the FIRST must be short, or one attempt can outlast the whole budget');
@@ -70,8 +70,8 @@ test('openStore does not re-set WAL on a database that is already WAL', { skip: 
 test('the FAILED terminal write survives a transient busy', { skip: NEEDS_SQLITE }, async () => {
   // Driven through `runTaskWorker` — the worker's own entry point — rather than
   // by composing `withBusyRetry` here. A witness that wraps the call itself
-  // proves only that the helper works, which the three tests above already
-  // prove, and it would stay green if the wrapping at the call site were
+  // proves only that the helper works, which `job-busy-helper.test.js` already
+  // proves, and it would stay green if the wrapping at the call site were
   // deleted. That is the single thing this is for.
   //
   // The job's transport is unreachable by construction, so the model call fails
@@ -88,10 +88,13 @@ test('the FAILED terminal write survives a transient busy', { skip: NEEDS_SQLITE
     const seq = insertSynthetic(state, { id: 'busy-terminal' });
     process.env.OAI_PLUGIN_STATE = state;
 
-    // Only the terminal write, and only once. `completed_at = ?` appears in no
-    // other statement in this repo, so the beat, the queue and the schema are
-    // untouched — a blanket injection would prove nothing about which call site
-    // recovered.
+    // Only the terminal write, and only once. `completed_at = ?` matches two
+    // statements, both in `job-record.mjs`: `finish` and `abandonUnstarted`. This
+    // worker registers as the job's waiter before anything can reconcile, and no
+    // other row or launch-outcome write exists, so `abandonUnstarted` is never
+    // prepared and the only write injected is the worker's own terminal
+    // `finish`. The beat, the queue and the schema are untouched — a blanket
+    // injection would prove nothing about which call site recovered.
     DatabaseSync.prototype.prepare = function inject(sql, ...rest) {
       if (injected === 0 && /completed_at\s*=\s*\?/.test(sql)) {
         injected += 1;
@@ -120,9 +123,10 @@ test('the COMPLETED terminal write survives a transient busy', { skip: NEEDS_SQL
   // The headline case, and the only witness that reaches it: the model has
   // ALREADY ANSWERED when the lock is hit. The failed-path witness above cannot
   // stand in for it — reverting the wrapping around the *completed* write leaves
-  // that one green, so without this the wrapping around the COMPLETED write has
-  // no guard. A real server is therefore part of the fixture: an unreachable
-  // transport can only ever produce the failure path.
+  // that one green, and no other test drives a busy into the COMPLETED write;
+  // `busy-site-count.test.js` notices only a deleted call site. A real server
+  // is therefore part of the fixture: an unreachable transport can only ever
+  // produce the failure path.
   const scenario = await queueScenario();
   const { DatabaseSync } = await import('node:sqlite');
   const original = DatabaseSync.prototype.prepare;

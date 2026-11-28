@@ -21,7 +21,7 @@ re-litigated. Each keeps its stable ID.
     - R5: held-test teardown never awaits worker exit.
     - R7: job-auth's `heldScenario` has no release in finally; its 5s first-byte budget is tight under
       starvation.
-    - R8: `job-launch-outcome.test.js:284` (30s) and the bench tests (15s) keep fixed SIGKILL backstops.
+    - R8: `job-launch-outcome.test.js:281` (30s) and the bench tests (15s) keep fixed SIGKILL backstops.
     - R9: `isAlive` is a production export with only a test-helper caller
       (`plugins/oai/scripts/lib/job-liveness.mjs`, still so on 2026-11-24).
     - R10: `tests/retention-helpers.mjs` duplicates the ack/log path helpers.

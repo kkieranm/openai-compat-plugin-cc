@@ -1,10 +1,11 @@
 // The notice about a persisted endpoint must not itself disclose one.
 //
-// Every one of these reaches `insertJob` — the notice really fires — because an
-// assertion that runs on a refusal path, where the notice never fires, reports
-// a real injected leak as green. An assertion that cannot fail is not evidence,
-// so every test here that asserts what the notice says also proves it fired, by
-// matching its whole line.
+// Every one of these reaches `insertJob`, so each leak assertion runs against a
+// real row. The notice prints before `prepareTask`, so it is absent only when
+// submission fails earlier (argument parsing, no `node:sqlite`), and an
+// assertion on its text there could not fail. An assertion that cannot fail is
+// not evidence, so every test here that asserts what the notice says also
+// proves it fired, by matching its whole line.
 //
 // The last two deliberately return no job id: they drive the partial failure the
 // notice's wording exists for — a worker that never starts, leaving a row nobody
@@ -76,10 +77,10 @@ function modelsAndChat(id = 'test-model') {
 async function submitAgainst(baseUrl, { viaConfig = false } = {}) {
   const server = await startFakeServer(modelsAndChat());
   const state = stateDir();
-  // `viaConfig` puts the endpoint where a real user's usually lives. Every other
-  // case here passes `--base-url`, so without this one a regression that gated
-  // the notice on that FLAG would leave the whole file green while a configured
-  // provider's query credential went unannounced.
+  // `viaConfig` puts the endpoint where a real user's usually lives. Every
+  // caller without it passes `--base-url`, so without it a regression that
+  // gated the notice on that FLAG would leave only the large-preamble test to
+  // notice a configured provider's query credential going unannounced.
   const endpoint = baseUrl(server);
   const { path: configPath } = writeConfig({
     providers: {
@@ -227,7 +228,7 @@ test('the core leak: a configured provider commits its query rather than storing
 });
 
 test('an ad hoc --base-url carrying a non-credential query string still reaches completed', { skip: NEEDS_SQLITE }, async () => {
-  // Guards the `Unknown provider "custom"` failure: keying `authPolicyFor`'s
+  // Guards the worker-time refusal: keying `authPolicyFor`'s
   // widening (`job-auth.mjs`) on the query alone, rather than on
   // `!adHoc && query`, would send a bare `--base-url` row's synthetic `custom`
   // profile through `resolveProfile` at worker time. With no configured
