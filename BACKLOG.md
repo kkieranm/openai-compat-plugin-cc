@@ -8,31 +8,20 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce) and entry 6 (15459ff). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff) and entry 7 (87e1258). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  7. **Narration and stale claims in runtime files, outside fb554ce's comment sites (lines at base 0ae7b67):**
-     - `plugins/oai/scripts/lib/cmd-task-worker.mjs`:
-       - `:170`: "the row now outlives the sweep";
-       - `:189`: "the worker-died discussion above" sits below;
-       - `:214`: "publish exactly one terminal verdict" when it publishes at most one;
-       - `:241-262`: change narration ("used to be discarded");
-       - `:273-274`: "bounded well under STALE_BEAT_MS".
-     - `plugins/oai/scripts/lib/task-submit.mjs:42-47`, `:124-132`, `:149`, `:193`, `:267-280`: narration.
-     - `plugins/oai/scripts/lib/job-auth.mjs:52-54`: says keying on the query alone would "fail every ad hoc job carrying any query string at all". That holds unless the provider the ad hoc profile is named for (`custom`, or the `--provider` name) is configured at exactly the job's endpoint.
-
-     **In progress (unattended /solo, 2026-11-28).** Owner's standing authorization, given 2026-11-27 before
-     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
-     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
-     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
-     gates" (no absent-operator gate exists). Base 0ae7b67. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e7-AUKk7W`.
-     Expected diff size: 180 lines (comments only, the three files above, every narration or false
-     sentence in them — 31 sites: 29 from a whole-file scout inventory, one from the independent plan sketch and one from the plan challenge; tracker moves excluded).
   8. **Test files outside the 12:**
      - `tests/job-busy.test.js:73`: "the three tests above". `:91-92`: "`completed_at = ?` appears in no other statement".
      - `tests/job-busy-diagnosis.test.js:27-31` and `:87-90`: narration.
      - `tests/job-launch-outcome.test.js:4-7`, `:110`, `:160-162` and `:242-248`. The last grounds `writeSync` in "the credential-notice design".
+     - `tests/job-auth.test.js:106-109` says keying the widening on the query alone "fails every such job
+       with `Unknown provider "custom"`", and `:116-121` that a bare `--base-url`'s synthetic profile "will
+       not be in `providers.json`"; `tests/credential-notice.test.js:230` names the same failure. The worker
+       never surfaces that message (`resolveCredential`'s catch replaces it with `credential-unavailable`),
+       and a configured `custom` at the job's exact endpoint passes. Added 2026-11-28 from #33 entry 7's
+       review, which made `job-auth.mjs:39-59` say so.
   9. **"Split from" headers** in 17 test files (`command grep -l 'Split from' tests/*.js tests/*.mjs`;
      still 17 on 2026-11-24).
   10. **`tests/job-spawn-failure.test.js:130` overstates**: its assertion message says an `acquired`
@@ -54,6 +43,18 @@ The next ID is `max+1` over all three files (highest used: #48).
       the same run was reconciled to `failed` and reported "already failed — nothing was cancelled".
       Tests whose wording assumes the invariant: `tests/queue-reconcile.test.js:44` (title),
       `tests/abandon-cli.test.js:106`, `tests/queue-semantics.test.js:29`.
+  13. **Same-class comment and hint residue outside entry 7's files** (filed 2026-11-28 from #33 entry 7's
+      review; each line unchanged at 0ae7b67 and read by a review stage that day):
+      - `plugins/oai/scripts/lib/job-reconcile.mjs:72-73`, a user-facing `cancel-unconfirmed` hint: "a worker
+        killed after the model answered and before it recorded anything held that answer only in memory".
+        On the path where the worker's `completed` write threw, `salvageOutcome` had already written the
+        answer to the job log, so the hint steers the user away from the one place the answer is, until
+        retention prunes the row and unlinks that log.
+      - `plugins/oai/scripts/lib/job-store.mjs:96`: "Bumped to 2: a `transport` may now carry …".
+      - `plugins/oai/scripts/lib/config.mjs:361-363` ("Skipping this check let a typo yield …") and
+        `:383-385` ("… instead was a real defect"): history narration.
+      - `plugins/oai/scripts/lib/job-heartbeat.mjs:110-116`: "… are now attempted independently".
+
 
 - **#48. Residue from #47 onward: collectTarget path and claim gaps, test isolation, structural guards** (filed 2026-11-08)
 
@@ -83,7 +84,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3 and 15459ff.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff and 87e1258.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
