@@ -23,9 +23,9 @@ The next ID is `max+1` over all three files (highest used: #48).
     `BACKLOG_PARKED.md` with their evidence.
   - Items 26, 36, 37, 53 and 85-88 were parked by the 2026-11-28 sweep (no real occurrence), in
     `BACKLOG_PARKED.md`.
+  - Item 73 (the pending live check) was closed on 2026-11-28 by a live run; see `BACKLOG_DONE.md`.
 
   Live:
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258, 04dd5d1, c40ae10, 915babf and 85dc920.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun; both in session transcript
     `2e52b799-def9-4f7d-9248-84c5a9c73208`, `actual: 'first-byte-timeout'`, output truncated). Capture the

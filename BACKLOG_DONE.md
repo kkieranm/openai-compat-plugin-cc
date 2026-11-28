@@ -4,6 +4,15 @@ Completed (or dropped) items, newest first. Each keeps its stable ID. Items clos
 tracker moved into the repo are listed by title only; their full record is the GitHub issue of the
 same number. Shipped work is also summarised in `CHANGELOG.md`.
 
+- **#48 sweep item 73. The live LM Studio check was pending for 13 commits** (2026-11-28): closed by a
+  live run at 6338f73, which contains all 13. `/oai:task --file plugins/oai/scripts/lib/errors.mjs` via
+  `check-load.mjs`: `LOADED: oai:task from oai@inline`; LM Studio JIT-loaded `qwen/qwen3.8-27b`; the answer
+  named `ERROR_BODY_CHARS` (400) and `UserError`, matching the file's two exports; footer `23.1s | prefill
+  15.4s | tokens: 319 in / 138 out`. The window was reported unknown because nothing was loaded when
+  the probe ran. #48 stays open.
+  Original entry:
+    - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258, 04dd5d1, c40ae10, 915babf and 85dc920.
+
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
