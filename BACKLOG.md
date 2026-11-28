@@ -8,32 +8,10 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked) and entry 5 (fb554ce). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce) and entry 6 (15459ff). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  6. **False or stale claims in the 12 job test files fb554ce edited, on lines it did not rewrite.** None is narration:
-     - `tests/liveness-unreadable-pid.test.js:12-13`: says `1.5` throws a TypeError. `:37-41`: the `deadPid` rationale says the assertion would pass, but `'unreadable'` ≠ `'gone'`, so it would fail.
-     - `tests/abandon-recovery.test.js:1`: says the file covers rows `/oai:abandon` did not simply write off, but several of its tests do write rows off. `:29`: "a row that never had one" sits on a synthetic fixture that carries a spawn stamp. `:195`: "the plain stale wedge above" is not above. `:205`: "retention can prune the row".
-     - `tests/queue-reconcile.test.js:101`: "never spawned" prose on a stamped fixture. `:307-315`: the `never-started` liveness reading is right, but "no worker to have changed state at all" and "a worker that never existed" infer more than the fixture shows. `:181-186`: "holds while its pid is READABLE" and "FIRST rung". `:214`: the label `(6)` contradicts `:222`.
-     - `tests/status-blocker-render.test.js`:
-       - `:122-137`: "Three conditions" and "read from a database a newer plugin wrote";
-       - `:217-218`: a causal "so";
-       - `:233-234`: "the only action that clears it";
-       - `:242-243`: "this file".
-     - `tests/job-busy-placement.test.js:4`, `:141-143` ("the stamp only shortens a startup grace window"; the stamp's absence does that) and `:210` ("id of a running job").
-     - `tests/blocker-helpers.mjs:20-25`: the `breakStamps` docblock says `ago()` "always yields a parseable ISO string". But `ago(null)` returns `null` (`ago` in `tests/job-helpers.mjs`), and `agedMs: null` feeds both stamps.
-
-     **In progress (unattended /solo, 2026-11-27).** Owner's standing authorization, given 2026-11-27 before
-     leaving: queue "#33 all live, then #48 in ID order"; permissions "Same as last run" (commit to main
-     and push; record in BACKLOG.md / BACKLOG_DONE.md; live runs and benches from a frozen worktree; opus
-     votes if fable is unavailable); widenings "Same-class fixes allowed"; repo gates "Bypass repo-level
-     gates" (none exists). Base 87ab88b. Work dir `~/.cache/feature/openai-compat-plugin-cc-33e6-V0diGS`.
-     Expected diff size: 70 lines (comments only, six test files; tracker moves excluded).
-     - Probe at base 87ab88b (scout): `:12-13` (`1.5` is rejected on shape, `job-liveness.mjs:102`),
-       `:37-41` (a shape-rejected pid reads `unreadable`, so the `gone` assertion would fail),
-       `abandon-recovery.test.js:195` (the plain wedge test is below, `:213`), `queue-reconcile.test.js:214`
-       (contradicts `:188-190` and `:222`) and `blocker-helpers.mjs:20-25` (`ago(null)` is `null`) all hold.
   7. **Narration and stale claims in runtime files, outside fb554ce's comment sites:**
      - `plugins/oai/scripts/lib/cmd-task-worker.mjs`:
        - `:170`: "the row now outlives the sweep";
@@ -57,6 +35,17 @@ The next ID is `max+1` over all three files (highest used: #48).
       in flight" to an arm that already ends in a full stop. Reproduced 2026-11-27 against a stale running
       row with a pending cancel: "…at its next check-in and exit. and it may still have a model request in
       flight." No test pins that arm's text (`tests/abandon-cli.test.js:38` matches the tail alone).
+  12. **`/oai:cancel` writes a newer plugin's row** (filed 2026-11-28 from #33 entry 6's review):
+      `runCancel` (`cmd-cancel.mjs:55-67`) refuses only a too-new database, and `requestCancel`'s UPDATE
+      (`job-record.mjs:205-213`) carries no `schema_version` predicate, so a non-terminal row a newer
+      plugin wrote gets `cancel_requested_at` set. `reconcileAll` leaves that row non-terminal because of
+      its version. That contradicts `job-reconcile.mjs:17` ("A row a newer plugin wrote is never mutated").
+      Reproduced 2026-11-27 in a scratch state dir with the real companion: a `running`, schema-99 row
+      with a reaped pid got `cancel_requested_at` set, and the reply said "Cancelling job foreign, running
+      since 0s ago. Its worker checks every 5s." for a worker that was gone. The schema-1 control row in
+      the same run was reconciled to `failed` and reported "already failed — nothing was cancelled".
+      Tests whose wording assumes the invariant: `tests/queue-reconcile.test.js:44` (title),
+      `tests/abandon-cli.test.js:106`, `tests/queue-semantics.test.js:29`.
 
 - **#48. Residue from #47 onward: collectTarget path and claim gaps, test isolation, structural guards** (filed 2026-11-08)
 
@@ -86,7 +75,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34 and 1c6a5e3.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3 and 15459ff.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
