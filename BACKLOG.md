@@ -8,12 +8,10 @@ The next ID is `max+1` over all three files (highest used: #48).
 - **#33. Job-test and runtime-comment residue: stale claims, narration, unexercised races** (filed 2026-10-08)
 
   Residue from #25 (740c2f7), extended by later runs. Done: entry 2 (history comments, 2bc2cdb and
-  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258) and entry 8 (04dd5d1). Entries 1 and 3 and review residuals R5 and
+  02c4112's `run-buckets.mjs` sweep), entry 4 (1c6a5e3; its G1-G3 parked), entry 5 (fb554ce), entry 6 (15459ff), entry 7 (87e1258), entry 8 (04dd5d1) and entry 9 (c40ae10). Entries 1 and 3 and review residuals R5 and
   R7-R10 were dropped on 2026-11-14 and are in `BACKLOG_PARKED.md`. Entries below keep their numbers and
   are as recorded on 2026-11-15 (issue comment 6896151922), not re-verified since unless marked.
 
-  9. **"Split from" headers** in 17 test files (`command grep -l 'Split from' tests/*.js tests/*.mjs`;
-     still 17 on 2026-11-24).
   10. **`tests/job-spawn-failure.test.js:130` overstates**: its assertion message says an `acquired`
       verdict means "the test above proves nothing", but `:116-119` says that test fails on its own when
       terminalization is removed (still so on 2026-11-24).
@@ -50,9 +48,23 @@ The next ID is `max+1` over all three files (highest used: #48).
         (`config.mjs:232` never interpolates the URL, `config.mjs:109-119` throws a static parse message).
         `plugins/oai/scripts/lib/job-store.mjs:377-380`: a caller's statement "has no retry loop around it",
         though seven `withBusyRetry` call sites wrap callers' statements.
-        `tests/job-busy-heartbeat.test.js:50-52` ("Before the fix …") and `:100` ("until this test
+        `tests/job-busy-heartbeat.test.js:49-51` ("Before the fix …") and `:99` ("until this test
         existed"); `tests/retention.test.js:189-193` ("now has a witness") and `:208` ("predates this
         one"): history narration.
+      - Added 2026-11-28 from #33 entry 9 (each read at c40ae10):
+        - Entry 9's class (size-split history in headers and comments) outside `tests/`. Universe:
+          `command grep -rlEi -- "$(cat pattern)" plugins/oai/scripts/lib bench/lib`, with the pattern
+          `split (from|out|off|apart|only|the same way|when|exists)|lifted (out|from)|moved (out|from|here)|extracted (from|out)|carved|outgrew|size (budget|ratchet|ceiling|cap|limit)|ratchet|line budget|[0-9]+-line (budget|limit|cap)|its own file|crossed the|reached its size|used to live|formerly|originally|was copied|forced a split|the two split|that split|the split`,
+          hits 23 files in `plugins/oai/scripts/lib` and 13 in `bench/lib`. Classified as the class: 21 lib
+          files (attempt-ledger, attempt-outcome, capability-ladder, chat, completion, findings-candidate,
+          http-budgets, http-errors, http, job-busy, job-drain, job-record, json-scan, model-selection,
+          render, review-request, review-schema, review-unparsed, stream-collect, task-execute,
+          task-report) and 7 bench/lib files (reason-notes, sweep-window, ttl-calibration, ttl-verdict,
+          ttl-episode, reliability-report, caveats).
+        - `tests/delegate-template.test.js:83-87` says nothing in `tests/` exercises the recipe's
+          containment; `tests/delegate-containment.test.js:134-235` does, and its header says so.
+        - `tests/runtime-capability.test.js:9-11` says the two files "would only share a size budget"; no
+          size budget exists.
   14. **No test discriminates `resolveCredential`'s no-forward catch** (filed 2026-11-28 from #33 entry 8's
       review). `job-auth.mjs:156-170` is the only layer keeping some raw config values out of a job's
       failure message: `resolveApiKey` quotes `apiKeyEnv` (`config.mjs:299`), so a key pasted into that
@@ -90,7 +102,7 @@ The next ID is `max+1` over all three files (highest used: #48).
     unfiltered bytes (reproduced: the diff shows `+XXX` while the body carries `SECRET`); the NFC
     spelling of an NFD-tracked skip-worktree file sends disk bytes with an empty diff.
   - **53. No structural test for "a user value reaches a helper's option parser".**
-  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258 and 04dd5d1.
+  - **73. The live LM Studio check is pending** for 3e59bf7, e7a14ae, 94ee785, 042ac83, 83c109c, 8c19e34, 1c6a5e3, 15459ff, 87e1258, 04dd5d1 and c40ae10.
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun). Capture the test name and output next time.
   - **85. A merge file with no `--cc` hunk is neither sent nor named on the no-body rungs** (filed
