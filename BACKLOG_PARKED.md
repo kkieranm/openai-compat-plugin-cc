@@ -60,6 +60,17 @@ re-litigated. Each keeps its stable ID.
       changed to forward `e.message` left all six leak tests green, and `resolveProfile` with
       `apiKeyEnv: "sk-live-PASTED"` threw a message quoting that value.
 
+- **#48 item 83 (parked 2026-11-28 by the owner: not reproduced).** Two real occurrences (2026-11-16,
+  2026-11-17); 15 later full-suite runs green, 7 of them under load. Reopening bar: a recurrence whose
+  test name and output are captured.
+
+  - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
+    2026-11-17, each followed by a green rerun; both in session transcript
+    `2e52b799-def9-4f7d-9248-84c5a9c73208`, `actual: 'first-byte-timeout'`, output truncated). Capture the
+    test name and output next time. Not reproduced in 8 consecutive full-suite runs on 2026-11-28 at
+    f17b011 (2103/2103 each), nor in 7 more under load the same day at 65924a4 (`taskpolicy -c
+    background` plus 8 `yes` loops, 253-322s per run, 2103/2103 each, no `first-byte-timeout` in any log).
+
 - **#48 items 26, 36, 37, 53, 85, 86, 87, 88 (parked 2026-11-28 by the backlog sweep: not worth doing —
   no real occurrence).** Items 26-88 here are the 2026-11-17 sweep's numbering plus the 2026-11-25
   filings; this item 85 (filed 2026-11-25) is not the process-note "Item 85" removed above. All verified

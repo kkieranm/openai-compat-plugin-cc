@@ -4,6 +4,28 @@ Completed (or dropped) items, newest first. Each keeps its stable ID. Items clos
 tracker moved into the repo are listed by title only; their full record is the GitHub issue of the
 same number. Shipped work is also summarised in `CHANGELOG.md`.
 
+- **#48. Residue from #47 onward: collectTarget path and claim gaps, test isolation, structural guards** (filed 2026-11-08)
+
+  The live list is the 2026-11-17 backlog sweep (issue comment 6941016378). It judged every open item
+  against four keep criteria: a recorded incident; wrong model input with no warning, reproduced in an
+  ordinary workflow; a recurring class with two or more fixed occurrences and no structural test; or an
+  outstanding verification obligation. The sweep's numbering is used below. Each item's full text and
+  measurements are in the comment that filed it.
+
+  Done or parked from the original filing:
+  - Original entry 2 (`git show` of an NFD path) was fixed in eafb174 and 5b27ceb.
+  - Original entry 3 (bench listing without `-z`) was fixed in eafb174, with a structural test.
+  - Original entry 6's "Nothing to review ignores `unreadable`" half was fixed in eafb174.
+  - The sweep covered 72 IDs: 8 live (below), 7 merged into another item, 54 parked, 3 removed as process
+    notes, plus 2 refuted sub-claims. The parked, refuted and removed entries, among them original entry 1
+    (NFD alias sent twice), entry 6's Linux non-UTF-8 half and entry 7 (newline in the FILE header), are in
+    `BACKLOG_PARKED.md` with their evidence.
+  - Items 26, 36, 37, 53 and 85-88 were parked by the 2026-11-28 sweep (no real occurrence), in
+    `BACKLOG_PARKED.md`.
+  - Item 73 (the pending live check) was closed on 2026-11-28 by a live run; see `BACKLOG_DONE.md`.
+
+  Closed 2026-11-28 by the owner: item 73 is done (above) and item 83 is parked, so nothing is live.
+
 - **#48 sweep item 73. The live LM Studio check was pending for 13 commits** (2026-11-28): closed by a
   live run at 6338f73, which contains all 13. `/oai:task --file plugins/oai/scripts/lib/errors.mjs` via
   `check-load.mjs`: `LOADED: oai:task from oai@inline`; LM Studio JIT-loaded `qwen/qwen3.8-27b`; the answer
