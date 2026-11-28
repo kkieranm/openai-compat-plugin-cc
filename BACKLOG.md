@@ -30,4 +30,5 @@ The next ID is `max+1` over all three files (highest used: #48).
     2026-11-17, each followed by a green rerun; both in session transcript
     `2e52b799-def9-4f7d-9248-84c5a9c73208`, `actual: 'first-byte-timeout'`, output truncated). Capture the
     test name and output next time. Not reproduced in 8 consecutive full-suite runs on 2026-11-28 at
-    f17b011 (2103/2103 each).
+    f17b011 (2103/2103 each), nor in 7 more under load the same day at 65924a4 (`taskpolicy -c
+    background` plus 8 `yes` loops, 253-322s per run, 2103/2103 each, no `first-byte-timeout` in any log).
