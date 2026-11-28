@@ -29,4 +29,5 @@ The next ID is `max+1` over all three files (highest used: #48).
   - **83. Unidentified test failures involving `first-byte-timeout` assertions** (2026-11-16,
     2026-11-17, each followed by a green rerun; both in session transcript
     `2e52b799-def9-4f7d-9248-84c5a9c73208`, `actual: 'first-byte-timeout'`, output truncated). Capture the
-    test name and output next time.
+    test name and output next time. Not reproduced in 8 consecutive full-suite runs on 2026-11-28 at
+    f17b011 (2103/2103 each).
